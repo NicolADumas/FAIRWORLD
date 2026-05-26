@@ -18,9 +18,29 @@
 #include "Player.h"
 #include "MobManager.h"
 #include "AIAssistant.h"
+#include "PhysicsEngine.h"
 
 
 enum class GameMode { Dev, Play };
+
+// ------------------------------------------------------------------
+// GameState: ogni stato è ESCLUSIVO. Mai due stati attivi assieme.
+// ------------------------------------------------------------------
+enum class GameState {
+    LOADING,
+    MAIN_MENU,
+    PLAYING,
+    PAUSE_MENU,
+    TAB_BLOCCHI,
+    TAB_MOB,
+    TAB_PLAYER,
+    TAB_TEXTURE_PAINTER,
+    TAB_MODEL_SCULPTOR,
+    TAB_MODEL_EDITOR,
+    TAB_MONDO,
+    TAB_ENGINE,
+    _COUNT
+};
 
 // Forward declarations
 class XrManager;
@@ -36,11 +56,36 @@ public:
     void Run();
     void Shutdown();
 
+    bool isWorldRunning() const;
+    bool isEditorOpen() const;
+
 private:
     bool Update(float deltaTime);
     void Render();
     std::string GetSlotName(int slotIndex);
     void ProcessAIMessage(const std::string& input);
+
+    // --- UI State Machine ---
+    GameState m_current;
+    GameState m_previousTab;
+    const char* getStateName() const;
+    void transitionTo(GameState next);
+    void renderMainMenu();
+    void renderPauseMenu();
+    void renderEditorTabs();
+    void renderTab_Blocchi();
+    void renderTab_Mob();
+    void renderTab_Player();
+    void renderTab_TexturePainter();
+    void renderTab_ModelSculptor();
+    void renderTab_ModelEditor();
+    void renderTab_Mondo();
+    void renderTab_Engine();
+    
+    bool isTabState(GameState s) const;
+    int tabIndex(GameState s) const;
+    GameState tabFromIndex(int i) const;
+    const char* tabLabel(GameState s) const;
 
     bool m_isRunning;
     bool m_isVrMode;
@@ -73,6 +118,9 @@ private:
     MobManager  m_mobManager;
     AIAssistant m_aiAssistant;
     GameMode    m_gameMode = GameMode::Dev;
+
+    PhysicsEngine m_physics;
+    RigidBody     m_playerBody;
 
     // Diario AI
     bool         m_isDiaryOpen = false;

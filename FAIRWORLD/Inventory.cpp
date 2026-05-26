@@ -62,10 +62,90 @@ void Inventory::RemoveItem(int slotIndex, int count) {
 
 void Inventory::SwapSlots(int slotA, int slotB) {
     if (slotA < 0 || slotA >= INVENTORY_SIZE || slotB < 0 || slotB >= INVENTORY_SIZE) return;
+    if (slotA == slotB) return;
+    
+    // Se i due slot sono dello stesso tipo e blocco, prova a fare un merge
+    if (!slots[slotA].IsEmpty() && !slots[slotB].IsEmpty() && 
+        slots[slotA].type == slots[slotB].type && 
+        slots[slotA].blockType == slots[slotB].blockType &&
+        slots[slotA].stringId == slots[slotB].stringId) {
+        
+        int space = slots[slotB].maxStack - slots[slotB].count;
+        if (space > 0) {
+            if (slots[slotA].count <= space) {
+                slots[slotB].count += slots[slotA].count;
+                slots[slotA].Clear();
+            } else {
+                slots[slotB].count += space;
+                slots[slotA].count -= space;
+            }
+            return;
+        }
+    }
     
     InventoryItem temp = slots[slotA];
     slots[slotA] = slots[slotB];
     slots[slotB] = temp;
+}
+
+void Inventory::MovePartial(int slotA, int slotB, int amount) {
+    if (slotA < 0 || slotA >= INVENTORY_SIZE || slotB < 0 || slotB >= INVENTORY_SIZE) return;
+    if (slotA == slotB) return;
+    if (slots[slotA].IsEmpty() || amount <= 0) return;
+    
+    amount = std::min(amount, slots[slotA].count); // Non spostare più di quanti ce ne siano
+
+    if (slots[slotB].IsEmpty()) {
+        // Slot destinazione vuoto, creiamo un nuovo stack
+        slots[slotB] = slots[slotA];
+        slots[slotB].count = amount;
+        slots[slotA].count -= amount;
+        if (slots[slotA].count <= 0) slots[slotA].Clear();
+    } else if (slots[slotA].type == slots[slotB].type && 
+               slots[slotA].blockType == slots[slotB].blockType &&
+               slots[slotA].stringId == slots[slotB].stringId) {
+        // Stesso tipo, merge parziale
+        int space = slots[slotB].maxStack - slots[slotB].count;
+        int toMove = std::min(amount, space);
+        slots[slotB].count += toMove;
+        slots[slotA].count -= toMove;
+        if (slots[slotA].count <= 0) slots[slotA].Clear();
+    }
+}
+
+void Inventory::Sort() {
+    // Sposta tutti gli slot vuoti alla fine e compatta gli stack dello stesso tipo
+    for (int i = 0; i < INVENTORY_SIZE; i++) {
+        if (!slots[i].IsEmpty()) {
+            for (int j = i + 1; j < INVENTORY_SIZE; j++) {
+                if (!slots[j].IsEmpty() && 
+                    slots[i].type == slots[j].type && 
+                    slots[i].blockType == slots[j].blockType &&
+                    slots[i].stringId == slots[j].stringId) {
+                    
+                    int space = slots[i].maxStack - slots[i].count;
+                    if (space > 0) {
+                        int amount = std::min(space, slots[j].count);
+                        slots[i].count += amount;
+                        slots[j].count -= amount;
+                        if (slots[j].count <= 0) slots[j].Clear();
+                    }
+                }
+            }
+        }
+    }
+
+    // Compatta (muove verso l'inizio)
+    int insertPos = 0;
+    for (int i = 0; i < INVENTORY_SIZE; i++) {
+        if (!slots[i].IsEmpty()) {
+            if (i != insertPos) {
+                slots[insertPos] = slots[i];
+                slots[i].Clear();
+            }
+            insertPos++;
+        }
+    }
 }
 
 void Inventory::SaveToJson(nlohmann::json& j) const {
@@ -114,4 +194,7 @@ void Inventory::GiveStarterItems() {
     InventoryItem lava; lava.type = ItemType::Block; lava.blockType = 7; lava.count = 64; AddItem(lava);
     InventoryItem leaves; leaves.type = ItemType::Block; leaves.blockType = 8; leaves.count = 64; AddItem(leaves);
     InventoryItem spawner; spawner.type = ItemType::Block; spawner.blockType = 9; spawner.count = 10; AddItem(spawner);
+    InventoryItem light; light.type = ItemType::Block; light.blockType = 10; light.count = 64; AddItem(light);
+    InventoryItem mushroom; mushroom.type = ItemType::Block; mushroom.blockType = 11; mushroom.count = 64; AddItem(mushroom);
+    InventoryItem ore; ore.type = ItemType::Block; ore.blockType = 12; ore.count = 64; AddItem(ore);
 }

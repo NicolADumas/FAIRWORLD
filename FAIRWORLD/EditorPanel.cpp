@@ -13,69 +13,55 @@
 #include <algorithm>
 
 void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const Camera& camera) {
-    DrawRadialMenu(world, renderer);
-
-    if (!isOpen) return;
-
-    // Configurazione della finestra principale dell'editor
-    ImGui::SetNextWindowSize(ImVec2(800, 500), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("FAIRWORLD - God Mode", &isOpen, ImGuiWindowFlags_MenuBar)) {
-        ImGui::End();
-        return;
-    }
+    // Il menu radiale TAB è stato rimosso.
+    // Questa funzione disegna solo le tab dell'editor.
+    // Deve essere chiamata dall'interno di un BeginTabBar esistente (nel menu di pausa).
 
     // Forza la selezione del tab se m_activeTab è valido
     static int forceSelectTab = -1;
     if (m_activeTab != -1) {
         forceSelectTab = m_activeTab;
-        m_activeTab = -1; // Consumato
+        m_activeTab = -1;
     }
 
     if (ImGui::BeginTabBar("EditorTabs", ImGuiTabBarFlags_None)) {
         
-        // TAB: BLOCCHI
         ImGuiTabItemFlags flags0 = (forceSelectTab == 0) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("📦 Blocchi", nullptr, flags0)) {
             DrawBlocksTab(assets, renderer);
             ImGui::EndTabItem();
         }
 
-        // TAB: MOB
         ImGuiTabItemFlags flags1 = (forceSelectTab == 1) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("🧟 Mob", nullptr, flags1)) {
             DrawMobsTab(assets, mobManager, camera);
             ImGui::EndTabItem();
         }
 
-        // TAB: PLAYER
         ImGuiTabItemFlags flags7 = (forceSelectTab == 7) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("🧑 Player", nullptr, flags7)) {
             if (player && mobManager) DrawPlayerTab(*player, *mobManager);
             ImGui::EndTabItem();
         }
 
-        // TAB: TEXTURE PAINTER
         ImGuiTabItemFlags flags2 = (forceSelectTab == 2) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("🎨 Texture Painter", nullptr, flags2)) {
             DrawTexturePainterTab(assets, renderer);
             ImGui::EndTabItem();
         }
 
-        // TAB: MODEL SCULPTOR (Voxel 3D)
         ImGuiTabItemFlags flags8 = (forceSelectTab == 8) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("🧊 Model Sculptor", nullptr, flags8)) {
             m_modelEditor.Draw();
             ImGui::EndTabItem();
         }
 
-        // TAB: MONDO (Struttura base)
         ImGuiTabItemFlags flags3 = (forceSelectTab == 3) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("🌍 Mondo", nullptr, flags3)) {
             DrawWorldTab(world);
             ImGui::EndTabItem();
         }
 
-        // TAB: ENGINE (Impostazioni grafiche)
         ImGuiTabItemFlags flags4 = (forceSelectTab == 4) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("⚙️ Engine", nullptr, flags4)) {
             DrawEngineTab(renderer);
@@ -85,129 +71,13 @@ void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* render
         ImGui::EndTabBar();
     }
 
-    // Reset del forceSelectTab dopo il rendering dei TabItem
     forceSelectTab = -1;
-
-    ImGui::End();
 }
 
-void EditorPanel::DrawRadialMenu(World& world, RenderManager* renderer) {
-    const int NUM_SLOTS = 10;
-    static int hovered_slot = 0;
-    static bool wasTabDown = false;
-    
-    bool tabDown = (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
-    
-    if (!tabDown) {
-        if (wasTabDown) {
-            // Rilasciato ora: esegui l'azione dello slot selezionato
-            if (hovered_slot == 0) {           // Slot 1: Blocchi
-                isOpen = true;
-                m_activeTab = 0;
-            } else if (hovered_slot == 1) {    // Slot 2: Mob
-                isOpen = true;
-                m_activeTab = 1;
-            } else if (hovered_slot == 2) {    // Slot 3: Texture Painter
-                isOpen = true;
-                m_activeTab = 2;
-            } else if (hovered_slot == 3) {    // Slot 4: Mondo
-                isOpen = true;
-                m_activeTab = 3;
-            } else if (hovered_slot == 4) {    // Slot 5: Engine
-                isOpen = true;
-                m_activeTab = 4;
-            } else if (hovered_slot == 5) {    // Slot 6: Refresh
-                world.InitWorld();
-                // I chunk verranno processati al prossimo frame
-            } else if (hovered_slot == 6) {    // Slot 7: Model Sculptor
-                isOpen = true;
-                m_activeTab = 8;
-            } else if (hovered_slot == 7) {    // Slot 8: Player
-                isOpen = true;
-                m_activeTab = 7;
-            } else if (hovered_slot == 8) {    // Slot 9: Chiudi
-                isOpen = false;
-            }
-        }
-        wasTabDown = false;
-        return;
-    }
-    
-    wasTabDown = true;
 
-    // Scorrimento rotellina del mouse per cambiare slot
-    float wheel = ImGui::GetIO().MouseWheel;
-    if (wheel != 0.0f) {
-        hovered_slot -= (int)wheel;
-        while (hovered_slot < 0) hovered_slot += NUM_SLOTS;
-        hovered_slot %= NUM_SLOTS;
-    }
-
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0.5f));
-    ImGui::Begin("RadialMenuOverlay", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
-    
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 center = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-    
-    const float radius_inner = 80.0f;
-    const float radius_outer = 200.0f;
-
-    for (int i = 0; i < NUM_SLOTS; i++) {
-        float a0 = (i - 0.5f) * (2.0f * 3.1415926535f) / NUM_SLOTS;
-        float a1 = (i + 0.5f) * (2.0f * 3.1415926535f) / NUM_SLOTS;
-        
-        ImU32 col = (i == hovered_slot) ? IM_COL32(100, 200, 255, 200) : IM_COL32(50, 50, 50, 150);
-        draw_list->PathArcTo(center, radius_inner, a0, a1, 10);
-        draw_list->PathArcTo(center, radius_outer, a1, a0, 10);
-        draw_list->PathFillConvex(col);
-        
-        float text_angle = i * (2.0f * 3.1415926535f) / NUM_SLOTS;
-        ImVec2 text_pos(center.x + cosf(text_angle) * (radius_inner + radius_outer) * 0.5f, 
-                        center.y + sinf(text_angle) * (radius_inner + radius_outer) * 0.5f);
-        
-        // Label degli slot
-        std::string text;
-        if (i == 0)      text = "📦 Blocchi";
-        else if (i == 1) text = "🧟 Mob";
-        else if (i == 2) text = "🎨 Painter";
-        else if (i == 3) text = "🌍 Mondo";
-        else if (i == 4) text = "⚙️ Engine";
-        else if (i == 5) text = "🔄 Refresh";
-        else if (i == 6) text = "🧊 Model Editor";
-        else if (i == 7) text = "🧑 Player";
-        else if (i == 8) text = "❌ Chiudi";
-        else             text = "Slot " + std::to_string(i + 1);
-        
-        ImVec2 text_size = ImGui::CalcTextSize(text.c_str());
-        draw_list->AddText(ImVec2(text_pos.x - text_size.x*0.5f, text_pos.y - text_size.y*0.5f), IM_COL32(255, 255, 255, 255), text.c_str());
-    }
-    
-    // Disegniamo il cerchio centrale con l'indicatore premium della selezione attuale
-    draw_list->AddCircleFilled(center, radius_inner - 5.0f, IM_COL32(20, 20, 25, 245));
-    draw_list->AddCircle(center, radius_inner - 5.0f, IM_COL32(100, 200, 255, 220), 0, 2.5f);
-    
-    std::string selectionText;
-    if (hovered_slot == 0)      selectionText = "Blocchi";
-    else if (hovered_slot == 1) selectionText = "Mob";
-    else if (hovered_slot == 2) selectionText = "Painter";
-    else if (hovered_slot == 3) selectionText = "Mondo";
-    else if (hovered_slot == 4) selectionText = "Engine";
-    else if (hovered_slot == 5) selectionText = "Refresh";
-    else if (hovered_slot == 6) selectionText = "Model Editor";
-    else if (hovered_slot == 7) selectionText = "Player";
-    else if (hovered_slot == 8) selectionText = "Chiudi";
-    else                        selectionText = "Slot " + std::to_string(hovered_slot + 1);
-    
-    ImVec2 sel_size = ImGui::CalcTextSize(selectionText.c_str());
-    draw_list->AddText(ImVec2(center.x - sel_size.x * 0.5f, center.y - sel_size.y * 0.5f), IM_COL32(100, 200, 255, 255), selectionText.c_str());
-    
-    ImGui::End();
-    ImGui::PopStyleColor();
-}
 
 void EditorPanel::DrawTexturePainterTab(AssetManager& assets, RenderManager* renderer) {
+
     ImGui::Text("Disegna Texture (16x16)");
     ImGui::Separator();
     

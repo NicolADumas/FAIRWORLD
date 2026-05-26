@@ -673,7 +673,11 @@ void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMat
     ubo.view = viewMatrix;
     
     // La Proiezione: grandangolo dinamico regolabile
-    ubo.proj = glm::perspective(glm::radians(m_fov), m_swapchainExtent.width / (float) m_swapchainExtent.height, 0.1f, 100.0f);
+    float aspect = 1.0f;
+    if (m_swapchainExtent.height > 0 && m_swapchainExtent.width > 0) {
+        aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+    }
+    ubo.proj = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
     ubo.proj[1][1] *= -1; // GLM nasce per OpenGL, invertiamo l'asse Y per Vulkan
 
     // Copiamo i dati nella RAM della GPU
@@ -933,7 +937,7 @@ bool RenderManager::CreateSyncObjects() {
 }
 
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
-void RenderManager::RenderDesktop(glm::mat4 viewMatrix, AssetManager* assets, MobManager* mobManager, Player* player) {
+void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, AssetManager* assets, MobManager* mobManager, Player* player) {
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
     // imageAvailable[currentFrame]: protetto dal fence sopra => e' sicuro risegnalarlo
@@ -966,7 +970,7 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, AssetManager* assets, Mo
 
     // Svuota sia il colore che il depth ogni frame
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color        = {{ 0.53f, 0.81f, 0.98f, 1.0f }}; // azzurro cielo
+    clearValues[0].color        = {{ skyColor.x, skyColor.y, skyColor.z, 1.0f }}; // colore dinamico cielo
     clearValues[1].depthStencil = { 1.0f, 0 };                     // depth = 1.0 (massimo)
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues    = clearValues.data();

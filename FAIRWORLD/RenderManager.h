@@ -221,5 +221,5 @@ public:
     void UploadGhostMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     
     // Metodo da chiamare nel Game Loop
-    void RenderDesktop(glm::mat4 viewMatrix, class AssetManager* assets = nullptr, class MobManager* mobManager = nullptr, class Player* player = nullptr);
+    void RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, class AssetManager* assets = nullptr, class MobManager* mobManager = nullptr, class Player* player = nullptr);
 };

@@ -39,10 +39,21 @@ public:
     
     // Scambia due slot (utile per il drag and drop)
     void SwapSlots(int slotA, int slotB);
+    
+    // Sposta una quantità parziale (es. 1 o metà) da slotA a slotB
+    void MovePartial(int slotA, int slotB, int amount);
 
     void SaveToJson(nlohmann::json& j) const;
     void LoadFromJson(const nlohmann::json& j);
     
     // Inizializza l'inventario con alcuni blocchi di base (per test)
     void GiveStarterItems();
+
+    // Ordina l'inventario compattando gli stack
+    void Sort();
+    
+    // Svuota uno slot specifico (Cestino)
+    void ClearSlot(int slotIndex) {
+        if (slotIndex >= 0 && slotIndex < INVENTORY_SIZE) slots[slotIndex].Clear();
+    }
 };

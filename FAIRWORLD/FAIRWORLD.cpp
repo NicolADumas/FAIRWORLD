@@ -39,8 +39,101 @@ std::string FairWorldEngine::GetSlotName(int slotIndex) {
     return "Unknown";
 }
 
+// ============================================================
+//  Tabelle statiche dei TAB  (ordine = ordine visivo nella barra)
+// ============================================================
+static constexpr GameState kTabStates[] = {
+    GameState::TAB_BLOCCHI,
+    GameState::TAB_MOB,
+    GameState::TAB_PLAYER,
+    GameState::TAB_TEXTURE_PAINTER,
+    GameState::TAB_MODEL_SCULPTOR,
+    GameState::TAB_MODEL_EDITOR,
+    GameState::TAB_MONDO,
+    GameState::TAB_ENGINE,
+};
+static constexpr int kTabCount = static_cast<int>(sizeof(kTabStates) / sizeof(kTabStates[0]));
+
+static constexpr const char* kTabLabels[] = {
+    "Blocchi",
+    "Mob",
+    "Player",
+    "Texture Painter",
+    "Model Sculptor",
+    "Model Editor",
+    "Mondo",
+    "Engine",
+};
+
+static constexpr const char* kStateNames[] = {
+    "LOADING",
+    "MAIN_MENU",
+    "PLAYING",
+    "PAUSE_MENU",
+    "TAB_BLOCCHI",
+    "TAB_MOB",
+    "TAB_PLAYER",
+    "TAB_TEXTURE_PAINTER",
+    "TAB_MODEL_SCULPTOR",
+    "TAB_MODEL_EDITOR",
+    "TAB_MONDO",
+    "TAB_ENGINE",
+    "_COUNT",
+};
+
+// ============================================================
+//  Helpers statici
+// ============================================================
+bool FairWorldEngine::isTabState(GameState s) const {
+    for (int i = 0; i < kTabCount; ++i)
+        if (kTabStates[i] == s) return true;
+    return false;
+}
+
+int FairWorldEngine::tabIndex(GameState s) const {
+    for (int i = 0; i < kTabCount; ++i)
+        if (kTabStates[i] == s) return i;
+    return 0;
+}
+
+GameState FairWorldEngine::tabFromIndex(int i) const {
+    if (i < 0 || i >= kTabCount) return kTabStates[0];
+    return kTabStates[i];
+}
+
+const char* FairWorldEngine::tabLabel(GameState s) const {
+    return kTabLabels[tabIndex(s)];
+}
+
+const char* FairWorldEngine::getStateName() const {
+    int idx = static_cast<int>(m_current);
+    return kStateNames[idx];
+}
+
+void FairWorldEngine::transitionTo(GameState next) {
+    if (next == m_current) return;
+    m_current = next;
+    // Here we can trigger onEnter/onExit logic if needed.
+}
+
+bool FairWorldEngine::isWorldRunning() const {
+    switch (m_current) {
+        case GameState::LOADING:
+        case GameState::MAIN_MENU:
+        case GameState::PAUSE_MENU:
+            return false;
+        default:
+            return true;
+    }
+}
+
+bool FairWorldEngine::isEditorOpen() const {
+    return isTabState(m_current);
+}
+
 FairWorldEngine::FairWorldEngine() 
     : m_isRunning(false), m_isVrMode(false),
+      m_current(GameState::MAIN_MENU), m_previousTab(GameState::TAB_BLOCCHI),
       m_xrManager(std::make_unique<XrManager>()), 
       m_renderManager(std::make_unique<RenderManager>()),
       m_windowManager(std::make_unique<WindowManager>()) {}
@@ -85,6 +178,8 @@ bool FairWorldEngine::Init() {
     m_camera.Position = glm::vec3(0.0f, 30.0f, 0.0f); // Spostato a y=30 per non incastrarsi nelle colline
     m_camera.Yaw   = -90.0f;
     m_camera.Pitch = -20.0f;
+    
+    m_playerBody.position = m_camera.Position;
 
     // Carica la mesh iniziale del mondo sulla GPU (Chunks)
     m_world.InitWorld();
@@ -186,9 +281,44 @@ bool FairWorldEngine::Update(float deltaTime) {
     }
     jWasDown = jDown;
     
-    // Toggle Inventory con 'E' o 'Tab'
+    
+    // --- ESC: apre/chiude il menu di pausa ---
+    static bool escWasDownEngine = false;
+    bool escDownEngine = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+    if (escDownEngine && !escWasDownEngine) {
+        if (m_current == GameState::PLAYING) {
+            transitionTo(GameState::PAUSE_MENU);
+        } else if (m_current == GameState::PAUSE_MENU || isEditorOpen()) {
+            transitionTo(GameState::PLAYING);
+        }
+    }
+    escWasDownEngine = escDownEngine;
+
+    if (!isWorldRunning()) return true;
+
+    // Avanza il tempo nel ciclo Giorno/Notte (Fase 2)
+    m_world.AdvanceTime(deltaTime);
+    
+    // Avanza la simulazione Orbitale e Kepleriana (Fase 8)
+    m_world.SimulateOrbits(deltaTime);
+
+    // Fisica dell'acqua (Fase 4)
+    m_world.m_waterTickAccum += deltaTime;
+    if (m_world.m_waterTickAccum >= 0.25f) {
+        m_world.SimulateWaterTick();
+        m_world.m_waterTickAccum = 0.0f;
+    }
+
+    // Termodinamica SI (Fase 6)
+    m_world.m_thermoTickAccum += deltaTime;
+    if (m_world.m_thermoTickAccum >= 1.0f) {
+        m_world.SimulateThermodynamicsTick();
+        m_world.m_thermoTickAccum = 0.0f;
+    }
+
+    // Toggle Inventory con 'E' (TAB ora è menu principale)
     static bool eWasDown = false;
-    bool eDown = (GetAsyncKeyState('E') & 0x8000) != 0 || (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
+    bool eDown = (GetAsyncKeyState('E') & 0x8000) != 0;
     if (eDown && !eWasDown && !m_isDiaryOpen && !io.WantCaptureKeyboard) {
         m_isInventoryOpen = !m_isInventoryOpen;
         if (m_isInventoryOpen) {
@@ -218,11 +348,6 @@ bool FairWorldEngine::Update(float deltaTime) {
     if (f1Down && !f1WasDown) {
         m_gameMode = (m_gameMode == GameMode::Dev) ? GameMode::Play : GameMode::Dev;
         m_player.SaveToJson("assets/player.json");
-        if (m_gameMode == GameMode::Dev) {
-            m_editor.isOpen = true;
-        } else {
-            m_editor.isOpen = false;
-        }
     }
     f1WasDown = f1Down;
 
@@ -243,22 +368,20 @@ bool FairWorldEngine::Update(float deltaTime) {
         float hLen = glm::length(moveDir);
         if (hLen > 0.0f) moveDir = (moveDir / hLen);
 
-        // Parametri AABB Player
-        float playerRadius = 0.3f;
-        float playerHeight = 1.8f;
-        float eyeHeight = 1.6f;
-
-        glm::vec3 pos = m_camera.Position;
-        glm::vec3 feetPos = pos; feetPos.y -= eyeHeight;
-
-        // Controlla se siamo nei liquidi
-        BlockType centerBlock = m_world.GetBlock((int)floor(pos.x), (int)floor(pos.y - 0.5f), (int)floor(pos.z));
-        BlockDef* centerDef = m_assets.GetBlock((int)centerBlock);
-        m_camera.IsSwimming = (centerDef && centerDef->isLiquid);
-
-        if (m_camera.IsSwimming) {
-            // Logica Nuoto
-            if (centerDef->damagePerSecond > 0) {
+        glm::vec3 targetVelocity = moveDir * m_camera.MovementSpeed;
+        
+        // Modalita' Dev (Volo) vs Play (Fisica Reale)
+        if (m_gameMode == GameMode::Dev) {
+            m_playerBody.velocity = targetVelocity;
+            if (GetAsyncKeyState(VK_SPACE) & 0x8000) m_playerBody.velocity.y = m_camera.MovementSpeed;
+            if (GetAsyncKeyState(VK_SHIFT) & 0x8000) m_playerBody.velocity.y = -m_camera.MovementSpeed;
+            m_playerBody.position += m_playerBody.velocity * deltaTime;
+            m_playerBody.isGrounded = false;
+        } else {
+            // Nuoto: danno (es. Lava)
+            BlockType centerBlock = m_world.GetBlock((int)floor(m_playerBody.position.x), (int)floor(m_playerBody.position.y - m_playerBody.radius), (int)floor(m_playerBody.position.z));
+            BlockDef* centerDef = m_assets.GetBlock((int)centerBlock);
+            if (centerDef && centerDef->isLiquid && centerDef->damagePerSecond > 0) {
                 static float damageTimer = 0.0f;
                 damageTimer += deltaTime;
                 if (damageTimer >= 1.0f) {
@@ -266,72 +389,62 @@ bool FairWorldEngine::Update(float deltaTime) {
                     damageTimer = 0.0f;
                 }
             }
-
-            m_camera.VelocityY *= 0.8f; // Attrito acqua
-            if (GetAsyncKeyState(VK_SPACE) & 0x8000) m_camera.VelocityY = 4.0f;
-            else if (GetAsyncKeyState(VK_SHIFT) & 0x8000) m_camera.VelocityY = -4.0f;
-        } else {
-            // Gravità
-            if (m_gameMode == GameMode::Dev) {
-                // Volo libero in Dev Mode
-                m_camera.VelocityY = 0.0f;
-                if (GetAsyncKeyState(VK_SPACE) & 0x8000) m_camera.VelocityY = m_camera.MovementSpeed;
-                if (GetAsyncKeyState(VK_SHIFT) & 0x8000) m_camera.VelocityY = -m_camera.MovementSpeed;
+            
+            // Imposta la velocità orizzontale desiderata dal player (WASD)
+            m_playerBody.velocity.x = targetVelocity.x;
+            m_playerBody.velocity.z = targetVelocity.z;
+            
+            if (m_playerBody.isInWater) {
+                // In acqua il movimento orizzontale è rallentato
+                m_playerBody.velocity.x *= 0.5f;
+                m_playerBody.velocity.z *= 0.5f;
+                if (GetAsyncKeyState(VK_SPACE) & 0x8000) m_playerBody.velocity.y = 4.0f;
+                else if (GetAsyncKeyState(VK_SHIFT) & 0x8000) m_playerBody.velocity.y = -4.0f;
             } else {
-                m_camera.VelocityY -= 20.0f * deltaTime; // Accelerazione gravitazionale
-                if (m_camera.IsGrounded && (GetAsyncKeyState(VK_SPACE) & 0x8000)) {
-                    m_camera.VelocityY = 7.0f; // Salto
+                // Salto (impulso istantaneo di velocità verticale)
+                if (m_playerBody.isGrounded && (GetAsyncKeyState(VK_SPACE) & 0x8000)) {
+                    m_playerBody.velocity.y = 7.0f; 
+                }
+            }
+            
+            // Vecchia velocità Y per calcolare l'impatto del danno da caduta
+            float oldVelY = m_playerBody.velocity.y;
+            
+            // Esegui lo step fisico: gravita', attrito, integrazione, collisioni continue AABB
+            m_physics.StepSimulation(m_playerBody, deltaTime, m_world);
+            
+            // --- STARGATE TELEPORT LOGIC ---
+            if (m_playerBody.touchedStargate) {
+                m_playerBody.touchedStargate = false;
+                
+                // Passa al pianeta successivo: Earth -> Mars -> Glacies -> Earth
+                PlanetType current = m_world.GetCurrentPlanet()->type;
+                PlanetType next = PlanetType::EarthPrime;
+                if (current == PlanetType::EarthPrime) next = PlanetType::MarsDesolation;
+                else if (current == PlanetType::MarsDesolation) next = PlanetType::Glacies;
+                
+                m_world.ChangePlanet(next);
+                
+                // Riposiziona il giocatore in alto al centro
+                m_playerBody.position = glm::vec3(0.0f, 40.0f, 0.0f);
+                m_playerBody.velocity = glm::vec3(0.0f);
+                std::cout << "[STARGATE] Attraversamento wormhole completato! Gravita e Termodinamica ricalcolati." << std::endl;
+            }
+            
+            // Danno da caduta automatico (Cap. 12/13 - perdita di energia cinetica)
+            if (m_playerBody.isGrounded && oldVelY < -10.0f) {
+                float deltaV = abs(oldVelY - m_playerBody.velocity.y);
+                float damage = m_physics.ComputeFallDamage(deltaV, m_playerBody.mass);
+                if (damage > 0.0f) {
+                    m_player.stats.currentHP -= (int)damage;
                 }
             }
         }
-
-        // Calcola nuovo spostamento
-        glm::vec3 targetVelocity = moveDir * m_camera.MovementSpeed;
-        if (m_camera.IsSwimming) targetVelocity *= 0.5f; // Più lenti in acqua
         
-        glm::vec3 nextPos = pos;
-        nextPos.x += targetVelocity.x * deltaTime;
-        nextPos.z += targetVelocity.z * deltaTime;
-        nextPos.y += m_camera.VelocityY * deltaTime;
-
-        // Funzione helper per collisioni AABB
-        auto CheckCollision = [&](glm::vec3 testPos) {
-            if (m_gameMode == GameMode::Dev && !m_camera.IsSwimming) return false; // Niente collisioni in volo dev
-            float minX = testPos.x - playerRadius, maxX = testPos.x + playerRadius;
-            float minY = testPos.y - eyeHeight, maxY = testPos.y + (playerHeight - eyeHeight);
-            float minZ = testPos.z - playerRadius, maxZ = testPos.z + playerRadius;
-
-            for (int x = (int)floor(minX); x <= (int)floor(maxX); x++) {
-                for (int y = (int)floor(minY); y <= (int)floor(maxY); y++) {
-                    for (int z = (int)floor(minZ); z <= (int)floor(maxZ); z++) {
-                        BlockType b = m_world.GetBlock(x, y, z);
-                        BlockDef* def = m_assets.GetBlock((int)b);
-                        if (def && def->isSolid) return true;
-                    }
-                }
-            }
-            return false;
-        };
-
-        // Movimento asse per asse per scivolare sui muri
-        // X-axis
-        if (!CheckCollision(glm::vec3(nextPos.x, pos.y, pos.z))) {
-            pos.x = nextPos.x;
-        }
-        // Z-axis
-        if (!CheckCollision(glm::vec3(pos.x, pos.y, nextPos.z))) {
-            pos.z = nextPos.z;
-        }
-        // Y-axis
-        m_camera.IsGrounded = false;
-        if (!CheckCollision(glm::vec3(pos.x, nextPos.y, pos.z))) {
-            pos.y = nextPos.y;
-        } else {
-            if (m_camera.VelocityY < 0.0f) m_camera.IsGrounded = true;
-            m_camera.VelocityY = 0.0f;
-        }
-
-        m_camera.Position = pos;
+        // Sincronizza la camera con il corpo fisico
+        m_camera.Position = m_playerBody.position;
+        m_camera.IsGrounded = m_playerBody.isGrounded;
+        m_camera.IsSwimming = m_playerBody.isInWater;
         m_camera.MovementSpeed = baseSpeed;
     } // Chiude if (!io.WantCaptureKeyboard)
 
@@ -348,13 +461,13 @@ bool FairWorldEngine::Update(float deltaTime) {
         m_escWasDown = escDown;
     }
 
-    // Se God Mode o il Diario sono aperti, il cursore è sempre libero
-    if (m_editor.isOpen || m_isDiaryOpen) {
+    // Se God Mode, Diario, o Inventario sono aperti, il cursore è sempre libero
+    if (m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen) {
         m_cursorLocked = false;
     }
 
-    // Click sinistro fuori dall'editor/diario: blocca il cursore per il gioco FPS
-    if (!m_cursorLocked && !m_editor.isOpen && !m_isDiaryOpen && !io.WantCaptureMouse) {
+    // Click sinistro fuori dall'editor/diario/inventario: blocca il cursore per il gioco FPS
+    if (!m_cursorLocked && !m_editor.isOpen && !m_isDiaryOpen && !m_isInventoryOpen && !io.WantCaptureMouse) {
         bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         if (lDown && !m_lButtonWasDown) {
             m_cursorLocked = true;
@@ -621,7 +734,22 @@ void FairWorldEngine::Render() {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // 1. Disegna il Mirino 2D al centro dello schermo (con outline nero per visibilità)
+        // --- RENDER MENU & TAB ---
+        switch (m_current) {
+            case GameState::MAIN_MENU:
+                renderMainMenu();
+                break;
+            case GameState::PAUSE_MENU:
+                renderPauseMenu();
+                break;
+            default:
+                // Gli stati TAB_* sono sub-stati del menu di pausa
+                if (isEditorOpen()) renderPauseMenu();
+                break;
+        }
+
+        if (m_current == GameState::PLAYING) {
+            // 1. Disegna il Mirino 2D al centro dello schermo (con outline nero per visibilità)
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImDrawList* dl = ImGui::GetBackgroundDrawList();
         const float CH = 14.0f;  // metà lunghezza braccio
@@ -685,19 +813,27 @@ void FairWorldEngine::Render() {
                         IM_COL32(255, 255, 0, 255), 2.0f, 0, 2.0f);
                 }
 
-                ImGui::BeginChild((std::string("HB") + std::to_string(i)).c_str(), ImVec2(38, 38), true, ImGuiWindowFlags_NoScrollbar);
+                ImGui::PushID(i);
+                ImVec2 curPos = ImGui::GetCursorScreenPos();
+                ImGui::InvisibleButton("##hbslot", ImVec2(38, 38));
+                
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                dl->AddRect(curPos, ImVec2(curPos.x + 38, curPos.y + 38), IM_COL32(100, 100, 100, 255));
+                
                 if (!item.IsEmpty()) {
                     std::string itemName = GetSlotName(i);
                     std::string initial = itemName.empty() ? "?" : itemName.substr(0, 3);
-                    ImGui::SetCursorPos(ImVec2(2, 2));
-                    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", initial.c_str());
+                    dl->AddText(ImVec2(curPos.x + 2, curPos.y + 2), IM_COL32(100, 200, 255, 255), initial.c_str());
 
                     std::string countStr = std::to_string(item.count);
                     ImVec2 textSize = ImGui::CalcTextSize(countStr.c_str());
-                    ImGui::SetCursorPos(ImVec2(38 - textSize.x - 4, 38 - textSize.y - 4));
-                    ImGui::Text("%s", countStr.c_str());
+                    dl->AddText(ImVec2(curPos.x + 38 - textSize.x - 4, curPos.y + 38 - textSize.y - 4), IM_COL32(255, 255, 255, 255), countStr.c_str());
                 }
-                ImGui::EndChild();
+                ImGui::PopID();
+                
+                if (ImGui::IsItemHovered() && !item.IsEmpty()) {
+                    ImGui::SetTooltip("%s (x%d)", GetSlotName(i).c_str(), item.count);
+                }
             }
             ImGui::End();
         } else {
@@ -709,19 +845,23 @@ void FairWorldEngine::Render() {
                 auto drawSlot = [&](int i, const char* labelPrefix) {
                     const auto& item = m_player.inventory.slots[i];
                     
-                    ImGui::BeginChild((std::string(labelPrefix) + std::to_string(i)).c_str(), ImVec2(40, 40), true, ImGuiWindowFlags_NoScrollbar);
+                    ImGui::PushID(i);
+                    ImVec2 curPos = ImGui::GetCursorScreenPos();
+                    ImGui::InvisibleButton("##slot", ImVec2(40, 40));
+                    
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    // Bordo dello slot
+                    dl->AddRect(curPos, ImVec2(curPos.x + 40, curPos.y + 40), IM_COL32(100, 100, 100, 255));
+                    
                     if (!item.IsEmpty()) {
                         std::string itemName = GetSlotName(i);
                         std::string initial = itemName.empty() ? "?" : itemName.substr(0, 3);
-                        ImGui::SetCursorPos(ImVec2(2, 2));
-                        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", initial.c_str());
+                        dl->AddText(ImVec2(curPos.x + 2, curPos.y + 2), IM_COL32(100, 200, 255, 255), initial.c_str());
 
                         std::string countStr = std::to_string(item.count);
                         ImVec2 textSize = ImGui::CalcTextSize(countStr.c_str());
-                        ImGui::SetCursorPos(ImVec2(40 - textSize.x - 4, 40 - textSize.y - 4));
-                        ImGui::Text("%s", countStr.c_str());
+                        dl->AddText(ImVec2(curPos.x + 40 - textSize.x - 4, curPos.y + 40 - textSize.y - 4), IM_COL32(255, 255, 255, 255), countStr.c_str());
                     }
-                    ImGui::EndChild();
 
                     // Drag source
                     if (!item.IsEmpty() && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
@@ -734,17 +874,67 @@ void FairWorldEngine::Render() {
                     if (ImGui::BeginDragDropTarget()) {
                         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("INVENTORY_SLOT")) {
                             int sourceIdx = *(const int*)payload->Data;
-                            m_player.inventory.SwapSlots(sourceIdx, i);
+                            
+                            if (ImGui::GetIO().KeyShift) {
+                                // Sposta 1 solo oggetto
+                                m_player.inventory.MovePartial(sourceIdx, i, 1);
+                            } else if (ImGui::GetIO().KeyCtrl) {
+                                // Sposta metà stack
+                                int half = m_player.inventory.slots[sourceIdx].count / 2;
+                                if (half < 1) half = 1;
+                                m_player.inventory.MovePartial(sourceIdx, i, half);
+                            } else {
+                                // Spostamento normale (o swap / merge completo)
+                                m_player.inventory.SwapSlots(sourceIdx, i);
+                            }
                         }
                         ImGui::EndDragDropTarget();
                     }
                     
                     if (ImGui::IsItemHovered() && !item.IsEmpty()) {
-                        ImGui::SetTooltip("%s (x%d)", GetSlotName(i).c_str(), item.count);
+                        ImGui::SetTooltip("%s (x%d)\nDrag: Sposta/Unisci\nShift+Drag: Sposta 1\nCtrl+Drag: Sposta Metà\nClick Destro: Dividi a metà in nuovo slot\nClick Centrale: Prendi 1 in nuovo slot", GetSlotName(i).c_str(), item.count);
+                        
+                        // Click destro per splittare a metà al volo (senza drag&drop)
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                            int half = item.count / 2;
+                            if (half > 0) {
+                                for (int empty = 0; empty < Inventory::INVENTORY_SIZE; empty++) {
+                                    if (m_player.inventory.slots[empty].IsEmpty()) {
+                                        m_player.inventory.MovePartial(i, empty, half);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        // Click centrale (rotellina) per prendere 1 singolo pezzo
+                        else if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+                            for (int empty = 0; empty < Inventory::INVENTORY_SIZE; empty++) {
+                                if (m_player.inventory.slots[empty].IsEmpty()) {
+                                    m_player.inventory.MovePartial(i, empty, 1);
+                                    break;
+                                }
+                            }
+                        }
                     }
+                    ImGui::PopID();
                 };
 
                 ImGui::Text("Zaino:");
+                ImGui::SameLine(ImGui::GetWindowWidth() - 170);
+                if (ImGui::Button("Ordina", ImVec2(70, 25))) {
+                    m_player.inventory.Sort();
+                }
+                ImGui::SameLine();
+                ImGui::BeginChild("TrashBin", ImVec2(70, 25), true, ImGuiWindowFlags_NoScrollbar);
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Cestino");
+                ImGui::EndChild();
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("INVENTORY_SLOT")) {
+                        int sourceIdx = *(const int*)payload->Data;
+                        m_player.inventory.ClearSlot(sourceIdx);
+                    }
+                    ImGui::EndDragDropTarget();
+                }
                 ImGui::Separator();
                 // Disegna storage (10 a 39)
                 for (int r = 0; r < 3; r++) {
@@ -921,11 +1111,53 @@ void FairWorldEngine::Render() {
             ImGui::End();
         }
 
+        // --- VISUAL THERMAL CUES ---
+        if (m_gameMode == GameMode::Play && !m_justDied) {
+            glm::vec3 pos = m_camera.Position;
+            float temp = m_world.GetTemperatureAt((int)std::floor(pos.x), (int)std::floor(pos.z));
+            
+            if (temp < 273.15f || temp > 323.15f) {
+                ImVec2 size = ImGui::GetMainViewport()->Size;
+                ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+                ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+                ImGui::Begin("ThermalOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                
+                ImU32 outerCol;
+                if (temp < 273.15f) {
+                    float intensity = std::clamp((273.15f - temp) / 20.0f, 0.0f, 0.8f);
+                    outerCol = IM_COL32(100, 200, 255, (int)(intensity * 150));
+                } else {
+                    float intensity = std::clamp((temp - 323.15f) / 100.0f, 0.0f, 0.8f);
+                    outerCol = IM_COL32(255, 80, 0, (int)(intensity * 150));
+                }
+                ImU32 innerCol = IM_COL32(0,0,0,0);
+                
+                float b = 150.0f; // Border size
+                // Top
+                dl->AddRectFilledMultiColor(ImVec2(0,0), ImVec2(size.x, b), outerCol, outerCol, innerCol, innerCol);
+                // Bottom
+                dl->AddRectFilledMultiColor(ImVec2(0,size.y-b), ImVec2(size.x, size.y), innerCol, innerCol, outerCol, outerCol);
+                // Left
+                dl->AddRectFilledMultiColor(ImVec2(0,b), ImVec2(b, size.y-b), outerCol, innerCol, innerCol, outerCol);
+                // Right
+                dl->AddRectFilledMultiColor(ImVec2(size.x-b,b), ImVec2(size.x, size.y-b), innerCol, outerCol, outerCol, innerCol);
+                
+                ImGui::End();
+            }
+        }
+
+        } // Fine blocco PLAYING
+
         // --- RENDER DEI MOB IN OVERLAY 2D (Finché Vulkan non supporta i modelli 3D) ---
         {
             ImVec2 screenSize = ImGui::GetMainViewport()->Size;
             glm::mat4 view = m_camera.GetViewMatrix();
-            glm::mat4 proj = glm::perspective(glm::radians(m_renderManager->GetFov()), screenSize.x / screenSize.y, 0.1f, 1000.0f);
+            float aspect = 1.0f;
+            if (screenSize.y > 0.001f && screenSize.x > 0.001f) {
+                aspect = screenSize.x / screenSize.y;
+            }
+            glm::mat4 proj = glm::perspective(glm::radians(m_renderManager->GetFov()), aspect, 0.1f, 1000.0f);
             
             ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
             ImGui::SetNextWindowSize(screenSize, ImGuiCond_Always);
@@ -978,7 +1210,7 @@ void FairWorldEngine::Render() {
             ImGui::End();
         }
 
-        if (m_gameMode == GameMode::Dev) {
+        if (m_current == GameState::PLAYING && m_gameMode == GameMode::Dev) {
             m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_camera);
         }
         
@@ -1061,8 +1293,170 @@ void FairWorldEngine::Render() {
 
         ImGui::Render();
 
-        m_renderManager->RenderDesktop(m_camera.GetViewMatrix(), &m_assets, &m_mobManager, &m_player);
+        m_renderManager->RenderDesktop(m_camera.GetViewMatrix(), m_world.GetSkyColor(), &m_assets, &m_mobManager, &m_player);
     }
+}
+
+void FairWorldEngine::renderMainMenu() {
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 center(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_Always);
+    ImGui::Begin("FAIRWORLD", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+
+    ImGui::SetCursorPosX((300 - ImGui::CalcTextSize("FAIRWORLD").x) * 0.5f);
+    ImGui::Text("FAIRWORLD");
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::Button("Nuova partita", ImVec2(-1, 40)))
+        transitionTo(GameState::PLAYING);
+
+    if (ImGui::Button("Continua", ImVec2(-1, 40)))
+        transitionTo(GameState::PLAYING);
+
+    ImGui::Spacing();
+    if (ImGui::Button("Esci", ImVec2(-1, 30))) {
+        m_isRunning = false;
+    }
+    ImGui::End();
+}
+
+void FairWorldEngine::renderPauseMenu() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Finestra grande centrata che occupa la maggior parte dello schermo
+    float winW = io.DisplaySize.x * 0.80f;
+    float winH = io.DisplaySize.y * 0.85f;
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
+
+    ImGui::Begin("FAIRWORLD  -  Menu", nullptr,
+                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+
+    // ---- Riga superiore: pulsanti azione ----
+    float btnW = 160.0f;
+    float btnH = 36.0f;
+    float totalBtns = btnW * 3 + ImGui::GetStyle().ItemSpacing.x * 2;
+    ImGui::SetCursorPosX((winW - totalBtns) * 0.5f);
+
+    if (ImGui::Button("  Riprendi  (ESC)", ImVec2(btnW, btnH)))
+        transitionTo(GameState::PLAYING);
+
+    ImGui::SameLine();
+    if (ImGui::Button("  Menu Principale", ImVec2(btnW, btnH)))
+        transitionTo(GameState::MAIN_MENU);
+
+    ImGui::SameLine();
+    if (ImGui::Button("  Esci dal gioco", ImVec2(btnW, btnH)))
+        m_isRunning = false;
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // ---- Parte inferiore: le vere tab dell'editor ----
+    m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_camera);
+
+    ImGui::End();
+}
+
+
+void FairWorldEngine::renderEditorTabs() {
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x - 20, io.DisplaySize.y - 20), ImGuiCond_Always);
+
+    ImGui::Begin("Dev Tools  -  [TAB] per chiudere  |  [ESC] per tornare al gioco", nullptr,
+                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+
+    if (ImGui::BeginTabBar("EditorTabBar")) {
+        for (int i = 0; i < kTabCount; ++i) {
+            GameState tabState = kTabStates[i];
+            ImGuiTabItemFlags flags = (m_current == tabState) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+
+            if (ImGui::BeginTabItem(kTabLabels[i], nullptr, flags)) {
+                if (m_current != tabState) transitionTo(tabState);
+                
+                switch (tabState) {
+                    case GameState::TAB_BLOCCHI:          renderTab_Blocchi();         break;
+                    case GameState::TAB_MOB:              renderTab_Mob();             break;
+                    case GameState::TAB_PLAYER:           renderTab_Player();          break;
+                    case GameState::TAB_TEXTURE_PAINTER:  renderTab_TexturePainter();  break;
+                    case GameState::TAB_MODEL_SCULPTOR:   renderTab_ModelSculptor();   break;
+                    case GameState::TAB_MODEL_EDITOR:     renderTab_ModelEditor();     break;
+                    case GameState::TAB_MONDO:            renderTab_Mondo();           break;
+                    case GameState::TAB_ENGINE:           renderTab_Engine();          break;
+                    default: break;
+                }
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::End();
+}
+
+void FairWorldEngine::renderTab_Blocchi() {
+    ImGui::Text("Palette blocchi");
+    ImGui::Separator();
+    ImGui::TextDisabled("(nessun blocco caricato)");
+}
+
+void FairWorldEngine::renderTab_Mob() {
+    ImGui::Text("Gestione Mob");
+    ImGui::Separator();
+    ImGui::TextDisabled("(nessun mob caricato)");
+}
+
+void FairWorldEngine::renderTab_Player() {
+    ImGui::Text("Dati Player");
+    ImGui::Separator();
+    ImGui::TextDisabled("(player non inizializzato)");
+}
+
+void FairWorldEngine::renderTab_TexturePainter() {
+    ImGui::Text("Texture Painter");
+    ImGui::Separator();
+    if (ImGui::Button("Ricarica Texture (Refresh)")) {}
+}
+
+void FairWorldEngine::renderTab_ModelSculptor() {
+    ImGui::Text("Model Sculptor");
+    ImGui::Separator();
+    ImGui::TextDisabled("(nessun modello attivo)");
+}
+
+void FairWorldEngine::renderTab_ModelEditor() {
+    ImGui::Text("Model Editor");
+    ImGui::Separator();
+    ImGui::TextDisabled("(nessun modello attivo)");
+}
+
+void FairWorldEngine::renderTab_Mondo() {
+    ImGui::Text("World Editor");
+    ImGui::Separator();
+    static int seedValue = 12345;
+    ImGui::InputInt("Seed", &seedValue);
+    if (ImGui::Button("Rigenera Chunk attorno al player")) {}
+}
+
+void FairWorldEngine::renderTab_Engine() {
+    ImGui::Text("Engine Debug");
+    ImGui::Separator();
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::Text("FPS: %.1f (%.3f ms/frame)", io.Framerate, 1000.0f / io.Framerate);
+    ImGui::Text("Stato corrente: %s", getStateName());
+    
+    ImGui::Spacing();
+    ImGui::Text("Transizioni manuali:");
+    if (ImGui::Button("-> PLAYING"))    transitionTo(GameState::PLAYING);
+    ImGui::SameLine();
+    if (ImGui::Button("-> MAIN MENU"))  transitionTo(GameState::MAIN_MENU);
+    ImGui::SameLine();
+    if (ImGui::Button("-> PAUSA"))      transitionTo(GameState::PAUSE_MENU);
 }
 
 void FairWorldEngine::Shutdown() {

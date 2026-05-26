@@ -8,14 +8,14 @@
         "vit": 18
     },
     "currentExp": 99,
-    "currentHP": 370,
+    "currentHP": 226,
     "currentMP": 190,
     "currentStamina": 174,
     "freeStatPoints": 0,
     "inventory": [
         {
             "blockType": 1,
-            "count": 64,
+            "count": 39,
             "maxStack": 64,
             "stringId": "",
             "type": 1
@@ -50,7 +50,7 @@
         },
         {
             "blockType": 6,
-            "count": 64,
+            "count": 63,
             "maxStack": 64,
             "stringId": "",
             "type": 1

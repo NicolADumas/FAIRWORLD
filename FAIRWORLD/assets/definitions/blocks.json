@@ -99,6 +99,56 @@
             "tex_side": "textures/light.png",
             "tex_top": "textures/light.png",
             "transparent": false
+        },
+        {
+            "alpha": 1.0,
+            "hardness": 0.5,
+            "id": 11,
+            "name": "Mushroom",
+            "tex_bottom": "textures/mushroom.png",
+            "tex_side": "textures/mushroom.png",
+            "tex_top": "textures/mushroom.png",
+            "transparent": false
+        },
+        {
+            "alpha": 1.0,
+            "hardness": 4.0,
+            "id": 12,
+            "name": "Ore",
+            "tex_bottom": "textures/ore.png",
+            "tex_side": "textures/ore.png",
+            "tex_top": "textures/ore.png",
+            "transparent": false
+        },
+        {
+            "alpha": 0.8,
+            "hardness": 1.5,
+            "id": 13,
+            "name": "Ice",
+            "tex_bottom": "textures/ice.png",
+            "tex_side": "textures/ice.png",
+            "tex_top": "textures/ice.png",
+            "transparent": true
+        },
+        {
+            "alpha": 1.0,
+            "hardness": 10.0,
+            "id": 14,
+            "name": "StargateFrame",
+            "tex_bottom": "textures/stone.png",
+            "tex_side": "textures/stone.png",
+            "tex_top": "textures/stone.png",
+            "transparent": false
+        },
+        {
+            "alpha": 0.5,
+            "hardness": -1.0,
+            "id": 15,
+            "name": "StargatePortal",
+            "tex_bottom": "textures/water.png",
+            "tex_side": "textures/water.png",
+            "tex_top": "textures/water.png",
+            "transparent": true
         }
     ]
 }
