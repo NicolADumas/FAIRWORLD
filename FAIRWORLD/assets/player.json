@@ -1,0 +1,299 @@
+{
+    "attributes": {
+        "dex": 14,
+        "intl": 14,
+        "luk": 34,
+        "res": 14,
+        "str": 14,
+        "vit": 18
+    },
+    "currentExp": 99,
+    "currentHP": 370,
+    "currentMP": 190,
+    "currentStamina": 174,
+    "freeStatPoints": 0,
+    "inventory": [
+        {
+            "blockType": 1,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 2,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 3,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 4,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 5,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 6,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 7,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 8,
+            "count": 64,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 9,
+            "count": 10,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 1
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        },
+        {
+            "blockType": 0,
+            "count": 0,
+            "maxStack": 64,
+            "stringId": "",
+            "type": 0
+        }
+    ],
+    "level": 5,
+    "name": "Hero"
+}

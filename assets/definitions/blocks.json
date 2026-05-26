@@ -1,0 +1,110 @@
+{
+  "blocks": [
+    {
+      "id": 1,
+      "name": "Grass",
+      "tex_top": "textures/grass_top.png",
+      "tex_side": "textures/grass_side.png",
+      "tex_bottom": "textures/dirt.png",
+      "hardness": 1.0,
+      "transparent": false,
+      "alpha": 1.0
+    },
+    {
+      "id": 2,
+      "name": "Dirt",
+      "tex_top": "textures/dirt.png",
+      "tex_side": "textures/dirt.png",
+      "tex_bottom": "textures/dirt.png",
+      "hardness": 0.8,
+      "transparent": false,
+      "alpha": 1.0
+    },
+    {
+      "id": 3,
+      "name": "Stone",
+      "tex_top": "textures/stone.png",
+      "tex_side": "textures/stone.png",
+      "tex_bottom": "textures/stone.png",
+      "hardness": 3.0,
+      "transparent": false,
+      "alpha": 1.0
+    },
+    {
+      "id": 4,
+      "name": "Wood",
+      "tex_top": "textures/wood_top.png",
+      "tex_side": "textures/wood_side.png",
+      "tex_bottom": "textures/wood_top.png",
+      "hardness": 2.0,
+      "transparent": false,
+      "alpha": 1.0
+    },
+    {
+      "id": 5,
+      "name": "Sand",
+      "tex_top": "textures/sand.png",
+      "tex_side": "textures/sand.png",
+      "tex_bottom": "textures/sand.png",
+      "hardness": 0.5,
+      "transparent": false,
+      "alpha": 1.0
+    },
+    {
+      "id": 6,
+      "name": "Water",
+      "tex_top": "textures/water.png",
+      "tex_side": "textures/water.png",
+      "tex_bottom": "textures/water.png",
+      "hardness": 0.0,
+      "transparent": true,
+      "alpha": 0.7,
+      "isSolid": false,
+      "isLiquid": true,
+      "damagePerSecond": 0
+    },
+    {
+      "id": 7,
+      "name": "Lava",
+      "tex_top": "textures/lava.png",
+      "tex_side": "textures/lava.png",
+      "tex_bottom": "textures/lava.png",
+      "hardness": 0.0,
+      "transparent": false,
+      "alpha": 1.0,
+      "isSolid": false,
+      "isLiquid": true,
+      "damagePerSecond": 5
+    },
+    {
+      "id": 8,
+      "name": "Leaves",
+      "tex_top": "textures/leaves.png",
+      "tex_side": "textures/leaves.png",
+      "tex_bottom": "textures/leaves.png",
+      "hardness": 0.3,
+      "transparent": true,
+      "alpha": 0.9
+    },
+    {
+      "id": 9,
+      "name": "MobSpawner",
+      "tex_top": "",
+      "tex_side": "",
+      "tex_bottom": "",
+      "hardness": 5.0,
+      "transparent": false,
+      "alpha": 1.0
+    },
+    {
+      "id": 10,
+      "name": "LightSource",
+      "tex_top": "textures/light.png",
+      "tex_side": "textures/light.png",
+      "tex_bottom": "textures/light.png",
+      "hardness": 0.5,
+      "transparent": false,
+      "alpha": 1.0
+    }
+  ]
+}

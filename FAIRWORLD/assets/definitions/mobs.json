@@ -1,0 +1,127 @@
+{
+    "mobs": [
+        {
+            "ai": {
+                "attackCooldown": 1.2000000476837158,
+                "attackRange": 1.2000000476837158,
+                "behavior": "chase_player",
+                "detectionRadius": 10.0,
+                "fieldOfView": 130.0,
+                "loseSightRadius": 16.0,
+                "runSpeed": 7.0,
+                "turnSpeed": 14.0,
+                "walkSpeed": 2.5
+            },
+            "displayName": "Goblin Guerriero",
+            "faction": "Monster",
+            "id": "goblin_warrior",
+            "physics": {
+                "colliderHeight": 1.399999976158142,
+                "colliderOffsetY": 0.0,
+                "colliderRadius": 0.3499999940395355,
+                "knockbackResistance": 0.20000000298023224,
+                "mass": 45.0
+            },
+            "resources": {
+                "animatorControllerID": "humanoid_light",
+                "modelPath": "models/mobs/goblin.obj",
+                "onDeathSound": "audio/sfx/goblin_death.wav",
+                "onHitSound": "audio/sfx/goblin_hit.wav",
+                "texturePath": "textures/mobs/goblin.png"
+            },
+            "stats": {
+                "dex": 15,
+                "dropTableID": "loot_goblin_tier1",
+                "expYield": 45,
+                "intl": 3,
+                "level": 3,
+                "luk": 12,
+                "res": 4,
+                "str": 18,
+                "vit": 8
+            }
+        },
+        {
+            "ai": {
+                "attackCooldown": 2.799999952316284,
+                "attackRange": 12.0,
+                "behavior": "patrol",
+                "detectionRadius": 18.0,
+                "fieldOfView": 150.0,
+                "loseSightRadius": 28.0,
+                "runSpeed": 3.5,
+                "turnSpeed": 6.0,
+                "walkSpeed": 1.7999999523162842
+            },
+            "displayName": "Mago Oscuro",
+            "faction": "Undead",
+            "id": "dark_mage",
+            "physics": {
+                "colliderHeight": 1.850000023841858,
+                "colliderOffsetY": 0.0,
+                "colliderRadius": 0.3499999940395355,
+                "knockbackResistance": 0.15000000596046448,
+                "mass": 55.0
+            },
+            "resources": {
+                "animatorControllerID": "humanoid_caster",
+                "modelPath": "models/mobs/dark_mage.obj",
+                "onDeathSound": "audio/sfx/mage_death.wav",
+                "onHitSound": "audio/sfx/mage_hit.wav",
+                "texturePath": "textures/mobs/dark_mage.png"
+            },
+            "stats": {
+                "dex": 9,
+                "dropTableID": "loot_mage_tier2",
+                "expYield": 180,
+                "intl": 28,
+                "level": 7,
+                "luk": 8,
+                "res": 20,
+                "str": 4,
+                "vit": 6
+            }
+        },
+        {
+            "ai": {
+                "attackCooldown": 3.5,
+                "attackRange": 2.5,
+                "behavior": "patrol",
+                "detectionRadius": 6.0,
+                "fieldOfView": 90.0,
+                "loseSightRadius": 10.0,
+                "runSpeed": 2.200000047683716,
+                "turnSpeed": 3.0,
+                "walkSpeed": 0.8999999761581421
+            },
+            "displayName": "Golem di Pietra",
+            "faction": "Monster",
+            "id": "stone_golem",
+            "physics": {
+                "colliderHeight": 3.200000047683716,
+                "colliderOffsetY": 0.20000000298023224,
+                "colliderRadius": 0.8999999761581421,
+                "knockbackResistance": 0.949999988079071,
+                "mass": 800.0
+            },
+            "resources": {
+                "animatorControllerID": "giant_beast",
+                "modelPath": "models/mobs/stone_golem.obj",
+                "onDeathSound": "audio/sfx/golem_death.wav",
+                "onHitSound": "audio/sfx/golem_hit.wav",
+                "texturePath": "textures/mobs/stone_golem.png"
+            },
+            "stats": {
+                "dex": 2,
+                "dropTableID": "loot_golem_tier3",
+                "expYield": 520,
+                "intl": 1,
+                "level": 12,
+                "luk": 2,
+                "res": 25,
+                "str": 20,
+                "vit": 42
+            }
+        }
+    ]
+}

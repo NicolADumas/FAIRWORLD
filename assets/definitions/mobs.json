@@ -1,0 +1,37 @@
+{
+  "mobs": [
+    {
+      "id": 1,
+      "name": "Goblin",
+      "modelPath": "models/goblin.obj",
+      "texturePath": "textures/goblin.png",
+      "hp": 30,
+      "damage": 5,
+      "speed": 3.0,
+      "aggroRange": 8.0,
+      "behavior": "chase_player"
+    },
+    {
+      "id": 2,
+      "name": "Skeleton",
+      "modelPath": "models/skeleton.obj",
+      "texturePath": "textures/skeleton.png",
+      "hp": 20,
+      "damage": 8,
+      "speed": 2.5,
+      "aggroRange": 10.0,
+      "behavior": "chase_player"
+    },
+    {
+      "id": 3,
+      "name": "StoneGolem",
+      "modelPath": "models/golem.obj",
+      "texturePath": "textures/golem.png",
+      "hp": 200,
+      "damage": 25,
+      "speed": 1.2,
+      "aggroRange": 5.0,
+      "behavior": "patrol"
+    }
+  ]
+}

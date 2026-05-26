@@ -1,0 +1,21 @@
+# Visual Studio cartelle di compilazione
+.vs/
+x64/
+Debug/
+Release/
+*.user
+*.suo
+
+# Installatori e file giganti
+vulkan-sdk-installer.exe
+
+# File oggetto e cache
+*.obj
+*.pdb
+*.ilk
+*.tlog
+*.idb
+
+# Python / AI Server
+ai_server/__pycache__/
+*.pyc
