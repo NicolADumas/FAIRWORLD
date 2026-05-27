@@ -1,0 +1,198 @@
+# PROGETTO ROBOT SCARA - DOCUMENTAZIONE TECNICA (AI CONTEXT)
+
+## 1. Introduzione e Architettura
+### Technical Specifications
+- **Group ID Generation**: `Date.now() + Math.random()`
+- **History Depth**: 50 actions.
+- **Polling Rate**: ~20Hz (50ms).
+- **Workspace Bounds**: Configurable Linear (Rect) and Curved (Annular Sector) limits.
+
+### System Configuration & UI
+- **Workspace Geometry**:
+    - Configurazione flessibile dell'area di lavoro:
+        - **Linear Workspace**: Definito da coordinate cartesiane (X, Y, Larghezza, Altezza). Supporta preset standard (A4, A3, ecc.).
+        - **Curved Workspace**: Definito da coordinate polari (Raggio Interno/Esterno).
+- **GUI Customization**:
+    - **Theme Buttons**: Pulsanti dinamici per cambiare al volo i colori dell'interfaccia utente (User Friendly).
+    - **Right Sidebar**: Pannello laterale a scomparsa che ospita tutte le configurazioni non critiche per mantenere la main view pulita.
+
+### Safety Architecture (Multi-layered Protection)
+Il sistema implementa 5 livelli di sicurezza per garantire l'integrità operativa:
+1.  **Validazione Geometrica**: Controllo preventivo di raggiungibilità ($R_{min} < d < R_{max}$) prima dell'invio.
+2.  **Validazione Dinamica**: Verifica che velocità e accelerazioni richieste non superino i limiti fisici ($|v| \le 10.0$ rad/s).
+3.  **Integrità Dati (CRC32)**: Checksum su ogni pacchetto seriale per scartare comandi corrotti.
+4.  **Thread Safety**: Accesso sincronizzato (`threading.Lock`) allo stato del firmware per prevenire race conditions.
+5.  **Emergency Stop**: Flag atomico per l'interruzione immediata di qualsiasi operazione.
+
+### System Constants (`config.py`)
+- **Limiti Fisici**: $L_1 = 0.170$m, $L_2 = 0.158$m.
+- **Dinamica**: $V_{max} = 10.0$ rad/s, $A_{max} = 0.35$ rad/s².
+- **Timing**: $T_c = 0.01$s (Loop Controllo).
+
+## 2. Controllo Moto e Pianificazione Traiettorie
+### Core Motion & Trajectory System
+- **Global Reset Logic (`main.js`)**:
+    - Pulsante "Global Reset" che adatta il comportamento alla modalità attiva (Image, Text, Drawing).
+    - **State Clearing**: Resetta tutte le variabili di stato critiche (`points`, `generatedTextPatches`, `manipulator.trace`) per evitare artefatti fantasma.
+- **Robot Reconfiguration Fix**:
+    - Implementata logica "Smart Wait" con sollevamento penna (Pen Up) automatico prima di riposizionamenti lunghi.
+    - Previene il trascinamento indesiderato del pennarello durante il setup iniziale o l'homing.
+- **Micro-Gap Precision**:
+    - Tolleranza di fusione segmenti ridotta a **0.1mm**.
+    - Assicura che linee consecutive vengano trattate come un unico percorso fluido se i vertici coincidono.
+- **Motion Profiles** (`gui_interface.py`, `config.py`):
+    - **Trapezoidal**: Profilo standard a velocità costante (ottimo per debug).
+    - **S-Curve**: Profilo ad accelerazione continua (riduce vibrazioni).
+    - **Quintic**: Profilo polinomiale di 5° grado (massima fluidità PTP).
+
+### Low-Level Control Strategy (`get_profile_law`)
+- Il sistema calcola dinamicamente la legge oraria $s(t)$ normalizzata $[0, 1]$ basata sui vincoli fisici:
+    - **Duration Calculation**: $t_f$ viene derivato automaticamente da $V_{max}$ e $A_{max}$ per garantire la fattibilità del moto.
+    - **Profile Composition**: Combinazione di primitive geometriche (Linee, Archi) con leggi di moto temporali.
+
+### Kinematics & Transformation (`trajpy.py`, `transform.py`)
+- **Inverse Kinematics (IK)**:
+    - Risolve la cinematica inversa per braccio SCARA 2-DOF planare.
+    - **Gestione Singolarità**: Clamping dei valori del coseno per evitare errori numerici fuori dal workspace.
+    - **Soluzione Ottimale**: Seleziona automaticamente la configurazione "Gomito Alto" o "Gomito Basso" più vicina alla posizione precedente (`seed_q`) per minimizzare il movimento.
+- **Direct Kinematics (DK)**:
+    - Calcola la posizione cartesiana $(x, y)$ data la configurazione dei giunti $(q_1, q_2)$.
+- **Curved Transformation**:
+    - Mappa coordinate Cartesiane $(x, y)$ in coordinate Polari $(Arco, Raggio)$ per scrivere su superfici curve.
+
+### Trajectory Optimizer (`trajectory_optimizer.js`)
+- Implementa il sistema **FLSC** (First Linear, Second Curved).
+- **Classificazione**: Divide le traiettorie in gruppi Lineari e Curvi.
+- **Ordinamento Prioritario**: Esegue *prima* tutte le parti lineari (più veloci/precise), *poi* tutte le parti curve.
+- **Nearest Neighbor**: All'interno di ogni gruppo, ordina i tratti per minimizzare la distanza di viaggio a vuoto.
+
+### Smart Jumps
+- Inserisce automaticamente movimenti "Pen Up" (salti) tra segmenti disgiunti nel payload della traiettoria.
+- Calcola la distanza Euclidea tra fine dell'ultimo tratto e inizio del nuovo; se > 0.001m, aggiunge un salto.
+
+## 3. Interfaccia Uomo-Macchina (HMI)
+## 3. Interfaccia Uomo-Macchina (HMI)
+### Modes of Operation
+- **Drawing Mode (Unified/Continuous)**:
+    - La penna rimane giù tra una forma e l'altra, creando un tracciato unico e continuo.
+    - Ideale per disegni artistici fluidi o firme.
+- **Drawing Mode (Divided/Discrete)**:
+    - La penna si solleva (Pen Up) automaticamente tra forme separate.
+    - Permette di disegnare elementi distinti (es. figure geometriche staccate) senza linee di collegamento indesiderate.
+    - **Shape Tools**: Supporto nativo per Poligoni, **Stelle** (parametriche), **Spirali** (Archimede), **Cuori**, **Croci**, Rombi e Triangoli.
+    - **Logic & Interactions**:
+        - **Linear**: Click successivi creano una polilinea continua.
+        - **Semicircle**: *Start Point* $\to$ *End Point*. Supporta il "chaining" (l'ultimo punto diventa il nuovo start).
+        - **Circle**: *Centro* $\to$ *Punto Perimetro* (Raggio).
+        - **Square/Polygon**: *Centro* $\to$ *Angolo* (definisce dimensione e rotazione).
+
+    - **Smart Snapping**: Calamita il cursore ai vertici esistenti (raggio 15px) o alla griglia di sfondo.
+- **Erase Mode Pro**:
+    - Cancellazione per **Gruppi Semantici**: Cliccare su un punto di una Stella/Cerchio cancella l'intera forma.
+    - Algoritmo di pulizia ottimizzato da $O(N^2)$ a $O(N)$.
+- **Undo/Redo Robustness** (`state.js`):
+    - Serializzazione profonda degli oggetti `Point` e `Trajectory`.
+    - Gestione sicura di stack vuoti o punti `undefined` per prevenire crash.
+
+### Audio & Visual Feedback
+- **Audio Feedback System**:
+    - Il sistema integra trigger sonori distinti per cambi di modalità (Reset), avvio (Startup) e completamento traiettoria.
+    - I comandi audio vengono inviati direttamente al robot tramite protocollo seriale (`CMD_MELODY`), delegando la generazione sonora all'hardware per un feedback più "fisico".
+- **Dynamic Theme Manager**:
+    - Sistema di temi (Nero, Grigio, Blu, Viola) commutabili istantaneamente da interfaccia per adattarsi alle condizioni di luce dell'ambiente di lavoro.
+
+### Controllo Parametrico Diretto
+- **Motion Control Panel**:
+    - Interfaccia dedicata per il tuning in tempo reale dei parametri cinematici.
+    - **Controlli Sliders/Input**: Accesso diretto a Velocità Massima, Accelerazione e Tc (Time Constant) senza dover modificare il firmware o riavviare il backend.
+    - **Profili Dinamici**: Selezione drop-down tra profili Trapezoidale, S-Curve e Quintic.
+
+## 4. Computer Vision
+### Image Processing Engine (`image_processor.py`)
+- **Image Mode**:
+    - Converte immagini raster (JPG/PNG) o vettoriali (SVG) in percorsi tracciabili.
+    - Include filtri di preprocessing (Soglia, Smoothing, Invert, Denoise) e stili di tracciamento (Complex/Simple).
+- **Vector BW Engine**:
+    - **Auto-Detection**: Analizza la densità e larghezza dei tratti per scegliere l'algoritmo migliore:
+        - *Complex Sketches*: Usa **Skeletonization** (riduce i tratti a linee singole tramite Morphological Thinning + Pruning).
+        - *Simple Shapes*: Usa **Outline** (traccia i contorni esterni doppi).
+    - **Smart Rotation & Scaling**:
+        - Ruota automaticamente l'immagine per allineare il lato più lungo all'asse Y del robot (asse laterale esteso).
+        - Ottimizza l'uso del workspace rettangolare (Portrait/Landscape detection).
+    - **Optimization Level (Slider UI)**:
+        - Il frontend include uno slider per decimare i punti (`py_optimize_trajectory`), ma la funzione backend corrispondente **NON è ancora implementata**.
+        - Attualmente il sistema invia i patch grezzi ("Raw") indipendentemente dal livello selezionato (Fallback silenzioso).
+- **Chaikin Smoothing**:
+    - Algoritmo iterativo per ammorbidire le curve spigolose (corner cutting) prima della generazione G-code.
+- **Path Sorting**: Ordina i vettori risultanti per ottimizzare il percorso (simile a TSP/Nearest Neighbor).
+
+## 5. Ingegneria del Testo
+### Text Engine & Vector Fonts (`char_gen.py`, `transform.py`)
+- **Advanced Text Workflow**:
+    - **Multi-Text Accumulator**: Pulsante "➕ Aggiungi Testo" per concatenare più blocchi di testo (anche con angolazioni diverse) in un'unica traiettoria.
+    - **Letter Mode Preset**: Configurazione rapida one-click per lettere standard (Size 0.01, Angolo -360°).
+- **Text Mode**:
+    - Generazione di scritte vettoriali con font "Stick" proprietario.
+    - Supporta orientamento **Lineare** (standard) o **Curvo** (testo su arco/cerchio).
+    - Include un **Symbol Picker** per inserire caratteri speciali.
+- **Vector Font Generator**:
+    - Motore proprietario "Stick Font" vettoriale definito proceduralmente.
+    - Caratteri definiti come primitive geometriche (Linee, Archi/Ellissi parametriche).
+    - **Smart Kerning**: Spaziatura variabile tra i caratteri per leggibilità naturale.
+- **Extended Character Set**:
+    - Supporto completo ASCII + Simboli Estesi:
+    - Meteo (☀, ☁, ⚡), Carte (♠, ♣, ♥, ♦), Frecce (←, ↑, →, ↓), Matematica (√, ±, ≠), Accenti (À, È, ecc.).
+- **Curved Text Logic**:
+    - Modulo `transform.py` mappa le coordinate lineari cartesiane (X, Y) in coordinate polari (Arco, Raggio).
+    - Permette di scrivere testo lungo archi o cerchi mantenendo la geometria corretta dei caratteri.
+
+## 6. Comunicazione e Firmware
+### Serial Communication Protocol (`binary_protocol.py`, `serial_com.py`)
+- **Binary Protocol**:
+    - Pacchetti strutturati con Header (`0xA5 0x5A`), Command ID, Payload e CRC32 Checksum.
+    - **CRC32 Protection**: Garantisce l'integrità dei dati posizionali critici.
+- **Robust Feedback Loop**:
+    - Il monitor seriale (`serial_manager.py`) svuota *tutto* il buffer in ingresso ad ogni ciclo per visualizzazione Real-Time (~20Hz).
+- **Hardware Reset**:
+    - Implementata sequenza **DTR Toggle** all'inizializzazione per resettare automaticamente la scheda microcontroller.
+- **Command Priority**:
+    - Gestione asincrona e prioritaria per comandi di sistema (`STOP`, `HOMING`, `MELODY`) rispetto al flusso dati traiettoria.
+
+## 7. Debug, Manutenzione e Test
+### User-Friendly Debugging Suite
+- **Motion Control Panel (Floating UI)**:
+    - Pannello a scomparsa intuitivo per il tuning in tempo reale dei parametri di moto.
+    - Permette di cambiare al volo: **Profilo** (Trapezoidal/S-Curve/Quintic), **Accelerazione**, **Velocità** e **Tc** (Step Time).
+    - Elimina la necessità di ricompilare o riavviare per testare diverse configurazioni dinamiche.
+- **Automated Plotting System**:
+    - Generazione automatica di grafici post-esecuzione (`plotting.py`).
+    - **Trigger Logic**: Attualmente attivo automaticamente solo in **Simulation Mode** (alla fine di `_execute_simulation`). In Online Mode, la chiamata è presente ma commentata/disabilitata.
+    - **XY Path Analysis**: Sovrappone la traiettoria desiderata (blu) a quella reale (rossa) per evidenziare errori di tracking.
+    - **Joint Space Plots**: Visualizza posizione, velocità e accelerazione dei giunti $q_0, q_1$ nel tempo.
+- **Visual "Ghost" Robot** (`manipulator.js`):
+    - Renderizza lo scheletro del robot (**Bracci Arancioni**) in tempo reale sul canvas.
+    - **End-Effector Feedback**: La punta cambia colore per indicare lo stato della penna (Ciano = Pen Up, Rosso = Pen Down).
+    - **Safety Preview**: Mostra in anticipo la configurazione "Gomito Alto/Basso" scelta dalla cinematica inversa, evitando collisioni inaspettate.
+
+### Maintenance & Testing Tools
+- **Scripts**:
+    - `AGGIORNA_ONLINE.bat`: Script batch one-click per sincronizzare il codice locale con la repository GitHub.
+- **Test Suite (`tests/`)**:
+    - `test_aspect.py`, `test_scaling.py`: Unit tests per verificare che le proporzioni delle immagini siano preservate durante l'importazione.
+    - `verify_preview_persistence.py`: Verifica che la preview non scompaia tra i cambi di modalità.
+- **Utility Scripts**:
+    - **`check_ports.py`**:
+        - Script diagnostico per scansionare le porte COM disponibili.
+        - Tenta un handshake automatico inviando un comando di posizione.
+        - Se il robot risponde, riproduce una melodia di conferma (ID 1).
+    - **`test_pen_control.py`**:
+        - Test isolato per il meccanismo Pen Up/Down.
+        - Alterna lo stato della penna ogni 2 secondi senza muovere i motori.
+
+## 8. Sviluppi Futuri
+### Funzionalità In Sviluppo / Placeholder
+- **CAD Import (`.dxf`)**:
+    - Interfaccia presente (`cad-import-panel`) in Frontend.
+    - API definita (`importDXF`).
+    - **Backend Mancante**: La funzione `py_import_dxf` non è ancora implementata in `gui_interface.py`. La funzionalità è attualmente solo visuale (UI-only).
+- **Optimization Backend**: La funzione `py_optimize_trajectory` chiamata da `main.js` non esiste nel backend.

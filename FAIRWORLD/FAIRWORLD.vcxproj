@@ -207,6 +207,8 @@
     <ClInclude Include="Editor\ModelEditor.h" />
     <ClInclude Include="httplib.h" />
     <ClInclude Include="PhysicsEngine.h" />
+    <ClInclude Include="DeskarmWebView.h" />
+    <ClInclude Include="EventManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="imgui\imgui.cpp">
@@ -242,6 +244,7 @@
     <ClCompile Include="Inventory.cpp" />
     <ClCompile Include="Editor\ModelEditor.cpp" />
     <ClCompile Include="PhysicsEngine.cpp" />
+    <ClCompile Include="DeskarmWebView.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -253,6 +256,7 @@
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\packages\OpenXR.Headers.1.0.10.2\build\native\OpenXR.Headers.targets" Condition="Exists('..\packages\OpenXR.Headers.1.0.10.2\build\native\OpenXR.Headers.targets')" />
     <Import Project="..\packages\OpenXR.Loader.1.0.10.2\build\native\OpenXR.Loader.targets" Condition="Exists('..\packages\OpenXR.Loader.1.0.10.2\build\native\OpenXR.Loader.targets')" />
+    <Import Project="..\packages\Microsoft.Web.WebView2.1.0.3967.48\build\native\Microsoft.Web.WebView2.targets" Condition="Exists('..\packages\Microsoft.Web.WebView2.1.0.3967.48\build\native\Microsoft.Web.WebView2.targets')" />
   </ImportGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
@@ -262,5 +266,6 @@
     <Error Condition="!Exists('..\packages\OpenXR.Headers.1.0.10.2\build\native\OpenXR.Headers.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\OpenXR.Headers.1.0.10.2\build\native\OpenXR.Headers.targets'))" />
     <Error Condition="!Exists('..\packages\OpenXR.Loader.1.0.10.2\build\native\OpenXR.Loader.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\OpenXR.Loader.1.0.10.2\build\native\OpenXR.Loader.props'))" />
     <Error Condition="!Exists('..\packages\OpenXR.Loader.1.0.10.2\build\native\OpenXR.Loader.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\OpenXR.Loader.1.0.10.2\build\native\OpenXR.Loader.targets'))" />
+    <Error Condition="!Exists('..\packages\Microsoft.Web.WebView2.1.0.3967.48\build\native\Microsoft.Web.WebView2.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Web.WebView2.1.0.3967.48\build\native\Microsoft.Web.WebView2.targets'))" />
   </Target>
 </Project>

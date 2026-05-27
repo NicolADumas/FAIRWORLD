@@ -740,7 +740,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     bindingDesc.stride    = sizeof(Vertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 4> attrDescs{};
+    std::array<VkVertexInputAttributeDescription, 5> attrDescs{};
     // location 0: posizione (vec3)
     attrDescs[0].binding  = 0;
     attrDescs[0].location = 0;
@@ -761,6 +761,11 @@ bool RenderManager::CreateGraphicsPipeline() {
     attrDescs[3].location = 3;
     attrDescs[3].format   = VK_FORMAT_R32_SFLOAT;
     attrDescs[3].offset   = offsetof(Vertex, texIndex);
+    // location 4: normale (vec3)
+    attrDescs[4].binding  = 0;
+    attrDescs[4].location = 4;
+    attrDescs[4].format   = VK_FORMAT_R32G32B32_SFLOAT;
+    attrDescs[4].offset   = offsetof(Vertex, normal);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

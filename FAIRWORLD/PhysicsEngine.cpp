@@ -79,11 +79,6 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const World& worl
             for (int y = (int)floor(minY); y <= (int)floor(maxY); y++) {
                 for (int z = (int)floor(minZ); z <= (int)floor(maxZ); z++) {
                     BlockType b = world.GetBlock(x, y, z);
-                    
-                    if (b == BlockType::StargatePortal) {
-                        rb.touchedStargate = true;
-                    }
-                    
                     // Consideriamo solido tutto ciò che non è aria o acqua/lava o portale
                     if (b != BlockType::Air && b != BlockType::Water && b != BlockType::Lava && b != BlockType::StargatePortal) {
                         return true;
@@ -93,6 +88,26 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const World& worl
         }
         return false;
     };
+
+    // 1. Controlla i trigger (Stargate, Acqua, ecc.) in modo indipendente dalla collisione solida!
+    {
+        float minX = rb.position.x - rb.radius;
+        float maxX = rb.position.x + rb.radius;
+        float minY = rb.position.y - rb.eyeOffset;
+        float maxY = rb.position.y + (rb.height - rb.eyeOffset);
+        float minZ = rb.position.z - rb.radius;
+        float maxZ = rb.position.z + rb.radius;
+        
+        for (int x = (int)floor(minX); x <= (int)floor(maxX); x++) {
+            for (int y = (int)floor(minY); y <= (int)floor(maxY); y++) {
+                for (int z = (int)floor(minZ); z <= (int)floor(maxZ); z++) {
+                    if (world.GetBlock(x, y, z) == BlockType::StargatePortal) {
+                        rb.touchedStargate = true;
+                    }
+                }
+            }
+        }
+    }
 
     // La "next position" se non ci fossero ostacoli
     // Notare: Il movement input orizzontale (WASD) viene applicato esternamente manipolando la velocità

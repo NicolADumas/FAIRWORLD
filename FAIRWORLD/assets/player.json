@@ -8,73 +8,73 @@
         "vit": 18
     },
     "currentExp": 99,
-    "currentHP": 226,
+    "currentHP": 158,
     "currentMP": 190,
     "currentStamina": 174,
     "freeStatPoints": 0,
     "inventory": [
         {
-            "blockType": 1,
-            "count": 39,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 2,
-            "count": 64,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 3,
-            "count": 64,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 4,
-            "count": 64,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 5,
-            "count": 64,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 6,
-            "count": 63,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 7,
-            "count": 64,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 8,
-            "count": 64,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
-            "blockType": 9,
-            "count": 10,
+            "blockType": 0,
+            "count": 0,
             "maxStack": 64,
             "stringId": "",
-            "type": 1
+            "type": 0
         },
         {
             "blockType": 0,

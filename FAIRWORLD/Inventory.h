@@ -56,4 +56,13 @@ public:
     void ClearSlot(int slotIndex) {
         if (slotIndex >= 0 && slotIndex < INVENTORY_SIZE) slots[slotIndex].Clear();
     }
+
+    // Controlla se l'inventario è completamente pieno (nessuno slot vuoto né espandibile)
+    bool IsFull() const {
+        for (int i = 0; i < INVENTORY_SIZE; i++) {
+            if (slots[i].IsEmpty()) return false;
+            if (slots[i].count < slots[i].maxStack) return false; // Ha spazio residuo
+        }
+        return true;
+    }
 };

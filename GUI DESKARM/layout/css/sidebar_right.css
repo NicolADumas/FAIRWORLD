@@ -1,0 +1,182 @@
+/* Right Sidebar - Professional Design */
+.right-sidebar {
+    position: fixed;
+    top: 10px;
+    right: -220px;
+    width: 210px;
+    height: auto;
+    max-height: 85vh;
+    background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px 0 0 12px;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.right-sidebar.open {
+    right: 0;
+}
+
+/* Header */
+.sidebar-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.sidebar-header h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+/* Content Area */
+.sidebar-content {
+    padding: 10px 12px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Compact Control Groups for Right Sidebar */
+.right-sidebar .control-group {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.right-sidebar .control-group:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.right-sidebar .group-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 8px;
+    opacity: 0.9;
+}
+
+/* Compact Input Rows */
+.right-sidebar .input-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    font-size: 0.75rem;
+}
+
+.right-sidebar .input-row label {
+    font-size: 0.7rem;
+    opacity: 0.85;
+}
+
+.right-sidebar .input-row input {
+    width: 50px;
+    padding: 3px 5px;
+    font-size: 0.7rem;
+    border-radius: 4px;
+}
+
+/* Compact Toggle Buttons */
+.right-sidebar .toggle-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.right-sidebar .btn.sm {
+    padding: 4px 8px;
+    font-size: 0.65rem;
+}
+
+/* Theme Buttons in Sidebar */
+.right-sidebar .theme-buttons-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+}
+
+.right-sidebar .theme-btn {
+    width: 22px;
+    height: 22px;
+}
+
+/* Floating Toggle Button */
+.floating-toggle-btn {
+    position: fixed;
+    top: 15px;
+    right: 15px;
+    z-index: 90;
+    padding: 0 15px;
+    gap: 8px;
+    height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover, #0099cc) 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.floating-toggle-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+/* Close Button */
+.icon-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.2rem;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.icon-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Scrollbar Styling */
+.sidebar-content::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+.sidebar-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}

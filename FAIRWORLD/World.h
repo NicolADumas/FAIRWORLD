@@ -38,6 +38,7 @@ struct Vertex {
     glm::vec3 color;
     glm::vec2 texCoord;
     float texIndex;
+    glm::vec3 normal;
 };
 
 enum class PlanetType {
@@ -103,6 +104,9 @@ public:
     void UpdateTemperature() {
         if (heatCapacity > 0.0) temperature = internalEnergy / heatCapacity;
     }
+    
+    // Ricalcola la capacita termica totale del chunk in base ai materiali presenti
+    void UpdateHeatCapacity();
 
     Chunk(int x, int z) : cx(x), cz(z) {}
 };

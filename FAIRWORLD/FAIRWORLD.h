@@ -19,6 +19,8 @@
 #include "MobManager.h"
 #include "AIAssistant.h"
 #include "PhysicsEngine.h"
+#include "DroppedItem.h"
+#include "DeskarmWebView.h"
 
 
 enum class GameMode { Dev, Play };
@@ -39,6 +41,7 @@ enum class GameState {
     TAB_MODEL_EDITOR,
     TAB_MONDO,
     TAB_ENGINE,
+    WEB_BROWSER,
     _COUNT
 };
 
@@ -138,10 +141,19 @@ private:
 
     // DESKARM Integration
     std::filesystem::file_time_type m_lastDeskarmExportTime;
+    DeskarmWebView m_webView;
 
     // MIRINO: blocco attualmente puntato dalla camera (aggiornato ogni frame)
     glm::ivec3 m_targetedBlock = glm::ivec3(-1, -1, -1);
     bool       m_hasTarget     = false;
+
+    // --- Mining Progressivo (Sforzo di Taglio) ---
+    float      m_miningProgress     = 0.0f;             // Progresso corrente [0..1]
+    glm::ivec3 m_miningTarget       = {-1, -1, -1};     // Blocco che stiamo scavando
+    float      m_miningTimeRequired = 0.0f;              // Tempo totale necessario [s]
+
+    // --- Dropped Items (Entità fisiche nel mondo) ---
+    std::vector<DroppedItem> m_droppedItems;
 
     std::unique_ptr<XrManager>     m_xrManager;
     std::unique_ptr<RenderManager> m_renderManager;

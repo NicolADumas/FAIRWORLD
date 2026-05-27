@@ -2,6 +2,7 @@
 #include "World.h"
 #include "AIAssistant.h"
 #include "PerlinNoise.h"
+#include "BlockMaterial.h"
 
 // Offset per le 6 facce di un cubo (in ordine: +Y, -Y, -X, +X, -Z, +Z)
 static const glm::vec3 FACE_VERTS[6][4] = {
@@ -18,6 +19,30 @@ static const glm::ivec3 FACE_DIRS[6] = {
     { 0, 1, 0}, { 0,-1, 0}, {-1, 0, 0},
     { 1, 0, 0}, { 0, 0,-1}, { 0, 0, 1},
 };
+
+void Chunk::UpdateHeatCapacity() {
+    double totalCapacity = 0.0;
+    for (int x = 0; x < CHUNK_SIZE; x++) {
+        for (int z = 0; z < CHUNK_SIZE; z++) {
+            for (int y = 0; y < CHUNK_HEIGHT; y++) {
+                BlockType b = (BlockType)blocks[x][y][z];
+                if (b != BlockType::Air) {
+                    const auto& mat = GetBlockMaterial(b);
+                    // C_tot = sum(m * c)
+                    totalCapacity += (mat.mass * mat.heatCapacitySp);
+                }
+            }
+        }
+    }
+    // Evita divisioni per zero se il chunk e completamente vuoto
+    if (totalCapacity < 1000.0) totalCapacity = 1000.0;
+    
+    // Per evitare ere glaciali istantanee quando calcoliamo la nuova 
+    // gigantesca capacita termica del chunk, preserviamo la temperatura 
+    // attuale scalando l'energia interna, anziche il contrario!
+    heatCapacity = totalCapacity;
+    internalEnergy = temperature * heatCapacity;
+}
 
 World::World() {
     // 1. Inizializza i pianeti del Sistema Solare
@@ -403,6 +428,9 @@ void World::GenerateChunk(Chunk* chunk) {
             }
         }
     }
+    
+    // Inizializza la capacita termica del nuovo chunk basandosi sulla generazione
+    chunk->UpdateHeatCapacity();
 }
 
 void World::PlaceTree(int x, int y, int z) {
@@ -481,7 +509,26 @@ void World::SetBlock(int x, int y, int z, BlockType type) {
         int lx = x - cx * CHUNK_SIZE;
         int lz = z - cz * CHUNK_SIZE;
         if (it->second->blocks[lx][y][lz] != (uint8_t)type) {
+            uint8_t oldType = it->second->blocks[lx][y][lz];
             it->second->blocks[lx][y][lz] = (uint8_t)type;
+            
+            // Aggiornamento Incrementale Termodinamico (O(1) anziche O(N))
+            if (oldType != (uint8_t)BlockType::Air) {
+                const auto& oldMat = GetBlockMaterial((BlockType)oldType);
+                double c = oldMat.mass * oldMat.heatCapacitySp;
+                it->second->heatCapacity -= c;
+                it->second->internalEnergy -= c * it->second->temperature; // Rimuove energia proporzionale
+            }
+            if (type != BlockType::Air) {
+                const auto& newMat = GetBlockMaterial(type);
+                double c = newMat.mass * newMat.heatCapacitySp;
+                it->second->heatCapacity += c;
+                it->second->internalEnergy += c * it->second->temperature; // Aggiunge energia a T ambiente
+            }
+            
+            if (it->second->heatCapacity < 1000.0) it->second->heatCapacity = 1000.0;
+            it->second->UpdateTemperature();
+
             it->second->isDirty = true;
             
             // Mark neighboring chunks as dirty if placed on chunk border
@@ -515,13 +562,14 @@ void World::AddFace(int x, int y, int z, int face, const glm::vec3& color, float
     uint32_t baseIndex = (uint32_t)outVerts.size();
     glm::vec3 origin((float)x, (float)y, (float)z);
     const glm::vec2 UVS[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    glm::vec3 normal = glm::vec3((float)FACE_DIRS[face].x, (float)FACE_DIRS[face].y, (float)FACE_DIRS[face].z);
 
     for (int i = 0; i < 4; i++) {
         glm::vec3 pos = origin + FACE_VERTS[face][i];
         if (lowerY && pos.y == origin.y + 1) {
             pos.y -= 0.15f;
         }
-        outVerts.push_back({ pos, color, UVS[i], texIndex });
+        outVerts.push_back({ pos, color, UVS[i], texIndex, normal });
     }
 
     outIndices.push_back(baseIndex + 0);

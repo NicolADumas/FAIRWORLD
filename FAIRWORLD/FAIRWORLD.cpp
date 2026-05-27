@@ -1,8 +1,10 @@
 #include "pch.h"
 #include "FAIRWORLD.h"
+#include "BlockMaterial.h"
 #include "XrManager.h"
 #include "RenderManager.h"
 #include "WindowManager.h"
+#include "EventManager.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -78,6 +80,7 @@ static constexpr const char* kStateNames[] = {
     "TAB_MODEL_EDITOR",
     "TAB_MONDO",
     "TAB_ENGINE",
+    "WEB_BROWSER",
     "_COUNT",
 };
 
@@ -112,8 +115,25 @@ const char* FairWorldEngine::getStateName() const {
 
 void FairWorldEngine::transitionTo(GameState next) {
     if (next == m_current) return;
+    
+    // Logica di uscita dallo stato
+    if (m_current == GameState::WEB_BROWSER) {
+        m_webView.SetVisible(false);
+        m_cursorLocked = true; // Riblocca il cursore uscendo dal browser
+    }
+    
     m_current = next;
-    // Here we can trigger onEnter/onExit logic if needed.
+    
+    // Logica di entrata nello stato
+    if (m_current == GameState::WEB_BROWSER) {
+        m_webView.SetVisible(true);
+        m_cursorLocked = false;
+        
+        // Alla prima apertura del browser, assicuriamoci di mostrare una pagina (es. Google se è la prima volta)
+        if (!m_webView.IsVisible()) {
+            m_webView.Navigate(L"https://www.google.com");
+        }
+    }
 }
 
 bool FairWorldEngine::isWorldRunning() const {
@@ -193,6 +213,47 @@ bool FairWorldEngine::Init() {
 
     m_isRunning = true;
     m_player.LoadFromJson("assets/player.json");
+    
+    // Inizializza WebView2 per GUI DESKARM
+    std::cout << "[SYSTEM] Inizializzazione WebView2 in corso..." << std::endl;
+    m_webView.Init(hwnd);
+    
+    // --- Sottoscrizione Eventi (Event-Driven Input System) ---
+    EventManager::Get().Subscribe<Event_BlockMined>([this](const Event_BlockMined& e) {
+        // Logica eseguita UNA SOLA VOLTA quando l'evento viene triggerato
+        BlockType brokenType = m_world.GetBlock(e.position.x, e.position.y, e.position.z);
+        
+        if (brokenType != BlockType::Air) {
+            m_world.SetBlock(e.position.x, e.position.y, e.position.z, BlockType::Air);
+            
+            // Gestione Drop (Loot)
+            InventoryItem drop;
+            drop.type = ItemType::Block;
+            drop.blockType = (int)brokenType;
+            drop.count = 1;
+            
+            if (!m_player.inventory.AddItem(drop)) {
+                // L'inventario è pieno, spawna l'oggetto fisico a terra
+                DroppedItem di;
+                di.item = drop;
+                // Spawna al centro esatto del blocco
+                di.position = glm::vec3(e.position.x + 0.5f, e.position.y + 0.5f, e.position.z + 0.5f);
+                // Dai un piccolo "pop" casuale verso l'alto
+                float rx = ((rand() % 100) / 100.0f) * 2.0f - 1.0f;
+                float rz = ((rand() % 100) / 100.0f) * 2.0f - 1.0f;
+                di.velocity = glm::vec3(rx * 1.5f, 3.0f, rz * 1.5f);
+                
+                m_droppedItems.push_back(di);
+            }
+            std::cout << "[EVENT] Blocco distrutto in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
+        }
+    });
+
+    EventManager::Get().Subscribe<Event_BlockPlaced>([this](const Event_BlockPlaced& e) {
+        m_world.SetBlock(e.position.x, e.position.y, e.position.z, e.type);
+        std::cout << "[EVENT] Blocco piazzato in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
+    });
+
     return true;
 }
 
@@ -280,6 +341,18 @@ bool FairWorldEngine::Update(float deltaTime) {
         m_cursorLocked = false; // Sblocca il cursore per cliccare sul diario se serve
     }
     jWasDown = jDown;
+    
+    // Apri Browser Web Integrato con 'H'
+    static bool hWasDown = false;
+    bool hDown = (GetAsyncKeyState('H') & 0x8000) != 0;
+    if (hDown && !hWasDown) {
+        if (m_current == GameState::WEB_BROWSER) {
+            transitionTo(GameState::PLAYING);
+        } else if (m_current == GameState::PLAYING) {
+            transitionTo(GameState::WEB_BROWSER);
+        }
+    }
+    hWasDown = hDown;
     
     
     // --- ESC: apre/chiude il menu di pausa ---
@@ -461,13 +534,13 @@ bool FairWorldEngine::Update(float deltaTime) {
         m_escWasDown = escDown;
     }
 
-    // Se God Mode, Diario, o Inventario sono aperti, il cursore è sempre libero
-    if (m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen) {
+    // Se God Mode, Diario, Inventario o Web Browser sono aperti, il cursore è sempre libero
+    if (m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen || m_current == GameState::WEB_BROWSER) {
         m_cursorLocked = false;
     }
 
-    // Click sinistro fuori dall'editor/diario/inventario: blocca il cursore per il gioco FPS
-    if (!m_cursorLocked && !m_editor.isOpen && !m_isDiaryOpen && !m_isInventoryOpen && !io.WantCaptureMouse) {
+    // Click sinistro fuori dall'editor/diario/inventario/browser: blocca il cursore per il gioco FPS
+    if (!m_cursorLocked && !m_editor.isOpen && !m_isDiaryOpen && !m_isInventoryOpen && m_current != GameState::WEB_BROWSER && !io.WantCaptureMouse) {
         bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         if (lDown && !m_lButtonWasDown) {
             m_cursorLocked = true;
@@ -475,7 +548,10 @@ bool FairWorldEngine::Update(float deltaTime) {
         }
     }
 
-    // Applica visibilità cursore (ShowCursor ha un contatore interno, chiamiamo solo se cambia)
+    // Applica visibilità cursore (usa il cursore software di ImGui per aggirare bug di visibilità Win32)
+    ImGui::GetIO().MouseDrawCursor = !m_cursorLocked;
+    
+    // Per sicurezza, se il sistema Win32 nasconde il cursore, forziamolo a zero
     if (m_cursorLocked && m_cursorVisible) {
         ShowCursor(FALSE);
         m_cursorVisible = false;
@@ -530,6 +606,7 @@ bool FairWorldEngine::Update(float deltaTime) {
         // Ottieni lo stato dei tasti prima che la logica lo consumi
         bool placeBlock  = m_cursorLocked && (!m_lButtonWasDown && lDown);
         bool breakBlock  = m_cursorLocked && (!m_rButtonWasDown && rDown);
+        bool holdingBreak = m_cursorLocked && rDown;  // Tenuto premuto (per mining progressivo)
         
         // --- 1. SIMULAZIONE DESKTOP VIEW-MODEL (Prima Persona) ---
         // Se non siamo in VR, calcoliamo la posizione della mano ancorandola alla telecamera.
@@ -661,30 +738,149 @@ bool FairWorldEngine::Update(float deltaTime) {
                                   << prevBlock.x << "," << prevBlock.y << "," << prevBlock.z << ")" << std::endl;
                     }
                 } else if (breakBlock && hitBlock.x >= 0 && !hitGhost) {
-                    m_world.SetBlock(hitBlock.x, hitBlock.y, hitBlock.z, BlockType::Air);
-                    worldChanged = true;
-                    std::cout << "[WORLD] Blocco rimosso in ("
-                              << hitBlock.x << "," << hitBlock.y << "," << hitBlock.z << ")" << std::endl;
+                    // DevMode: scavo ISTANTANEO (nessun timer)
+                    BlockType brokenType = m_world.GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    if (brokenType != BlockType::Air) {
+                        EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenType));
+                        worldChanged = true;
+                    }
                 } else if (placeBlock && hitBlock.x >= 0 && m_world.IsInBounds(prevBlock.x, prevBlock.y, prevBlock.z) && !hitGhost) {
                     const InventoryItem& activeItem = m_player.inventory.slots[m_selectedSlot];
                     if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
-                        m_world.SetBlock(prevBlock.x, prevBlock.y, prevBlock.z, (BlockType)activeItem.blockType);
+                        EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
                         worldChanged = true;
                         
                         // Consuma l'oggetto
                         m_player.inventory.RemoveItem(m_selectedSlot, 1);
-                        
-                        std::cout << "[WORLD] Blocco '" << GetSlotName(m_selectedSlot) << "' piazzato in ("
-                                  << prevBlock.x << "," << prevBlock.y << "," << prevBlock.z << ")" << std::endl;
                     }
                 }
 
                 if (worldChanged) {
-                    // L'aggiornamento dei chunk sporchi avverrà all'inizio del prossimo frame
+                    // L'aggiornamento dei chunk sporchi avverra all'inizio del prossimo frame
+                }
+            } else {
+                // ============================================================
+                // PlayMode: SCAVO PROGRESSIVO basato sullo sforzo di taglio
+                // τ = F / A — il tempo dipende da τ_yield del materiale
+                // ============================================================
+                
+                if (holdingBreak && hitBlock.x >= 0 && !hitGhost) {
+                    BlockType targetType = m_world.GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    const auto& mat = GetBlockMaterial(targetType);
+                    
+                    // Blocco indistruttibile? (miningTime < 0)
+                    if (mat.miningTime < 0.0f) {
+                        m_miningProgress = 0.0f;
+                    } else {
+                        // Se cambiamo bersaglio, resettiamo il progresso
+                        if (m_miningTarget != hitBlock) {
+                            m_miningTarget = hitBlock;
+                            m_miningTimeRequired = mat.miningTime;
+                            m_miningProgress = 0.0f;
+                        }
+                        
+                        // Accumula progresso (dt / tempo_totale)
+                        if (m_miningTimeRequired > 0.0f) {
+                            m_miningProgress += deltaTime / m_miningTimeRequired;
+                        } else {
+                            m_miningProgress = 1.0f; // Scavo istantaneo (aria, acqua)
+                        }
+                        
+                        // Blocco rotto!
+                        if (m_miningProgress >= 1.0f) {
+                            BlockType brokenType = m_world.GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                            if (brokenType != BlockType::Air) {
+                                EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenType));
+                            }
+                            
+                            // Reset mining state
+                            m_miningProgress = 0.0f;
+                            m_miningTarget = glm::ivec3(-1, -1, -1);
+                        }
+                    }
+                } else {
+                    // Rilasciato il tasto o nessun bersaglio: reset progresso
+                    if (m_miningProgress > 0.0f) {
+                        m_miningProgress = 0.0f;
+                        m_miningTarget = glm::ivec3(-1, -1, -1);
+                    }
+                }
+                
+                // Piazzamento blocco (PlayMode — click sinistro singolo)
+                if (placeBlock && hitBlock.x >= 0 && m_world.IsInBounds(prevBlock.x, prevBlock.y, prevBlock.z) && !hitGhost) {
+                    const InventoryItem& activeItem = m_player.inventory.slots[m_selectedSlot];
+                    if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
+                        EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
+                        m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                    }
                 }
             }
         }
     } // Chiude if (!io.WantCaptureMouse)
+
+    // ================================================================
+    // --- UPDATE DROPPED ITEMS (Fisica di Newton + Archimede) ---
+    // ================================================================
+    {
+        float g = m_world.GetCurrentPlanet()->gravity;
+        
+        for (auto& di : m_droppedItems) {
+            if (!di.isAlive) continue;
+            
+            di.lifetime -= deltaTime;
+            di.bobTimer += deltaTime;
+            if (di.lifetime <= 0.0f) { di.isAlive = false; continue; }
+            
+            // 1. Gravita: F_g = m * g
+            di.velocity.y -= g * deltaTime;
+            
+            // 2. Archimede: se in acqua e il materiale galleggia
+            BlockType blockAtDrop = m_world.GetBlock((int)floor(di.position.x), (int)floor(di.position.y), (int)floor(di.position.z));
+            if (blockAtDrop == BlockType::Water) {
+                if (di.ShouldFloat()) {
+                    // F_A = rho_water * g * V > F_g => spinta netta verso l'alto
+                    di.velocity.y += g * 2.0f * deltaTime; // Galleggiamento forte
+                } else {
+                    // Affonda piu lentamente (attrito viscoso acqua)
+                    di.velocity *= 0.95f;
+                }
+            }
+            
+            // 3. Attrito aria
+            di.velocity.x *= (1.0f - 2.0f * deltaTime);
+            di.velocity.z *= (1.0f - 2.0f * deltaTime);
+            
+            // 4. Collisione semplice col terreno
+            glm::vec3 nextPos = di.position + di.velocity * deltaTime;
+            BlockType below = m_world.GetBlock((int)floor(nextPos.x), (int)floor(nextPos.y - 0.2f), (int)floor(nextPos.z));
+            if (below != BlockType::Air && below != BlockType::Water && below != BlockType::Lava) {
+                di.velocity.y = 0.0f;
+                nextPos.y = floor(nextPos.y - 0.2f) + 1.2f; // Appoggia sopra il blocco
+            }
+            di.position = nextPos;
+            
+            // 5. Pickup automatico: distanza < 1.5m dal giocatore
+            float dist = glm::length(di.position - m_camera.Position);
+            if (dist < 1.5f) {
+                bool added = m_player.inventory.AddItem(di.item);
+                if (added) {
+                    di.isAlive = false;
+                    std::cout << "[PICKUP] Raccolto " << di.item.count << "x blocco (ID " << di.item.blockType << ")" << std::endl;
+                }
+            } else if (dist < 3.0f) {
+                // Magnetismo: attira verso il giocatore quando e vicino
+                glm::vec3 toPlayer = glm::normalize(m_camera.Position - di.position);
+                di.velocity += toPlayer * 5.0f * deltaTime;
+            }
+        }
+        
+        // Rimuovi items morti (garbage collection)
+        m_droppedItems.erase(
+            std::remove_if(m_droppedItems.begin(), m_droppedItems.end(),
+                [](const DroppedItem& di) { return !di.isAlive; }),
+            m_droppedItems.end()
+        );
+    }
 
     if (m_gameMode == GameMode::Play) {
         if (!m_player.stats.IsAlive()) {
@@ -777,6 +973,80 @@ void FairWorldEngine::Render() {
             ImVec2 textPos = ImVec2(center.x - textSize.x * 0.5f, center.y - 40.0f);
             dl->AddRectFilled(ImVec2(textPos.x - 4, textPos.y - 2), ImVec2(textPos.x + textSize.x + 4, textPos.y + textSize.y + 2), IM_COL32(0,0,0,150), 3.0f);
             dl->AddText(textPos, IM_COL32(255,255,100,255), blockInfo);
+        }
+
+        // --- BARRA DI PROGRESSO MINING (PlayMode) ---
+        if (m_miningProgress > 0.0f && m_miningProgress < 1.0f && m_gameMode == GameMode::Play) {
+            float barW = 120.0f;
+            float barH = 8.0f;
+            ImVec2 barPos = ImVec2(center.x - barW * 0.5f, center.y + 25.0f);
+            
+            // Sfondo barra
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + barW, barPos.y + barH), IM_COL32(0, 0, 0, 180), 3.0f);
+            // Progresso (arancione → verde)
+            float r = 1.0f - m_miningProgress;
+            float g = m_miningProgress;
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + barW * m_miningProgress, barPos.y + barH), 
+                IM_COL32((int)(r*255), (int)(g*255), 50, 255), 3.0f);
+            // Bordo
+            dl->AddRect(barPos, ImVec2(barPos.x + barW, barPos.y + barH), IM_COL32(200, 200, 200, 200), 3.0f);
+            
+            // Percentuale
+            char pctText[16];
+            snprintf(pctText, sizeof(pctText), "%d%%", (int)(m_miningProgress * 100.0f));
+            ImVec2 pctSize = ImGui::CalcTextSize(pctText);
+            dl->AddText(ImVec2(center.x - pctSize.x * 0.5f, barPos.y + barH + 2.0f), IM_COL32(255, 255, 255, 255), pctText);
+        }
+
+        // --- INFO MATERIALE blocco puntato (PlayMode) ---
+        if (m_hasTarget && m_gameMode == GameMode::Play) {
+            BlockType targetType = m_world.GetBlock(m_targetedBlock.x, m_targetedBlock.y, m_targetedBlock.z);
+            if (targetType != BlockType::Air) {
+                const auto& mat = GetBlockMaterial(targetType);
+                char matInfo[128];
+                snprintf(matInfo, sizeof(matInfo), "%s | %.0f kg/m3 | %.0f J/kg*K | t=%.1fs", 
+                    mat.name, mat.density, mat.heatCapacitySp, mat.miningTime);
+                ImVec2 matSize = ImGui::CalcTextSize(matInfo);
+                ImVec2 matPos = ImVec2(center.x - matSize.x * 0.5f, center.y - 40.0f);
+                dl->AddRectFilled(ImVec2(matPos.x - 4, matPos.y - 2), 
+                    ImVec2(matPos.x + matSize.x + 4, matPos.y + matSize.y + 2), IM_COL32(0,0,0,150), 3.0f);
+                dl->AddText(matPos, IM_COL32(180, 220, 255, 255), matInfo);
+            }
+        }
+
+        // --- RENDER DROPPED ITEMS (Tags 2D Proiettati) ---
+        if (!m_droppedItems.empty()) {
+            glm::mat4 view = m_camera.GetViewMatrix();
+            float aspect = ImGui::GetMainViewport()->Size.x / ImGui::GetMainViewport()->Size.y;
+            glm::mat4 proj = glm::perspective(glm::radians(m_renderManager->GetFov()), aspect, 0.1f, 100.0f);
+            
+            // Per Vulkan, l'asse Y di proiezione è invertito rispetto a OpenGL, 
+            // ma ImGui ha (0,0) in alto a sinistra. Dobbiamo stare attenti.
+            for (const auto& di : m_droppedItems) {
+                if (!di.isAlive) continue;
+                
+                // Posizione con animazione di fluttuazione (sin)
+                glm::vec3 renderPos = di.position + glm::vec3(0.0f, sin(di.bobTimer * 2.0f) * 0.1f, 0.0f);
+                glm::vec4 clipPos = proj * view * glm::vec4(renderPos, 1.0f);
+                
+                if (clipPos.w > 0.1f) {
+                    glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+                    if (ndc.z >= 0.0f && ndc.z <= 1.0f && ndc.x >= -1.0f && ndc.x <= 1.0f && ndc.y >= -1.0f && ndc.y <= 1.0f) {
+                        float screenX = (ndc.x * 0.5f + 0.5f) * ImGui::GetMainViewport()->Size.x;
+                        float screenY = (ndc.y * 0.5f + 0.5f) * ImGui::GetMainViewport()->Size.y;
+                        
+                        const auto& mat = GetBlockMaterial((BlockType)di.item.blockType);
+                        char dropText[64];
+                        snprintf(dropText, sizeof(dropText), "%s (x%d)", mat.name, di.item.count);
+                        ImVec2 textSize = ImGui::CalcTextSize(dropText);
+                        ImVec2 textPos(screenX - textSize.x * 0.5f, screenY - textSize.y * 0.5f);
+                        
+                        dl->AddRectFilled(ImVec2(textPos.x - 4, textPos.y - 2), 
+                                          ImVec2(textPos.x + textSize.x + 4, textPos.y + textSize.y + 2), IM_COL32(0, 0, 0, 180), 3.0f);
+                        dl->AddText(textPos, IM_COL32(150, 255, 150, 255), dropText);
+                    }
+                }
+            }
         }
 
         // 2. Disegna la Hotbar in basso se l'inventario non è aperto
@@ -1289,6 +1559,48 @@ void FairWorldEngine::Render() {
 
             ImGui::End();
             ImGui::PopStyleColor(2); // Ripristina colori
+        }
+
+        // --- BROWSER WEB INTEGRATO (WebView2) ---
+        if (m_current == GameState::WEB_BROWSER) {
+            ImVec2 size = ImGui::GetMainViewport()->Size;
+            float winW = size.x * 0.90f;
+            float winH = size.y * 0.90f;
+            ImGui::SetNextWindowPos(ImVec2(size.x * 0.5f, size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
+
+            bool keepOpen = true;
+            if (ImGui::Begin("Browser Web Integrato - Premi 'H' per chiudere", &keepOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+                
+                // --- BARRA DEGLI INDIRIZZI ---
+                static char urlBuffer[512] = "https://www.google.com";
+                ImGui::SetNextItemWidth(winW - 100.0f);
+                if (ImGui::InputText("##URLBar", urlBuffer, sizeof(urlBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    std::string urlStr(urlBuffer);
+                    std::wstring wUrl(urlStr.begin(), urlStr.end());
+                    m_webView.Navigate(wUrl);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Vai", ImVec2(70, 0))) {
+                    std::string urlStr(urlBuffer);
+                    std::wstring wUrl(urlStr.begin(), urlStr.end());
+                    m_webView.Navigate(wUrl);
+                }
+                ImGui::Separator();
+                
+                // Calcola le coordinate assolute sullo schermo dello spazio per i contenuti HTML
+                ImVec2 contentPos = ImGui::GetCursorScreenPos();
+                ImVec2 contentSize = ImGui::GetContentRegionAvail();
+                
+                // Comunica al wrapper C++ di Edge di sovrapporsi esattamente qui
+                m_webView.Resize((int)contentPos.x, (int)contentPos.y, (int)contentSize.x, (int)contentSize.y);
+            }
+            ImGui::End();
+            
+            // Se l'utente chiude dalla "X" della finestra
+            if (!keepOpen) {
+                transitionTo(GameState::PLAYING);
+            }
         }
 
         ImGui::Render();

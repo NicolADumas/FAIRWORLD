@@ -20,3 +20,5 @@ vulkan-sdk-installer.exe
 # Python / AI Server
 ai_server/__pycache__/
 *.pyc
+
+packages/
