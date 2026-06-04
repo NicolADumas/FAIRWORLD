@@ -38,6 +38,74 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // FASE 3.1: Creazione del Logical Device
     if (!CreateLogicalDevice()) return false;
 
+    // Inizializza VMA (Vulkan Memory Allocator)
+    VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice = m_physicalDevice;
+    allocatorInfo.device = m_device;
+    allocatorInfo.instance = m_instance;
+    allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+    if (vmaCreateAllocator(&allocatorInfo, &m_vmaAllocator) != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] Impossibile inizializzare VmaAllocator!" << std::endl;
+        return false;
+    }
+
+    // --- 1. CREATE TRANSFER COMMAND POOL E COMMAND BUFFER ---
+    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = indices.transferFamily.value();
+    
+    if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_transferCommandPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create transfer command pool!");
+    }
+    
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = m_transferCommandPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &m_transferCommandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate transfer command buffer!");
+    }
+    
+    // Inizia subito a registrare
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    vkBeginCommandBuffer(m_transferCommandBuffer, &beginInfo);
+
+    // --- 2. CREATE CHUNK VMA POOL ---
+    VkBufferCreateInfo dummyBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    dummyBufInfo.size = 1024;
+    dummyBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VmaAllocationCreateInfo dummyAllocInfo = {};
+    dummyAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    uint32_t memTypeIndex = 0;
+    vmaFindMemoryTypeIndexForBufferInfo(m_vmaAllocator, &dummyBufInfo, &dummyAllocInfo, &memTypeIndex);
+
+    VmaPoolCreateInfo vmaPoolInfo = {};
+    vmaPoolInfo.memoryTypeIndex = memTypeIndex;
+    if (vmaCreatePool(m_vmaAllocator, &vmaPoolInfo, &m_chunkVmaPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create VMA Pool for chunks!");
+    }
+
+    // --- 3. CREATE RING BUFFER (STAGING PERSISTENTE) ---
+    VkBufferCreateInfo stagingBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    stagingBufInfo.size = STAGING_BUFFER_SIZE;
+    stagingBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    
+    VmaAllocationCreateInfo stagingAllocInfo = {};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
+    if (vmaCreateBuffer(m_vmaAllocator, &stagingBufInfo, &stagingAllocInfo, &m_stagingRingBuffer, &m_stagingAllocation, nullptr) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create Staging Ring Buffer!");
+    }
+    
+    VmaAllocationInfo vmaRingInfo;
+    vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
+    m_mappedStagingData = vmaRingInfo.pMappedData;
+    std::cout << "[VMA] VmaAllocator inizializzato con successo." << std::endl;
+
     // FASE 3.3: Creazione della Swapchain
     if (!CreateSwapchain(hwnd)) return false;
     if (!CreateImageViews()) return false;
@@ -183,6 +251,12 @@ QueueFamilyIndices RenderManager::FindQueueFamilies(VkPhysicalDevice device) {
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.graphicsFamily = i;
         }
+
+        // Cerca una coda dedicata esclusivamente ai trasferimenti (ottimale per DMA asincrono sui Voxel)
+        if ((queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+            indices.transferFamily = i;
+        }
+
         VkBool32 presentSupport = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
         if (presentSupport) {
@@ -191,6 +265,12 @@ QueueFamilyIndices RenderManager::FindQueueFamilies(VkPhysicalDevice device) {
         if (indices.isComplete()) break;
         i++;
     }
+
+    // Fallback: se la GPU non ha una coda dedicata (es. vecchie GPU o Intel HD), usiamo la grafica
+    if (!indices.transferFamily.has_value() && indices.graphicsFamily.has_value()) {
+        indices.transferFamily = indices.graphicsFamily.value();
+    }
+    
     return indices;
 }
 
@@ -256,7 +336,7 @@ bool RenderManager::CreateLogicalDevice() {
     QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value(), indices.transferFamily.value() };
 
     float queuePriority = 1.0f;
     for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -291,8 +371,9 @@ bool RenderManager::CreateLogicalDevice() {
 
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
     vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
+    vkGetDeviceQueue(m_device, indices.transferFamily.value(), 0, &m_transferQueue);
     
-    std::cout << "[VULKAN] Logical Device e Code Grafiche configurate." << std::endl;
+    std::cout << "[VULKAN] Logical Device e Code (Graphics, Present, Transfer) configurate." << std::endl;
     return true;
 }
 
@@ -414,8 +495,8 @@ bool RenderManager::CreateDepthResources() {
     CreateImage(m_swapchainExtent.width, m_swapchainExtent.height, 1,
                 depthFormat, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                m_depthImage, m_depthImageMemory);
+                VMA_MEMORY_USAGE_GPU_ONLY,
+                m_depthImage, m_depthImageAllocation);
 
     // Crea l'image view per il depth (usa solo l'aspetto DEPTH, non STENCIL)
     VkImageViewCreateInfo viewInfo{};
@@ -576,7 +657,7 @@ bool RenderManager::CreateUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
     m_uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    m_uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    m_uniformBuffersAllocation.resize(MAX_FRAMES_IN_FLIGHT);
     m_uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -585,22 +666,18 @@ bool RenderManager::CreateUniformBuffers() {
         bufferInfo.size = bufferSize;
         bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        
+        VmaAllocationCreateInfo allocInfo = {};
+        allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        if (vmaCreateBuffer(m_vmaAllocator, &bufferInfo, &allocInfo, &m_uniformBuffers[i], &m_uniformBuffersAllocation[i], nullptr) != VK_SUCCESS) {
+            return false;
+        }
 
-        vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_uniformBuffers[i]);
-
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(m_device, m_uniformBuffers[i], &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-        vkAllocateMemory(m_device, &allocInfo, nullptr, &m_uniformBuffersMemory[i]);
-        vkBindBufferMemory(m_device, m_uniformBuffers[i], m_uniformBuffersMemory[i], 0);
-
-        // Mappiamo la memoria in modo permanente per scriverci dentro ogni frame
-        vkMapMemory(m_device, m_uniformBuffersMemory[i], 0, bufferSize, 0, &m_uniformBuffersMapped[i]);
+        VmaAllocationInfo vmaAllocInfo;
+        vmaGetAllocationInfo(m_vmaAllocator, m_uniformBuffersAllocation[i], &vmaAllocInfo);
+        m_uniformBuffersMapped[i] = vmaAllocInfo.pMappedData;
     }
     return true;
 }
@@ -1139,31 +1216,30 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Asse
     }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    
+    // Esegui il flush dei comandi asincroni (Voxel Meshes, etc)
+    FlushTransferBatch();
 }
 
 // ---------------------------------------------------------
 // VERTEX / INDEX BUFFER HELPERS
 // ---------------------------------------------------------
 bool RenderManager::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                                  VkMemoryPropertyFlags properties,
-                                  VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+                                 VmaMemoryUsage vmaUsage,
+                                 VkBuffer& buffer, VmaAllocation& bufferAllocation, VmaAllocationCreateFlags flags) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size  = size;
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) return false;
 
-    VkMemoryRequirements memReq;
-    vkGetBufferMemoryRequirements(m_device, buffer, &memReq);
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = vmaUsage;
+    allocInfo.flags = flags;
 
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memReq.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, properties);
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) return false;
-
-    vkBindBufferMemory(m_device, buffer, bufferMemory, 0);
+    if (vmaCreateBuffer(m_vmaAllocator, &bufferInfo, &allocInfo, &buffer, &bufferAllocation, nullptr) != VK_SUCCESS) {
+        return false;
+    }
     return true;
 }
 
@@ -1202,51 +1278,108 @@ void RenderManager::DestroyChunkBuffer(ChunkCoord coord) {
     auto it = m_chunkBuffers.find(coord);
     if (it != m_chunkBuffers.end()) {
         vkDeviceWaitIdle(m_device);
-        if (it->second.vertexBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(m_device, it->second.vertexBuffer, nullptr); }
-        if (it->second.vertexBufferMemory != VK_NULL_HANDLE) { vkFreeMemory(m_device, it->second.vertexBufferMemory, nullptr); }
-        if (it->second.indexBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(m_device, it->second.indexBuffer, nullptr); }
-        if (it->second.indexBufferMemory != VK_NULL_HANDLE) { vkFreeMemory(m_device, it->second.indexBufferMemory, nullptr); }
+        if (it->second.vertexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_vmaAllocator, it->second.vertexBuffer, it->second.vertexBufferAllocation); }
+        if (it->second.indexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_vmaAllocator, it->second.indexBuffer, it->second.indexBufferAllocation); }
         m_chunkBuffers.erase(it);
     }
 }
 
 void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     DestroyChunkBuffer(coord);
-
     if (vertices.empty() || indices.empty()) return;
 
     VulkanChunkBuffer chunkBuf;
     chunkBuf.indexCount = (uint32_t)indices.size();
 
-    VkDeviceSize vSize = sizeof(vertices[0]) * vertices.size();
-    VkDeviceSize iSize = sizeof(indices[0]) * indices.size();
+    VkDeviceSize vertexSize = sizeof(vertices[0]) * vertices.size();
+    VkDeviceSize indexSize = sizeof(indices[0]) * indices.size();
+    VkDeviceSize totalSize = vertexSize + indexSize;
 
-    // Staging Vertex
-    VkBuffer stagingVBuf; VkDeviceMemory stagingVMem;
-    if (!CreateBuffer(vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingVBuf, stagingVMem)) return;
-    void* vData; vkMapMemory(m_device, stagingVMem, 0, vSize, 0, &vData);
-    memcpy(vData, vertices.data(), (size_t)vSize);
-    vkUnmapMemory(m_device, stagingVMem);
+    // 1. Allineiamo il cursore per i vertici
+    m_currentOffset = AlignMemory(m_currentOffset);
+    uint64_t vertexOffset = m_currentOffset;
+    
+    // 2. Allineiamo il cursore per gli indici subito dopo i vertici
+    m_currentOffset += vertexSize;
+    m_currentOffset = AlignMemory(m_currentOffset);
+    uint64_t indexOffset = m_currentOffset;
+    m_currentOffset += indexSize;
 
-    if (!CreateBuffer(vSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, chunkBuf.vertexBuffer, chunkBuf.vertexBufferMemory)) return;
-    CopyBuffer(stagingVBuf, chunkBuf.vertexBuffer, vSize);
-    vkDestroyBuffer(m_device, stagingVBuf, nullptr);
-    vkFreeMemory(m_device, stagingVMem, nullptr);
+    // [!] Prevenzione Overflow: Se il buffer è pieno, dobbiamo forzare un flush immediato
+    if (m_currentOffset > STAGING_BUFFER_SIZE) {
+        FlushTransferBatch();
+        m_currentOffset = 0;
+        vertexOffset = 0;
+        indexOffset = AlignMemory(vertexSize);
+        m_currentOffset = indexOffset + indexSize;
+    }
 
-    // Staging Index
-    VkBuffer stagingIBuf; VkDeviceMemory stagingIMem;
-    if (!CreateBuffer(iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingIBuf, stagingIMem)) return;
-    void* iData; vkMapMemory(m_device, stagingIMem, 0, iSize, 0, &iData);
-    memcpy(iData, indices.data(), (size_t)iSize);
-    vkUnmapMemory(m_device, stagingIMem);
+    // 3. Copia fulminea in RAM (nel puntatore mappato da VMA)
+    uint8_t* dstMapped = static_cast<uint8_t*>(m_mappedStagingData);
+    memcpy(dstMapped + vertexOffset, vertices.data(), (size_t)vertexSize);
+    memcpy(dstMapped + indexOffset, indices.data(), (size_t)indexSize);
 
-    if (!CreateBuffer(iSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, chunkBuf.indexBuffer, chunkBuf.indexBufferMemory)) return;
-    CopyBuffer(stagingIBuf, chunkBuf.indexBuffer, iSize);
-    vkDestroyBuffer(m_device, stagingIBuf, nullptr);
-    vkFreeMemory(m_device, stagingIMem, nullptr);
+    // 4. Crea i buffer di destinazione in VRAM (usando il tuo VmaPool dedicato ai chunk se vuoi, ma qui usiamo CreateBuffer globale con pool opzionale)
+    // Per ora allochiamo con VMA normale in VRAM
+    VkBufferCreateInfo vbInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    vbInfo.size = vertexSize;
+    vbInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaAllocationCreateInfo vbAllocInfo = {};
+    vbAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    vbAllocInfo.pool = m_chunkVmaPool; // Use the chunk pool!
+    vmaCreateBuffer(m_vmaAllocator, &vbInfo, &vbAllocInfo, &chunkBuf.vertexBuffer, &chunkBuf.vertexBufferAllocation, nullptr);
+
+    VkBufferCreateInfo ibInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    ibInfo.size = indexSize;
+    ibInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    ibInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaAllocationCreateInfo ibAllocInfo = {};
+    ibAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    ibAllocInfo.pool = m_chunkVmaPool;
+    vmaCreateBuffer(m_vmaAllocator, &ibInfo, &ibAllocInfo, &chunkBuf.indexBuffer, &chunkBuf.indexBufferAllocation, nullptr);
+
+    // 5. Registra i comandi di copia nel Transfer Command Buffer
+    VkBufferCopy vertexCopyRegion = {};
+    vertexCopyRegion.srcOffset = vertexOffset;
+    vertexCopyRegion.dstOffset = 0;
+    vertexCopyRegion.size = vertexSize;
+    vkCmdCopyBuffer(m_transferCommandBuffer, m_stagingRingBuffer, chunkBuf.vertexBuffer, 1, &vertexCopyRegion);
+
+    VkBufferCopy indexCopyRegion = {};
+    indexCopyRegion.srcOffset = indexOffset;
+    indexCopyRegion.dstOffset = 0;
+    indexCopyRegion.size = indexSize;
+    vkCmdCopyBuffer(m_transferCommandBuffer, m_stagingRingBuffer, chunkBuf.indexBuffer, 1, &indexCopyRegion);
 
     m_chunkBuffers[coord] = chunkBuf;
 }
+
+void RenderManager::FlushTransferBatch() {
+    if (m_currentOffset == 0) return; // Niente da flussare
+
+    // Chiudi il command buffer e sottomettilo alla coda di trasferimento
+    vkEndCommandBuffer(m_transferCommandBuffer);
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &m_transferCommandBuffer;
+
+    vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+
+    // Iterazione 1: WaitIdle (Sincronizzazione dura a fine batch)
+    vkQueueWaitIdle(m_transferQueue);
+
+    // Resetta l'offset (Tail raggiunge Head) e il command buffer per il prossimo batch
+    m_currentOffset = 0;
+    vkResetCommandBuffer(m_transferCommandBuffer, 0);
+    
+    // Fai ripartire la registrazione del Command Buffer
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    vkBeginCommandBuffer(m_transferCommandBuffer, &beginInfo);
+}
+
 
 void RenderManager::UploadGhostMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     if (vertices.empty() || indices.empty()) {
@@ -1256,49 +1389,45 @@ void RenderManager::UploadGhostMesh(const std::vector<Vertex>& vertices, const s
     VkDeviceSize vSize = sizeof(vertices[0]) * vertices.size();
     VkDeviceSize iSize = sizeof(indices[0]) * indices.size();
 
-    VkBuffer stagingBuf; VkDeviceMemory stagingMem;
+    VkBuffer stagingBuf; VmaAllocation stagingMem;
     if (!CreateBuffer(vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      VMA_MEMORY_USAGE_CPU_TO_GPU,
                       stagingBuf, stagingMem)) return;
 
     void* data;
-    vkMapMemory(m_device, stagingMem, 0, vSize, 0, &data);
+    vmaMapMemory(m_vmaAllocator, stagingMem, &data);
     memcpy(data, vertices.data(), (size_t)vSize);
-    vkUnmapMemory(m_device, stagingMem);
+    vmaUnmapMemory(m_vmaAllocator, stagingMem);
 
     if (m_ghostVertexBuffer != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
-        vkDestroyBuffer(m_device, m_ghostVertexBuffer, nullptr);
-        vkFreeMemory(m_device, m_ghostVertexBufferMemory, nullptr);
-        vkDestroyBuffer(m_device, m_ghostIndexBuffer, nullptr);
-        vkFreeMemory(m_device, m_ghostIndexBufferMemory, nullptr);
+        vmaDestroyBuffer(m_vmaAllocator, m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
+        vmaDestroyBuffer(m_vmaAllocator, m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
     }
 
     if (!CreateBuffer(vSize,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                      m_ghostVertexBuffer, m_ghostVertexBufferMemory)) return;
+                      VMA_MEMORY_USAGE_GPU_ONLY,
+                      m_ghostVertexBuffer, m_ghostVertexBufferAllocation)) return;
 
     CopyBuffer(stagingBuf, m_ghostVertexBuffer, vSize);
-    vkDestroyBuffer(m_device, stagingBuf, nullptr);
-    vkFreeMemory(m_device, stagingMem, nullptr);
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuf, stagingMem);
 
     if (!CreateBuffer(iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      VMA_MEMORY_USAGE_CPU_TO_GPU,
                       stagingBuf, stagingMem)) return;
 
-    vkMapMemory(m_device, stagingMem, 0, iSize, 0, &data);
+    vmaMapMemory(m_vmaAllocator, stagingMem, &data);
     memcpy(data, indices.data(), (size_t)iSize);
-    vkUnmapMemory(m_device, stagingMem);
+    vmaUnmapMemory(m_vmaAllocator, stagingMem);
 
     if (!CreateBuffer(iSize,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                      m_ghostIndexBuffer, m_ghostIndexBufferMemory)) return;
+                      VMA_MEMORY_USAGE_GPU_ONLY,
+                      m_ghostIndexBuffer, m_ghostIndexBufferAllocation)) return;
 
     CopyBuffer(stagingBuf, m_ghostIndexBuffer, iSize);
-    vkDestroyBuffer(m_device, stagingBuf, nullptr);
-    vkFreeMemory(m_device, stagingMem, nullptr);
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuf, stagingMem);
 
     m_ghostIndexCount = (uint32_t)indices.size();
 }
@@ -1392,30 +1521,28 @@ void RenderManager::LoadMobMesh(const std::string& filepath) {
     VoxelMesh newMesh;
 
     // Crea i buffer Vulkan
-    CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, newMesh.vertexBuffer, newMesh.vertexBufferMemory);
-    CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, newMesh.indexBuffer, newMesh.indexBufferMemory);
+    CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.vertexBuffer, newMesh.vertexBufferAllocation);
+    CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer, newMesh.indexBufferAllocation);
 
     VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
+    VmaAllocation stagingBufferMemory;
 
     // Upload Vertices
-    CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
     void* data;
-    vkMapMemory(m_device, stagingBufferMemory, 0, sizeof(vertices[0]) * vertices.size(), 0, &data);
+    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
     memcpy(data, vertices.data(), (size_t)(sizeof(vertices[0]) * vertices.size()));
-    vkUnmapMemory(m_device, stagingBufferMemory);
+    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
     CopyBuffer(stagingBuffer, newMesh.vertexBuffer, sizeof(vertices[0]) * vertices.size());
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
 
     // Upload Indices
-    CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-    vkMapMemory(m_device, stagingBufferMemory, 0, sizeof(indices[0]) * indices.size(), 0, &data);
+    CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
     memcpy(data, indices.data(), (size_t)(sizeof(indices[0]) * indices.size()));
-    vkUnmapMemory(m_device, stagingBufferMemory);
+    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
     CopyBuffer(stagingBuffer, newMesh.indexBuffer, sizeof(indices[0]) * indices.size());
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
 
     newMesh.indexCount = (uint32_t)indices.size();
     
@@ -1434,10 +1561,23 @@ void RenderManager::Shutdown() {
             vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
         }
 
+        if (m_textureSampler != VK_NULL_HANDLE) {
+            vkDestroySampler(m_device, m_textureSampler, nullptr);
+            m_textureSampler = VK_NULL_HANDLE;
+        }
+        if (m_textureImageView != VK_NULL_HANDLE) {
+            vkDestroyImageView(m_device, m_textureImageView, nullptr);
+            m_textureImageView = VK_NULL_HANDLE;
+        }
+        if (m_textureImage != VK_NULL_HANDLE) {
+            vmaDestroyImage(m_vmaAllocator, m_textureImage, m_textureImageAllocation);
+            m_textureImage = VK_NULL_HANDLE;
+            m_textureImageAllocation = VK_NULL_HANDLE;
+        }
+
         // Depth buffer cleanup
         if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
-        if (m_depthImage       != VK_NULL_HANDLE) { vkDestroyImage(m_device, m_depthImage, nullptr);           m_depthImage = VK_NULL_HANDLE; }
-        if (m_depthImageMemory != VK_NULL_HANDLE) { vkFreeMemory(m_device, m_depthImageMemory, nullptr);       m_depthImageMemory = VK_NULL_HANDLE; }
+        if (m_depthImage       != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
 
         if (m_graphicsPipeline != VK_NULL_HANDLE) {
             vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
@@ -1455,8 +1595,7 @@ void RenderManager::Shutdown() {
             vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
             vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
             
-            vkDestroyBuffer(m_device, m_uniformBuffers[i], nullptr);
-            vkFreeMemory(m_device, m_uniformBuffersMemory[i], nullptr);
+            vmaDestroyBuffer(m_vmaAllocator, m_uniformBuffers[i], m_uniformBuffersAllocation[i]);
         }
 
         if (m_descriptorPool != VK_NULL_HANDLE) {
@@ -1483,21 +1622,36 @@ void RenderManager::Shutdown() {
             vkDestroyImageView(m_device, imageView, nullptr);
         }
         for (auto& pair : m_chunkBuffers) {
-            if (pair.second.vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(m_device, pair.second.vertexBuffer, nullptr);
-            if (pair.second.vertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(m_device, pair.second.vertexBufferMemory, nullptr);
-            if (pair.second.indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(m_device, pair.second.indexBuffer, nullptr);
-            if (pair.second.indexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(m_device, pair.second.indexBufferMemory, nullptr);
+            if (pair.second.vertexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_vmaAllocator, pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
+            if (pair.second.indexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_vmaAllocator, pair.second.indexBuffer, pair.second.indexBufferAllocation);
         }
         m_chunkBuffers.clear();
         if (m_ghostVertexBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(m_device, m_ghostVertexBuffer, nullptr);
-            vkFreeMemory(m_device, m_ghostVertexBufferMemory, nullptr);
+            vmaDestroyBuffer(m_vmaAllocator, m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
         }
         if (m_ghostIndexBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(m_device, m_ghostIndexBuffer, nullptr);
-            vkFreeMemory(m_device, m_ghostIndexBufferMemory, nullptr);
+            vmaDestroyBuffer(m_vmaAllocator, m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
         }
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+        
+        if (m_stagingRingBuffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_vmaAllocator, m_stagingRingBuffer, m_stagingAllocation);
+            m_stagingRingBuffer = VK_NULL_HANDLE;
+        }
+        if (m_chunkVmaPool != VK_NULL_HANDLE) {
+            vmaDestroyPool(m_vmaAllocator, m_chunkVmaPool);
+            m_chunkVmaPool = VK_NULL_HANDLE;
+        }
+        if (m_transferCommandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(m_device, m_transferCommandPool, nullptr);
+            m_transferCommandPool = VK_NULL_HANDLE;
+        }
+        if (m_vmaAllocator != VK_NULL_HANDLE) {
+            vmaDestroyAllocator(m_vmaAllocator);
+            m_vmaAllocator = VK_NULL_HANDLE;
+            std::cout << "[VMA] VmaAllocator distrutto." << std::endl;
+        }
+
         vkDestroyDevice(m_device, nullptr);
         m_device = VK_NULL_HANDLE;
     }
@@ -1636,22 +1790,21 @@ void RenderManager::CreateTextureImage() {
     std::vector<uint8_t> pixels(imageSize, 255); // Tutto bianco di default
 
     VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    VmaAllocation stagingBufferMemory;
+    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
 
     void* data;
-    vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &data);
+    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
     memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
-    vkUnmapMemory(m_device, stagingBufferMemory);
+    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
-    CreateImage(texWidth, texHeight, layerCount, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_textureImage, m_textureImageMemory);
+    CreateImage(texWidth, texHeight, layerCount, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_textureImage, m_textureImageAllocation);
 
     TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layerCount);
     CopyBufferToImage(stagingBuffer, m_textureImage, texWidth, texHeight, layerCount);
     TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, layerCount);
 
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
 }
 
 void RenderManager::CreateTextureImageView() {
@@ -1691,7 +1844,7 @@ void RenderManager::CreateTextureSampler() {
     }
 }
 
-void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
+void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage vmaUsage, VkImage& image, VmaAllocation& imageAllocation) {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1707,23 +1860,12 @@ void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerC
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile creare image!");
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = vmaUsage;
+
+    if (vmaCreateImage(m_vmaAllocator, &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
+        throw std::runtime_error("Impossibile allocare memory image con VMA!");
     }
-
-    VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(m_device, image, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
-
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile allocare memory image!");
-    }
-
-    vkBindImageMemory(m_device, image, imageMemory, 0);
 }
 
 VkCommandBuffer RenderManager::BeginSingleTimeCommands() {
@@ -1824,13 +1966,13 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     VkDeviceSize imageSize = width * height * 4;
 
     VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    VmaAllocation stagingBufferMemory;
+    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
 
     void* data;
-    vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &data);
+    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
     memcpy(data, pixelData, static_cast<size_t>(imageSize));
-    vkUnmapMemory(m_device, stagingBufferMemory);
+    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
     // Dobbiamo transizionare il layout prima di poter copiare di nuovo
     TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 10);
@@ -1854,8 +1996,7 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     // Rimettiamo in lettura per lo shader
     TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 10);
 
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
     std::cout << "[VULKAN] Texture Array Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
 }
 
@@ -1906,13 +2047,7 @@ void RenderManager::CleanupSwapchain() {
         m_depthImageView = VK_NULL_HANDLE;
     }
     if (m_depthImage != VK_NULL_HANDLE) {
-        vkDestroyImage(m_device, m_depthImage, nullptr);
-        m_depthImage = VK_NULL_HANDLE;
-    }
-    if (m_depthImageMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(m_device, m_depthImageMemory, nullptr);
-        m_depthImageMemory = VK_NULL_HANDLE;
-    }
+        vmaDestroyImage(m_vmaAllocator, m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
 
     for (auto imageView : m_swapchainImageViews) {
         vkDestroyImageView(m_device, imageView, nullptr);
@@ -1959,4 +2094,35 @@ void RenderManager::RecreateSwapchain() {
     CreateGraphicsPipeline();
 
     std::cout << "[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (" << width << "x" << height << ")" << std::endl;
+}
+
+// ---------------------------------------------------------
+// FASE 5: DEFRAMMENTAZIONE A CALDO (FAST)
+// ---------------------------------------------------------
+void RenderManager::DefragmentVRAM() {
+    if (!m_vmaAllocator || !m_chunkVmaPool) return;
+
+    VmaDefragmentationInfo defragInfo = {};
+    defragInfo.pool = m_chunkVmaPool;
+    defragInfo.flags = VMA_DEFRAGMENTATION_FLAG_ALGORITHM_FAST_BIT;
+    
+    VmaDefragmentationContext defragCtx = VK_NULL_HANDLE;
+    VkResult res = vmaBeginDefragmentation(m_vmaAllocator, &defragInfo, &defragCtx);
+    
+    if (res == VK_SUCCESS) {
+        VmaDefragmentationPassMoveInfo pass = {};
+        res = vmaBeginDefragmentationPass(m_vmaAllocator, defragCtx, &pass);
+        if (res == VK_SUCCESS) {
+            // Approccio "Fast" invisibile:
+            // VMA unira' logicamente lo spazio libero frammentato nei suoi metadati.
+            // Ignoriamo gli spostamenti fisici proposti per non dover distruggere/ricreare i VkBuffer
+            // e non bloccare la GPU durante lo streaming dei chunk.
+            for (uint32_t i = 0; i < pass.moveCount; i++) {
+                pass.pMoves[i].operation = VMA_DEFRAGMENTATION_MOVE_OPERATION_IGNORE;
+            }
+            vmaEndDefragmentationPass(m_vmaAllocator, defragCtx, &pass);
+        }
+        vmaEndDefragmentation(m_vmaAllocator, defragCtx, nullptr);
+        std::cout << "[VMA] DefragmentVRAM() Fast-Pass completato." << std::endl;
+    }
 }

@@ -1,6 +1,7 @@
 #pragma once
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
+#include "vk_mem_alloc.h"
 #include <vector>
 #include <map>
 #include <optional>
@@ -16,9 +17,10 @@ struct BlockDef;
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
+    std::optional<uint32_t> transferFamily;
 
     bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
     }
 };
 
@@ -47,6 +49,10 @@ private:
     VkDevice m_device{ VK_NULL_HANDLE };
     VkQueue m_graphicsQueue{ VK_NULL_HANDLE };
     VkQueue m_presentQueue{ VK_NULL_HANDLE };
+    VkQueue m_transferQueue{ VK_NULL_HANDLE }; // Coda asincrona per i Voxel
+    
+    // --- VMA ---
+    VmaAllocator m_vmaAllocator{ VK_NULL_HANDLE };
     
     VkSurfaceKHR m_surface{ VK_NULL_HANDLE };
     VkSwapchainKHR m_swapchain{ VK_NULL_HANDLE };
@@ -79,7 +85,7 @@ private:
     std::vector<VkDescriptorSet> m_descriptorSets;
 
     std::vector<VkBuffer> m_uniformBuffers;
-    std::vector<VkDeviceMemory> m_uniformBuffersMemory;
+    std::vector<VmaAllocation> m_uniformBuffersAllocation;
     std::vector<void*> m_uniformBuffersMapped; // Puntatori per scrivere direttamente nella RAM
 
     VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
@@ -87,13 +93,13 @@ private:
 
     // --- TEXTURE ARRAY (In-Game Pixel Editor) ---
     VkImage m_textureImage{ VK_NULL_HANDLE };
-    VkDeviceMemory m_textureImageMemory{ VK_NULL_HANDLE };
+    VmaAllocation m_textureImageAllocation{ VK_NULL_HANDLE };
     VkImageView m_textureImageView{ VK_NULL_HANDLE };
     VkSampler m_textureSampler{ VK_NULL_HANDLE };
 
     // --- DEPTH BUFFER (risolve il problema delle facce trasparenti) ---
     VkImage m_depthImage{ VK_NULL_HANDLE };
-    VkDeviceMemory m_depthImageMemory{ VK_NULL_HANDLE };
+    VmaAllocation m_depthImageAllocation{ VK_NULL_HANDLE };
     VkImageView m_depthImageView{ VK_NULL_HANDLE };
 
     bool CreateDepthResources();
@@ -107,12 +113,13 @@ private:
     void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount);
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
-    void CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+    void CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage vmaUsage, VkImage& image, VmaAllocation& imageAllocation);
     
     float m_fov = 45.0f;
 
     void CleanupSwapchain();
     void RecreateSwapchain();
+    void DefragmentVRAM();
     
 public:
     float GetFov() const { return m_fov; }
@@ -126,26 +133,26 @@ public:
     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
     struct VulkanChunkBuffer {
         VkBuffer vertexBuffer{ VK_NULL_HANDLE };
-        VkDeviceMemory vertexBufferMemory{ VK_NULL_HANDLE };
+        VmaAllocation vertexBufferAllocation{ VK_NULL_HANDLE };
         VkBuffer indexBuffer{ VK_NULL_HANDLE };
-        VkDeviceMemory indexBufferMemory{ VK_NULL_HANDLE };
+        VmaAllocation indexBufferAllocation{ VK_NULL_HANDLE };
         uint32_t indexCount{ 0 };
     };
     std::unordered_map<ChunkCoord, VulkanChunkBuffer, ChunkHash> m_chunkBuffers;
 
     // --- VERTEX e INDEX BUFFER (ologrammi AI) ---
     VkBuffer m_ghostVertexBuffer{ VK_NULL_HANDLE };
-    VkDeviceMemory m_ghostVertexBufferMemory{ VK_NULL_HANDLE };
+    VmaAllocation m_ghostVertexBufferAllocation{ VK_NULL_HANDLE };
     VkBuffer m_ghostIndexBuffer{ VK_NULL_HANDLE };
-    VkDeviceMemory m_ghostIndexBufferMemory{ VK_NULL_HANDLE };
+    VmaAllocation m_ghostIndexBufferAllocation{ VK_NULL_HANDLE };
     uint32_t m_ghostIndexCount = 0;
 
     // --- MOB MESH (Dynamic Registry) ---
     struct VoxelMesh {
         VkBuffer vertexBuffer{ VK_NULL_HANDLE };
-        VkDeviceMemory vertexBufferMemory{ VK_NULL_HANDLE };
+        VmaAllocation vertexBufferAllocation{ VK_NULL_HANDLE };
         VkBuffer indexBuffer{ VK_NULL_HANDLE };
-        VkDeviceMemory indexBufferMemory{ VK_NULL_HANDLE };
+        VmaAllocation indexBufferAllocation{ VK_NULL_HANDLE };
         uint32_t indexCount{ 0 };
     };
     std::map<std::string, VoxelMesh> m_mobMeshes;
@@ -154,6 +161,22 @@ public:
     void LoadMobMesh(const std::string& filepath);
 
     VkCommandPool m_commandPool{ VK_NULL_HANDLE };
+    // --- Variabili per il VMA Staging Ring Buffer ---
+    VkBuffer m_stagingRingBuffer{ VK_NULL_HANDLE };
+    VmaAllocation m_stagingAllocation{ VK_NULL_HANDLE };
+    void* m_mappedStagingData = nullptr; // Puntatore fisso alla RAM
+    const uint64_t STAGING_BUFFER_SIZE = 32 * 1024 * 1024; // 32 MB
+    uint64_t m_currentOffset = 0; // Il cursore 'Head'
+    VkCommandBuffer m_transferCommandBuffer{ VK_NULL_HANDLE };
+    VkCommandPool m_transferCommandPool{ VK_NULL_HANDLE };
+    
+    // --- VmaPool dedicato per Chunk ---
+    VmaPool m_chunkVmaPool{ VK_NULL_HANDLE };
+
+    inline uint64_t AlignMemory(uint64_t offset, uint64_t alignment = 256) {
+        return (offset + alignment - 1) & ~(alignment - 1);
+    }
+    void FlushTransferBatch();
 
     // Trasformati in Vettori per supportare i MAX_FRAMES_IN_FLIGHT
     std::vector<VkCommandBuffer> m_commandBuffers;
@@ -204,8 +227,8 @@ public:
 
     // --- VERTEX/INDEX BUFFER ---
     bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                      VkMemoryPropertyFlags properties,
-                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+                      VmaMemoryUsage vmaUsage,
+                      VkBuffer& buffer, VmaAllocation& bufferAllocation, VmaAllocationCreateFlags flags = 0);
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     bool CreateVertexBuffer(const std::vector<Vertex>& vertices);
     bool CreateIndexBuffer(const std::vector<uint32_t>& indices);

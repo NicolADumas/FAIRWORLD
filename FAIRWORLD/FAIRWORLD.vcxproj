@@ -209,6 +209,16 @@
     <ClInclude Include="PhysicsEngine.h" />
     <ClInclude Include="DeskarmWebView.h" />
     <ClInclude Include="EventManager.h" />
+    <ClInclude Include="MemoryMath.h" />
+    <ClInclude Include="IAllocator.h" />
+    <ClInclude Include="LinearAllocator.h" />
+    <ClInclude Include="StackAllocator.h" />
+    <ClInclude Include="PoolAllocator.h" />
+    <ClInclude Include="FreeListAllocator.h" />
+    <ClInclude Include="ProxyAllocator.h" />
+    <ClInclude Include="MemorySystem.h" />
+    <ClInclude Include="MemoryTracking.h" />
+    <ClInclude Include="vk_mem_alloc.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="imgui\imgui.cpp">
@@ -245,6 +255,13 @@
     <ClCompile Include="Editor\ModelEditor.cpp" />
     <ClCompile Include="PhysicsEngine.cpp" />
     <ClCompile Include="DeskarmWebView.cpp" />
+    <ClCompile Include="LinearAllocator.cpp" />
+    <ClCompile Include="StackAllocator.cpp" />
+    <ClCompile Include="PoolAllocator.cpp" />
+    <ClCompile Include="FreeListAllocator.cpp" />
+    <ClCompile Include="ProxyAllocator.cpp" />
+    <ClCompile Include="MemorySystem.cpp" />
+    <ClCompile Include="VmaUsage.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

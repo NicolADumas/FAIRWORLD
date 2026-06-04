@@ -101,6 +101,36 @@
     <ClInclude Include="PhysicsEngine.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="MemoryMath.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="IAllocator.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="LinearAllocator.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="StackAllocator.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="PoolAllocator.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="FreeListAllocator.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="ProxyAllocator.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="MemorySystem.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryTracking.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="vk_mem_alloc.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FAIRWORLD.cpp">
@@ -167,6 +197,27 @@
       <Filter>File di origine</Filter>
     </ClCompile>
     <ClCompile Include="PhysicsEngine.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="LinearAllocator.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="StackAllocator.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="PoolAllocator.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="FreeListAllocator.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="ProxyAllocator.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="MemorySystem.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="VmaUsage.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>
