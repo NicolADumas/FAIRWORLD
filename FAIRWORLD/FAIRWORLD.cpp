@@ -257,21 +257,23 @@ bool FairWorldEngine::Init() {
     return true;
 }
 
+void FairWorldEngine::PollHardwareEvents() {
+    if (m_isVrMode) {
+        // Gestisci gli eventi del visore
+        m_xrManager->PollEvents(m_isRunning);
+    } else {
+        // Gestisci gli eventi della finestra desktop
+        if (!m_windowManager->PollEvents()) {
+            m_isRunning = false;
+        }
+    }
+}
+
 void FairWorldEngine::Run() {
     auto lastTime = std::chrono::high_resolution_clock::now();
 
     while (m_isRunning) {
-        if (m_isVrMode) {
-            // Gestisci gli eventi del visore
-            m_xrManager->PollEvents(m_isRunning);
-        } else {
-            // Gestisci gli eventi della finestra desktop (es. la crocetta per chiudere)
-            if (!m_windowManager->PollEvents()) {
-                m_isRunning = false;
-                break;
-            }
-        }
-
+        PollHardwareEvents();
         if (!m_isRunning) break;
 
         // Calcola il Delta Time

@@ -26,6 +26,21 @@
     <ClInclude Include="FAIRWORLD.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="SharedContext.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="State.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="StateManager.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="HubState.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="PlayState.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
     <ClInclude Include="pch.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
@@ -134,6 +149,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FAIRWORLD.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+
+    <ClCompile Include="HubState.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="PlayState.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
     <ClCompile Include="pch.cpp">

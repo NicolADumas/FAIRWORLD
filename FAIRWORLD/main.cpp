@@ -1,8 +1,12 @@
 #include "pch.h"
 #include "FAIRWORLD.h"
 #include <iostream>
-
 #include <windows.h>
+#include <chrono>
+
+#include "SharedContext.h"
+#include "StateManager.h"
+#include "HubState.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -36,25 +40,60 @@ void StopAIServer() {
 
 int main() {
     std::cout << "==========================================\n";
-    std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE      \n";
+    std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE V2   \n";
     std::cout << "==========================================\n\n";
 
     StartAIServer();
 
+    // 1. Inizializza il VERO motore grafico (Incapsulato come Servitore)
     FairWorldEngine engine;
-
-    if (engine.Init()) {
-        std::cout << "\n[SYSTEM] Motore avviato. Entro nel loop principale...\n";
-        
-        // Esegue il programma finché non chiudi la finestra o il visore
-        engine.Run(); 
-        
-        std::cout << "[SYSTEM] Chiusura del motore completata.\n";
-    } else {
-        std::cerr << "\n[ERROR] Errore critico durante l'inizializzazione." << std::endl;
-        std::cin.get();
+    if (!engine.Init()) {
+        std::cerr << "\n[ERROR] Errore critico durante l'inizializzazione grafica." << std::endl;
+        StopAIServer();
+        return -1;
     }
 
+    // 2. Istanzia Context e StateManager
+    SharedContext context;
+    StateManager stateManager;
+    context.stateManager = &stateManager;
+    context.engine = &engine; // SharedContext come osservatore non-owning
+
+    // 3. Bootstrap (Isolamento Memoria)
+    stateManager.ChangeState(std::make_unique<HubState>(&context));
+
+    std::cout << "\n[SYSTEM] Entro nel main loop guidato dalla State Machine...\n";
+
+    // Setup Real Timing
+    auto lastTime = std::chrono::high_resolution_clock::now();
+
+    // 4. Main Loop
+    while (context.engine->IsRunning()) {
+        
+        // Polling hardware (Finestra o VR)
+        context.engine->PollHardwareEvents();
+
+        // Calcolo Real Timing Delta (dt)
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float dt = std::chrono::duration<float>(currentTime - lastTime).count();
+        lastTime = currentTime;
+
+        // A. Transizioni (Distrugge vecchi stati prima di inizializzare i nuovi)
+        stateManager.ProcessTransitions();
+
+        if (!stateManager.IsRunning()) {
+            break; 
+        }
+
+        // B. Update Data-Driven (che a sua volta pilota l'Update dell'Engine)
+        stateManager.Update(dt);
+        
+        // C. Render Hardware (che a sua volta pilota il Render dell'Engine)
+        stateManager.Render();
+    }
+
+    std::cout << "[SYSTEM] Chiusura del motore completata.\n";
+    engine.Shutdown();
     StopAIServer();
     return 0;
 }

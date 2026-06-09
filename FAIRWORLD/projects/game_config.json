@@ -1,0 +1,20 @@
+{
+    "entities": [
+        {
+            "name": "Player",
+            "transform": {
+                "x": 0.0,
+                "y": 30.0,
+                "z": 0.0
+            }
+        },
+        {
+            "name": "SpawnPoint",
+            "transform": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 10.0
+            }
+        }
+    ]
+}

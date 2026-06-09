@@ -8,7 +8,7 @@
 #define VMA_IMPLEMENTATION
 
 // Indichiamo a VMA che stiamo usando Vulkan 1.3
-#define VMA_VULKAN_VERSION 1003000
+#define VMA_VULKAN_VERSION 1001000
 
 // Includiamo l'header gigante scaricato
 #include "vk_mem_alloc.h"

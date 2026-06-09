@@ -43,7 +43,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     allocatorInfo.physicalDevice = m_physicalDevice;
     allocatorInfo.device = m_device;
     allocatorInfo.instance = m_instance;
-    allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+    allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_1;
     if (vmaCreateAllocator(&allocatorInfo, &m_vmaAllocator) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile inizializzare VmaAllocator!" << std::endl;
         return false;
@@ -196,7 +196,7 @@ bool RenderManager::CreateVulkanInstance(XrManager* xrManager) {
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "FAIRWORLD";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_3; // Usiamo Vulkan 1.3, lo standard moderno
+    appInfo.apiVersion = VK_API_VERSION_1_1; // Usiamo Vulkan 1.1 per massima compatibilita
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -623,7 +623,7 @@ bool RenderManager::CreateDescriptorSetLayout() {
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Accessibile solo dal Vertex Shader
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT; // Accessibile da Vertex e Fragment Shader
 
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
@@ -1945,20 +1945,26 @@ void RenderManager::TransitionImageLayout(VkImage image, VkFormat format, VkImag
 void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount) {
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
+    std::vector<VkBufferImageCopy> regions;
+    VkDeviceSize layerSize = width * height * 4; // 4 bytes per pixel (RGBA)
 
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = layerCount;
+    for (uint32_t i = 0; i < layerCount; i++) {
+        VkBufferImageCopy region{};
+        region.bufferOffset = i * layerSize;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
 
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {width, height, 1};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = i;
+        region.imageSubresource.layerCount = 1;
 
-    vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {width, height, 1};
+        regions.push_back(region);
+    }
+
+    vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(regions.size()), regions.data());
     EndSingleTimeCommands(commandBuffer);
 }
 

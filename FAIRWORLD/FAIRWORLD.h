@@ -59,12 +59,18 @@ public:
     void Run();
     void Shutdown();
 
+    // Nuovi metodi per la State Machine Data-Driven (Fase 1.3)
+    GameState GetCurrentState() const { return m_current; }
+    bool IsRunning() const { return m_isRunning; }
+    void PollHardwareEvents();
+
     bool isWorldRunning() const;
     bool isEditorOpen() const;
 
-private:
     bool Update(float deltaTime);
     void Render();
+
+private:
     std::string GetSlotName(int slotIndex);
     void ProcessAIMessage(const std::string& input);
 
