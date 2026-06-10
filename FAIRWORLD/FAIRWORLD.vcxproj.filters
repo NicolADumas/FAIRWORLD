@@ -26,6 +26,9 @@
     <ClInclude Include="FAIRWORLD.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="DeviceManager.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
     <ClInclude Include="SharedContext.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
@@ -151,7 +154,9 @@
     <ClCompile Include="FAIRWORLD.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-
+    <ClCompile Include="DeviceManager.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
     <ClCompile Include="HubState.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>

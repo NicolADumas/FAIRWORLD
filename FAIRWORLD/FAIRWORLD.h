@@ -49,6 +49,7 @@ enum class GameState {
 class XrManager;
 class RenderManager;
 class WindowManager;
+struct SharedContext;
 
 class FAIRWORLD_API FairWorldEngine {
 public:
@@ -68,7 +69,15 @@ public:
     bool isEditorOpen() const;
 
     bool Update(float deltaTime);
+    
+    // Gestione ImGui disaccoppiata per il Sistema Operativo (HubState)
+    void BeginUIFrame();
+    void EndUIFrame();
+    
     void Render();
+
+    // Collega il Bus Dati dell'OS al motore (chiamato dal main prima del loop)
+    void SetSharedContext(SharedContext* ctx) { m_sharedContext = ctx; }
 
 private:
     std::string GetSlotName(int slotIndex);
@@ -164,4 +173,7 @@ private:
     std::unique_ptr<XrManager>     m_xrManager;
     std::unique_ptr<RenderManager> m_renderManager;
     std::unique_ptr<WindowManager> m_windowManager;
+
+    // Puntatore al Bus Dati dell'OS (non owning, vita gestita da main)
+    SharedContext* m_sharedContext = nullptr;
 };

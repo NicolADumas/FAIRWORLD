@@ -190,6 +190,8 @@
     <ClInclude Include="AssetManager.h" />
     <ClInclude Include="EditorPanel.h" />
     <ClInclude Include="FAIRWORLD.h" />
+    <ClInclude Include="DeviceManager.h" />
+    <ClInclude Include="InputTypes.h" />
     <ClInclude Include="SharedContext.h" />
     <ClInclude Include="State.h" />
     <ClInclude Include="StateManager.h" />
@@ -247,6 +249,8 @@
     <ClCompile Include="AssetManager.cpp" />
     <ClCompile Include="EditorPanel.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="DeviceManager.cpp" />
+    <ClCompile Include="SharedContext.cpp" />
     <ClCompile Include="HubState.cpp" />
     <ClCompile Include="PlayState.cpp" />
     <ClCompile Include="FAIRWORLD.cpp" />

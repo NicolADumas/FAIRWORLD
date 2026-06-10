@@ -7,6 +7,7 @@
 #include "SharedContext.h"
 #include "StateManager.h"
 #include "HubState.h"
+#include "DeviceManager.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -62,7 +63,12 @@ int main() {
     // 3. Bootstrap (Isolamento Memoria)
     stateManager.ChangeState(std::make_unique<HubState>(&context));
 
+    // 4. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
+    engine.SetSharedContext(&context);
+
     std::cout << "\n[SYSTEM] Entro nel main loop guidato dalla State Machine...\n";
+
+    DeviceManager deviceManager; // Il nostro Demone hardware
 
     // Setup Real Timing
     auto lastTime = std::chrono::high_resolution_clock::now();
@@ -72,6 +78,9 @@ int main() {
         
         // Polling hardware (Finestra o VR)
         context.engine->PollHardwareEvents();
+
+        // 1. IL DEMONE AGGIORNA IL BUS HARDWARE
+        deviceManager.Update(&context);
 
         // Calcolo Real Timing Delta (dt)
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -89,7 +98,9 @@ int main() {
         stateManager.Update(dt);
         
         // C. Render Hardware (che a sua volta pilota il Render dell'Engine)
+        context.engine->BeginUIFrame();
         stateManager.Render();
+        context.engine->EndUIFrame();
     }
 
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";

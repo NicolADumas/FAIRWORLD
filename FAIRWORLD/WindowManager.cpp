@@ -10,7 +10,14 @@ LRESULT CALLBACK WindowManager::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam))
         return true;
 
+    WindowManager* wm = reinterpret_cast<WindowManager*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
     switch (uMsg) {
+        case WM_SIZE:
+            if (wParam != SIZE_MINIMIZED && wm) {
+                wm->SetResizeFlag();
+            }
+            return 0;
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
@@ -42,6 +49,8 @@ bool WindowManager::Init(int width, int height, const std::string& title) {
     if (m_hwnd == nullptr) {
         return false;
     }
+
+    SetWindowLongPtr(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
     ShowWindow(m_hwnd, SW_SHOW);
     std::cout << "[SYSTEM] Finestra Desktop creata con successo." << std::endl;

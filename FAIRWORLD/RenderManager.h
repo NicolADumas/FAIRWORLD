@@ -39,6 +39,9 @@ public:
     VkInstance GetVulkanInstance() const { return m_instance; }
     VkPhysicalDevice GetPhysicalDevice() const { return m_physicalDevice; }
 
+    // Notifica che la finestra è stata ridimensionata: ricrea la Swapchain
+    void NotifyResize() { RecreateSwapchain(); }
+
 private:
     bool m_isVRMode;
     void* m_hwnd{ nullptr };

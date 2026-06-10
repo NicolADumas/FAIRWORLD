@@ -16,7 +16,9 @@
 #include <filesystem>
 #include <fstream>
 #include "json.hpp"
+#include "SharedContext.h"
 
+using namespace entt::literals;
 using json = nlohmann::json;
 
 std::string FairWorldEngine::GetSlotName(int slotIndex) {
@@ -357,9 +359,10 @@ bool FairWorldEngine::Update(float deltaTime) {
     hWasDown = hDown;
     
     
-    // --- ESC: apre/chiude il menu di pausa ---
+    // --- ESC / START: apre/chiude il menu di pausa ---
     static bool escWasDownEngine = false;
-    bool escDownEngine = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+    bool escDownEngine = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0
+                      || fw::IsActionActive("PAUSE"_hs, m_sharedContext);
     if (escDownEngine && !escWasDownEngine) {
         if (m_current == GameState::PLAYING) {
             transitionTo(GameState::PAUSE_MENU);
@@ -435,10 +438,30 @@ bool FairWorldEngine::Update(float deltaTime) {
         glm::vec3 flatRight = glm::normalize(glm::vec3(m_camera.Right.x, 0.0f, m_camera.Right.z));
         glm::vec3 moveDir(0.0f);
 
-        if (GetAsyncKeyState('W') & 0x8000) moveDir += flatFront;
-        if (GetAsyncKeyState('S') & 0x8000) moveDir -= flatFront;
-        if (GetAsyncKeyState('A') & 0x8000) moveDir -= flatRight;
-        if (GetAsyncKeyState('D') & 0x8000) moveDir += flatRight;
+        // === ACTION MAPPING: Tastiera e Gamepad tramite il Bus Dati ===
+        if (m_sharedContext) {
+            // Movimento digitale (WASD o D-Pad)
+            if (fw::IsActionActive("MOVE_FORWARD"_hs,  m_sharedContext)) moveDir += flatFront;
+            if (fw::IsActionActive("MOVE_BACKWARD"_hs, m_sharedContext)) moveDir -= flatFront;
+            if (fw::IsActionActive("MOVE_LEFT"_hs,     m_sharedContext)) moveDir -= flatRight;
+            if (fw::IsActionActive("MOVE_RIGHT"_hs,    m_sharedContext)) moveDir += flatRight;
+
+            // Analogico sinistro del controller (se connesso)
+            if (m_sharedContext->isGamepadConnected) {
+                float lx = m_sharedContext->gamepadInput.leftThumbX;
+                float ly = m_sharedContext->gamepadInput.leftThumbY;
+                if (fabsf(lx) > 0.1f || fabsf(ly) > 0.1f) {
+                    moveDir += flatFront * ly;
+                    moveDir += flatRight * lx;
+                }
+            }
+        } else {
+            // Fallback legacy (senza SharedContext collegato)
+            if (GetAsyncKeyState('W') & 0x8000) moveDir += flatFront;
+            if (GetAsyncKeyState('S') & 0x8000) moveDir -= flatFront;
+            if (GetAsyncKeyState('A') & 0x8000) moveDir -= flatRight;
+            if (GetAsyncKeyState('D') & 0x8000) moveDir += flatRight;
+        }
 
         float hLen = glm::length(moveDir);
         if (hLen > 0.0f) moveDir = (moveDir / hLen);
@@ -448,8 +471,10 @@ bool FairWorldEngine::Update(float deltaTime) {
         // Modalita' Dev (Volo) vs Play (Fisica Reale)
         if (m_gameMode == GameMode::Dev) {
             m_playerBody.velocity = targetVelocity;
-            if (GetAsyncKeyState(VK_SPACE) & 0x8000) m_playerBody.velocity.y = m_camera.MovementSpeed;
-            if (GetAsyncKeyState(VK_SHIFT) & 0x8000) m_playerBody.velocity.y = -m_camera.MovementSpeed;
+            if (fw::IsActionActive("JUMP"_hs, m_sharedContext))
+                m_playerBody.velocity.y = m_camera.MovementSpeed;
+            if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+                m_playerBody.velocity.y = -m_camera.MovementSpeed;
             m_playerBody.position += m_playerBody.velocity * deltaTime;
             m_playerBody.isGrounded = false;
         } else {
@@ -473,11 +498,13 @@ bool FairWorldEngine::Update(float deltaTime) {
                 // In acqua il movimento orizzontale è rallentato
                 m_playerBody.velocity.x *= 0.5f;
                 m_playerBody.velocity.z *= 0.5f;
-                if (GetAsyncKeyState(VK_SPACE) & 0x8000) m_playerBody.velocity.y = 4.0f;
-                else if (GetAsyncKeyState(VK_SHIFT) & 0x8000) m_playerBody.velocity.y = -4.0f;
+                if (fw::IsActionActive("JUMP"_hs, m_sharedContext))
+                    m_playerBody.velocity.y = 4.0f;
+                else if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+                    m_playerBody.velocity.y = -4.0f;
             } else {
                 // Salto (impulso istantaneo di velocità verticale)
-                if (m_playerBody.isGrounded && (GetAsyncKeyState(VK_SPACE) & 0x8000)) {
+                if (m_playerBody.isGrounded && fw::IsActionActive("JUMP"_hs, m_sharedContext)) {
                     m_playerBody.velocity.y = 7.0f; 
                 }
             }
@@ -527,9 +554,10 @@ bool FairWorldEngine::Update(float deltaTime) {
     // --- SISTEMA FPS: CURSORE LOCK + ROTAZIONE MOUSE ---
     // =======================================================
 
-    // Escape: sblocca il cursore (torna al menu / libera il mouse)
+    // Escape: sblocca il cursore
     {
-        bool escDown = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+        bool escDown = fw::IsActionActive("PAUSE"_hs, m_sharedContext)
+                    || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
         if (escDown && !m_escWasDown) {
             m_cursorLocked = false;
         }
@@ -546,7 +574,12 @@ bool FairWorldEngine::Update(float deltaTime) {
         bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         if (lDown && !m_lButtonWasDown) {
             m_cursorLocked = true;
-            m_firstMouse = true; // Resetta per evitare salto al primo frame
+            m_firstMouse = true;
+        }
+        // Auto-lock quando il gamepad è connesso e si è in modalità gioco
+        if (m_sharedContext && m_sharedContext->isGamepadConnected && m_current == GameState::PLAYING) {
+            m_cursorLocked = true;
+            m_firstMouse = true;
         }
     }
 
@@ -564,8 +597,15 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // --- ROTAZIONE MOUSE FPS ---
     if (!io.WantCaptureMouse) {
+        // Legge mouse fisico (per desktop)
         bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         bool rDown = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+
+        // Sovrascrittura tramite Action Map (gamepad trigger R=distruggi, L=piazza)
+        if (m_sharedContext) {
+            if (fw::IsActionActive("DESTROY_BLOCK"_hs, m_sharedContext)) rDown = true;
+            if (fw::IsActionActive("PLACE_BLOCK"_hs,   m_sharedContext)) lDown = true;
+        }
 
         if (m_cursorLocked) {
             // Calcola il centro della finestra in coordinate schermo
@@ -597,6 +637,18 @@ bool FairWorldEngine::Update(float deltaTime) {
             m_firstMouse = true;
         }
 
+        // Analogico destro del controller: rotazione camera
+        // Funziona sempre quando il gamepad è connesso, indipendentemente da m_cursorLocked
+        if (m_sharedContext && m_sharedContext->isGamepadConnected) {
+            float rx = m_sharedContext->gamepadInput.rightThumbX;
+            float ry = m_sharedContext->gamepadInput.rightThumbY;
+            float padSens = 150.0f * deltaTime;
+            if (fabsf(rx) > 0.1f || fabsf(ry) > 0.1f) {
+                m_camera.ProcessMouseMovement(rx * padSens, ry * padSens);
+                m_firstMouse = false;
+            }
+        }
+
         // Freccette: rotazione alternativa (sempre attive)
         float rs = 100.0f * deltaTime;
         if (GetAsyncKeyState(VK_UP)    & 0x8000) m_camera.ProcessMouseMovement(0.0f,  rs);
@@ -605,7 +657,7 @@ bool FairWorldEngine::Update(float deltaTime) {
         if (GetAsyncKeyState(VK_RIGHT) & 0x8000) m_camera.ProcessMouseMovement( rs,  0.0f);
 
         // --- PIAZZAMENTO / RIMOZIONE BLOCCHI (solo con cursore bloccato) ---
-        // Ottieni lo stato dei tasti prima che la logica lo consumi
+        // lDown/rDown già aggiornati sopra con l'Action Map del controller
         bool placeBlock  = m_cursorLocked && (!m_lButtonWasDown && lDown);
         bool breakBlock  = m_cursorLocked && (!m_rButtonWasDown && rDown);
         bool holdingBreak = m_cursorLocked && rDown;  // Tenuto premuto (per mining progressivo)
@@ -919,18 +971,24 @@ bool FairWorldEngine::Update(float deltaTime) {
     return true;
 }
 
-void FairWorldEngine::Render() {
+void FairWorldEngine::BeginUIFrame() {
     if (m_isVrMode) {
-        // Logica VR con OpenXR (Fase 4)
-        if (!m_xrManager->BeginFrame()) return;
-        // m_renderManager->RenderStereo(m_xrManager.get()); // Lo faremo in seguito
-        m_xrManager->EndFrame();
+        // Logica VR con OpenXR
+        m_xrManager->BeginFrame();
     } else {
-        // FINALMENTE DISEGNAMO SU DESKTOP!
-        
+        if (m_windowManager->WasWindowResized()) {
+            m_renderManager->NotifyResize();
+            m_windowManager->ResetResizeFlag();
+        }
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+    }
+}
+
+void FairWorldEngine::Render() {
+    if (!m_isVrMode) {
+        // FINALMENTE DISEGNAMO SU DESKTOP!
 
         // --- RENDER MENU & TAB ---
         switch (m_current) {
@@ -1605,8 +1663,15 @@ void FairWorldEngine::Render() {
             }
         }
 
-        ImGui::Render();
+        // m_renderManager->RenderDesktop(...) was here
+    }
+}
 
+void FairWorldEngine::EndUIFrame() {
+    if (m_isVrMode) {
+        m_xrManager->EndFrame();
+    } else {
+        ImGui::Render();
         m_renderManager->RenderDesktop(m_camera.GetViewMatrix(), m_world.GetSkyColor(), &m_assets, &m_mobManager, &m_player);
     }
 }

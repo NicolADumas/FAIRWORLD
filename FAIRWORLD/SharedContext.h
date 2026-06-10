@@ -1,16 +1,97 @@
 #pragma once
 #include <string>
+#include <unordered_map>
+#include <vector>
+#include "InputTypes.h"
+#include "entt/entt.hpp"
 
-// Forward declaration per l'handle della finestra (Win32)
+// Forward declarations
 struct HWND__;
 using WindowHandle = HWND__*;
-
 class StateManager;
 class FairWorldEngine;
 
-struct SharedContext {
-    WindowHandle window = nullptr;
-    StateManager* stateManager = nullptr;
-    FairWorldEngine* engine = nullptr;
-    std::string targetGameJsonPath;
+// Struttura dati per il monitoraggio delle onde cerebrali (BCI)
+struct BciData {
+    float alpha = 0.0f;
+    float beta  = 0.0f;
+    float gamma = 0.0f;
+    float theta = 0.0f;
 };
+
+// === TIPI DEL NAMESPACE fw (solo quelli che NON dipendono da SharedContext) ===
+namespace fw {
+    // Associazione tra un'azione logica e i suoi tasti fisici (es: W + Shift)
+    struct ActionBinding {
+        InputID primaryKey;
+        InputID modifierKey = InputID::NONE; // NONE = nessun modificatore richiesto
+    };
+
+    // Il registro di tutte le associazioni azione -> tasti
+    struct ActionMap {
+        std::unordered_map<entt::id_type, std::vector<ActionBinding>> bindings;
+
+        // Stato per la UI "Premi un tasto" nell'HubState
+        bool isListening = false;
+        entt::id_type actionBeingMapped = 0;
+    };
+}
+
+// === IL BUS GLOBALE DELL'OS ===
+// Definito prima di IsActionActive perché quella funzione lo referenzia
+struct SharedContext {
+    // --- SISTEMA CORE ---
+    WindowHandle window         = nullptr;
+    StateManager* stateManager  = nullptr;
+    FairWorldEngine* engine     = nullptr;
+
+    // --- BUS DATI (LA CARTUCCIA) ---
+    std::string targetGameJsonPath;
+
+    // 1. MODULO VR (OpenXR)
+    bool isVrSupported    = false;
+    bool isVrActive       = false;
+    void* xrSessionHandle = nullptr;
+
+    // 2. MODULO ROBOTICA / SERIALE (DESKARM)
+    void* serialPortHandle     = nullptr;
+    bool isSerialConnected     = false;
+    std::string serialPortName = "COM3";
+
+    // 3. MODULO NEURALE / NETWORK SOCKET (BCI)
+    unsigned __int64 bciSocket = 0xFFFFFFFFFFFFFFFFULL; // INVALID_SOCKET
+    bool isBciConnected        = false;
+    BciData neuralInput;
+
+    // 4. MODULO GAMEPAD / CONTROLLER (XInput)
+    // Tipi base, niente <xinput.h> in questo header
+    struct GamepadData {
+        float leftThumbX   = 0.0f;
+        float leftThumbY   = 0.0f;
+        float rightThumbX  = 0.0f;
+        float rightThumbY  = 0.0f;
+        float leftTrigger  = 0.0f;
+        float rightTrigger = 0.0f;
+        unsigned short buttons = 0; // Bitmask XInput grezzo
+        // Bottoni decodificati (popolati da DeviceManager ogni frame)
+        bool buttonA = false; bool buttonB = false;
+        bool buttonX = false; bool buttonY = false;
+        bool bumperLeft  = false; bool bumperRight  = false;
+        bool thumbLeft   = false; bool thumbRight   = false;
+        bool buttonStart = false; bool buttonSelect = false;
+        bool dpadUp   = false; bool dpadDown  = false;
+        bool dpadLeft = false; bool dpadRight = false;
+    };
+    bool isGamepadConnected = false;
+    int  gamepadIndex       = -1;
+    GamepadData gamepadInput;
+
+    // 5. MODULO INPUT LOGICO (Action Mapping)
+    fw::ActionMap actionMap;
+};
+
+// === HELPER DEL NAMESPACE fw (dichiarato DOPO SharedContext, che ora è completo) ===
+namespace fw {
+    // Interroga il bus input a costo zero tramite hash a compile-time
+    bool IsActionActive(entt::id_type actionHash, SharedContext* ctx);
+}
