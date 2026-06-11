@@ -68,40 +68,46 @@ int main() {
 
     std::cout << "\n[SYSTEM] Entro nel main loop guidato dalla State Machine...\n";
 
-    DeviceManager deviceManager; // Il nostro Demone hardware
+// Setup Real Timing
+auto lastTime = std::chrono::high_resolution_clock::now();
+const float FIXED_DT = 1.0f / 60.0f; // 60 updates per second
+float accumulator = 0.0f;
+DeviceManager deviceManager;
 
-    // Setup Real Timing
-    auto lastTime = std::chrono::high_resolution_clock::now();
+while (context.engine->IsRunning()) {
+    // Poll hardware (window or VR)
+    context.engine->PollHardwareEvents();
 
-    // 4. Main Loop
-    while (context.engine->IsRunning()) {
-        
-        // Polling hardware (Finestra o VR)
-        context.engine->PollHardwareEvents();
+    // Update hardware bus
+    deviceManager.Update(&context);
 
-        // 1. IL DEMONE AGGIORNA IL BUS HARDWARE
-        deviceManager.Update(&context);
+    // Calculate frame time
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float frameTime = std::chrono::duration<float>(currentTime - lastTime).count();
+    lastTime = currentTime;
+    // Clamp to avoid spiral of death
+    if (frameTime > 0.25f) frameTime = 0.25f;
+    accumulator += frameTime;
 
-        // Calcolo Real Timing Delta (dt)
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float dt = std::chrono::duration<float>(currentTime - lastTime).count();
-        lastTime = currentTime;
-
-        // A. Transizioni (Distrugge vecchi stati prima di inizializzare i nuovi)
+    // Fixed‑timestep updates
+    while (accumulator >= FIXED_DT) {
+        // Process state transitions
         stateManager.ProcessTransitions();
-
         if (!stateManager.IsRunning()) {
-            break; 
+            // Exit main loop cleanly
+            accumulator = 0.0f;
+            break;
         }
-
-        // B. Update Data-Driven (che a sua volta pilota l'Update dell'Engine)
-        stateManager.Update(dt);
-        
-        // C. Render Hardware (che a sua volta pilota il Render dell'Engine)
-        context.engine->BeginUIFrame();
-        stateManager.Render();
-        context.engine->EndUIFrame();
+        // Update game logic with fixed dt
+        stateManager.Update(FIXED_DT);
+        accumulator -= FIXED_DT;
     }
+
+    // Rendering (V‑Sync limits the rate)
+    context.engine->BeginUIFrame();
+    stateManager.Render();
+    context.engine->EndUIFrame();
+}
 
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";
     engine.Shutdown();

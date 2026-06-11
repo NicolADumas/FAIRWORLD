@@ -81,4 +81,96 @@ namespace fw {
         }
         return false;
     }
+
+    const char* InputIDToString(InputID key) {
+        switch (key) {
+            case InputID::NONE: return "NESSUNO";
+            case InputID::MOUSE_LEFT: return "Click Sinistro";
+            case InputID::MOUSE_RIGHT: return "Click Destro";
+            case InputID::MOUSE_MIDDLE: return "Click Centrale";
+            case InputID::KEY_W: return "W";
+            case InputID::KEY_A: return "A";
+            case InputID::KEY_S: return "S";
+            case InputID::KEY_D: return "D";
+            case InputID::KEY_SPACE: return "Spazio";
+            case InputID::KEY_ESC: return "Esc";
+            case InputID::KEY_ENTER: return "Invio";
+            case InputID::KEY_SHIFT: return "Shift";
+            case InputID::KEY_CTRL: return "Ctrl";
+            case InputID::KEY_ALT: return "Alt";
+            case InputID::KEY_UP: return "Freccia Su";
+            case InputID::KEY_DOWN: return "Freccia Giu";
+            case InputID::KEY_LEFT: return "Freccia Sx";
+            case InputID::KEY_RIGHT: return "Freccia Dx";
+            
+            case InputID::PAD_FACE_DOWN: return "A / Croce";
+            case InputID::PAD_FACE_RIGHT: return "B / Cerchio";
+            case InputID::PAD_FACE_LEFT: return "X / Quadrato";
+            case InputID::PAD_FACE_UP: return "Y / Triangolo";
+            case InputID::PAD_TRIGGER_L: return "Grilletto Sinistro";
+            case InputID::PAD_TRIGGER_R: return "Grilletto Destro";
+            case InputID::PAD_BUMPER_L: return "Dorsale Sinistro";
+            case InputID::PAD_BUMPER_R: return "Dorsale Destro";
+            case InputID::PAD_DPAD_UP: return "D-PAD Su";
+            case InputID::PAD_DPAD_DOWN: return "D-PAD Giu";
+            case InputID::PAD_DPAD_LEFT: return "D-PAD Sx";
+            case InputID::PAD_DPAD_RIGHT: return "D-PAD Dx";
+            case InputID::PAD_THUMB_L: return "Analogico L3";
+            case InputID::PAD_THUMB_R: return "Analogico R3";
+            case InputID::PAD_START: return "Start";
+            case InputID::PAD_SELECT: return "Select";
+            default: return "?";
+        }
+    }
+
+    InputID GetFirstPressedKey(SharedContext* ctx, bool checkForGamepad) {
+        // Range di chiavi da controllare in base alla modalità
+        int start = checkForGamepad ? (int)InputID::PAD_FACE_DOWN : (int)InputID::MOUSE_LEFT;
+        int end   = checkForGamepad ? (int)InputID::PAD_SELECT + 1 : (int)InputID::KEY_RIGHT + 1;
+
+        for (int i = start; i < end; ++i) {
+            InputID key = (InputID)i;
+            if (IsPhysicalKeyPressed(key, ctx)) {
+                return key;
+            }
+        }
+        return InputID::NONE;
+    }
+
+    void InitDefaultBindings(SharedContext* ctx) {
+        if (!ctx) return;
+        if (!ctx->actionMap.bindings.empty()) return; // Già inizializzato
+
+        // MOVE_FORWARD
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_FORWARD")].push_back({InputID::KEY_W, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_FORWARD")].push_back({InputID::PAD_DPAD_UP, InputID::NONE});
+
+        // MOVE_BACKWARD
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_BACKWARD")].push_back({InputID::KEY_S, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_BACKWARD")].push_back({InputID::PAD_DPAD_DOWN, InputID::NONE});
+
+        // MOVE_LEFT
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_LEFT")].push_back({InputID::KEY_A, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_LEFT")].push_back({InputID::PAD_DPAD_LEFT, InputID::NONE});
+
+        // MOVE_RIGHT
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_RIGHT")].push_back({InputID::KEY_D, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("MOVE_RIGHT")].push_back({InputID::PAD_DPAD_RIGHT, InputID::NONE});
+
+        // JUMP
+        ctx->actionMap.bindings[entt::hashed_string("JUMP")].push_back({InputID::KEY_SPACE, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("JUMP")].push_back({InputID::PAD_FACE_DOWN, InputID::NONE});
+
+        // DESTROY_BLOCK
+        ctx->actionMap.bindings[entt::hashed_string("DESTROY_BLOCK")].push_back({InputID::MOUSE_RIGHT, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("DESTROY_BLOCK")].push_back({InputID::PAD_TRIGGER_R, InputID::NONE});
+
+        // PLACE_BLOCK
+        ctx->actionMap.bindings[entt::hashed_string("PLACE_BLOCK")].push_back({InputID::MOUSE_LEFT, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("PLACE_BLOCK")].push_back({InputID::PAD_TRIGGER_L, InputID::NONE});
+
+        // PAUSE
+        ctx->actionMap.bindings[entt::hashed_string("PAUSE")].push_back({InputID::KEY_ESC, InputID::NONE});
+        ctx->actionMap.bindings[entt::hashed_string("PAUSE")].push_back({InputID::PAD_START, InputID::NONE});
+    }
 }

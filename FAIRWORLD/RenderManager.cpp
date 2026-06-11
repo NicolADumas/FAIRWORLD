@@ -1277,6 +1277,10 @@ void RenderManager::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
 void RenderManager::DestroyChunkBuffer(ChunkCoord coord) {
     auto it = m_chunkBuffers.find(coord);
     if (it != m_chunkBuffers.end()) {
+        // [FIX] Flush the transfer batch FIRST, because the OLD buffer might have just been created 
+        // and recorded in the current transfer batch (if Update() ran multiple times this frame).
+        FlushTransferBatch();
+
         vkDeviceWaitIdle(m_device);
         if (it->second.vertexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_vmaAllocator, it->second.vertexBuffer, it->second.vertexBufferAllocation); }
         if (it->second.indexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_vmaAllocator, it->second.indexBuffer, it->second.indexBufferAllocation); }
@@ -1328,7 +1332,11 @@ void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>&
     VmaAllocationCreateInfo vbAllocInfo = {};
     vbAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     vbAllocInfo.pool = m_chunkVmaPool; // Use the chunk pool!
-    vmaCreateBuffer(m_vmaAllocator, &vbInfo, &vbAllocInfo, &chunkBuf.vertexBuffer, &chunkBuf.vertexBufferAllocation, nullptr);
+    VkResult vbResult = vmaCreateBuffer(m_vmaAllocator, &vbInfo, &vbAllocInfo, &chunkBuf.vertexBuffer, &chunkBuf.vertexBufferAllocation, nullptr);
+    if (vbResult != VK_SUCCESS || chunkBuf.vertexBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[UploadChunkMesh] vmaCreateBuffer for vertex buffer FAILED: " << vbResult << std::endl;
+        return;
+    }
 
     VkBufferCreateInfo ibInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     ibInfo.size = indexSize;
@@ -1337,9 +1345,26 @@ void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>&
     VmaAllocationCreateInfo ibAllocInfo = {};
     ibAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     ibAllocInfo.pool = m_chunkVmaPool;
-    vmaCreateBuffer(m_vmaAllocator, &ibInfo, &ibAllocInfo, &chunkBuf.indexBuffer, &chunkBuf.indexBufferAllocation, nullptr);
+    VkResult ibResult = vmaCreateBuffer(m_vmaAllocator, &ibInfo, &ibAllocInfo, &chunkBuf.indexBuffer, &chunkBuf.indexBufferAllocation, nullptr);
+    if (ibResult != VK_SUCCESS || chunkBuf.indexBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[UploadChunkMesh] vmaCreateBuffer for index buffer FAILED: " << ibResult << std::endl;
+        // Cleanup vertex buffer created before
+        if (chunkBuf.vertexBuffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_vmaAllocator, chunkBuf.vertexBuffer, chunkBuf.vertexBufferAllocation);
+        }
+        return;
+    }
 
     // 5. Registra i comandi di copia nel Transfer Command Buffer
+    // Verifica che gli handle siano validi prima di usarli
+    if (m_transferCommandBuffer == VK_NULL_HANDLE || m_stagingRingBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[UploadChunkMesh] TransferCommandBuffer or StagingRingBuffer is INVALID!" << std::endl;
+        // Cleanup both buffers
+        vmaDestroyBuffer(m_vmaAllocator, chunkBuf.vertexBuffer, chunkBuf.vertexBufferAllocation);
+        vmaDestroyBuffer(m_vmaAllocator, chunkBuf.indexBuffer, chunkBuf.indexBufferAllocation);
+        return;
+    }
+
     VkBufferCopy vertexCopyRegion = {};
     vertexCopyRegion.srcOffset = vertexOffset;
     vertexCopyRegion.dstOffset = 0;

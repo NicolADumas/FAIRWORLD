@@ -5,14 +5,14 @@
 #include "CharacterStats.h"
 #include "Player.h"
 #include "MobManager.h"
-#include "Camera.h"
+#include "SharedContext.h"
 #include <imgui.h>
 #include <windows.h>
 #include <commdlg.h>
 #include <math.h>
 #include <algorithm>
 
-void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const Camera& camera) {
+void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const RenderViewData& cameraView) {
     // Il menu radiale TAB è stato rimosso.
     // Questa funzione disegna solo le tab dell'editor.
     // Deve essere chiamata dall'interno di un BeginTabBar esistente (nel menu di pausa).
@@ -34,7 +34,7 @@ void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* render
 
         ImGuiTabItemFlags flags1 = (forceSelectTab == 1) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("🧟 Mob", nullptr, flags1)) {
-            DrawMobsTab(assets, mobManager, camera);
+            DrawMobsTab(assets, mobManager, cameraView);
             ImGui::EndTabItem();
         }
 
@@ -298,7 +298,7 @@ void EditorPanel::DrawPlayerTab(Player& player, MobManager& mobManager) {
     }
 }
 
-void EditorPanel::DrawMobsTab(AssetManager& assets, MobManager* mobManager, const Camera& camera) {
+void EditorPanel::DrawMobsTab(AssetManager& assets, MobManager* mobManager, const RenderViewData& cameraView) {
     auto& mobs = assets.GetMobs();
 
     // ── Layout a due colonne ──────────────────────────────────────────
@@ -628,7 +628,7 @@ void EditorPanel::DrawMobsTab(AssetManager& assets, MobManager* mobManager, cons
         ImGui::Separator();
         if (ImGui::Button("Spawna davanti al Player", ImVec2(-1, 35))) {
             if (!mobs.empty() && m_selectedMob >= 0 && m_selectedMob < mobs.size()) {
-                glm::vec3 spawnPos = camera.Position + camera.Front * 3.0f;
+                glm::vec3 spawnPos = cameraView.cameraPosition + cameraView.cameraFront * 3.0f;
                 mobManager->Spawn(mobs[m_selectedMob], spawnPos);
             }
         }

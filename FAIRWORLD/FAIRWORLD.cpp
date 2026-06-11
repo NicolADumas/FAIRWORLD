@@ -197,11 +197,8 @@ bool FairWorldEngine::Init() {
     m_renderManager->LoadTextureFromFile("assets/textures/custom1.png", 4);
 
     // Posiziona la telecamera sopra il pavimento al centro del mondo
-    m_camera.Position = glm::vec3(0.0f, 30.0f, 0.0f); // Spostato a y=30 per non incastrarsi nelle colline
-    m_camera.Yaw   = -90.0f;
-    m_camera.Pitch = -20.0f;
-    
-    m_playerBody.position = m_camera.Position;
+                
+    m_playerBody.position = glm::vec3(0.0f, 30.0f, 0.0f);
 
     // Carica la mesh iniziale del mondo sulla GPU (Chunks)
     m_world.InitWorld();
@@ -257,6 +254,13 @@ bool FairWorldEngine::Init() {
     });
 
     return true;
+}
+
+void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
+    m_sharedContext = ctx;
+    if (ctx && m_windowManager) {
+        ctx->window = (WindowHandle)m_windowManager->GetWindowHandle();
+    }
 }
 
 void FairWorldEngine::PollHardwareEvents() {
@@ -372,6 +376,13 @@ bool FairWorldEngine::Update(float deltaTime) {
     }
     escWasDownEngine = escDownEngine;
 
+    // Comunichiamo al DeviceManager se i menu richiedono il cursore libero
+    if (m_current == GameState::MAIN_MENU || m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen || m_current == GameState::WEB_BROWSER || io.WantCaptureMouse) {
+        m_sharedContext->requireFreeCursor = true;
+    } else {
+        m_sharedContext->requireFreeCursor = false;
+    }
+
     if (!isWorldRunning()) return true;
 
     // Avanza il tempo nel ciclo Giorno/Notte (Fase 2)
@@ -420,247 +431,23 @@ bool FairWorldEngine::Update(float deltaTime) {
         }
     }
 
-    // Tasto F1: Cambia modalità
-    static bool f1WasDown = false;
-    bool f1Down = (GetAsyncKeyState(VK_F1) & 0x8000) != 0;
-    if (f1Down && !f1WasDown) {
-        m_gameMode = (m_gameMode == GameMode::Dev) ? GameMode::Play : GameMode::Dev;
-        m_player.SaveToJson("assets/player.json");
-    }
-    f1WasDown = f1Down;
 
-    if (!io.WantCaptureKeyboard && !m_isDiaryOpen) {
-        // --- FISICA E MOVIMENTO (Fase 2) ---
-        float baseSpeed = m_camera.MovementSpeed;
-        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) m_camera.MovementSpeed = baseSpeed * 1.5f;
-
-        glm::vec3 flatFront = glm::normalize(glm::vec3(m_camera.Front.x, 0.0f, m_camera.Front.z));
-        glm::vec3 flatRight = glm::normalize(glm::vec3(m_camera.Right.x, 0.0f, m_camera.Right.z));
-        glm::vec3 moveDir(0.0f);
-
-        // === ACTION MAPPING: Tastiera e Gamepad tramite il Bus Dati ===
-        if (m_sharedContext) {
-            // Movimento digitale (WASD o D-Pad)
-            if (fw::IsActionActive("MOVE_FORWARD"_hs,  m_sharedContext)) moveDir += flatFront;
-            if (fw::IsActionActive("MOVE_BACKWARD"_hs, m_sharedContext)) moveDir -= flatFront;
-            if (fw::IsActionActive("MOVE_LEFT"_hs,     m_sharedContext)) moveDir -= flatRight;
-            if (fw::IsActionActive("MOVE_RIGHT"_hs,    m_sharedContext)) moveDir += flatRight;
-
-            // Analogico sinistro del controller (se connesso)
-            if (m_sharedContext->isGamepadConnected) {
-                float lx = m_sharedContext->gamepadInput.leftThumbX;
-                float ly = m_sharedContext->gamepadInput.leftThumbY;
-                if (fabsf(lx) > 0.1f || fabsf(ly) > 0.1f) {
-                    moveDir += flatFront * ly;
-                    moveDir += flatRight * lx;
-                }
-            }
-        } else {
-            // Fallback legacy (senza SharedContext collegato)
-            if (GetAsyncKeyState('W') & 0x8000) moveDir += flatFront;
-            if (GetAsyncKeyState('S') & 0x8000) moveDir -= flatFront;
-            if (GetAsyncKeyState('A') & 0x8000) moveDir -= flatRight;
-            if (GetAsyncKeyState('D') & 0x8000) moveDir += flatRight;
-        }
-
-        float hLen = glm::length(moveDir);
-        if (hLen > 0.0f) moveDir = (moveDir / hLen);
-
-        glm::vec3 targetVelocity = moveDir * m_camera.MovementSpeed;
-        
-        // Modalita' Dev (Volo) vs Play (Fisica Reale)
-        if (m_gameMode == GameMode::Dev) {
-            m_playerBody.velocity = targetVelocity;
-            if (fw::IsActionActive("JUMP"_hs, m_sharedContext))
-                m_playerBody.velocity.y = m_camera.MovementSpeed;
-            if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
-                m_playerBody.velocity.y = -m_camera.MovementSpeed;
-            m_playerBody.position += m_playerBody.velocity * deltaTime;
-            m_playerBody.isGrounded = false;
-        } else {
-            // Nuoto: danno (es. Lava)
-            BlockType centerBlock = m_world.GetBlock((int)floor(m_playerBody.position.x), (int)floor(m_playerBody.position.y - m_playerBody.radius), (int)floor(m_playerBody.position.z));
-            BlockDef* centerDef = m_assets.GetBlock((int)centerBlock);
-            if (centerDef && centerDef->isLiquid && centerDef->damagePerSecond > 0) {
-                static float damageTimer = 0.0f;
-                damageTimer += deltaTime;
-                if (damageTimer >= 1.0f) {
-                    m_player.stats.currentHP -= centerDef->damagePerSecond;
-                    damageTimer = 0.0f;
-                }
-            }
-            
-            // Imposta la velocità orizzontale desiderata dal player (WASD)
-            m_playerBody.velocity.x = targetVelocity.x;
-            m_playerBody.velocity.z = targetVelocity.z;
-            
-            if (m_playerBody.isInWater) {
-                // In acqua il movimento orizzontale è rallentato
-                m_playerBody.velocity.x *= 0.5f;
-                m_playerBody.velocity.z *= 0.5f;
-                if (fw::IsActionActive("JUMP"_hs, m_sharedContext))
-                    m_playerBody.velocity.y = 4.0f;
-                else if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
-                    m_playerBody.velocity.y = -4.0f;
-            } else {
-                // Salto (impulso istantaneo di velocità verticale)
-                if (m_playerBody.isGrounded && fw::IsActionActive("JUMP"_hs, m_sharedContext)) {
-                    m_playerBody.velocity.y = 7.0f; 
-                }
-            }
-            
-            // Vecchia velocità Y per calcolare l'impatto del danno da caduta
-            float oldVelY = m_playerBody.velocity.y;
-            
-            // Esegui lo step fisico: gravita', attrito, integrazione, collisioni continue AABB
-            m_physics.StepSimulation(m_playerBody, deltaTime, m_world);
-            
-            // --- STARGATE TELEPORT LOGIC ---
-            if (m_playerBody.touchedStargate) {
-                m_playerBody.touchedStargate = false;
-                
-                // Passa al pianeta successivo: Earth -> Mars -> Glacies -> Earth
-                PlanetType current = m_world.GetCurrentPlanet()->type;
-                PlanetType next = PlanetType::EarthPrime;
-                if (current == PlanetType::EarthPrime) next = PlanetType::MarsDesolation;
-                else if (current == PlanetType::MarsDesolation) next = PlanetType::Glacies;
-                
-                m_world.ChangePlanet(next);
-                
-                // Riposiziona il giocatore in alto al centro
-                m_playerBody.position = glm::vec3(0.0f, 40.0f, 0.0f);
-                m_playerBody.velocity = glm::vec3(0.0f);
-                std::cout << "[STARGATE] Attraversamento wormhole completato! Gravita e Termodinamica ricalcolati." << std::endl;
-            }
-            
-            // Danno da caduta automatico (Cap. 12/13 - perdita di energia cinetica)
-            if (m_playerBody.isGrounded && oldVelY < -10.0f) {
-                float deltaV = abs(oldVelY - m_playerBody.velocity.y);
-                float damage = m_physics.ComputeFallDamage(deltaV, m_playerBody.mass);
-                if (damage > 0.0f) {
-                    m_player.stats.currentHP -= (int)damage;
-                }
-            }
-        }
-        
-        // Sincronizza la camera con il corpo fisico
-        m_camera.Position = m_playerBody.position;
-        m_camera.IsGrounded = m_playerBody.isGrounded;
-        m_camera.IsSwimming = m_playerBody.isInWater;
-        m_camera.MovementSpeed = baseSpeed;
-    } // Chiude if (!io.WantCaptureKeyboard)
 
     // =======================================================
-    // --- SISTEMA FPS: CURSORE LOCK + ROTAZIONE MOUSE ---
+    // --- SISTEMA FPS: DELEGATO A DEVICEMANAGER (HAL) ---
     // =======================================================
 
-    // Escape: sblocca il cursore
-    {
-        bool escDown = fw::IsActionActive("PAUSE"_hs, m_sharedContext)
-                    || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-        if (escDown && !m_escWasDown) {
-            m_cursorLocked = false;
-        }
-        m_escWasDown = escDown;
+
+    // --- PIAZZAMENTO / RIMOZIONE BLOCCHI ---
+    bool placeBlock = false;
+    bool breakBlock = false;
+    bool holdingBreak = false;
+
+    if (!io.WantCaptureMouse && m_sharedContext) {
+        placeBlock = m_sharedContext->currentInput.isPlacing;
+        breakBlock = m_sharedContext->currentInput.isMining;
+        holdingBreak = m_sharedContext->currentInput.isMining;
     }
-
-    // Se God Mode, Diario, Inventario o Web Browser sono aperti, il cursore è sempre libero
-    if (m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen || m_current == GameState::WEB_BROWSER) {
-        m_cursorLocked = false;
-    }
-
-    // Click sinistro fuori dall'editor/diario/inventario/browser: blocca il cursore per il gioco FPS
-    if (!m_cursorLocked && !m_editor.isOpen && !m_isDiaryOpen && !m_isInventoryOpen && m_current != GameState::WEB_BROWSER && !io.WantCaptureMouse) {
-        bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        if (lDown && !m_lButtonWasDown) {
-            m_cursorLocked = true;
-            m_firstMouse = true;
-        }
-        // Auto-lock quando il gamepad è connesso e si è in modalità gioco
-        if (m_sharedContext && m_sharedContext->isGamepadConnected && m_current == GameState::PLAYING) {
-            m_cursorLocked = true;
-            m_firstMouse = true;
-        }
-    }
-
-    // Applica visibilità cursore (usa il cursore software di ImGui per aggirare bug di visibilità Win32)
-    ImGui::GetIO().MouseDrawCursor = !m_cursorLocked;
-    
-    // Per sicurezza, se il sistema Win32 nasconde il cursore, forziamolo a zero
-    if (m_cursorLocked && m_cursorVisible) {
-        ShowCursor(FALSE);
-        m_cursorVisible = false;
-    } else if (!m_cursorLocked && !m_cursorVisible) {
-        ShowCursor(TRUE);
-        m_cursorVisible = true;
-    }
-
-    // --- ROTAZIONE MOUSE FPS ---
-    if (!io.WantCaptureMouse) {
-        // Legge mouse fisico (per desktop)
-        bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        bool rDown = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-
-        // Sovrascrittura tramite Action Map (gamepad trigger R=distruggi, L=piazza)
-        if (m_sharedContext) {
-            if (fw::IsActionActive("DESTROY_BLOCK"_hs, m_sharedContext)) rDown = true;
-            if (fw::IsActionActive("PLACE_BLOCK"_hs,   m_sharedContext)) lDown = true;
-        }
-
-        if (m_cursorLocked) {
-            // Calcola il centro della finestra in coordinate schermo
-            HWND hwnd = m_windowManager->GetWindowHandle();
-            RECT clientRect;
-            GetClientRect(hwnd, &clientRect);
-            POINT center = {
-                (clientRect.right  - clientRect.left) / 2,
-                (clientRect.bottom - clientRect.top)  / 2
-            };
-            ClientToScreen(hwnd, &center);
-
-            // Delta dal centro
-            POINT cursorPos;
-            GetCursorPos(&cursorPos);
-            float xoffset = (float)(cursorPos.x - center.x);
-            float yoffset = (float)(center.y    - cursorPos.y);
-
-            // Ricentra il cursore ogni frame
-            SetCursorPos(center.x, center.y);
-
-            // Primo frame dopo lock: ignora il delta (potrebbe essere grande)
-            if (!m_firstMouse) {
-                m_camera.ProcessMouseMovement(xoffset, yoffset);
-            }
-            m_firstMouse = false;
-        } else {
-            // Cursore libero: reset firstMouse per quando si ribloccherà
-            m_firstMouse = true;
-        }
-
-        // Analogico destro del controller: rotazione camera
-        // Funziona sempre quando il gamepad è connesso, indipendentemente da m_cursorLocked
-        if (m_sharedContext && m_sharedContext->isGamepadConnected) {
-            float rx = m_sharedContext->gamepadInput.rightThumbX;
-            float ry = m_sharedContext->gamepadInput.rightThumbY;
-            float padSens = 150.0f * deltaTime;
-            if (fabsf(rx) > 0.1f || fabsf(ry) > 0.1f) {
-                m_camera.ProcessMouseMovement(rx * padSens, ry * padSens);
-                m_firstMouse = false;
-            }
-        }
-
-        // Freccette: rotazione alternativa (sempre attive)
-        float rs = 100.0f * deltaTime;
-        if (GetAsyncKeyState(VK_UP)    & 0x8000) m_camera.ProcessMouseMovement(0.0f,  rs);
-        if (GetAsyncKeyState(VK_DOWN)  & 0x8000) m_camera.ProcessMouseMovement(0.0f, -rs);
-        if (GetAsyncKeyState(VK_LEFT)  & 0x8000) m_camera.ProcessMouseMovement(-rs,  0.0f);
-        if (GetAsyncKeyState(VK_RIGHT) & 0x8000) m_camera.ProcessMouseMovement( rs,  0.0f);
-
-        // --- PIAZZAMENTO / RIMOZIONE BLOCCHI (solo con cursore bloccato) ---
-        // lDown/rDown già aggiornati sopra con l'Action Map del controller
-        bool placeBlock  = m_cursorLocked && (!m_lButtonWasDown && lDown);
-        bool breakBlock  = m_cursorLocked && (!m_rButtonWasDown && rDown);
-        bool holdingBreak = m_cursorLocked && rDown;  // Tenuto premuto (per mining progressivo)
         
         // --- 1. SIMULAZIONE DESKTOP VIEW-MODEL (Prima Persona) ---
         // Se non siamo in VR, calcoliamo la posizione della mano ancorandola alla telecamera.
@@ -671,11 +458,11 @@ bool FairWorldEngine::Update(float deltaTime) {
             }
 
             // A. Prendi la matrice di rotazione della telecamera
-            glm::mat4 camRotation = glm::mat4(glm::mat3(m_camera.GetViewMatrix()));
+            glm::mat4 camRotation = glm::mat4(glm::mat3(m_sharedContext->activeCameraView.viewMatrix));
             camRotation = glm::inverse(camRotation); 
 
             // B. Crea la matrice base della mano (ancorata alla camera)
-            glm::mat4 handMatrix = glm::translate(glm::mat4(1.0f), m_camera.Position);
+            glm::mat4 handMatrix = glm::translate(glm::mat4(1.0f), m_sharedContext->activeCameraView.cameraPosition);
             handMatrix *= camRotation;
 
             // C. Sposta l'arma in "basso, a destra, in avanti" (coordinate locali View-Space)
@@ -693,12 +480,12 @@ bool FairWorldEngine::Update(float deltaTime) {
         }
 
         // --- 2. LOGICA COMBATTIMENTO E MOB (Sempre attiva) ---
-        m_mobManager.UpdateMobs(deltaTime, m_camera.Position, m_player, m_assets, m_world);
+        m_mobManager.UpdateMobs(deltaTime, m_sharedContext->activeCameraView.cameraPosition, m_player, m_assets, m_world);
         if (placeBlock) { // Usiamo lo stesso trigger 'placeBlock' (Click Sinistro) per attaccare
             m_player.attackAnimTimer = 0.3f; // Avvia l'animazione di attacco
 
-            glm::vec3 rayPos = m_camera.Position;
-            glm::vec3 rayDir = glm::normalize(m_camera.Front);
+            glm::vec3 rayPos = m_sharedContext->activeCameraView.cameraPosition;
+            glm::vec3 rayDir = glm::normalize(m_sharedContext->activeCameraView.cameraFront);
             
             int hitIndex = m_mobManager.Raycast(rayPos, rayDir, 3.5f);
             if (hitIndex >= 0) {
@@ -727,14 +514,11 @@ bool FairWorldEngine::Update(float deltaTime) {
             }
         }
 
-        // Ora aggiorniamo lo stato precedente
-        m_lButtonWasDown = lDown;
-        m_rButtonWasDown = rDown;
 
         // Raycast SEMPRE attivo ogni frame (aggiorna il mirino HUD)
         {
-            glm::vec3 rayPos = m_camera.Position;
-            glm::vec3 rayDir = glm::normalize(m_camera.Front);
+            glm::vec3 rayPos = m_sharedContext->activeCameraView.cameraPosition;
+            glm::vec3 rayDir = glm::normalize(m_sharedContext->activeCameraView.cameraFront);
             const float STEP     = 0.05f;
             const float MAX_DIST = 8.0f;
 
@@ -870,7 +654,6 @@ bool FairWorldEngine::Update(float deltaTime) {
                 }
             }
         }
-    } // Chiude if (!io.WantCaptureMouse)
 
     // ================================================================
     // --- UPDATE DROPPED ITEMS (Fisica di Newton + Archimede) ---
@@ -914,7 +697,7 @@ bool FairWorldEngine::Update(float deltaTime) {
             di.position = nextPos;
             
             // 5. Pickup automatico: distanza < 1.5m dal giocatore
-            float dist = glm::length(di.position - m_camera.Position);
+            float dist = glm::length(di.position - m_sharedContext->activeCameraView.cameraPosition);
             if (dist < 1.5f) {
                 bool added = m_player.inventory.AddItem(di.item);
                 if (added) {
@@ -923,7 +706,7 @@ bool FairWorldEngine::Update(float deltaTime) {
                 }
             } else if (dist < 3.0f) {
                 // Magnetismo: attira verso il giocatore quando e vicino
-                glm::vec3 toPlayer = glm::normalize(m_camera.Position - di.position);
+                glm::vec3 toPlayer = glm::normalize(m_sharedContext->activeCameraView.cameraPosition - di.position);
                 di.velocity += toPlayer * 5.0f * deltaTime;
             }
         }
@@ -950,7 +733,7 @@ bool FairWorldEngine::Update(float deltaTime) {
             m_deathOverlayTimer -= deltaTime;
             if (m_deathOverlayTimer <= 0.0f) {
                 // Respawn al centro
-                m_camera.Position = glm::vec3(0.0f, 30.0f, 0.0f);
+                m_sharedContext->activeCameraView.cameraPosition = glm::vec3(0.0f, 30.0f, 0.0f);
                 m_player.stats.currentHP = m_player.stats.GetMaxHP();
                 m_player.stats.currentMP = m_player.stats.GetMaxMP();
                 m_player.stats.currentStamina = m_player.stats.GetMaxStamina();
@@ -1076,7 +859,7 @@ void FairWorldEngine::Render() {
 
         // --- RENDER DROPPED ITEMS (Tags 2D Proiettati) ---
         if (!m_droppedItems.empty()) {
-            glm::mat4 view = m_camera.GetViewMatrix();
+            glm::mat4 view = m_sharedContext->activeCameraView.viewMatrix;
             float aspect = ImGui::GetMainViewport()->Size.x / ImGui::GetMainViewport()->Size.y;
             glm::mat4 proj = glm::perspective(glm::radians(m_renderManager->GetFov()), aspect, 0.1f, 100.0f);
             
@@ -1443,7 +1226,7 @@ void FairWorldEngine::Render() {
 
         // --- VISUAL THERMAL CUES ---
         if (m_gameMode == GameMode::Play && !m_justDied) {
-            glm::vec3 pos = m_camera.Position;
+            glm::vec3 pos = m_sharedContext->activeCameraView.cameraPosition;
             float temp = m_world.GetTemperatureAt((int)std::floor(pos.x), (int)std::floor(pos.z));
             
             if (temp < 273.15f || temp > 323.15f) {
@@ -1482,7 +1265,7 @@ void FairWorldEngine::Render() {
         // --- RENDER DEI MOB IN OVERLAY 2D (Finché Vulkan non supporta i modelli 3D) ---
         {
             ImVec2 screenSize = ImGui::GetMainViewport()->Size;
-            glm::mat4 view = m_camera.GetViewMatrix();
+            glm::mat4 view = m_sharedContext->activeCameraView.viewMatrix;
             float aspect = 1.0f;
             if (screenSize.y > 0.001f && screenSize.x > 0.001f) {
                 aspect = screenSize.x / screenSize.y;
@@ -1541,7 +1324,7 @@ void FairWorldEngine::Render() {
         }
 
         if (m_current == GameState::PLAYING && m_gameMode == GameMode::Dev) {
-            m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_camera);
+            m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView);
         }
         
         // --- DIARIO MAGICO (AI ASSISTANT) ---
@@ -1601,7 +1384,7 @@ void FairWorldEngine::Render() {
                     m_diaryHistory.push_back("[Tu]: (Evocazione)");
                     
                     // L'input può essere multilinea, lo passiamo all'AIAssistant
-                    std::string response = m_aiAssistant.ProcessPlayerMessage(inputStr, m_world, m_mobManager, m_player, m_camera.Position, m_camera.Front);
+                    std::string response = m_aiAssistant.ProcessPlayerMessage(inputStr, m_world, m_mobManager, m_player, m_sharedContext->activeCameraView.cameraPosition, m_sharedContext->activeCameraView.cameraFront);
                     m_diaryHistory.push_back(response);
                     
                     // NB: Non cancelliamo l'input del diario, così funge da veri appunti che restano scritti!
@@ -1672,7 +1455,7 @@ void FairWorldEngine::EndUIFrame() {
         m_xrManager->EndFrame();
     } else {
         ImGui::Render();
-        m_renderManager->RenderDesktop(m_camera.GetViewMatrix(), m_world.GetSkyColor(), &m_assets, &m_mobManager, &m_player);
+        m_renderManager->RenderDesktop(m_sharedContext->activeCameraView.viewMatrix, m_world.GetSkyColor(), &m_assets, &m_mobManager, &m_player);
     }
 }
 
@@ -1737,7 +1520,7 @@ void FairWorldEngine::renderPauseMenu() {
     ImGui::Spacing();
 
     // ---- Parte inferiore: le vere tab dell'editor ----
-    m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_camera);
+    m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView);
 
     ImGui::End();
 }
@@ -1846,3 +1629,4 @@ void FairWorldEngine::Shutdown() {
     m_renderManager->Shutdown();
     m_isRunning = false;
 }
+

@@ -77,7 +77,14 @@ public:
     void Render();
 
     // Collega il Bus Dati dell'OS al motore (chiamato dal main prima del loop)
-    void SetSharedContext(SharedContext* ctx) { m_sharedContext = ctx; }
+    void SetSharedContext(SharedContext* ctx);
+
+    // Getters esposti per i sistemi ECS
+    PhysicsEngine& GetPhysicsEngine() { return m_physics; }
+    Player& GetPlayer() { return m_player; }
+    World& GetWorld() { return m_world; }
+    GameMode GetGameMode() const { return m_gameMode; }
+    void SetGameMode(GameMode mode) { m_gameMode = mode; }
 
 private:
     std::string GetSlotName(int slotIndex);
@@ -107,8 +114,6 @@ private:
 
     bool m_isRunning;
     bool m_isVrMode;
-
-    Camera m_camera;
     World  m_world;
 
     // Input mouse
@@ -177,3 +182,4 @@ private:
     // Puntatore al Bus Dati dell'OS (non owning, vita gestita da main)
     SharedContext* m_sharedContext = nullptr;
 };
+

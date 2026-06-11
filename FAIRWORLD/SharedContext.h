@@ -4,6 +4,7 @@
 #include <vector>
 #include "InputTypes.h"
 #include "entt/entt.hpp"
+#include <glm/glm.hpp>
 
 // Forward declarations
 struct HWND__;
@@ -38,12 +39,35 @@ namespace fw {
 }
 
 // === IL BUS GLOBALE DELL'OS ===
+// Struttura dati pura per il renderer, calcolata dai sistemi ECS
+struct RenderViewData {
+    glm::mat4 viewMatrix = glm::mat4(1.0f);
+    glm::mat4 projectionMatrix = glm::mat4(1.0f);
+    glm::vec3 cameraPosition = glm::vec3(0.0f);
+    glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+};
+
+// Struttura dati pura dell'input (Astratta e Indipendente dall'Hardware)
+struct InputState {
+    float moveForward = 0.0f; // -1.0 a 1.0 (W/S o Levetta Y sinistra)
+    float moveRight   = 0.0f; // -1.0 a 1.0 (A/D o Levetta X sinistra)
+    float lookYaw     = 0.0f; // Mouse X Delta o Levetta X destra
+    float lookPitch   = 0.0f; // Mouse Y Delta o Levetta Y destra
+    
+    bool isJumping    = false; // true solo nel frame in cui premi
+    bool isMining     = false; // true finché tenuto premuto
+    bool isPlacing    = false; // true solo nel frame in cui premi (per piazzare blocchi/attaccare)
+};
+
 // Definito prima di IsActionActive perché quella funzione lo referenzia
 struct SharedContext {
     // --- SISTEMA CORE ---
     WindowHandle window         = nullptr;
     StateManager* stateManager  = nullptr;
     FairWorldEngine* engine     = nullptr;
+
+    // --- RENDER DATA ---
+    RenderViewData activeCameraView;
 
     // --- BUS DATI (LA CARTUCCIA) ---
     std::string targetGameJsonPath;
@@ -88,10 +112,19 @@ struct SharedContext {
 
     // 5. MODULO INPUT LOGICO (Action Mapping)
     fw::ActionMap actionMap;
+
+    // 6. INPUT HAL (Hardware Abstraction Layer)
+    InputState currentInput;
+    bool requireFreeCursor = false; // Se true, il DeviceManager sblocca il cursore
 };
 
 // === HELPER DEL NAMESPACE fw (dichiarato DOPO SharedContext, che ora è completo) ===
 namespace fw {
     // Interroga il bus input a costo zero tramite hash a compile-time
     bool IsActionActive(entt::id_type actionHash, SharedContext* ctx);
+
+    // Helpers per la UI di remapping
+    const char* InputIDToString(InputID key);
+    InputID GetFirstPressedKey(SharedContext* ctx, bool checkForGamepad);
+    void InitDefaultBindings(SharedContext* ctx);
 }

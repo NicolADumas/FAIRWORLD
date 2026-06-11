@@ -17,6 +17,7 @@ HubState::~HubState() {
 
 std::expected<void, std::string> HubState::Init() {
     std::cout << "[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.\n";
+    fw::InitDefaultBindings(m_context);
     return {};
 }
 
@@ -37,6 +38,7 @@ void HubState::Update(float dt) {
 }
 
 void HubState::Render() {
+    static bool showDeviceManager = false;
     // Il nostro OS prende il controllo totale dello schermo
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos, ImGuiCond_Always);
@@ -54,7 +56,7 @@ void HubState::Render() {
         ImGui::SetCursorPos(ImVec2(viewport->Size.x / 2.0f - 150.0f, 40.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
         ImGui::SetWindowFontScale(2.5f);
-        ImGui::Text("FAIRWORLD OS");
+        ImGui::Text("FAIRWORLD HUB");
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
 
@@ -70,7 +72,7 @@ void HubState::Render() {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.9f, 1.0f, 1.0f)); // Azzurrino
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        if (ImGui::Button("Canale Disco\n[ Avvia Progetto JSON ]", ImVec2(channelWidth, channelHeight))) {
+        if (ImGui::Button("FAIRWORLD\n[ Avvia Progetto JSON ]", ImVec2(channelWidth, channelHeight))) {
             std::cout << "[HubState] Avvio Cartuccia JSON richiesto.\n";
             m_context->targetGameJsonPath = "projects/game_config.json";
             m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
@@ -83,16 +85,21 @@ void HubState::Render() {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
         
-        static bool showDeviceManager = false;
-        if (ImGui::Button("Canale Dispositivi\n[ Impostazioni Hardware ]", ImVec2(channelWidth, channelHeight))) {
+
+        if (ImGui::Button("CONNESSIONE DISPOSITIVI\n[ Impostazioni Hardware ]", ImVec2(channelWidth, channelHeight))) {
             showDeviceManager = true;
         }
         ImGui::PopStyleColor(3);
 
-        // --- POPUP IMPOSTAZIONI DISPOSITIVI ---
-        if (showDeviceManager) {
-            ImGui::SetNextWindowPos(ImVec2(viewport->Size.x / 2.0f - 200, viewport->Size.y / 2.0f - 150));
-            ImGui::SetNextWindowSize(ImVec2(400, 300));
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+
+    // --- POPUP IMPOSTAZIONI DISPOSITIVI ---
+    if (showDeviceManager) {
+            ImGui::SetNextWindowPos(ImVec2(viewport->Size.x / 2.0f - 300, viewport->Size.y / 2.0f - 250));
+            ImGui::SetNextWindowSize(ImVec2(600, 500));
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.15f, 0.95f)); // Sfondo scuro per il popup
             
             if (ImGui::Begin("Gestore Dispositivi Hardware", &showDeviceManager, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
@@ -117,14 +124,91 @@ void HubState::Render() {
                 
                 ImGui::Spacing();
                 ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "--- MAPPATURA COMANDI ---");
+                
+                bool isPad = m_context->isGamepadConnected;
+                ImGui::Text("Modalita' Input: %s", isPad ? "CONTROLLER" : "TASTIERA / MOUSE");
+                ImGui::Spacing();
+
+                std::vector<const char*> mappableActions = {
+                    "MOVE_FORWARD", "MOVE_BACKWARD", "MOVE_LEFT", "MOVE_RIGHT",
+                    "JUMP", "DESTROY_BLOCK", "PLACE_BLOCK", "PAUSE"
+                };
+
+                if (ImGui::BeginTable("Mappings", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+                    for (const char* actName : mappableActions) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", actName);
+                        ImGui::TableNextColumn();
+                        
+                        entt::id_type hash = entt::hashed_string(actName);
+                        fw::InputID currentKey = fw::InputID::NONE;
+                        
+                        auto it = m_context->actionMap.bindings.find(hash);
+                        if (it != m_context->actionMap.bindings.end()) {
+                            for (const auto& b : it->second) {
+                                bool bIsPad = ((int)b.primaryKey >= (int)fw::InputID::PAD_FACE_DOWN);
+                                if (bIsPad == isPad) {
+                                    currentKey = b.primaryKey;
+                                    break;
+                                }
+                            }
+                        }
+
+                        ImGui::PushID(actName);
+                        const char* btnLabel = fw::InputIDToString(currentKey);
+                        if (ImGui::Button(btnLabel, ImVec2(150, 0))) {
+                            m_context->actionMap.isListening = true;
+                            m_context->actionMap.actionBeingMapped = hash;
+                            ImGui::OpenPopup("Premi un tasto...");
+                        }
+
+                        if (ImGui::BeginPopupModal("Premi un tasto...", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+                            ImGui::Text("Premi il nuovo tasto per:\n\n %s\n\n", actName);
+                            ImGui::Separator();
+                            
+                            fw::InputID newKey = fw::GetFirstPressedKey(m_context, isPad);
+                            if (newKey != fw::InputID::NONE) {
+                                // Aggiorna o Inserisci il binding
+                                if (it != m_context->actionMap.bindings.end()) {
+                                    bool found = false;
+                                    for (auto& b : it->second) {
+                                        bool bIsPad = ((int)b.primaryKey >= (int)fw::InputID::PAD_FACE_DOWN);
+                                        if (bIsPad == isPad) {
+                                            b.primaryKey = newKey;
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                    // Se non c'era un binding per questa mod, lo aggiungiamo
+                                    if (!found) {
+                                        it->second.push_back({newKey, fw::InputID::NONE});
+                                    }
+                                } else {
+                                    m_context->actionMap.bindings[hash].push_back({newKey, fw::InputID::NONE});
+                                }
+                                m_context->actionMap.isListening = false;
+                                ImGui::CloseCurrentPopup();
+                            }
+
+                            if (ImGui::Button("Annulla", ImVec2(120, 0))) {
+                                m_context->actionMap.isListening = false;
+                                ImGui::CloseCurrentPopup();
+                            }
+                            ImGui::EndPopup();
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "--- VR / BCI / SERIALE ---");
                 ImGui::Text("Integrazione futura.");
             }
             ImGui::End();
             ImGui::PopStyleColor();
         }
-    }
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
 }

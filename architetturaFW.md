@@ -316,10 +316,25 @@ int main() {
 }
 ```
 
+1. Il Valore Analogico (Axis Mapping)
+Attualmente la nostra funzione IsActionActive restituisce un bool (Vero o Falso). Va benissimo per saltare o sparare. Ma cosa succede se vuoi mappare l'azione "ACCELERA_AUTO" sul grilletto R2 del gamepad? Vuoi sapere quanto l'utente sta premendo il grilletto, non solo se lo sta sfiorando.
+
+Il "Massimo": Il sistema restituirebbe un float (da 0.0 a 1.0) o un Vector2D (per il movimento fluido del joystick), normalizzando in automatico input digitali (tastiera) e analogici (gamepad).
+
+2. Lo Stack dei Contesti (Input Contexts)
+Nel nostro sistema attuale, l'azione "JUMP" è sempre in ascolto. Ma cosa succede se il tuo personaggio entra in un menu, o sale in macchina, o inizia a nuotare? Il tasto "Spazio" non dovrebbe più farlo saltare.
+
+Il "Massimo": Si implementa uno "Stack" di mappe (es. Context_Gameplay, Context_UI, Context_Vehicle). Il motore attiva e disattiva interi pacchetti di comandi a seconda della situazione, evitando che tu debba riempire il codice del giocatore con centinaia di controlli tipo if (isPlaying && !inMenu && !inCar).
+
+3. La Serializzazione Permanente (Salvataggio)
+Se apri il menu ImGui e rimappi il salto dal tasto Spazio al tasto Invio, funziona tutto a meraviglia. Ma quando chiudi FAIRWORLD e lo riapri, le modifiche svaniscono.
+
+Il "Massimo": Quando l'utente chiude l'HubState, l'OS prende l'ActionMap, lo converte e lo scrive sul disco in un file user_bindings.json (esattamente come fanno i giochi PC nella cartella AppData). Al prossimo avvio, il SharedContext ricarica le preferenze dell'utente.
+
 ## Checklist di Implementazione (Fasi)
 - [x] **Fase 1.1**: Aggiornamento progetto a C++23 e creazione dei file strutturali base (SharedContext, State, StateManager, HubState, PlayState) integrati in Visual Studio.
 - [x] **Fase 1.2**: Sostituzione temporanea del loop in `main.cpp` e validazione della Boot Sequence mockata (per verificare le stampe a schermo).
 - [x] **Fase 1.3**: Ricollegamento del vero `FairWorldEngine` all'interno dell'ecosistema `PlayState`.
 - [x] **Fase 2.1**: Setup del Registro EnTT nel `PlayState`, parsing no-throw JSON e creazione Entità base.
-- [ ] **Fase 2.2**: Migrazione della Telecamera (Camera Component).
-- [ ] **Fase 2.3**: Spostamento dell'Input System in `PlayState`.
+- [x] **Fase 2.2**: Migrazione della Telecamera (Camera Component).
+- [x] **Fase 2.3**: Spostamento dell'Input System in `PlayState`.
