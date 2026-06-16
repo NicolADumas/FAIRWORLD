@@ -149,6 +149,15 @@
     <ClInclude Include="vk_mem_alloc.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="InputTypes.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="DeskarmWebView.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="EventManager.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FAIRWORLD.cpp">
@@ -245,6 +254,12 @@
       <Filter>File di origine</Filter>
     </ClCompile>
     <ClCompile Include="VmaUsage.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="SharedContext.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="DeskarmWebView.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>
