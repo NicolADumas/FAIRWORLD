@@ -112,6 +112,7 @@ enum class BlockType : uint8_t {
     Ice         = 13,
     StargateFrame = 14,
     StargatePortal = 15,
+    Obsidian      = 16,
     OutOfBounds = 255,
 };
 

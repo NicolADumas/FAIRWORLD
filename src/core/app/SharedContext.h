@@ -83,6 +83,10 @@ struct SharedContext {
     // --- RENDER DATA ---
     RenderViewData activeCameraView;
     glm::vec3 playerVelocity = glm::vec3(0.0f); // Velocità RigidBody corrente (aggiornata da PlayState)
+    float worldTimeOfDay = 0.5f;                // 0.0=Mezzanotte, 0.5=Mezzogiorno
+    int worldCurrentDay = 0;                    // Giorno in-game
+    float moonPhase = 0.5f;                     // 0.0=Nuova, 0.5=Piena, 1.0=Nuova
+    glm::vec3 worldSkyColor = glm::vec3(0.5f, 0.7f, 1.0f); // Colore dinamico cielo
 
     // --- BUS DATI (LA CARTUCCIA) ---
     std::string targetGameJsonPath;

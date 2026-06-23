@@ -10,8 +10,10 @@
 #include "Components.h"
 #include "FAIRWORLD.h"
 #include "RenderManager.h"
+#include "EventManager.h"
 #include <iostream>
 #include <cmath>
+#include <vector>
 
 namespace fw {
 
@@ -178,6 +180,11 @@ void ForgeWorld::Initialize(SharedContext* context) {
             }
         }
     }
+
+    // Registrazione per i fluidi (Event-Driven)
+    EventManager::Get().Subscribe<Event_BlockUpdated>([this](const Event_BlockUpdated& e) {
+        this->ProcessFluidUpdate(e.position.x, e.position.y, e.position.z);
+    });
 }
 
 entt::entity ForgeWorld::CreateChunkEntity(const std::string& name, const Vec3& position) {
@@ -591,8 +598,70 @@ void ForgeWorld::SetBlock(int x, int y, int z, BlockType type) {
     if (it != m_activeChunks.end()) {
         if (m_registry.valid(it->second)) {
             auto& chunk = m_registry.get<VoxelChunkComponent>(it->second);
-            chunk.blocks[lx][y][lz] = static_cast<uint8_t>(type);
-            m_registry.emplace_or_replace<ChunkDirtyComponent>(it->second);
+            uint8_t oldType = chunk.blocks[lx][y][lz];
+            if (oldType != static_cast<uint8_t>(type)) {
+                chunk.blocks[lx][y][lz] = static_cast<uint8_t>(type);
+                m_registry.emplace_or_replace<ChunkDirtyComponent>(it->second);
+
+                // Emette eventi di aggiornamento fisico ai blocchi adiacenti e a sé stesso
+                // Usiamo QueueEvent per non sfasciare lo stack con chiamate ricorsive.
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y, z)));
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x+1, y, z)));
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x-1, y, z)));
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y+1, z)));
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y-1, z)));
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y, z+1)));
+                EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y, z-1)));
+            }
+        }
+    }
+}
+
+// FluidSystem: Processa gli update di adiacenza per acqua e lava
+void ForgeWorld::ProcessFluidUpdate(int x, int y, int z) {
+    if (y < 0 || y >= 128) return;
+    BlockType b = GetBlock(x, y, z);
+    
+    // Solo acqua e lava "reagiscono" alla gravità/vuoto
+    if (b == BlockType::Water || b == BlockType::Lava) {
+        // 1. Cade in basso
+        BlockType below = GetBlock(x, y - 1, z);
+        if (below == BlockType::Air) {
+            SetBlock(x, y - 1, z, b);
+        } else if (below != BlockType::Water && below != BlockType::Lava && below != BlockType::OutOfBounds) {
+            // Se c'è un solido sotto, si espande lateralmente
+            if (GetBlock(x+1, y, z) == BlockType::Air) SetBlock(x+1, y, z, b);
+            if (GetBlock(x-1, y, z) == BlockType::Air) SetBlock(x-1, y, z, b);
+            if (GetBlock(x, y, z+1) == BlockType::Air) SetBlock(x, y, z+1, b);
+            if (GetBlock(x, y, z-1) == BlockType::Air) SetBlock(x, y, z-1, b);
+        }
+
+        // Reazioni termiche (Ossidiana, Pietra)
+        if (b == BlockType::Water) {
+            if (GetBlock(x, y-1, z) == BlockType::Lava || 
+                GetBlock(x+1, y, z) == BlockType::Lava || GetBlock(x-1, y, z) == BlockType::Lava ||
+                GetBlock(x, y, z+1) == BlockType::Lava || GetBlock(x, y, z-1) == BlockType::Lava) {
+                SetBlock(x, y, z, BlockType::Stone); // Acqua che tocca lava diventa pietra
+            }
+        } else if (b == BlockType::Lava) {
+            if (GetBlock(x, y-1, z) == BlockType::Water || 
+                GetBlock(x+1, y, z) == BlockType::Water || GetBlock(x-1, y, z) == BlockType::Water ||
+                GetBlock(x, y, z+1) == BlockType::Water || GetBlock(x, y, z-1) == BlockType::Water) {
+                SetBlock(x, y, z, BlockType::Obsidian); // Lava che tocca acqua diventa Ossidiana
+            }
+        }
+    }
+    
+    // Termodinamica: Il ghiaccio fonde se adiacente a fonti di calore (Lava, Torcia)
+    if (b == BlockType::Ice) {
+        if (GetBlock(x, y-1, z) == BlockType::Lava || GetBlock(x, y-1, z) == BlockType::LightSource ||
+            GetBlock(x+1, y, z) == BlockType::Lava || GetBlock(x+1, y, z) == BlockType::LightSource ||
+            GetBlock(x-1, y, z) == BlockType::Lava || GetBlock(x-1, y, z) == BlockType::LightSource ||
+            GetBlock(x, y, z+1) == BlockType::Lava || GetBlock(x, y, z+1) == BlockType::LightSource ||
+            GetBlock(x, y, z-1) == BlockType::Lava || GetBlock(x, y, z-1) == BlockType::LightSource ||
+            GetBlock(x, y+1, z) == BlockType::Lava || GetBlock(x, y+1, z) == BlockType::LightSource) {
+            
+            SetBlock(x, y, z, BlockType::Water); // Il ghiaccio diventa acqua
         }
     }
 }

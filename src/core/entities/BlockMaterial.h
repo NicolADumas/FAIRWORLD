@@ -44,6 +44,7 @@ inline const BlockMaterial& GetBlockMaterial(BlockType type) {
         /* Ice           13 */ {  917.0f,  917.0f, 2090.0f,  1.00f,  1.5f,  false,  true, "Ice"           },
         /* StargateFrame 14 */ { 8000.0f, 8000.0f,  200.0f,999.00f, -1.0f,  false, false, "StargateFrame" },
         /* StargatePortal15 */ {    0.0f,    0.0f,    0.0f,  0.00f, -1.0f,  false, false, "StargatePortal"},
+        /* Obsidian      16 */ { 3300.0f, 3300.0f,  900.0f,150.00f, 15.0f,  false, false, "Obsidian"      },
     };
 
     uint8_t idx = (uint8_t)type;

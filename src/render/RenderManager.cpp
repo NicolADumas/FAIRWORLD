@@ -57,7 +57,8 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     poolInfo.queueFamilyIndex = indices.transferFamily.value();
     
     if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_transferCommandPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create transfer command pool!");
+        std::cerr << "[VULKAN ERROR] failed to create transfer command pool!" << std::endl;
+        return false;
     }
     
     VkCommandBufferAllocateInfo cmdAllocInfo{};
@@ -66,7 +67,8 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
     if (vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &m_transferCommandBuffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate transfer command buffer!");
+        std::cerr << "[VULKAN ERROR] failed to allocate transfer command buffer!" << std::endl;
+        return false;
     }
     
     // Inizia subito a registrare
@@ -85,7 +87,8 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     VmaPoolCreateInfo vmaPoolInfo = {};
     vmaPoolInfo.memoryTypeIndex = memTypeIndex;
     if (vmaCreatePool(m_vmaAllocator, &vmaPoolInfo, &m_chunkVmaPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create VMA Pool for chunks!");
+        std::cerr << "[VULKAN ERROR] failed to create VMA Pool for chunks!" << std::endl;
+        return false;
     }
 
     // --- 3. CREATE RING BUFFER (STAGING PERSISTENTE) ---
@@ -105,7 +108,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     VmaAllocationInfo vmaRingInfo;
     vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
     m_mappedStagingData = vmaRingInfo.pMappedData;
-    // --- 4. CREATE GLOBAL VRAM BUFFER (512 MB per i chunk) ---
+    // --- 4. CREATE GLOBAL VRAM BUFFER (512 MB per i chunk) ---
     VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     vramBufInfo.size = 512 * 1024 * 1024; // 512 MB
     vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
@@ -127,7 +130,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // FASE 3.4, 4 e 5: Creazione del Render Loop, Pipeline e UBO
     if (!CreateRenderPass()) return false;
     
-    // IMPORTANTE: Creiamo il Command Pool PRIMA delle texture, perchǸ CreateTextureImage 
+    // IMPORTANTE: Creiamo il Command Pool PRIMA delle texture, perché CreateTextureImage 
     // ha bisogno di eseguire comandi (BeginSingleTimeCommands)
     if (!CreateCommandPoolAndBuffer()) return false;
     
@@ -151,7 +154,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     if (!CreateFramebuffers()) return false;
     if (!CreateSyncObjects()) return false;
 
-    // Inizializza ImGui dopo che Vulkan  pronto
+    // Inizializza ImGui dopo che Vulkan è pronto
     InitImGui(hwnd);
     
     std::cout << "[VULKAN] Motore Grafico pronto. Pronti a renderizzare!" << std::endl;
@@ -692,7 +695,8 @@ uint32_t RenderManager::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlag
             return i;
         }
     }
-    throw std::runtime_error("Impossibile trovare un tipo di memoria adatto!");
+    std::cerr << "[VULKAN ERROR] Impossibile trovare un tipo di memoria adatto!" << std::endl;
+    return 0;
 }
 
 bool RenderManager::CreateUniformBuffers() {
@@ -814,11 +818,16 @@ std::vector<char> RenderManager::ReadFile(const std::string& filename) {
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     fs::path exeDir = fs::path(exePath).parent_path();
 
+    // Estrai il nome del file (senza path)
+    fs::path justFile = fs::path(filename).filename();
+
     std::vector<fs::path> candidates = {
         fs::path(filename),
         exeDir / filename,
-        exeDir / "shaders" / filename,
-        exeDir / "assets" / "shaders" / filename
+        exeDir / justFile,
+        exeDir / "shaders" / justFile,
+        exeDir / "assets" / "shaders" / justFile,
+        fs::current_path() / "bin" / justFile
     };
 
     for (auto& p : candidates) {
@@ -836,10 +845,15 @@ std::vector<char> RenderManager::ReadFile(const std::string& filename) {
     std::ostringstream oss;
     oss << "Impossibile aprire il file shader: " << filename
         << " (cwd=" << fs::current_path() << ", exeDir=" << exeDir << ")";
-    throw std::runtime_error(oss.str());
+    std::cerr << "[VULKAN ERROR] " << oss.str() << std::endl;
+    return std::vector<char>();
 }
 
 VkShaderModule RenderManager::CreateShaderModule(const std::vector<char>& code) {
+    if (code.empty()) {
+        std::cerr << "[VULKAN ERROR] Impossibile creare modulo shader: codice vuoto!" << std::endl;
+        return VK_NULL_HANDLE;
+    }
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
@@ -847,7 +861,8 @@ VkShaderModule RenderManager::CreateShaderModule(const std::vector<char>& code) 
 
     VkShaderModule shaderModule;
     if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile creare il modulo shader!");
+        std::cerr << "[VULKAN ERROR] Impossibile creare il modulo shader!" << std::endl;
+        return VK_NULL_HANDLE;
     }
     return shaderModule;
 }
@@ -858,6 +873,13 @@ bool RenderManager::CreateGraphicsPipeline() {
 
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
+
+    if (vertShaderModule == VK_NULL_HANDLE || fragShaderModule == VK_NULL_HANDLE) {
+        std::cerr << "[VULKAN ERROR] Moduli shader principali mancanti!" << std::endl;
+        if (vertShaderModule) vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+        if (fragShaderModule) vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+        return false;
+    }
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1081,6 +1103,87 @@ bool RenderManager::CreateGraphicsPipeline() {
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
 
+    // =========================================================================
+    // SKY PIPELINE (Nessun Vertex Buffer, usa gl_VertexIndex nel vertex shader)
+    // =========================================================================
+    auto skyVertCode = ReadFile("bin/sky_vert.spv");
+    auto skyFragCode = ReadFile("bin/sky_frag.spv");
+    
+    VkShaderModule skyVertModule = CreateShaderModule(skyVertCode);
+    VkShaderModule skyFragModule = CreateShaderModule(skyFragCode);
+
+    if (skyVertModule == VK_NULL_HANDLE || skyFragModule == VK_NULL_HANDLE) {
+        std::cerr << "[VULKAN ERROR] Moduli shader per il cielo mancanti!" << std::endl;
+        if (skyVertModule) vkDestroyShaderModule(m_device, skyVertModule, nullptr);
+        if (skyFragModule) vkDestroyShaderModule(m_device, skyFragModule, nullptr);
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo skyShaderStages[] = {
+        { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, skyVertModule, "main", nullptr },
+        { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, skyFragModule, "main", nullptr }
+    };
+
+    VkPipelineVertexInputStateCreateInfo skyVertexInputInfo{};
+    skyVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    skyVertexInputInfo.vertexBindingDescriptionCount = 0;
+    skyVertexInputInfo.vertexAttributeDescriptionCount = 0;
+
+    VkPipelineInputAssemblyStateCreateInfo skyInputAssembly{};
+    skyInputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    skyInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    skyInputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    // Riutilizziamo viewportState, rasterizer (ma culling=NONE per sicurezza), multisampling, colorBlending
+    VkPipelineRasterizationStateCreateInfo skyRasterizer = rasterizer;
+    skyRasterizer.cullMode = VK_CULL_MODE_NONE; // Disabilita culling per il fullscreen quad
+    skyRasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineDepthStencilStateCreateInfo skyDepthStencil{};
+    skyDepthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    skyDepthStencil.depthTestEnable = VK_FALSE;  // Niente depth test
+    skyDepthStencil.depthWriteEnable = VK_FALSE; // Niente depth write
+    skyDepthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    skyDepthStencil.stencilTestEnable = VK_FALSE;
+
+    // Push Constants per il cielo
+    VkPushConstantRange skyPushConstant{};
+    skyPushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    skyPushConstant.offset = 0;
+    skyPushConstant.size = sizeof(glm::mat4) * 2 + sizeof(float) * 4; // 128 + 16 = 144 bytes
+
+    VkPipelineLayoutCreateInfo skyPipelineLayoutInfo{};
+    skyPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    skyPipelineLayoutInfo.pushConstantRangeCount = 1;
+    skyPipelineLayoutInfo.pPushConstantRanges = &skyPushConstant;
+
+    if (vkCreatePipelineLayout(m_device, &skyPipelineLayoutInfo, nullptr, &m_skyPipelineLayout) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkGraphicsPipelineCreateInfo skyPipelineInfo{};
+    skyPipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    skyPipelineInfo.stageCount = 2;
+    skyPipelineInfo.pStages = skyShaderStages;
+    skyPipelineInfo.pVertexInputState = &skyVertexInputInfo;
+    skyPipelineInfo.pInputAssemblyState = &skyInputAssembly;
+    skyPipelineInfo.pViewportState = &viewportState;
+    skyPipelineInfo.pRasterizationState = &skyRasterizer;
+    skyPipelineInfo.pMultisampleState = &multisampling;
+    skyPipelineInfo.pDepthStencilState = &skyDepthStencil;
+    skyPipelineInfo.pColorBlendState = &colorBlending;
+    skyPipelineInfo.pDynamicState = nullptr;
+    skyPipelineInfo.layout = m_skyPipelineLayout;
+    skyPipelineInfo.renderPass = m_renderPass;
+    skyPipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &skyPipelineInfo, nullptr, &m_skyPipeline) != VK_SUCCESS) {
+        return false;
+    }
+
+    vkDestroyShaderModule(m_device, skyFragModule, nullptr);
+    vkDestroyShaderModule(m_device, skyVertModule, nullptr);
+
     return true;
 }
 
@@ -1153,11 +1256,12 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         m_imageAvailableSemaphores[m_currentFrame],
         VK_NULL_HANDLE, &imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_ERROR_SURFACE_LOST_KHR) {
         RecreateSwapchain();
         return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        throw std::runtime_error("Impossibile acquisire l'immagine della swapchain!");
+        std::cerr << "[VULKAN ERROR] Impossibile acquisire l'immagine della swapchain! Error: " << result << std::endl;
+        return;
     }
 
     vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
@@ -1183,6 +1287,36 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     renderPassInfo.pClearValues    = clearValues.data();
 
     vkCmdBeginRenderPass(m_commandBuffers[m_currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // --- SKY PASS ---
+    if (m_skyPipeline != VK_NULL_HANDLE) {
+        vkCmdBindPipeline(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline);
+        
+        struct SkyPushConstants {
+            glm::mat4 invView;
+            glm::mat4 invProj;
+            float timeOfDay;
+            float moonPhase;
+            glm::vec2 dummy;
+        } skyPC;
+        
+        // Per il cielo vogliamo solo la rotazione, quindi azzeriamo la traslazione (W=0 e P=0,0,0,1)
+        glm::mat4 skyView = viewMatrix;
+        skyView[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        
+        glm::mat4 projMatrix = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 100.0f);
+        projMatrix[1][1] *= -1; // Y flip per Vulkan
+        
+        skyPC.invView = glm::inverse(skyView);
+        skyPC.invProj = glm::inverse(projMatrix);
+        skyPC.timeOfDay = context ? context->worldTimeOfDay : 0.5f;
+        skyPC.moonPhase = context ? context->moonPhase : 0.5f;
+        
+        vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_skyPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants), &skyPC);
+        
+        // 3 vertici autogenerati in glsl (gl_VertexIndex)
+        vkCmdDraw(m_commandBuffers[m_currentFrame], 3, 1, 0, 0);
+    }
 
     UpdateUniformBuffer(m_currentFrame, viewMatrix);
 
@@ -1378,10 +1512,10 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         std::lock_guard<std::mutex> lock(m_queueMutex);
         resultPresent = vkQueuePresentKHR(m_presentQueue, &presentInfo);
     }
-    if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR) {
+    if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || resultPresent == VK_ERROR_SURFACE_LOST_KHR) {
         RecreateSwapchain();
     } else if (resultPresent != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile presentare l'immagine della swapchain!");
+        std::cerr << "[VULKAN ERROR] Impossibile presentare l'immagine della swapchain! Error: " << resultPresent << std::endl;
     }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -1776,9 +1910,14 @@ void RenderManager::Shutdown() {
     if (m_graphicsPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     if (m_portalPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_portalPipeline, nullptr);
     if (m_otherWorldPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_otherWorldPipeline, nullptr);
+    if (m_skyPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_skyPipeline, nullptr);
     if (m_pipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
             m_pipelineLayout = VK_NULL_HANDLE;
+        }
+    if (m_skyPipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device, m_skyPipelineLayout, nullptr);
+            m_skyPipelineLayout = VK_NULL_HANDLE;
         }
 
         for (size_t i = 0; i < m_imageAvailableSemaphores.size(); i++) {
@@ -2039,7 +2178,8 @@ void RenderManager::CreateTextureImageView() {
     viewInfo.subresourceRange.layerCount = 16; // Deve corrispondere al numero di layer
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_textureImageView) != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile creare texture image view!");
+        std::cerr << "[VULKAN ERROR] Impossibile creare texture image view!" << std::endl;
+        return;
     }
 }
 
@@ -2059,7 +2199,8 @@ void RenderManager::CreateTextureSampler() {
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
     if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile creare texture sampler!");
+        std::cerr << "[VULKAN ERROR] Impossibile creare texture sampler!" << std::endl;
+        return;
     }
 }
 
@@ -2083,7 +2224,7 @@ void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerC
     allocInfo.usage = vmaUsage;
 
     if (vmaCreateImage(m_vmaAllocator, &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
-        throw std::runtime_error("Impossibile allocare memory image con VMA!");
+        std::cerr << "[VULKAN ERROR] Impossibile allocare memory image con VMA!" << std::endl;
     }
 }
 
@@ -2320,9 +2461,17 @@ void RenderManager::RecreateSwapchain() {
         vkDestroyPipeline(m_device, m_otherWorldPipeline, nullptr);
         m_otherWorldPipeline = VK_NULL_HANDLE;
     }
+    if (m_skyPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_skyPipeline, nullptr);
+        m_skyPipeline = VK_NULL_HANDLE;
+    }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
         m_pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (m_skyPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_device, m_skyPipelineLayout, nullptr);
+        m_skyPipelineLayout = VK_NULL_HANDLE;
     }
     CreateGraphicsPipeline();
 

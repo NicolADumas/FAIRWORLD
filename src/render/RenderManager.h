@@ -102,6 +102,11 @@ private:
 
     VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_graphicsPipeline{ VK_NULL_HANDLE };
+
+    // --- SKY PIPELINE ---
+    VkPipelineLayout m_skyPipelineLayout{ VK_NULL_HANDLE };
+    VkPipeline m_skyPipeline{ VK_NULL_HANDLE };
+
     VkPipeline m_portalPipeline{ VK_NULL_HANDLE };      // Pipeline per scrivere nello Stencil Buffer
     VkPipeline m_otherWorldPipeline{ VK_NULL_HANDLE };  // Pipeline per disegnare dove Stencil == 1
 

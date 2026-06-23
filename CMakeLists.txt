@@ -54,6 +54,12 @@ add_custom_command(TARGET FairworldCore POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/src/render/frag.spv"
         $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/sky_vert.spv"
+        $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/sky_frag.spv"
+        $<TARGET_FILE_DIR:FairworldCore>
 )
 
 # Ottimizzazioni specifiche per il compilatore (MSVC vs GCC/Clang)
@@ -74,4 +80,4 @@ target_include_directories(Module_Modeling PRIVATE src/core src/core/ecs src/cor
 target_include_directories(Module_Sculpting PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
 target_include_directories(Module_GeometryNodes PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
 
-# Trigger CMake re-generation
+# Trigger CMake re-generation (TimeManager aggiunto)

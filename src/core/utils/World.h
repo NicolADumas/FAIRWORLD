@@ -30,6 +30,7 @@ enum class BlockType : uint8_t {
     Ice         = 13, // Ghiaccio
     StargateFrame = 14, // Cornice del portale
     StargatePortal = 15, // Portale interplanetario
+    Obsidian      = 16, // Ossidiana
 };
 
 struct Vertex {

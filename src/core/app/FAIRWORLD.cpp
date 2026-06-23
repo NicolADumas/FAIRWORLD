@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "FAIRWORLD.h"
 #include "BlockMaterial.h"
+#include "TimeManager.h"
 #include "XrManager.h"
 #include "RenderManager.h"
 #include "WindowManager.h"
@@ -40,6 +41,11 @@ std::string FairWorldEngine::GetSlotName(int slotIndex) {
         return "Weapon";
     } else if (item.type == ItemType::Consumable) {
         return "Consumable";
+    } else if (item.type == ItemType::Tool) {
+        if (!item.stringId.empty()) {
+            return item.stringId;
+        }
+        return "Tool";
     }
     
     return "Unknown";
@@ -160,8 +166,14 @@ FairWorldEngine::FairWorldEngine()
       m_current(GameState::MAIN_MENU), m_previousTab(GameState::TAB_BLOCCHI),
       m_xrManager(std::make_unique<XrManager>()), 
       m_renderManager(std::make_unique<RenderManager>()),
-      m_windowManager(std::make_unique<WindowManager>()),
-      m_forgeWorld(std::make_unique<fw::ForgeWorld>()) {}
+      m_windowManager(std::make_unique<WindowManager>()) {
+    
+    // ForgeWorld Init
+    m_forgeWorld = std::make_unique<fw::ForgeWorld>();
+
+    // TimeManager Init
+    m_timeManager = std::make_unique<fw::TimeManager>();
+}
 
 FairWorldEngine::~FairWorldEngine() {
     Shutdown();
@@ -218,6 +230,14 @@ bool FairWorldEngine::Init() {
     m_isRunning = true;
     m_player.LoadFromJson("assets/player.json");
     
+    // Aggiungi il Cronometro (Controllo Tempo) all'inventario iniziale
+    InventoryItem chronometer;
+    chronometer.type = ItemType::Tool;
+    chronometer.stringId = "TimeSkipper";
+    chronometer.count = 1;
+    chronometer.weightKg = 0.2f; // 200g
+    m_player.inventory.AddItem(chronometer);
+    
     // Inizializza WebView2 per GUI DESKARM
     std::cout << "[SYSTEM] Inizializzazione WebView2 in corso..." << std::endl;
     m_webView.Init(hwnd);
@@ -225,17 +245,18 @@ bool FairWorldEngine::Init() {
     // --- Sottoscrizione Eventi (Event-Driven Input System) ---
     EventManager::Get().Subscribe<Event_BlockMined>([this](const Event_BlockMined& e) {
         // Logica eseguita UNA SOLA VOLTA quando l'evento viene triggerato
-        BlockType brokenType = m_forgeWorld->GetBlock(e.position.x, e.position.y, e.position.z);
+        fw::BlockType brokenType = m_forgeWorld->GetBlock(e.position.x, e.position.y, e.position.z);
         
-        if (brokenType != BlockType::Air && brokenType != BlockType::OutOfBounds) {
-            m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, BlockType::Air);
+        if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
+            m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, fw::BlockType::Air);
             
             // Gestione Drop (Loot)
+            BlockType legacyType = static_cast<BlockType>((uint8_t)brokenType);
             InventoryItem drop;
             drop.type = ItemType::Block;
             drop.blockType = (int)brokenType;
             drop.count = 1;
-            drop.weightKg = GetBlockMaterial(brokenType).mass;
+            drop.weightKg = GetBlockMaterial(legacyType).mass;
             
             if (!m_player.inventory.AddItem(drop)) {
                 // L'inventario è pieno, spawna l'oggetto fisico a terra
@@ -255,7 +276,7 @@ bool FairWorldEngine::Init() {
     });
 
     EventManager::Get().Subscribe<Event_BlockPlaced>([this](const Event_BlockPlaced& e) {
-        m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, e.type);
+        m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, static_cast<fw::BlockType>((uint8_t)e.type));
         std::cout << "[EVENT] Blocco piazzato in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
     });
 
@@ -267,8 +288,9 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
     if (ctx && m_windowManager) {
         ctx->window = (WindowHandle)m_windowManager->GetWindowHandle();
         ctx->forgeWorld = m_forgeWorld.get();
-        // Inizializza ForgeWorld col context appena disponibile
+        // Inizializza i sistemi col context appena disponibile
         m_forgeWorld->Initialize(ctx);
+        m_timeManager->Initialize(ctx);
     }
 }
 
@@ -370,25 +392,14 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     if (!isWorldRunning()) return true;
 
-    // Avanza il tempo nel ciclo Giorno/Notte (Fase 2)
-    m_world.AdvanceTime(deltaTime);
-    
-    // Avanza la simulazione Orbitale e Kepleriana (Fase 8)
-    m_world.SimulateOrbits(deltaTime);
+    // 0. Processa gli eventi in coda (es. BlockUpdates per l'acqua)
+    EventManager::Get().ProcessEvents();
 
-    // Fisica dell'acqua (Fase 4)
-    m_world.m_waterTickAccum += deltaTime;
-    if (m_world.m_waterTickAccum >= 0.25f) {
-        m_world.SimulateWaterTick();
-        m_world.m_waterTickAccum = 0.0f;
-    }
+    // Avanza il tempo nel ciclo Giorno/Notte
+    m_timeManager->Update(deltaTime);
 
-    // Termodinamica SI (Fase 6)
-    m_world.m_thermoTickAccum += deltaTime;
-    if (m_world.m_thermoTickAccum >= 1.0f) {
-        m_world.SimulateThermodynamicsTick();
-        m_world.m_thermoTickAccum = 0.0f;
-    }
+    // Fisica dell'acqua e Termodinamica ora sono gestite da FluidSystem in ForgeWorld
+    // in risposta agli eventi BlockUpdated (non c'è più il polling per frame).
 
     // Toggle Inventory con 'E' (TAB ora è menu principale)
     static bool eWasDown = false;
@@ -588,7 +599,8 @@ bool FairWorldEngine::Update(float deltaTime) {
                 // ============================================================
                 
                 if (holdingBreak && hitBlock.x >= 0 && !hitGhost) {
-                    BlockType targetType = m_world.GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    fw::BlockType targetFW = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    BlockType targetType = static_cast<BlockType>((uint8_t)targetFW);
                     const auto& mat = GetBlockMaterial(targetType);
                     
                     // Blocco indistruttibile? (miningTime < 0)
@@ -611,9 +623,10 @@ bool FairWorldEngine::Update(float deltaTime) {
                         
                         // Blocco rotto!
                         if (m_miningProgress >= 1.0f) {
-                            BlockType brokenType = m_world.GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
-                            if (brokenType != BlockType::Air) {
-                                EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenType));
+                            fw::BlockType brokenFW = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                            if (brokenFW != fw::BlockType::Air && brokenFW != fw::BlockType::OutOfBounds) {
+                                BlockType brokenLegacy = static_cast<BlockType>((uint8_t)brokenFW);
+                                EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenLegacy));
                             }
                             
                             // Reset mining state
@@ -629,12 +642,20 @@ bool FairWorldEngine::Update(float deltaTime) {
                     }
                 }
                 
-                // Piazzamento blocco (PlayMode — click sinistro singolo)
-                if (placeBlock && hitBlock.x >= 0 && m_world.IsInBounds(prevBlock.x, prevBlock.y, prevBlock.z) && !hitGhost) {
+                // Piazzamento blocco o Uso Oggetto (PlayMode)
+                if (placeBlock) {
                     const InventoryItem& activeItem = m_player.inventory.slots[m_selectedSlot];
-                    if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
-                        EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
-                        m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                    
+                    if (!activeItem.IsEmpty() && activeItem.type == ItemType::Tool && activeItem.stringId == "TimeSkipper") {
+                        // Manda avanti il tempo di 1 ora (1.0f / 24.0f)
+                        m_timeManager->AdvanceTimeManual(1.0f / 24.0f);
+                        std::cout << "[TIME] Mandato avanti il tempo con il TimeSkipper!\n";
+                    }
+                    else if (hitBlock.x >= 0 && prevBlock.y >= 0 && prevBlock.y < 256 && !hitGhost) {
+                        if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
+                            EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
+                            m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                        }
                     }
                 }
             }
@@ -1137,11 +1158,47 @@ void FairWorldEngine::Render() {
         }
 
         // --- HUD E OVERLAYS DI GIOCO ---
+        // WIDGET OROLOGIO E CALENDARIO (In alto a destra)
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 260, vp->WorkPos.y + 20), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(240, 100), ImGuiCond_Always);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.15f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.3f, 0.4f, 0.5f));
+        if (ImGui::Begin("ClockWidget", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+            // Formattazione Giorno
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "GIORNO %d", m_sharedContext->worldCurrentDay);
+            ImGui::Separator();
+            
+            // Formattazione Ora
+            float t = m_sharedContext->worldTimeOfDay;
+            int totalMinutes = (int)(t * 24.0f * 60.0f);
+            int hours = totalMinutes / 60;
+            int minutes = totalMinutes % 60;
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.2f, 1.0f), "ORA: %02d:%02d", hours, minutes);
+            
+            // Formattazione Fase Lunare
+            const char* phaseIcon = "Luna";
+            const char* phaseName = "Nuova";
+            float phase = m_sharedContext->moonPhase;
+            
+            if (phase == 0.0f) { phaseIcon = "O"; phaseName = "Nuova"; }
+            else if (phase == 0.125f) { phaseIcon = ")"; phaseName = "Crescente"; }
+            else if (phase == 0.25f)  { phaseIcon = "D"; phaseName = "Primo Quarto"; }
+            else if (phase == 0.375f) { phaseIcon = "D>"; phaseName = "Gibb. Cresc."; }
+            else if (phase == 0.5f)   { phaseIcon = "O"; phaseName = "Piena"; }
+            else if (phase == 0.625f) { phaseIcon = "<C"; phaseName = "Gibb. Calante"; }
+            else if (phase == 0.75f)  { phaseIcon = "C"; phaseName = "Ultimo Quarto"; }
+            else if (phase == 0.875f) { phaseIcon = "("; phaseName = "Falce Calante"; }
+            
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "[%s] LUNA: %s", phaseIcon, phaseName);
+        }
+        ImGui::End();
+        ImGui::PopStyleColor(2);
         
         if (m_gameMode == GameMode::Play) {
             // Disegna l'HUD del Player (HP, MP, Stamina, EXP) in basso a sinistra
-            ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetMainViewport()->Size.y - 120), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(350, 110), ImGuiCond_Always);
+            ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetMainViewport()->Size.y - 140), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(350, 130), ImGuiCond_Always);
             ImGui::Begin("Player HUD", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs);
         
         // Barre colorate
@@ -1169,6 +1226,13 @@ void FairWorldEngine::Render() {
         ImGui::ProgressBar(expPercent, ImVec2(220, 12), "");
         ImGui::SameLine(); ImGui::Text("EXP %d%% (Lv.%d)", (int)(expPercent*100), m_player.stats.level);
         ImGui::PopStyleColor();
+
+        // Orologio
+        float tod = m_sharedContext->worldTimeOfDay;
+        int h = (int)(tod * 24.0f);
+        int m = (int)((tod * 24.0f - h) * 60.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "🕒 Orologio In-Game: %02d:%02d", h, m);
+
         ImGui::End();
         }
 
@@ -1490,7 +1554,8 @@ void FairWorldEngine::EndUIFrame() {
         m_xrManager->EndFrame();
     } else {
         ImGui::Render();
-        m_renderManager->RenderDesktop(m_sharedContext->activeCameraView.viewMatrix, m_world.GetSkyColor(), m_sharedContext, &m_assets, &m_mobManager, &m_player);
+        glm::vec3 skyColor = m_sharedContext ? m_sharedContext->worldSkyColor : m_world.GetSkyColor();
+        m_renderManager->RenderDesktop(m_sharedContext->activeCameraView.viewMatrix, skyColor, m_sharedContext, &m_assets, &m_mobManager, &m_player);
     }
 }
 

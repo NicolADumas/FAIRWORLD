@@ -49,6 +49,9 @@ public:
     void SetBlock(int x, int y, int z, BlockType type);
     bool IsChunkReady(int cx, int cz) const;
 
+    // FluidSystem event-driven
+    void ProcessFluidUpdate(int x, int y, int z);
+
     // Accoda la creazione di una mesh da un thread separato (Thread-safe)
     void EnqueueDeferredMesh(const std::string& name, const Vec3& position, MeshComponent&& mesh);
 

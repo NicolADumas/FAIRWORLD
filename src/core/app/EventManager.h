@@ -33,6 +33,13 @@ struct Event_BlockPlaced : public IEvent {
     Event_BlockPlaced(glm::ivec3 pos, BlockType t) : position(pos), type(t) {}
 };
 
+// Evento: Aggiornamento Blocco (Triggerato quando un blocco adiacente cambia)
+// Usato per propagare la fisica dei fluidi (acqua/lava che cadono) e termodinamica
+struct Event_BlockUpdated : public IEvent {
+    glm::ivec3 position;
+    Event_BlockUpdated(glm::ivec3 pos) : position(pos) {}
+};
+
 // Interfaccia Listener generica per l'archiviazione
 class IEventListener {
 public:
