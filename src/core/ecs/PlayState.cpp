@@ -307,8 +307,9 @@ void PlayState::Update(float dt) {
                     glm::vec3 oldPos = rb.position;
                     
                     if (m_context->forgeWorld) {
-                        int cx = (int)floor(rb.position.x) / 16;
-                        int cz = (int)floor(rb.position.z) / 16;
+                        // FIX CHUNK: divisione per 16.0f prima del floor per gestire coordinate negative in sicurezza.
+                        int cx = (int)std::floor(rb.position.x / 16.0f);
+                        int cz = (int)std::floor(rb.position.z / 16.0f);
                         // Se il chunk sotto i piedi non è pronto, congegliamo la fisica
                         if (m_context->forgeWorld->IsChunkReady(cx, cz)) {
                             m_context->engine->GetPhysicsEngine().StepSimulation(rb, stepDt, *(m_context->forgeWorld));

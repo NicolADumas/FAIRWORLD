@@ -4,6 +4,8 @@
 #include <new>
 #include <cstdlib>
 
+#include <mutex>
+
 // Buffer per il grande blocco di memoria
 static void* g_GlobalHeapBuffer = nullptr;
 
@@ -11,10 +13,12 @@ static void* g_GlobalHeapBuffer = nullptr;
 static constexpr size_t GLOBAL_HEAP_SIZE = 1024ULL * 1024ULL * 256ULL; 
 
 static fw::memory::FreeListAllocator* g_GlobalAllocator = nullptr;
+static std::mutex g_GlobalAllocatorMutex;
 
 namespace fw::memory {
 
     void InitializeGlobalMemory() {
+        std::lock_guard<std::mutex> lock(g_GlobalAllocatorMutex);
         if (!g_GlobalAllocator) {
             g_GlobalHeapBuffer = std::malloc(GLOBAL_HEAP_SIZE);
             if (!g_GlobalHeapBuffer) {
@@ -30,6 +34,7 @@ namespace fw::memory {
     }
 
     void ShutdownGlobalMemory() {
+        std::lock_guard<std::mutex> lock(g_GlobalAllocatorMutex);
         if (g_GlobalAllocator) {
             g_GlobalAllocator->~FreeListAllocator();
             g_GlobalAllocator = nullptr;
@@ -58,7 +63,12 @@ void* operator new(size_t size) {
         fw::memory::InitializeGlobalMemory();
     }
     
-    void* ptr = g_GlobalAllocator->Allocate(size);
+    void* ptr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_GlobalAllocatorMutex);
+        ptr = g_GlobalAllocator->Allocate(size);
+    }
+
     if (!ptr) {
         // Fallback se l'heap custom è esaurito, in modo che l'engine non craschi istantaneamente
         ptr = std::malloc(size);
@@ -72,7 +82,12 @@ void* operator new[](size_t size) {
         fw::memory::InitializeGlobalMemory();
     }
     
-    void* ptr = g_GlobalAllocator->Allocate(size);
+    void* ptr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_GlobalAllocatorMutex);
+        ptr = g_GlobalAllocator->Allocate(size);
+    }
+
     if (!ptr) {
         ptr = std::malloc(size);
         if (!ptr) throw std::bad_alloc();
@@ -90,6 +105,7 @@ void operator delete(void* ptr) noexcept {
         
         // Verifica se l'indirizzo appartiene al nostro blocco (Memory Bound Checking)
         if (p >= start && p < end) {
+            std::lock_guard<std::mutex> lock(g_GlobalAllocatorMutex);
             g_GlobalAllocator->Free(ptr);
             return;
         }

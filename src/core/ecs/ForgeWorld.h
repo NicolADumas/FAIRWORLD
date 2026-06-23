@@ -35,7 +35,11 @@ public:
     void Update(float dt);
     
     // Genera un blocco "Chunk" allocandolo tramite il PoolAllocator
-    entt::entity CreateChunkEntity(const std::string& name, const Vec3& position);
+#ifdef _MSC_VER
+    __declspec(noinline) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position);
+#else
+    __attribute__((noinline)) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position);
+#endif
     
     // Generatore utility convertito in entity
     entt::entity CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type);

@@ -8,8 +8,9 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::ForgeWorld
     rb.netForce = glm::vec3(0.0f);
 
     // 2. Controlla se è in acqua (Fluidodinamica Cap. 18)
-    fw::BlockType feetBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y - rb.eyeOffset + 0.1f), (int)floor(rb.position.z + 0.5f));
-    fw::BlockType centerBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y - rb.radius + 0.5f), (int)floor(rb.position.z + 0.5f));
+    // rb.position.y rappresenta i piedi del giocatore
+    fw::BlockType feetBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y + 0.1f), (int)floor(rb.position.z + 0.5f));
+    fw::BlockType centerBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y + (rb.height * 0.5f)), (int)floor(rb.position.z + 0.5f));
     
     bool feetInWater = (feetBlock == fw::BlockType::Water);
     bool centerInWater = (centerBlock == fw::BlockType::Water);
@@ -94,8 +95,8 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
         float epsilon = 0.01f;
         int minX = (int)floor(rb.position.x - rb.radius + epsilon);
         int maxX = (int)floor(rb.position.x + rb.radius - epsilon);
-        int minY = (int)floor(rb.position.y - rb.eyeOffset + epsilon);
-        int maxY = (int)floor(rb.position.y + (rb.height - rb.eyeOffset) - epsilon);
+        int minY = (int)floor(rb.position.y + epsilon);
+        int maxY = (int)floor(rb.position.y + rb.height - epsilon);
         int minZ = (int)floor(rb.position.z - rb.radius + epsilon);
         int maxZ = (int)floor(rb.position.z + rb.radius - epsilon);
 
@@ -119,10 +120,10 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
     auto getAABB = [&]() -> AABB {
         return {
             rb.position.x - rb.radius + eps,
-            rb.position.y - rb.eyeOffset + eps,
+            rb.position.y + eps,
             rb.position.z - rb.radius + eps,
             rb.position.x + rb.radius - eps,
-            rb.position.y + (rb.height - rb.eyeOffset) - eps,
+            rb.position.y + rb.height - eps,
             rb.position.z + rb.radius - eps
         };
     };

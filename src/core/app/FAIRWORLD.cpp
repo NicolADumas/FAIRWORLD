@@ -321,34 +321,8 @@ bool FairWorldEngine::Update(float deltaTime) {
     }
     */
 
-    // Integrazione Polling DESKARM Editor (Python 2D)
-    try {
-        std::string exportPath = "../assets/deskarm_export.json";
-        if (std::filesystem::exists(exportPath)) {
-            auto lastWrite = std::filesystem::last_write_time(exportPath);
-            if (lastWrite != m_lastDeskarmExportTime) {
-                m_lastDeskarmExportTime = lastWrite;
-                std::ifstream f(exportPath);
-                if (f.is_open()) {
-                    json data = json::parse(f);
-                    bool worldChanged = false;
-                    for (const auto& pt : data) {
-                        int x = pt["x"];
-                        int z = pt["z"];
-                        // Piazziamo una colonna alta 3 blocchi al suolo
-                        for (int y = 30; y < 33; y++) {
-                            m_world.SetBlock(x, y, z, BlockType::Stone);
-                        }
-                        worldChanged = true;
-                    }
-                    if (worldChanged) {
-                        std::cout << "[DESKARM] Costruzione dall'editor ricevuta e applicata!" << std::endl;
-                        // Il prossimo Update(deltaTime) chiamerà BuildDirtyChunks e uploaderà i chunk giusti.
-                    }
-                }
-            }
-        }
-    } catch (...) {}
+    // Integrazione Polling DESKARM disattivata come richiesto.
+    // L'apertura della WebView2 è ora gestita solo dalla macchina a stati (tasto 'H').
 
     // Toggle Diario AI con 'J'
     static bool jWasDown = false;

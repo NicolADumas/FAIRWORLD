@@ -169,16 +169,14 @@ void DeviceManager::Update(SharedContext* context) {
 
     // Aggiungiamo il contributo dell'analogico destro (look)
     if (context->isGamepadConnected) {
-        // Scala gamepad (es. 150 gradi/sec, assumendo venga moltiplicato per dt nel sistema ricevente)
-        // Siccome il deltaTime non ce l'abbiamo qui, passiamo il valore raw e il sistema lo moltiplicherà per dt.
-        // Wait, mouse offset è già delta. Il gamepad è rate (deg/sec).
-        // Per uniformare, passeremo un "Delta Equivalente".
-        // Più semplice: passiamo il rate e chi legge decide.
-        // Ma per coerenza, se lookYaw è un delta angolare puro:
-        // Lasciamo che la levetta passi i valori raw e chi usa lookYaw (CameraSystem) applica il deltaTime/Sens.
-        // Per ora passiamo i valori scalati per simulare un delta standard (es 1.5).
-        if (std::abs(context->gamepadInput.rightThumbX) > 0.1f) in.lookYaw += context->gamepadInput.rightThumbX * 1.5f;
-        if (std::abs(context->gamepadInput.rightThumbY) > 0.1f) in.lookPitch += context->gamepadInput.rightThumbY * 1.5f;
+        // Aumentata la deadzone a 0.25f per evitare stick drift ("guarda in alto da solo")
+        const float deadzone = 0.25f;
+        if (std::abs(context->gamepadInput.rightThumbX) > deadzone) {
+            in.lookYaw += context->gamepadInput.rightThumbX * 1.5f;
+        }
+        if (std::abs(context->gamepadInput.rightThumbY) > deadzone) {
+            in.lookPitch += context->gamepadInput.rightThumbY * 1.5f;
+        }
     }
 
     // Freccette tastiera (legacy look)

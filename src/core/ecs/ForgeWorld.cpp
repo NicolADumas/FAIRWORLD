@@ -281,7 +281,12 @@ void ForgeWorld::Update(float dt) {
                 memcpy(chunk.light, def.chunkData->light, sizeof(chunk.light));
                 
                 m_registry.emplace_or_replace<PBRMaterialComponent>(def.targetEntity);
-                m_registry.emplace_or_replace<MeshComponent>(def.targetEntity, std::move(def.mesh));
+                if (!def.mesh.vertices.empty()) {
+                    m_registry.emplace_or_replace<MeshComponent>(def.targetEntity, std::move(def.mesh));
+                }
+                
+                // Rimuoviamo il tag Dirty SOLO ORA, indicando che il chunk è completato e pronto per la fisica
+                m_registry.remove<ChunkDirtyComponent>(def.targetEntity);
                 // std::cout << "[ForgeWorld ECS] " << def.name << " aggiornato nell'ECS con successo!\n";
             }
         }
@@ -303,8 +308,9 @@ void ForgeWorld::Update(float dt) {
             std::cout << "[ForgeWorld::Update] Camera a (" << px << ", " << py << ", " << pz << ")\n";
         }
         
-        int pcx = (int)px / 16;
-        int pcz = (int)pz / 16;
+        // FIX CHUNK: divisione per 16.0f all'interno di floor() per supportare coordinate negative in modo simmetrico
+        int pcx = (int)std::floor(px / 16.0f);
+        int pcz = (int)std::floor(pz / 16.0f);
         
         for (int dx = -viewDistance; dx <= viewDistance; dx++) {
             for (int dz = -viewDistance; dz <= viewDistance; dz++) {
@@ -350,8 +356,8 @@ void ForgeWorld::Update(float dt) {
                     mTel.m[2][0]*px + mTel.m[2][1]*py + mTel.m[2][2]*pz + mTel.m[2][3]
                 };
                 
-                int vcx = (int)virtualPos.x / 16;
-                int vcz = (int)virtualPos.z / 16;
+                int vcx = (int)std::floor(virtualPos.x / 16.0f);
+                int vcz = (int)std::floor(virtualPos.z / 16.0f);
                 
                 for (int dx = -viewDistance; dx <= viewDistance; dx++) {
                     for (int dz = -viewDistance; dz <= viewDistance; dz++) {
@@ -380,15 +386,14 @@ void ForgeWorld::Update(float dt) {
             dirty.pendingJob = true;
             auto& chunk = dirtyChunks.get<VoxelChunkComponent>(entity);
             std::string chunkName = "Chunk_" + std::to_string(chunk.cx) + "_" + std::to_string(chunk.cz);
-            
-            VoxelChunkComponent chunkCopy = chunk;
-            // Creiamo uno shared_ptr per i dati del chunk, isolati per il thread
-            auto chunkData = std::make_shared<VoxelChunkComponent>(chunkCopy);
+            // Creiamo uno shared_ptr allocando l'heap vuoto, poi copiamo i dati per evitare temporanei sullo stack MSVC
+            auto chunkData = std::shared_ptr<VoxelChunkComponent>(new VoxelChunkComponent());
+            *chunkData = chunk;
             SharedContext* ctx = m_context;
             
             // Sottomette il job
             m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx]() {
-                // 1. GENERAZIONE DATI PROCEDURALI IN BACKGROUND (Niente più CPU stall sul Main Thread!)
+                // 1. GENERAZIONE DATI PROCEDURALI IN BACKGROUND (Niente più CPU stall sul Main Thread)
                 GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
                 
                 // 2. GENERAZIONE MESH
@@ -490,9 +495,16 @@ void ForgeWorld::Update(float dt) {
                     }
                 }
                 
-                // Se la chunk è completamente vuota (solo aria), non facciamo l'upload
+                // Se la chunk è completamente vuota (solo aria), notifichiamo comunque il main thread per sincronizzare l'array e sbloccare la fisica
                 if (vertices.empty()) {
-                    // std::cout << "[ForgeWorld Worker] " << chunkName << " e' vuoto (0 vertici). Scartato.\n";
+                    std::lock_guard<std::mutex> lock(m_deferredMutex);
+                    m_deferredMeshes.push_back({
+                        chunkName + "_Empty", 
+                        {(float)chunkData->cx * 16.0f, 0.0f, (float)chunkData->cz * 16.0f}, 
+                        MeshComponent{}, // mesh vuota
+                        chunkData,
+                        entity
+                    });
                     return;
                 }
                 
@@ -526,13 +538,7 @@ void ForgeWorld::Update(float dt) {
                 });
             });
             
-            // Segnamo l'entità per la rimozione del tag, ma lo facciamo in modo sicuro dopo il loop
-            toRemove.push_back(entity);
-        }
-        
-        // Rimuoviamo il tag così non lo reinvia al prossimo frame (Fuori dal loop della view)
-        for (auto e : toRemove) {
-            m_registry.remove<ChunkDirtyComponent>(e);
+            // Niente più rimozione di ChunkDirtyComponent qui! Viene rimosso dal Main Thread dopo che il DeferredCommand è elaborato.
         }
     }
     
