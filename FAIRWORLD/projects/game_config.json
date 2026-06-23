@@ -1,20 +1,15 @@
 {
-    "entities": [
-        {
-            "name": "Player",
-            "transform": {
-                "x": 0.0,
-                "y": 30.0,
-                "z": 0.0
-            }
-        },
-        {
-            "name": "SpawnPoint",
-            "transform": {
-                "x": 10.0,
-                "y": 0.0,
-                "z": 10.0
-            }
-        }
-    ]
+  "name": "FAIRWORLD Action RPG",
+  "version": "1.0.0",
+  "start_scene": "MainWorld",
+  "entities": [
+    {
+      "name": "SpawnPoint",
+      "transform": {
+        "x": 0.0,
+        "y": 50.0,
+        "z": 0.0
+      }
+    }
+  ]
 }

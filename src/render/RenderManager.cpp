@@ -9,10 +9,10 @@
 #include <fstream>
 #include "json.hpp"
 #include "MobManager.h"
+#include "SharedContext.h"
+#include "ForgeWorld.h"
+#include "ForgeComponents.h"
 #include <algorithm>
-#include <stdexcept>
-#include <iostream>
-#include <fstream>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_impl_vulkan.h>
@@ -105,8 +105,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     VmaAllocationInfo vmaRingInfo;
     vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
     m_mappedStagingData = vmaRingInfo.pMappedData;
-
-    // --- 4. CREATE GLOBAL VRAM BUFFER (512 MB per i chunk) ---
+    // --- 4. CREATE GLOBAL VRAM BUFFER (512 MB per i chunk) ---
     VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     vramBufInfo.size = 512 * 1024 * 1024; // 512 MB
     vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
@@ -128,7 +127,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // FASE 3.4, 4 e 5: Creazione del Render Loop, Pipeline e UBO
     if (!CreateRenderPass()) return false;
     
-    // IMPORTANTE: Creiamo il Command Pool PRIMA delle texture, perché CreateTextureImage 
+    // IMPORTANTE: Creiamo il Command Pool PRIMA delle texture, perchǸ CreateTextureImage 
     // ha bisogno di eseguire comandi (BeginSingleTimeCommands)
     if (!CreateCommandPoolAndBuffer()) return false;
     
@@ -152,7 +151,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     if (!CreateFramebuffers()) return false;
     if (!CreateSyncObjects()) return false;
 
-    // Inizializza ImGui dopo che Vulkan è pronto
+    // Inizializza ImGui dopo che Vulkan  pronto
     InitImGui(hwnd);
     
     std::cout << "[VULKAN] Motore Grafico pronto. Pronti a renderizzare!" << std::endl;
@@ -228,7 +227,16 @@ bool RenderManager::CreateVulkanInstance(XrManager* xrManager) {
         createInfo.enabledLayerCount = 0;
     }
 
-    if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS) {
+    VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance);
+    if (result != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] vkCreateInstance fallito con codice di errore: " << result << std::endl;
+        if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
+            std::cerr << "[VULKAN ERROR] -> Il tuo driver grafico non supporta Vulkan 1.2 (richiesto per Timeline Semaphores). Aggiorna i driver o cambia GPU!" << std::endl;
+        } else if (result == VK_ERROR_EXTENSION_NOT_PRESENT) {
+            std::cerr << "[VULKAN ERROR] -> Un'estensione richiesta non e' supportata!" << std::endl;
+        } else if (result == VK_ERROR_LAYER_NOT_PRESENT) {
+            std::cerr << "[VULKAN ERROR] -> Un validation layer richiesto non e' presente!" << std::endl;
+        }
         return false;
     }
 
@@ -365,14 +373,23 @@ bool RenderManager::CreateLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{}; // Nessuna feature extra per ora
 
+    // Aggiungiamo i Timeline Semaphores a pNext
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
+    timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
+
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pNext = &timelineSemaphoreFeatures;
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
 
-    // Abilitiamo l'estensione Swapchain necessaria per mostrare immagini a schermo
-    const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    // Abilitiamo l'estensione Swapchain necessaria per mostrare immagini a schermo e i Timeline Semaphores
+    const std::vector<const char*> deviceExtensions = { 
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
+    };
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
@@ -525,6 +542,11 @@ bool RenderManager::CreateDepthResources() {
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount     = 1;
 
+    // Aggiungi l'aspetto STENCIL se supportato dal formato
+    if (depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT || depthFormat == VK_FORMAT_D24_UNORM_S8_UINT) {
+        viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_depthImageView) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare la Depth Image View!" << std::endl;
         return false;
@@ -552,13 +574,13 @@ bool RenderManager::CreateRenderPass() {
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    // --- Attachment depth (FIX: risolve facce trasparenti) ---
+    // --- Attachment depth/stencil (Stencil Buffer attivo per Portali) ---
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format         = FindDepthFormat();
     depthAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;     // pulisce ogni frame
-    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE; // non serve dopo
-    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;     // Pulisce Z-buffer
+    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR;     // Pulisce Stencil a 0 ogni frame
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -620,6 +642,11 @@ bool RenderManager::CreateFramebuffers() {
         framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass      = m_renderPass;
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        
+        if (m_renderPass == VK_NULL_HANDLE) {
+            std::cerr << "[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n";
+            return false;
+        }
         framebufferInfo.pAttachments    = attachments.data();
         framebufferInfo.width           = m_swapchainExtent.width;
         framebufferInfo.height          = m_swapchainExtent.height;
@@ -852,7 +879,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     bindingDesc.stride    = sizeof(Vertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 5> attrDescs{};
+    std::array<VkVertexInputAttributeDescription, 7> attrDescs{};
     // location 0: posizione (vec3)
     attrDescs[0].binding  = 0;
     attrDescs[0].location = 0;
@@ -878,6 +905,16 @@ bool RenderManager::CreateGraphicsPipeline() {
     attrDescs[4].location = 4;
     attrDescs[4].format   = VK_FORMAT_R32G32B32_SFLOAT;
     attrDescs[4].offset   = offsetof(Vertex, normal);
+    // location 5: Ambient Occlusion (float)
+    attrDescs[5].binding  = 0;
+    attrDescs[5].location = 5;
+    attrDescs[5].format   = VK_FORMAT_R32_SFLOAT;
+    attrDescs[5].offset   = offsetof(Vertex, ao);
+    // location 6: Light (float)
+    attrDescs[6].binding  = 0;
+    attrDescs[6].location = 6;
+    attrDescs[6].format   = VK_FORMAT_R32_SFLOAT;
+    attrDescs[6].offset   = offsetof(Vertex, light);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -988,6 +1025,58 @@ bool RenderManager::CreateGraphicsPipeline() {
 
     if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) != VK_SUCCESS) return false;
 
+    // --- PIPELINE DEL PORTALE (Scrive 1 nello stencil, colore disabilitato) ---
+    VkPipelineDepthStencilStateCreateInfo portalStencil{};
+    portalStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    portalStencil.depthTestEnable       = VK_TRUE;
+    portalStencil.depthWriteEnable      = VK_FALSE; // Non scrivere nel depth buffer! Lascia il "buco" infinito
+    portalStencil.depthCompareOp        = VK_COMPARE_OP_LESS;
+    portalStencil.stencilTestEnable     = VK_TRUE;  // ATTIVA STENCIL!
+    portalStencil.front.compareOp       = VK_COMPARE_OP_ALWAYS;
+    portalStencil.front.passOp          = VK_STENCIL_OP_REPLACE; // Metti 1 dove c'è il portale
+    portalStencil.front.failOp          = VK_STENCIL_OP_KEEP;
+    portalStencil.front.depthFailOp     = VK_STENCIL_OP_KEEP;
+    portalStencil.front.compareMask     = 0xFF;
+    portalStencil.front.writeMask       = 0xFF;
+    portalStencil.front.reference       = 1;
+    portalStencil.back = portalStencil.front; // Stesso comportamento su entrambe le facce
+
+    VkPipelineColorBlendAttachmentState noColorBlend{};
+    noColorBlend.colorWriteMask = 0; // Disabilita la scrittura sui colori
+    noColorBlend.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo noColorBlending{};
+    noColorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    noColorBlending.logicOpEnable = VK_FALSE;
+    noColorBlending.attachmentCount = 1;
+    noColorBlending.pAttachments = &noColorBlend;
+
+    pipelineInfo.pDepthStencilState = &portalStencil;
+    pipelineInfo.pColorBlendState   = &noColorBlending;
+
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_portalPipeline) != VK_SUCCESS) return false;
+
+    // --- PIPELINE DELL'ALTRO MONDO (Disegna SOLO dove stencil == 1) ---
+    VkPipelineDepthStencilStateCreateInfo otherWorldStencil{};
+    otherWorldStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    otherWorldStencil.depthTestEnable       = VK_TRUE;
+    otherWorldStencil.depthWriteEnable      = VK_TRUE; 
+    otherWorldStencil.depthCompareOp        = VK_COMPARE_OP_LESS;
+    otherWorldStencil.stencilTestEnable     = VK_TRUE;
+    otherWorldStencil.front.compareOp       = VK_COMPARE_OP_EQUAL; // Disegna solo se stencil == reference (1)
+    otherWorldStencil.front.passOp          = VK_STENCIL_OP_KEEP;
+    otherWorldStencil.front.failOp          = VK_STENCIL_OP_KEEP;
+    otherWorldStencil.front.depthFailOp     = VK_STENCIL_OP_KEEP;
+    otherWorldStencil.front.compareMask     = 0xFF;
+    otherWorldStencil.front.writeMask       = 0x00; // Non modificare più lo stencil
+    otherWorldStencil.front.reference       = 1;
+    otherWorldStencil.back = otherWorldStencil.front;
+
+    pipelineInfo.pDepthStencilState = &otherWorldStencil;
+    pipelineInfo.pColorBlendState   = &colorBlending; // Rimetti i colori normali
+
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_otherWorldPipeline) != VK_SUCCESS) return false;
+
     // Pulizia dei moduli shader locali (sono già compilati nella pipeline!)
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
@@ -1054,7 +1143,8 @@ bool RenderManager::CreateSyncObjects() {
 }
 
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
-void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, AssetManager* assets, MobManager* mobManager, Player* player) {
+void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
+    if (m_device == VK_NULL_HANDLE) return;
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
     // imageAvailable[currentFrame]: protetto dal fence sopra => e' sicuro risegnalarlo
@@ -1099,7 +1189,7 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Asse
     vkCmdBindPipeline(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     vkCmdBindDescriptorSets(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
 
-    // Disegna tutti i chunk visibili
+    // Disegna tutti i chunk legacy (se presenti)
     for (const auto& pair : m_chunkBuffers) {
         const auto& chunkBuf = pair.second;
         if (chunkBuf.vertexBuffer != VK_NULL_HANDLE && chunkBuf.indexBuffer != VK_NULL_HANDLE && chunkBuf.indexCount > 0) {
@@ -1114,6 +1204,39 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Asse
             vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &noColorOffset);
 
             vkCmdDrawIndexed(m_commandBuffers[m_currentFrame], chunkBuf.indexCount, 1, 0, 0, 0);
+        }
+    }
+
+    // --- DISEGNO FORGEWORLD (ECS) ---
+    if (context && context->forgeWorld && m_globalVramBuffer != VK_NULL_HANDLE) {
+        auto& registry = context->forgeWorld->GetRegistry();
+        auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
+        
+        for (auto entity : view) {
+            const auto& mesh = view.get<fw::MeshComponent>(entity);
+            const auto& trans = view.get<fw::TransformComponent>(entity);
+            
+            // Disegniamo solo mesh che sono state allocate con successo nella VRAM
+            if (mesh.vramAlloc.valid && mesh.vertices.size() > 0) {
+                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                VkDeviceSize offsets[]   = { mesh.vramAlloc.offset };
+                vkCmdBindVertexBuffers(m_commandBuffers[m_currentFrame], 0, 1, vertexBuffers, offsets);
+                
+                fw::Mat4 fwModel = trans.worldMatrix();
+                glm::mat4 model;
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        model[col][row] = fwModel.m[row][col];
+                    }
+                }
+                
+                glm::vec4 noColorOffset = glm::vec4(0.0f);
+                vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model);
+                vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &noColorOffset);
+                
+                // Le mesh procedurali non hanno un index buffer, disegniamo direttamente i vertici!
+                vkCmdDraw(m_commandBuffers[m_currentFrame], (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            }
         }
     }
 
@@ -1215,35 +1338,46 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Asse
     vkEndCommandBuffer(m_commandBuffers[m_currentFrame]);
 
     // Submit: attende imageAvailable[currentFrame], segnala renderFinished[imageIndex]
-    VkSemaphore waitSemaphores[]   = { m_imageAvailableSemaphores[m_currentFrame] };
-    VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[imageIndex] }; // <-- KEY FIX
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-
     VkSubmitInfo submitInfo{};
-    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount   = 1;
-    submitInfo.pWaitSemaphores      = waitSemaphores;
-    submitInfo.pWaitDstStageMask    = waitStages;
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &m_commandBuffers[m_currentFrame];
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &m_commandBuffers[m_currentFrame];
+
+    VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[imageIndex] };
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores    = signalSemaphores;
+    submitInfo.pSignalSemaphores = signalSemaphores;
 
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]);
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer!" << std::endl;
+        }
+    }
 
-    // Present: attende renderFinished[imageIndex]
-    // La prossima volta che la swapchain restituisce imageIndex, la sua presentazione e' finita
-    // => renderFinishedSemaphores[imageIndex] sara' gia' consumato e puo' essere risegnalato
+    // Presentazione dell'immagine sullo schermo
     VkPresentInfoKHR presentInfo{};
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = signalSemaphores;
-    VkSwapchainKHR swapchains[]    = { m_swapchain };
-    presentInfo.swapchainCount     = 1;
-    presentInfo.pSwapchains        = swapchains;
-    presentInfo.pImageIndices      = &imageIndex;
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-    VkResult resultPresent = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapchains[] = { m_swapchain };
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapchains;
+    presentInfo.pImageIndices = &imageIndex;
+
+    VkResult resultPresent;
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        resultPresent = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+    }
     if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR) {
         RecreateSwapchain();
     } else if (resultPresent != VK_SUCCESS) {
@@ -1639,11 +1773,10 @@ void RenderManager::Shutdown() {
         if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
         if (m_depthImage       != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
 
-        if (m_graphicsPipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-            m_graphicsPipeline = VK_NULL_HANDLE;
-        }
-        if (m_pipelineLayout != VK_NULL_HANDLE) {
+    if (m_graphicsPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+    if (m_portalPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_portalPipeline, nullptr);
+    if (m_otherWorldPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_otherWorldPipeline, nullptr);
+    if (m_pipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
             m_pipelineLayout = VK_NULL_HANDLE;
         }
@@ -1848,11 +1981,32 @@ void RenderManager::InitImGui(void* hwnd) {
 // ---------------------------------------------------------
 void RenderManager::CreateTextureImage() {
     uint32_t texWidth = 16, texHeight = 16;
-    uint32_t layerCount = 10; // Fino a 10 texture contemporanee
+    uint32_t layerCount = 16; // Supporta fino a 16 BlockType (0-15)
     VkDeviceSize imageSize = texWidth * texHeight * 4 * layerCount;
 
-    // Crea un buffer temporaneo (staging buffer) inizializzato con pixel vuoti
-    std::vector<uint8_t> pixels(imageSize, 255); // Tutto bianco di default
+    // Crea un buffer temporaneo (staging buffer) inizializzato con colori procedurali per identificare i blocchi
+    std::vector<uint8_t> pixels(imageSize, 255);
+    for (uint32_t layer = 0; layer < layerCount; layer++) {
+        uint8_t r = (layer * 45) % 255;
+        uint8_t g = (layer * 85) % 255;
+        uint8_t b = (layer * 125) % 255;
+        
+        // Colori specifici (hardcoded per test)
+        if (layer == 1) { r = 60; g = 180; b = 40; } // Grass
+        else if (layer == 2) { r = 100; g = 60; b = 30; } // Dirt
+        else if (layer == 3) { r = 120; g = 120; b = 120; } // Stone
+        else if (layer == 7) { r = 255; g = 100; b = 0; } // Lava
+        
+        for (uint32_t i = 0; i < texWidth * texHeight; i++) {
+            uint32_t index = (layer * texWidth * texHeight + i) * 4;
+            // Motivo a scacchiera per simulare una texture
+            bool checker = ((i % texWidth) / 4 + (i / texWidth) / 4) % 2 == 0;
+            pixels[index + 0] = checker ? r : std::max(0, r - 30);
+            pixels[index + 1] = checker ? g : std::max(0, g - 30);
+            pixels[index + 2] = checker ? b : std::max(0, b - 30);
+            pixels[index + 3] = 255; // Alpha
+        }
+    }
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingBufferMemory;
@@ -1882,7 +2036,7 @@ void RenderManager::CreateTextureImageView() {
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 10; // Deve corrispondere al numero di layer
+    viewInfo.subresourceRange.layerCount = 16; // Deve corrispondere al numero di layer
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_textureImageView) != VK_SUCCESS) {
         throw std::runtime_error("Impossibile creare texture image view!");
@@ -2075,9 +2229,9 @@ void RenderManager::LoadBlockTextures(const std::string& baseDir, const std::vec
     for (const auto& block : blocks) {
         if (block.id < 1 || block.id >= 10) continue; // Supportiamo solo layer validi 1-9
         
-        // Cerca una texture per il blocco (preferiamo tex_side, poi tex_top, poi tex_bottom)
-        std::string filename = block.tex_side;
-        if (filename.empty()) filename = block.tex_top;
+        // Cerca una texture per il blocco (preferiamo tex_top per la resa a terra visiva)
+        std::string filename = block.tex_top;
+        if (filename.empty()) filename = block.tex_side;
         if (filename.empty()) filename = block.tex_bottom;
         
         if (filename.empty()) continue;
@@ -2157,6 +2311,14 @@ void RenderManager::RecreateSwapchain() {
     if (m_graphicsPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
         m_graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (m_portalPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_portalPipeline, nullptr);
+        m_portalPipeline = VK_NULL_HANDLE;
+    }
+    if (m_otherWorldPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_otherWorldPipeline, nullptr);
+        m_otherWorldPipeline = VK_NULL_HANDLE;
     }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);

@@ -49,312 +49,322 @@ cmake_ninja_workdir = D$:\FAIRWORLD\FAIRWORLD\out\build\x64-Debug\
 
 build cmake_object_order_depends_target_FairworldCore: phony || .
 
-build CMakeFiles\FairworldCore.dir\src\core\AIAssistant.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\AIAssistant.cpp || cmake_object_order_depends_target_FairworldCore
-  CONFIG = Debug
-  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
-  OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
-  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
-  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
-  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
-
-build CMakeFiles\FairworldCore.dir\src\core\AssetManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\AssetManager.cpp || cmake_object_order_depends_target_FairworldCore
-  CONFIG = Debug
-  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
-  OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
-  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
-  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
-  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
-
-build CMakeFiles\FairworldCore.dir\src\core\AsyncInput.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\AsyncInput.cpp || cmake_object_order_depends_target_FairworldCore
-  CONFIG = Debug
-  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
-  OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
-  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
-  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
-  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
-
-build CMakeFiles\FairworldCore.dir\src\core\DeskarmWebView.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\DeskarmWebView.cpp || cmake_object_order_depends_target_FairworldCore
-  CONFIG = Debug
-  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
-  OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
-  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
-  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
-  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
-
-build CMakeFiles\FairworldCore.dir\src\core\DeviceManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\DeviceManager.cpp || cmake_object_order_depends_target_FairworldCore
-  CONFIG = Debug
-  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
-  OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
-  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
-  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
-  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
-
 build CMakeFiles\FairworldCore.dir\src\core\Editor\ModelEditor.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\Editor\ModelEditor.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\Editor
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\EditorPanel.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\EditorPanel.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\AIAssistant.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\AIAssistant.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\FAIRWORLD.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\FAIRWORLD.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\AssetManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\AssetManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\ForgeState.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ForgeState.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\AsyncInput.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\AsyncInput.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\ForgeWorld.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ForgeWorld.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\DeskarmWebView.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\DeskarmWebView.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\FreeListAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\FreeListAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\DeviceManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\DeviceManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\HubState.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\HubState.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\EditorPanel.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\EditorPanel.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\Inventory.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\Inventory.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\FAIRWORLD.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\FAIRWORLD.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\JobSystem.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\JobSystem.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\SharedContext.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\SharedContext.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\LinearAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\LinearAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\WindowManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\WindowManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\MemorySystem.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\MemorySystem.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\XrManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\XrManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\MobManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\MobManager.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\app\main.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\app\main.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\app
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\PhysicsEngine.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\PhysicsEngine.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\ForgeState.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\ForgeState.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\PlayState.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\PlayState.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\ForgeWorld.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\ForgeWorld.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\Player.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\Player.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\HubState.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\HubState.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\PoolAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\PoolAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\JobSystem.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\JobSystem.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\ProxyAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ProxyAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\PhysicsEngine.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\PhysicsEngine.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\SharedContext.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\SharedContext.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\PlayState.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\PlayState.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\StackAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\StackAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\ecs\PortalSystem.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\ecs\PortalSystem.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\ecs
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\VmaUsage.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\VmaUsage.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\entities\Inventory.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\entities\Inventory.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\entities
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\WindowManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\WindowManager.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\entities\MobManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\entities\MobManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\entities
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\World.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\World.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\entities\Player.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\entities\Player.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\entities
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\XrManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\XrManager.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\memory\FreeListAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\FreeListAllocator.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\dllmain.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\dllmain.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\memory\LinearAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\LinearAllocator.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\main.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\main.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\memory\MemorySystem.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\MemorySystem.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
 
-build CMakeFiles\FairworldCore.dir\src\core\pch.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\pch.cpp || cmake_object_order_depends_target_FairworldCore
+build CMakeFiles\FairworldCore.dir\src\core\memory\PoolAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\PoolAllocator.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
-  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
+  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
+  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
+
+build CMakeFiles\FairworldCore.dir\src\core\memory\ProxyAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\ProxyAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  OBJECT_DIR = CMakeFiles\FairworldCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
+  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
+  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
+
+build CMakeFiles\FairworldCore.dir\src\core\memory\StackAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\StackAllocator.cpp || cmake_object_order_depends_target_FairworldCore
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  OBJECT_DIR = CMakeFiles\FairworldCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
+  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
+  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
+
+build CMakeFiles\FairworldCore.dir\src\core\memory\VmaUsage.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\memory\VmaUsage.cpp || cmake_object_order_depends_target_FairworldCore
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  OBJECT_DIR = CMakeFiles\FairworldCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\memory
+  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
+  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
+
+build CMakeFiles\FairworldCore.dir\src\core\utils\World.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\utils\World.cpp || cmake_object_order_depends_target_FairworldCore
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  OBJECT_DIR = CMakeFiles\FairworldCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\utils
+  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
+  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
+
+build CMakeFiles\FairworldCore.dir\src\core\utils\dllmain.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\utils\dllmain.cpp || cmake_object_order_depends_target_FairworldCore
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  OBJECT_DIR = CMakeFiles\FairworldCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\utils
+  TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
+  TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
+
+build CMakeFiles\FairworldCore.dir\src\core\utils\pch.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\core\utils\pch.cpp || cmake_object_order_depends_target_FairworldCore
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  OBJECT_DIR = CMakeFiles\FairworldCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\core\utils
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
   TARGET_PDB = D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\FairworldCore.dir
@@ -362,7 +372,7 @@ build CMakeFiles\FairworldCore.dir\src\core\pch.cpp.obj: CXX_COMPILER__Fairworld
 build CMakeFiles\FairworldCore.dir\src\render\Camera.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\render\Camera.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\render
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -372,7 +382,7 @@ build CMakeFiles\FairworldCore.dir\src\render\Camera.cpp.obj: CXX_COMPILER__Fair
 build CMakeFiles\FairworldCore.dir\src\render\RenderManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\render\RenderManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\render
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -382,7 +392,7 @@ build CMakeFiles\FairworldCore.dir\src\render\RenderManager.cpp.obj: CXX_COMPILE
 build CMakeFiles\FairworldCore.dir\src\render\VramSlabAllocator.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\render\VramSlabAllocator.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\render
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -392,7 +402,7 @@ build CMakeFiles\FairworldCore.dir\src\render\VramSlabAllocator.cpp.obj: CXX_COM
 build CMakeFiles\FairworldCore.dir\src\render\VulkanDmaManager.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\src\render\VulkanDmaManager.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\src\render
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -402,7 +412,7 @@ build CMakeFiles\FairworldCore.dir\src\render\VulkanDmaManager.cpp.obj: CXX_COMP
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -412,7 +422,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui.cpp.obj: CXX_COMPILER
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_demo.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_demo.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -422,7 +432,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_demo.cpp.obj: CXX_COM
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_draw.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_draw.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -432,7 +442,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_draw.cpp.obj: CXX_COM
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_vulkan.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_impl_vulkan.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -442,7 +452,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_vulkan.cpp.obj: 
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_win32.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_impl_win32.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -452,7 +462,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_win32.cpp.obj: C
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_tables.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_tables.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -462,7 +472,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_tables.cpp.obj: CXX_C
 build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_widgets.cpp.obj: CXX_COMPILER__FairworldCore_unscanned_Debug D$:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_widgets.cpp || cmake_object_order_depends_target_FairworldCore
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd /fp:fast /wd4819 /wd4244
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\src\render -ID:\FAIRWORLD\FAIRWORLD\third_party -ID:\FAIRWORLD\FAIRWORLD\third_party\imgui -ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include -ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include -external:ID:\VulkanSDK\include -external:W0
   OBJECT_DIR = CMakeFiles\FairworldCore.dir
   OBJECT_FILE_DIR = CMakeFiles\FairworldCore.dir\third_party\imgui
   TARGET_COMPILE_PDB = CMakeFiles\FairworldCore.dir\
@@ -477,7 +487,7 @@ build CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_widgets.cpp.obj: CXX_
 #############################################
 # Link the executable D:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.exe
 
-build D$:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.exe: CXX_EXECUTABLE_LINKER__FairworldCore_Debug CMakeFiles\FairworldCore.dir\src\core\AIAssistant.cpp.obj CMakeFiles\FairworldCore.dir\src\core\AssetManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\AsyncInput.cpp.obj CMakeFiles\FairworldCore.dir\src\core\DeskarmWebView.cpp.obj CMakeFiles\FairworldCore.dir\src\core\DeviceManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\Editor\ModelEditor.cpp.obj CMakeFiles\FairworldCore.dir\src\core\EditorPanel.cpp.obj CMakeFiles\FairworldCore.dir\src\core\FAIRWORLD.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ForgeState.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ForgeWorld.cpp.obj CMakeFiles\FairworldCore.dir\src\core\FreeListAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\HubState.cpp.obj CMakeFiles\FairworldCore.dir\src\core\Inventory.cpp.obj CMakeFiles\FairworldCore.dir\src\core\JobSystem.cpp.obj CMakeFiles\FairworldCore.dir\src\core\LinearAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\MemorySystem.cpp.obj CMakeFiles\FairworldCore.dir\src\core\MobManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\PhysicsEngine.cpp.obj CMakeFiles\FairworldCore.dir\src\core\PlayState.cpp.obj CMakeFiles\FairworldCore.dir\src\core\Player.cpp.obj CMakeFiles\FairworldCore.dir\src\core\PoolAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ProxyAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\SharedContext.cpp.obj CMakeFiles\FairworldCore.dir\src\core\StackAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\VmaUsage.cpp.obj CMakeFiles\FairworldCore.dir\src\core\WindowManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\World.cpp.obj CMakeFiles\FairworldCore.dir\src\core\XrManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\dllmain.cpp.obj CMakeFiles\FairworldCore.dir\src\core\main.cpp.obj CMakeFiles\FairworldCore.dir\src\core\pch.cpp.obj CMakeFiles\FairworldCore.dir\src\render\Camera.cpp.obj CMakeFiles\FairworldCore.dir\src\render\RenderManager.cpp.obj CMakeFiles\FairworldCore.dir\src\render\VramSlabAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\render\VulkanDmaManager.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_demo.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_draw.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_vulkan.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_win32.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_tables.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_widgets.cpp.obj | D$:\VulkanSDK\Lib\vulkan-1.lib D$:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D$:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib
+build D$:\FAIRWORLD\FAIRWORLD\bin\FairworldCore.exe: CXX_EXECUTABLE_LINKER__FairworldCore_Debug CMakeFiles\FairworldCore.dir\src\core\Editor\ModelEditor.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\AIAssistant.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\AssetManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\AsyncInput.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\DeskarmWebView.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\DeviceManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\EditorPanel.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\FAIRWORLD.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\SharedContext.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\WindowManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\XrManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\app\main.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\ForgeState.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\ForgeWorld.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\HubState.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\JobSystem.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\PhysicsEngine.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\PlayState.cpp.obj CMakeFiles\FairworldCore.dir\src\core\ecs\PortalSystem.cpp.obj CMakeFiles\FairworldCore.dir\src\core\entities\Inventory.cpp.obj CMakeFiles\FairworldCore.dir\src\core\entities\MobManager.cpp.obj CMakeFiles\FairworldCore.dir\src\core\entities\Player.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\FreeListAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\LinearAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\MemorySystem.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\PoolAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\ProxyAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\StackAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\core\memory\VmaUsage.cpp.obj CMakeFiles\FairworldCore.dir\src\core\utils\World.cpp.obj CMakeFiles\FairworldCore.dir\src\core\utils\dllmain.cpp.obj CMakeFiles\FairworldCore.dir\src\core\utils\pch.cpp.obj CMakeFiles\FairworldCore.dir\src\render\Camera.cpp.obj CMakeFiles\FairworldCore.dir\src\render\RenderManager.cpp.obj CMakeFiles\FairworldCore.dir\src\render\VramSlabAllocator.cpp.obj CMakeFiles\FairworldCore.dir\src\render\VulkanDmaManager.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_demo.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_draw.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_vulkan.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_impl_win32.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_tables.cpp.obj CMakeFiles\FairworldCore.dir\third_party\imgui\imgui_widgets.cpp.obj | D$:\VulkanSDK\Lib\vulkan-1.lib D$:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D$:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib
   CONFIG = Debug
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
   LINK_FLAGS = /machine:x64 /debug /INCREMENTAL /subsystem:console
@@ -504,7 +514,7 @@ build CMakeFiles\Module_Modeling.dir\src\modules\Modeling.cpp.obj: CXX_COMPILER_
   CONFIG = Debug
   DEFINES = -DModule_Modeling_EXPORTS
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\third_party
   OBJECT_DIR = CMakeFiles\Module_Modeling.dir
   OBJECT_FILE_DIR = CMakeFiles\Module_Modeling.dir\src\modules
   TARGET_COMPILE_PDB = CMakeFiles\Module_Modeling.dir\
@@ -547,7 +557,7 @@ build CMakeFiles\Module_Sculpting.dir\src\modules\Sculpting.cpp.obj: CXX_COMPILE
   CONFIG = Debug
   DEFINES = -DModule_Sculpting_EXPORTS
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\third_party
   OBJECT_DIR = CMakeFiles\Module_Sculpting.dir
   OBJECT_FILE_DIR = CMakeFiles\Module_Sculpting.dir\src\modules
   TARGET_COMPILE_PDB = CMakeFiles\Module_Sculpting.dir\
@@ -590,7 +600,7 @@ build CMakeFiles\Module_GeometryNodes.dir\src\modules\GeometryNodes.cpp.obj: CXX
   CONFIG = Debug
   DEFINES = -DModule_GeometryNodes_EXPORTS
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++latest -MDd
-  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core
+  INCLUDES = -ID:\FAIRWORLD\FAIRWORLD\src\core -ID:\FAIRWORLD\FAIRWORLD\src\core\ecs -ID:\FAIRWORLD\FAIRWORLD\src\core\memory -ID:\FAIRWORLD\FAIRWORLD\src\core\entities -ID:\FAIRWORLD\FAIRWORLD\src\core\app -ID:\FAIRWORLD\FAIRWORLD\src\core\utils -ID:\FAIRWORLD\FAIRWORLD\third_party
   OBJECT_DIR = CMakeFiles\Module_GeometryNodes.dir
   OBJECT_FILE_DIR = CMakeFiles\Module_GeometryNodes.dir\src\modules
   TARGET_COMPILE_PDB = CMakeFiles\Module_GeometryNodes.dir\

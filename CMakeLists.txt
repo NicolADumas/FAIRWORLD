@@ -14,14 +14,26 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/modules)
 # Trova l'SDK di Vulkan installato nel sistema
 find_package(Vulkan REQUIRED)
 
-# --- 2. IL CORE ENGINE (Eseguibile) ---
 file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/render/*.cpp")
+list(APPEND CORE_SOURCES "src/core/ecs/PortalSystem.cpp")
 file(GLOB IMGUI_SOURCES "third_party/imgui/*.cpp")
 
 add_executable(FairworldCore ${CORE_SOURCES} ${IMGUI_SOURCES})
 
 # Includiamo le directory per far trovare gli header
-target_include_directories(FairworldCore PRIVATE src/core src/render third_party third_party/imgui packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/include packages/OpenXR.Headers.1.0.10.2/include)
+target_include_directories(FairworldCore PRIVATE 
+    src/core 
+    src/core/ecs 
+    src/core/memory 
+    src/core/entities 
+    src/core/app 
+    src/core/utils 
+    src/render 
+    third_party 
+    third_party/imgui 
+    packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/include 
+    packages/OpenXR.Headers.1.0.10.2/include
+)
 
 # Linkiamo Vulkan e librerie OS al Core
 target_link_libraries(FairworldCore PRIVATE Vulkan::Vulkan)
@@ -58,6 +70,8 @@ add_library(Module_Sculpting SHARED src/modules/Sculpting.cpp)
 add_library(Module_GeometryNodes SHARED src/modules/GeometryNodes.cpp)
 
 # Facciamo in modo che i moduli vedano gli header del core
-target_include_directories(Module_Modeling PRIVATE src/core)
-target_include_directories(Module_Sculpting PRIVATE src/core)
-target_include_directories(Module_GeometryNodes PRIVATE src/core)
+target_include_directories(Module_Modeling PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
+target_include_directories(Module_Sculpting PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
+target_include_directories(Module_GeometryNodes PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
+
+# Trigger CMake re-generation

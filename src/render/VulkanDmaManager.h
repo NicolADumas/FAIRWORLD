@@ -11,6 +11,8 @@ typedef struct VkQueue_T* VkQueue;
 typedef struct VkSemaphore_T* VkSemaphore;
 typedef struct VkCommandPool_T* VkCommandPool;
 
+typedef struct VkCommandBuffer_T* VkCommandBuffer;
+
 namespace fw {
 
 class VulkanDmaManager {
@@ -21,7 +23,7 @@ public:
     // Inizializza il Dma Manager con gli handle di Vulkan generati da RenderManager
     void Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool, 
                     VkBuffer stagingBuffer, void* mappedStaging, uint32_t stagingSize,
-                    VkBuffer globalVramBuffer);
+                    VkBuffer globalVramBuffer, std::mutex* queueMutex);
 
     // Funzione chiamata dal Worker Thread (Job System).
     // Esegue una copia Zero-Copy in RAM (Write-Combine burst) verso lo Staging Buffer,
@@ -48,6 +50,7 @@ private:
     VkQueue m_transferQueue = nullptr;
     VkCommandPool m_transferPool = nullptr;
     VkBuffer m_globalVramBuffer = nullptr;
+    std::mutex* m_queueMutex = nullptr;
 
     // -- Timeline Semaphore --
     VkSemaphore m_transferTimeline = nullptr;
@@ -57,6 +60,12 @@ private:
     // Se non c'è spazio, in una VERA implementazione dovrebbe attendere (wait)
     // l'avanzamento della m_tailOffset verificando il valore del Timeline Semaphore.
     uint32_t AllocateStagingSpace(uint32_t size);
+
+    struct PendingTransfer {
+        uint64_t timelineId;
+        VkCommandBuffer cmd;
+    };
+    std::vector<PendingTransfer> m_pendingTransfers;
 };
 
 } // namespace fw

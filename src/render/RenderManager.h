@@ -45,6 +45,7 @@ public:
     void* GetMappedStagingData() const { return m_mappedStagingData; }
     uint64_t GetStagingBufferSize() const { return STAGING_BUFFER_SIZE; }
     VkBuffer GetGlobalVramBuffer() const { return m_globalVramBuffer; }
+    std::mutex* GetQueueMutex() { return &m_queueMutex; }
 
     // Notifica che la finestra è stata ridimensionata: ricrea la Swapchain
     void NotifyResize() { RecreateSwapchain(); }
@@ -57,6 +58,7 @@ private:
 
     // --- NUOVI COMPONENTI FASE 3 ---
     VkDevice m_device{ VK_NULL_HANDLE };
+    std::mutex m_queueMutex;
     VkQueue m_graphicsQueue{ VK_NULL_HANDLE };
     VkQueue m_presentQueue{ VK_NULL_HANDLE };
     VkQueue m_transferQueue{ VK_NULL_HANDLE }; // Coda asincrona per i Voxel
@@ -100,6 +102,8 @@ private:
 
     VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_graphicsPipeline{ VK_NULL_HANDLE };
+    VkPipeline m_portalPipeline{ VK_NULL_HANDLE };      // Pipeline per scrivere nello Stencil Buffer
+    VkPipeline m_otherWorldPipeline{ VK_NULL_HANDLE };  // Pipeline per disegnare dove Stencil == 1
 
     // --- TEXTURE ARRAY (In-Game Pixel Editor) ---
     VkImage m_textureImage{ VK_NULL_HANDLE };
@@ -258,5 +262,5 @@ public:
     void UploadGhostMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     
     // Metodo da chiamare nel Game Loop
-    void RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, class AssetManager* assets = nullptr, class MobManager* mobManager = nullptr, class Player* player = nullptr);
+    void RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, struct SharedContext* context = nullptr, class AssetManager* assets = nullptr, class MobManager* mobManager = nullptr, class Player* player = nullptr);
 };

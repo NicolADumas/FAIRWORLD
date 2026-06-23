@@ -15,8 +15,8 @@ VramSlabAllocator::VramSlabAllocator(uint32_t totalMemoryBytes, uint32_t pageSiz
         m_freePagesOffsets.push_back((numPages - 1 - i) * m_pageSize);
     }
 
-    // Inizializza le classi di Bucket (Potenze di 2 partendo da 8KB fino a 512KB)
-    uint32_t sizes[] = { 8192, 16384, 32768, 65536, 131072, 262144, 524288 };
+    // Inizializza le classi di Bucket (Potenze di 2 partendo da 8KB fino a 4MB)
+    uint32_t sizes[] = { 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304 };
     for (uint32_t size : sizes) {
         Bucket b;
         b.slotSize = size;
@@ -54,8 +54,6 @@ bool VramSlabAllocator::ExpandBucket(int bucketIdx) {
         b.freeOffsets.push_back(pageOffset + (slotsInPage - 1 - i) * b.slotSize);
     }
 
-    std::cout << "[VRAM] Pagina da " << (m_pageSize / 1024) << "KB assegnata al Bucket da " 
-              << (b.slotSize / 1024) << "KB. Generati " << slotsInPage << " slot.\n";
     return true;
 }
 

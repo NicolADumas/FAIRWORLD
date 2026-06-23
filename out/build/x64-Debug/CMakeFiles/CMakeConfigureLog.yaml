@@ -1026,8 +1026,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/CMakeScratch/TryCompile-l4h5g5"
-      binary: "D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/CMakeScratch/TryCompile-l4h5g5"
+      source: "D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/CMakeScratch/TryCompile-8vrc5c"
+      binary: "D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/CMakeScratch/TryCompile-8vrc5c"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -1038,11 +1038,11 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/CMakeScratch/TryCompile-l4h5g5'
+        Change Dir: 'D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/CMakeScratch/TryCompile-8vrc5c'
         
-        Run Build Command(s): "D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe" -v cmTC_31a96
-        [1/2] "D:\\Visual Code\\vs\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe"  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_31a96.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_31a96.dir\\ /FS -c "D:\\Visual Code\\vs\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\share\\cmake-4.3\\Modules\\CMakeCXXCompilerABI.cpp"
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && "D:\\Visual Code\\vs\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe" -E vs_link_exe --msvc-ver=1951 --intdir=CMakeFiles\\cmTC_31a96.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- "D:\\Visual Code\\vs\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\link.exe" /nologo CMakeFiles\\cmTC_31a96.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_31a96.exe /implib:cmTC_31a96.lib /pdb:cmTC_31a96.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
+        Run Build Command(s): "D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe" -v cmTC_0ff7c
+        [1/2] "D:\\Visual Code\\vs\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe"  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_0ff7c.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_0ff7c.dir\\ /FS -c "D:\\Visual Code\\vs\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\share\\cmake-4.3\\Modules\\CMakeCXXCompilerABI.cpp"
+        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && "D:\\Visual Code\\vs\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe" -E vs_link_exe --msvc-ver=1951 --intdir=CMakeFiles\\cmTC_0ff7c.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- "D:\\Visual Code\\vs\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\link.exe" /nologo CMakeFiles\\cmTC_0ff7c.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_0ff7c.exe /implib:cmTC_0ff7c.lib /pdb:cmTC_0ff7c.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
         
       exitCode: 0
   -

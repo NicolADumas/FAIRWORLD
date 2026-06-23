@@ -11,6 +11,8 @@ layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in float fragTexIndex;
 layout(location = 3) in vec3 fragNormal;
 layout(location = 4) in vec3 fragWorldPos;
+layout(location = 5) in float fragAO;
+layout(location = 6) in float fragLight;
 
 layout(binding = 1) uniform sampler2DArray texSampler;
 
@@ -94,8 +96,12 @@ void main() {
     // Moltiplicatore 3.0 per far brillare molto i bordi!
     vec3 specular = specularColor * specPower * NdotL * 3.0; 
 
-    // Combina illuminazione
-    vec3 finalColor = ambient + (diffuse + specular) * sunColor;
+    // Ambient Occlusion e Sunlight dal Voxel (passati come vertex attributes)
+    float ao = fragAO;
+    float blockLight = fragLight;
+
+    // Combina illuminazione moltiplicata per l'Ambient Occlusion Voxel
+    vec3 finalColor = (ambient * ao) + (diffuse + specular) * sunColor * ao * blockLight;
 
     // Se è lava, aggiungi self-illumination (emissive)
     if (type == 7) {
