@@ -14,31 +14,31 @@ namespace fw {
 
         switch (key) {
             // --- MOUSE ---
-            case InputID::MOUSE_LEFT:   return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-            case InputID::MOUSE_RIGHT:  return (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-            case InputID::MOUSE_MIDDLE: return (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+            case InputID::MOUSE_LEFT:   return (ctx->keyboardState[VK_LBUTTON] & 0x80) != 0;
+            case InputID::MOUSE_RIGHT:  return (ctx->keyboardState[VK_RBUTTON] & 0x80) != 0;
+            case InputID::MOUSE_MIDDLE: return (ctx->keyboardState[VK_MBUTTON] & 0x80) != 0;
 
             // --- TASTIERA: Movimento ---
-            case InputID::KEY_W:     return (GetAsyncKeyState('W') & 0x8000) != 0;
-            case InputID::KEY_S:     return (GetAsyncKeyState('S') & 0x8000) != 0;
-            case InputID::KEY_A:     return (GetAsyncKeyState('A') & 0x8000) != 0;
-            case InputID::KEY_D:     return (GetAsyncKeyState('D') & 0x8000) != 0;
+            case InputID::KEY_W:     return (ctx->keyboardState['W'] & 0x80) != 0;
+            case InputID::KEY_S:     return (ctx->keyboardState['S'] & 0x80) != 0;
+            case InputID::KEY_A:     return (ctx->keyboardState['A'] & 0x80) != 0;
+            case InputID::KEY_D:     return (ctx->keyboardState['D'] & 0x80) != 0;
 
             // --- TASTIERA: Azioni ---
-            case InputID::KEY_SPACE: return (GetAsyncKeyState(VK_SPACE)   & 0x8000) != 0;
-            case InputID::KEY_ESC:   return (GetAsyncKeyState(VK_ESCAPE)  & 0x8000) != 0;
-            case InputID::KEY_ENTER: return (GetAsyncKeyState(VK_RETURN)  & 0x8000) != 0;
+            case InputID::KEY_SPACE: return (ctx->keyboardState[VK_SPACE]   & 0x80) != 0;
+            case InputID::KEY_ESC:   return (ctx->keyboardState[VK_ESCAPE]  & 0x80) != 0;
+            case InputID::KEY_ENTER: return (ctx->keyboardState[VK_RETURN]  & 0x80) != 0;
 
             // --- TASTIERA: Modificatori ---
-            case InputID::KEY_SHIFT: return (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
-            case InputID::KEY_CTRL:  return (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-            case InputID::KEY_ALT:   return (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
+            case InputID::KEY_SHIFT: return (ctx->keyboardState[VK_SHIFT]   & 0x80) != 0;
+            case InputID::KEY_CTRL:  return (ctx->keyboardState[VK_CONTROL] & 0x80) != 0;
+            case InputID::KEY_ALT:   return (ctx->keyboardState[VK_MENU]    & 0x80) != 0;
 
             // --- TASTIERA: Frecce ---
-            case InputID::KEY_UP:    return (GetAsyncKeyState(VK_UP)    & 0x8000) != 0;
-            case InputID::KEY_DOWN:  return (GetAsyncKeyState(VK_DOWN)  & 0x8000) != 0;
-            case InputID::KEY_LEFT:  return (GetAsyncKeyState(VK_LEFT)  & 0x8000) != 0;
-            case InputID::KEY_RIGHT: return (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+            case InputID::KEY_UP:    return (ctx->keyboardState[VK_UP]    & 0x80) != 0;
+            case InputID::KEY_DOWN:  return (ctx->keyboardState[VK_DOWN]  & 0x80) != 0;
+            case InputID::KEY_LEFT:  return (ctx->keyboardState[VK_LEFT]  & 0x80) != 0;
+            case InputID::KEY_RIGHT: return (ctx->keyboardState[VK_RIGHT] & 0x80) != 0;
 
             // --- GAMEPAD (dati già pre-decodificati da DeviceManager) ---
             case InputID::PAD_FACE_DOWN:  return ctx && ctx->gamepadInput.buttonA;

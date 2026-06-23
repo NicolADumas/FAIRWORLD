@@ -561,7 +561,8 @@ void ForgeWorld::Update(float dt) {
 }
 
 BlockType ForgeWorld::GetBlock(int x, int y, int z) const {
-    if (y < 0 || y >= 128) return BlockType::Air;
+    if (y >= 128) return BlockType::Air; // Sky libero
+    if (y < 0) return BlockType::OutOfBounds; // Void solido
     int cx = x >= 0 ? x / 16 : (x - 15) / 16;
     int cz = z >= 0 ? z / 16 : (z - 15) / 16;
     int lx = x - (cx * 16);
@@ -575,7 +576,7 @@ BlockType ForgeWorld::GetBlock(int x, int y, int z) const {
             return static_cast<BlockType>(chunk.blocks[lx][y][lz]);
         }
     }
-    return BlockType::Air;
+    return BlockType::OutOfBounds; // Chunk non ancora caricato agisce da muro solido
 }
 
 void ForgeWorld::SetBlock(int x, int y, int z, BlockType type) {

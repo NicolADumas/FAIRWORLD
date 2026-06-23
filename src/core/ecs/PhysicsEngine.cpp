@@ -116,7 +116,7 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
         float maxX, maxY, maxZ;
     };
 
-    float eps = 0.001f;
+    float eps = 0.01f;
     auto getAABB = [&]() -> AABB {
         return {
             rb.position.x - rb.radius + eps,
@@ -135,12 +135,12 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
     while (anyPenetration && maxIters-- > 0) {
         anyPenetration = false;
         AABB box = getAABB();
-        int minX = (int)floor(box.minX);
-        int maxX = (int)floor(box.maxX);
-        int minY = (int)floor(box.minY);
-        int maxY = (int)floor(box.maxY);
-        int minZ = (int)floor(box.minZ);
-        int maxZ = (int)floor(box.maxZ);
+        int minX = (int)floor(box.minX + 0.001f);
+        int maxX = (int)floor(box.maxX - 0.001f);
+        int minY = (int)floor(box.minY + 0.001f);
+        int maxY = (int)floor(box.maxY - 0.001f);
+        int minZ = (int)floor(box.minZ + 0.001f);
+        int maxZ = (int)floor(box.maxZ - 0.001f);
         
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
@@ -516,9 +516,9 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
     }
 
     // Danno da caduta (Energia Cinetica persa improvvisamente)
-    // Soglia: 4.8 m/s corrisponde a ~1.2m di caduta (v = sqrt(2*g*h))
-    // Cadute più basse di ~1.2m non causano danni (soglia biologica umana)
-    if (rb.isGrounded && oldVelY < -4.8f) {
+    // Soglia: 7.7 m/s corrisponde a ~3m di caduta (v = sqrt(2*g*h))
+    // Cadute più basse di ~3m non causano danni
+    if (rb.isGrounded && oldVelY < -7.7f) {
         float deltaV = abs(oldVelY - rb.velocity.y);
         float damage = ComputeFallDamage(deltaV, rb.mass);
         if (damage > 0.0f) {
@@ -532,8 +532,8 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
 
 float PhysicsEngine::ComputeFallDamage(float deltaV, float mass) {
     // E_cin_persa = 0.5 * m * v^2  (v_finale ~= 0 dopo l'impatto)
-    // Soglia biologica: impatti < 4.8 m/s (h < 1.2m) sono assorbiti dalle ginocchia
-    if (deltaV < 4.8f) return 0.0f;
+    // Soglia biologica: impatti < 7.7 m/s (h < 3m) sono assorbiti dalle ginocchia
+    if (deltaV < 7.7f) return 0.0f;
 
     float kineticEnergyLost = 0.5f * mass * (deltaV * deltaV);
 

@@ -225,16 +225,17 @@ bool FairWorldEngine::Init() {
     // --- Sottoscrizione Eventi (Event-Driven Input System) ---
     EventManager::Get().Subscribe<Event_BlockMined>([this](const Event_BlockMined& e) {
         // Logica eseguita UNA SOLA VOLTA quando l'evento viene triggerato
-        BlockType brokenType = m_world.GetBlock(e.position.x, e.position.y, e.position.z);
+        BlockType brokenType = m_forgeWorld->GetBlock(e.position.x, e.position.y, e.position.z);
         
-        if (brokenType != BlockType::Air) {
-            m_world.SetBlock(e.position.x, e.position.y, e.position.z, BlockType::Air);
+        if (brokenType != BlockType::Air && brokenType != BlockType::OutOfBounds) {
+            m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, BlockType::Air);
             
             // Gestione Drop (Loot)
             InventoryItem drop;
             drop.type = ItemType::Block;
             drop.blockType = (int)brokenType;
             drop.count = 1;
+            drop.weightKg = GetBlockMaterial(brokenType).mass;
             
             if (!m_player.inventory.AddItem(drop)) {
                 // L'inventario è pieno, spawna l'oggetto fisico a terra
@@ -254,7 +255,7 @@ bool FairWorldEngine::Init() {
     });
 
     EventManager::Get().Subscribe<Event_BlockPlaced>([this](const Event_BlockPlaced& e) {
-        m_world.SetBlock(e.position.x, e.position.y, e.position.z, e.type);
+        m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, e.type);
         std::cout << "[EVENT] Blocco piazzato in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
     });
 
@@ -326,7 +327,7 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // Toggle Diario AI con 'J'
     static bool jWasDown = false;
-    bool jDown = (GetAsyncKeyState('J') & 0x8000) != 0;
+    bool jDown = m_sharedContext && (m_sharedContext->keyboardState['J'] & 0x80) != 0;
     if (jDown && !jWasDown && !m_isDiaryOpen) {
         m_isDiaryOpen = true;
         m_diaryFocusRequested = true;
@@ -336,7 +337,7 @@ bool FairWorldEngine::Update(float deltaTime) {
     
     // Apri Browser Web Integrato con 'H'
     static bool hWasDown = false;
-    bool hDown = (GetAsyncKeyState('H') & 0x8000) != 0;
+    bool hDown = m_sharedContext && (m_sharedContext->keyboardState['H'] & 0x80) != 0;
     if (hDown && !hWasDown) {
         if (m_current == GameState::WEB_BROWSER) {
             transitionTo(GameState::PLAYING);
@@ -349,7 +350,7 @@ bool FairWorldEngine::Update(float deltaTime) {
     
     // --- ESC / START: apre/chiude il menu di pausa ---
     static bool escWasDownEngine = false;
-    bool escDownEngine = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0
+    bool escDownEngine = (m_sharedContext && (m_sharedContext->keyboardState[VK_ESCAPE] & 0x80) != 0)
                       || fw::IsActionActive("PAUSE"_hs, m_sharedContext);
     if (escDownEngine && !escWasDownEngine) {
         if (m_current == GameState::PLAYING) {
@@ -391,7 +392,7 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // Toggle Inventory con 'E' (TAB ora è menu principale)
     static bool eWasDown = false;
-    bool eDown = (GetAsyncKeyState('E') & 0x8000) != 0;
+    bool eDown = m_sharedContext && (m_sharedContext->keyboardState['E'] & 0x80) != 0;
     if (eDown && !eWasDown && !m_isDiaryOpen && !io.WantCaptureKeyboard) {
         m_isInventoryOpen = !m_isInventoryOpen;
         if (m_isInventoryOpen) {
@@ -405,7 +406,7 @@ bool FairWorldEngine::Update(float deltaTime) {
         // I tasti '1'-'9' mappano agli slot 0-8, '0' mappa allo slot 9
         const int keyMap[10] = { '1','2','3','4','5','6','7','8','9','0' };
         for (int i = 0; i < Inventory::HOTBAR_SIZE; i++) {
-            if (GetAsyncKeyState(keyMap[i]) & 0x8000) {
+            if (m_sharedContext && (m_sharedContext->keyboardState[keyMap[i]] & 0x80) != 0) {
                 if (m_selectedSlot != i) {
                     m_selectedSlot  = i;
                     std::cout << "[INVENTORY] Slot " << (i + 1 == 10 ? 0 : i + 1)

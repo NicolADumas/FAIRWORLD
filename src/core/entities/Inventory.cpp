@@ -2,6 +2,7 @@
 #include "Inventory.h"
 #include <iostream>
 #include <algorithm>
+#include "BlockMaterial.h"
 
 Inventory::Inventory() {
     for (int i = 0; i < INVENTORY_SIZE; i++) {
@@ -172,6 +173,11 @@ void Inventory::LoadFromJson(const nlohmann::json& j) {
             slots[i].stringId = itemObj.value("stringId", "");
             slots[i].count = itemObj.value("count", 0);
             slots[i].maxStack = itemObj.value("maxStack", 64);
+            if (slots[i].type == ItemType::Block) {
+                slots[i].weightKg = GetBlockMaterial((BlockType)slots[i].blockType).mass;
+            } else {
+                slots[i].weightKg = itemObj.value("weightKg", 0.5f);
+            }
             if (slots[i].count <= 0) {
                 slots[i].Clear();
             }
@@ -185,16 +191,26 @@ void Inventory::LoadFromJson(const nlohmann::json& j) {
 
 void Inventory::GiveStarterItems() {
     // Aggiungi un po' di blocchi iniziali
-    InventoryItem grass; grass.type = ItemType::Block; grass.blockType = 1; grass.count = 64; AddItem(grass);
-    InventoryItem dirt; dirt.type = ItemType::Block; dirt.blockType = 2; dirt.count = 64; AddItem(dirt);
-    InventoryItem stone; stone.type = ItemType::Block; stone.blockType = 3; stone.count = 64; AddItem(stone);
-    InventoryItem wood; wood.type = ItemType::Block; wood.blockType = 4; wood.count = 64; AddItem(wood);
-    InventoryItem sand; sand.type = ItemType::Block; sand.blockType = 5; sand.count = 64; AddItem(sand);
-    InventoryItem water; water.type = ItemType::Block; water.blockType = 6; water.count = 64; AddItem(water);
-    InventoryItem lava; lava.type = ItemType::Block; lava.blockType = 7; lava.count = 64; AddItem(lava);
-    InventoryItem leaves; leaves.type = ItemType::Block; leaves.blockType = 8; leaves.count = 64; AddItem(leaves);
-    InventoryItem spawner; spawner.type = ItemType::Block; spawner.blockType = 9; spawner.count = 10; AddItem(spawner);
-    InventoryItem light; light.type = ItemType::Block; light.blockType = 10; light.count = 64; AddItem(light);
-    InventoryItem mushroom; mushroom.type = ItemType::Block; mushroom.blockType = 11; mushroom.count = 64; AddItem(mushroom);
-    InventoryItem ore; ore.type = ItemType::Block; ore.blockType = 12; ore.count = 64; AddItem(ore);
+    auto addBlock = [&](int bType) {
+        InventoryItem item;
+        item.type = ItemType::Block;
+        item.blockType = bType;
+        item.count = 64;
+        item.weightKg = GetBlockMaterial((BlockType)bType).mass;
+        AddItem(item);
+    };
+
+    addBlock(1);  // Grass
+    addBlock(2);  // Dirt
+    addBlock(3);  // Stone
+    addBlock(4);  // Wood
+    addBlock(5);  // Sand
+    addBlock(6);  // Water
+    addBlock(7);  // Lava
+    addBlock(8);  // Leaves
+    
+    InventoryItem spawner; spawner.type = ItemType::Block; spawner.blockType = 9; spawner.count = 10; spawner.weightKg = GetBlockMaterial(BlockType::MobSpawner).mass; AddItem(spawner);
+    addBlock(10); // LightSource
+    addBlock(11); // Mushroom
+    addBlock(12); // Ore
 }

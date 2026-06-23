@@ -1,6 +1,0 @@
-D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/FairworldCore.dir
-D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/Module_Modeling.dir
-D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/Module_Sculpting.dir
-D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/Module_GeometryNodes.dir
-D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/edit_cache.dir
-D:/FAIRWORLD/FAIRWORLD/out/build/x64-Debug/CMakeFiles/rebuild_cache.dir

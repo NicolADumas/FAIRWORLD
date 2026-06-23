@@ -40,7 +40,7 @@ struct NameComponent {
 struct PlayerControllerComponent {
     float walkSpeed = 5.0f;
     float runSpeed = 8.0f;
-    float jumpForce = 7.0f;
+    float jumpForce = 5.5f; // Salto di ~1.5 blocchi invece di 2.5
 };
 
 // Componente per la simulazione fisica

@@ -169,7 +169,7 @@ void PlayState::Update(float dt) {
 
         // --- F1: CAMBIO MODALITÀ ---
         static bool f1WasDown = false;
-        bool f1Down = fw::IsActionActive("PAUSE"_hs, m_context) == false && (GetAsyncKeyState(VK_F1) & 0x8000) != 0; 
+        bool f1Down = fw::IsActionActive("PAUSE"_hs, m_context) == false && (m_context->keyboardState[VK_F1] & 0x80) != 0; 
         if (f1Down && !f1WasDown) {
             GameMode currentMode = m_context->engine->GetGameMode();
             m_context->engine->SetGameMode(currentMode == GameMode::Dev ? GameMode::Play : GameMode::Dev);
@@ -222,7 +222,7 @@ void PlayState::Update(float dt) {
                 
                 rb.velocity = flyMoveVec * controller.walkSpeed;
                 if (m_context->currentInput.isJumping) rb.velocity.y = controller.walkSpeed;
-                else if (GetAsyncKeyState(VK_SHIFT) & 0x8000) rb.velocity.y = -controller.walkSpeed;
+                else if (m_context->keyboardState[VK_SHIFT] & 0x80) rb.velocity.y = -controller.walkSpeed;
                 else rb.velocity.y = 0.0f; // Azzera Y se non stiamo salendo o scendendo in Noclip
                 
                 rb.position += rb.velocity * dt;
@@ -340,8 +340,19 @@ void PlayState::Update(float dt) {
                 // Svuotamento coda eventi fisica (Danni da caduta, ecc.)
                 for (const auto& ev : rb.pendingEvents) {
                     if (ev.type == PhysicsEvent::Type::FallDamage) {
-                        m_context->engine->GetPlayer().stats.currentHP -= (int)ev.value;
-                        std::cout << "[PlayState] Danno da caduta subito: " << ev.value << " HP\n";
+                        Player& player = m_context->engine->GetPlayer();
+                        int dex = player.stats.GetDEX();
+                        
+                        // Mitigazione DEX: La destrezza riduce il danno da caduta (Parkour roll)
+                        // 1% di riduzione ogni punto DEX, fino a un massimo di 70% di riduzione.
+                        float reduction = std::min(0.70f, dex * 0.01f);
+                        int finalDamage = std::max(0, (int)(ev.value * (1.0f - reduction)));
+                        
+                        if (finalDamage > 0) {
+                            player.stats.currentHP -= finalDamage;
+                            std::cout << "[PlayState] Danno da caduta subito: " << finalDamage 
+                                      << " HP (mitigato del " << (int)(reduction * 100) << "% da DEX)\n";
+                        }
                     }
                 }
                 rb.pendingEvents.clear();

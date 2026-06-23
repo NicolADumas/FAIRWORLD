@@ -131,6 +131,7 @@ struct SharedContext {
     // 6. INPUT HAL (Hardware Abstraction Layer)
     InputState currentInput;
     bool requireFreeCursor = false; // Se true, il DeviceManager sblocca il cursore
+    unsigned char keyboardState[256] = {0}; // Cache dello stato hardware tastiera (latenza zero)
 };
 
 // === HELPER DEL NAMESPACE fw (dichiarato DOPO SharedContext, che ora è completo) ===

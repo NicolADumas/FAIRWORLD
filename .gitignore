@@ -10,6 +10,13 @@ Release/
 # Installatori e file giganti
 vulkan-sdk-installer.exe
 
+# Build output e binari compilati
+bin/
+out/
+
+# ImGui layout (runtime)
+imgui.ini
+
 # File oggetto e cache
 *.obj
 *.pdb

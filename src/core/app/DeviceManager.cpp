@@ -27,6 +27,9 @@ void DeviceManager::Update(SharedContext* context) {
     if (!context) return;
     using namespace entt::literals;
 
+    // 0. --- CACHE STATO TASTIERA (Zero Latenza per IsActionActive) ---
+    GetKeyboardState(context->keyboardState);
+
     // 1. --- POLLING GAMEPAD (XINPUT) ---
     XINPUT_STATE state;
     ZeroMemory(&state, sizeof(XINPUT_STATE));
@@ -105,7 +108,7 @@ void DeviceManager::Update(SharedContext* context) {
     HWND hwnd = (HWND)context->window;
     
     // Unlock forzato se l'engine lo richiede (es. UI, Inventario aperti) o se si preme ESC/PAUSE
-    bool escDown = fw::IsActionActive("PAUSE"_hs, context) || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+    bool escDown = fw::IsActionActive("PAUSE"_hs, context) || (context->keyboardState[VK_ESCAPE] & 0x80) != 0;
     if (escDown && !m_escWasDown) {
         m_cursorLocked = false;
     }
@@ -115,8 +118,8 @@ void DeviceManager::Update(SharedContext* context) {
         m_cursorLocked = false;
     }
 
-    bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    bool rDown = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+    bool lDown = (context->keyboardState[VK_LBUTTON] & 0x80) != 0;
+    bool rDown = (context->keyboardState[VK_RBUTTON] & 0x80) != 0;
     
     // Se clicchiamo e non siamo in un menu, blocchiamo il cursore (o se si usa il pad)
     if (!m_cursorLocked && !context->requireFreeCursor) {
@@ -180,10 +183,10 @@ void DeviceManager::Update(SharedContext* context) {
     }
 
     // Freccette tastiera (legacy look)
-    if (GetAsyncKeyState(VK_UP)    & 0x8000) in.lookPitch += 1.5f;
-    if (GetAsyncKeyState(VK_DOWN)  & 0x8000) in.lookPitch -= 1.5f;
-    if (GetAsyncKeyState(VK_LEFT)  & 0x8000) in.lookYaw -= 1.5f;
-    if (GetAsyncKeyState(VK_RIGHT) & 0x8000) in.lookYaw += 1.5f;
+    if (context->keyboardState[VK_UP]    & 0x80) in.lookPitch += 1.5f;
+    if (context->keyboardState[VK_DOWN]  & 0x80) in.lookPitch -= 1.5f;
+    if (context->keyboardState[VK_LEFT]  & 0x80) in.lookYaw -= 1.5f;
+    if (context->keyboardState[VK_RIGHT] & 0x80) in.lookYaw += 1.5f;
 
     // Override Azioni da Gamepad
     if (fw::IsActionActive("DESTROY_BLOCK"_hs, context)) rDown = true;
