@@ -788,7 +788,7 @@ bool RenderManager::CreateDescriptorPoolAndSets() {
     return true;
 }
 
-void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix) {
+void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, float seasonProgress) {
     UniformBufferObject ubo{};
     
     // Il triangolo resta fermo al centro (0,0,0)
@@ -804,6 +804,9 @@ void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMat
     }
     ubo.proj = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
     ubo.proj[1][1] *= -1; // GLM nasce per OpenGL, invertiamo l'asse Y per Vulkan
+
+    // Assegnamo il progresso stagionale passato dall'esterno
+    ubo.seasonProgress = seasonProgress;
 
     // Copiamo i dati nella RAM della GPU
     memcpy(m_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1320,7 +1323,17 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         vkCmdDraw(m_commandBuffers[m_currentFrame], 3, 1, 0, 0);
     }
 
-    UpdateUniformBuffer(m_currentFrame, viewMatrix);
+    // Calcolo progresso stagionale
+    float rawYearProgress = 0.0f;
+    if (context && context->engine) {
+        int currentDay = context->engine->GetTimeManager().GetCurrentDay();
+        // Mappiamo i giorni in un ciclo annuale di 365 giorni
+        rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
+    }
+    // Applica distorsione per rallentare estate/inverno (modello biologico)
+    float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
+
+    UpdateUniformBuffer(m_currentFrame, viewMatrix, seasonalUboValue);
 
     vkCmdBindPipeline(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     vkCmdBindDescriptorSets(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);

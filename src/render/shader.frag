@@ -4,6 +4,7 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+    float seasonProgress;
 } ubo;
 
 layout(location = 0) in vec3 fragColor;
@@ -18,6 +19,30 @@ layout(binding = 1) uniform sampler2DArray texSampler;
 
 layout(location = 0) out vec4 outColor;
 
+// --- BIOLOGICAL SEASONAL MODEL (GPU-SIDE) ---
+// Funzione di rumore analitica pseudo-casuale veloce
+float getSpatialNoise(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+// Generatore di rumore sfumato (Value Noise) per creare transizioni morbide sul terreno
+float getSmoothNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f); // Interpolazione cubica (Hermite)
+
+    return mix(mix(getSpatialNoise(i + vec2(0.0, 0.0)), 
+                   getSpatialNoise(i + vec2(1.0, 0.0)), u.x),
+               mix(getSpatialNoise(i + vec2(0.0, 1.0)), 
+                   getSpatialNoise(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+// Equazione della Distribuzione Gaussiana
+float calcGaussianPigment(float t, float mu, float sigma) {
+    return exp(-pow(t - mu, 2.0) / (2.0 * pow(sigma, 2.0)));
+}
+// ---------------------------------------------
+
 void main() {
     vec4 texColor = vec4(1.0);
     if (fragTexIndex >= 0.0) {
@@ -25,6 +50,50 @@ void main() {
     }
     
     vec3 baseColor = fragColor * texColor.rgb;
+    
+    int type = int(fragTexIndex + 0.5);
+
+    // --- BIOLOGICAL SEASONAL VEGETATION COLORING ---
+    if (type == 1 || type == 8) { // Grass, Leaves
+        // 1. Calcolo del Microclima Spaziale (Scala 0.05 per chiazze ampie ~20 blocchi)
+        float noiseValue = getSmoothNoise(fragWorldPos.xz * 0.05) * 0.6 + getSmoothNoise(fragWorldPos.xz * 0.15) * 0.4;
+        
+        // Trasliamo il tempo globale del frame di un offset locale compreso tra -0.15 e +0.15
+        float localBiologicalTime = clamp(ubo.seasonProgress + (noiseValue - 0.5) * 0.3, 0.0, 1.0);
+
+        // 2. Valutazione delle curve dei Pigmenti Chimici
+        float clorofilla  = calcGaussianPigment(localBiologicalTime, 0.15, 0.20); // Primavera/Estate
+        float carotenoidi = calcGaussianPigment(localBiologicalTime, 0.55, 0.12); // Autunno (Giallo)
+        float antocianine = calcGaussianPigment(localBiologicalTime, 0.70, 0.08); // Tardo Autunno (Rosso)
+        float tannini     = calcGaussianPigment(localBiologicalTime, 0.90, 0.18); // Inverno (Marrone)
+
+        // 3. Normalizzazione dei contributi cromatici
+        float totalPigments = clorofilla + carotenoidi + antocianine + tannini;
+        if (totalPigments > 0.0) {
+            clorofilla  /= totalPigments;
+            carotenoidi /= totalPigments;
+            antocianine /= totalPigments;
+            tannini     /= totalPigments;
+        }
+
+        // Vettori cromatici dei pigmenti puri
+        vec3 colCarotenoidi = vec3(0.95, 0.65, 0.10); // Arancione/Giallo dorato
+        vec3 colAntocianine = vec3(0.80, 0.15, 0.15); // Rosso vivo
+        vec3 colTannini     = vec3(0.38, 0.26, 0.18); // Marrone corteccia/foglia secca
+
+        // Miscelazione lineare
+        baseColor = (baseColor * clorofilla) + 
+                    (colCarotenoidi * carotenoidi) + 
+                    (colAntocianine * antocianine) + 
+                    (colTannini * tannini);
+
+        // Effetto neve profondo inverno sui blocchi rivolti verso l'alto (normale Y > 0.8)
+        float frostInfiltration = smoothstep(0.85, 0.98, localBiologicalTime);
+        float upFactor = smoothstep(0.7, 1.0, normalize(fragNormal).y);
+        // Aggiungiamo neve solo se c'è "frost" e la faccia guarda verso l'alto
+        baseColor = mix(baseColor, vec3(0.90, 0.95, 0.98), frostInfiltration * upFactor * 0.8);
+    }
+    // ------------------------------------------------
 
     // --- ANALYTIC BEVELING (Cubi smussati senza poligoni extra) ---
     vec3 normal = normalize(fragNormal);
@@ -55,7 +124,6 @@ void main() {
     float roughness = 0.8;
     float metallic = 0.0;
     
-    int type = int(fragTexIndex + 0.5);
     if (type == 6 || type == 13) { // Water, Ice
         roughness = 0.02; // Super liscio
         metallic = 0.3;

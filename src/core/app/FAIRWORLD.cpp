@@ -241,6 +241,14 @@ bool FairWorldEngine::Init() {
     chronometer.count = 1;
     chronometer.weightKg = 0.2f; // 200g
     m_player.inventory.AddItem(chronometer);
+
+    // Aggiungi il Calendario (Cambio Mese) all'inventario iniziale
+    InventoryItem monthSkipper;
+    monthSkipper.type = ItemType::Tool;
+    monthSkipper.stringId = "MonthSkipper";
+    monthSkipper.count = 1;
+    monthSkipper.weightKg = 0.5f; // 500g
+    m_player.inventory.AddItem(monthSkipper);
     
     // Inizializza WebView2 per GUI DESKARM
     std::cout << "[SYSTEM] Inizializzazione WebView2 in corso..." << std::endl;
@@ -650,10 +658,17 @@ bool FairWorldEngine::Update(float deltaTime) {
                 if (placeBlock) {
                     const InventoryItem& activeItem = m_player.inventory.slots[m_selectedSlot];
                     
-                    if (!activeItem.IsEmpty() && activeItem.type == ItemType::Tool && activeItem.stringId == "TimeSkipper") {
-                        // Manda avanti il tempo di 1 ora (1.0f / 24.0f)
-                        m_timeManager->AdvanceTimeManual(1.0f / 24.0f);
-                        std::cout << "[TIME] Mandato avanti il tempo con il TimeSkipper!\n";
+                    if (!activeItem.IsEmpty() && activeItem.type == ItemType::Tool) {
+                        if (activeItem.stringId == "TimeSkipper") {
+                            // Manda avanti il tempo di 1 ora (1.0f / 24.0f)
+                            m_timeManager->AdvanceTimeManual(1.0f / 24.0f);
+                            std::cout << "[TIME] Mandato avanti il tempo con il TimeSkipper!\n";
+                        }
+                        else if (activeItem.stringId == "MonthSkipper") {
+                            // Manda avanti il tempo di 30 giorni (Cambio Stagione)
+                            m_timeManager->AdvanceDay(30);
+                            std::cout << "[TIME] Mandato avanti di 30 giorni con il MonthSkipper!\n";
+                        }
                     }
                     else if (hitBlock.x >= 0 && prevBlock.y >= 0 && prevBlock.y < 256 && !hitGhost) {
                         if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
@@ -1149,6 +1164,13 @@ void FairWorldEngine::Render() {
                     }
 
                     if (i < 5) ImGui::SameLine();
+                }
+                
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Comandi Temporali:");
+                if (ImGui::Button("Avanza 1 Mese (Cambio Stagione)", ImVec2(-1, 30))) {
+                    m_timeManager->AdvanceDay(30);
                 }
                 
                 ImGui::Spacing();
