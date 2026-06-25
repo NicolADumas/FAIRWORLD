@@ -1,6 +1,7 @@
 #pragma once
 #include <expected>
 #include <string>
+#include <entt/entt.hpp>
 
 class State {
 public:
@@ -14,4 +15,6 @@ public:
     virtual std::expected<void, std::string> Init() = 0;
     virtual void Update(float dt) = 0;
     virtual void Render() = 0;
+    
+    virtual entt::registry* GetRegistry() { return nullptr; }
 };

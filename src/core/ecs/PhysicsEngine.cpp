@@ -556,3 +556,99 @@ float PhysicsEngine::ComputeFallDamage(float deltaV, float mass) {
     float damage = kineticEnergyLost * 0.004f;
     return damage;
 }
+
+// Funzione helper per controllare l'intersezione tra due scatole in movimento (Swept AABB)
+bool SweptAABB(const AABB& b1, const glm::vec3& v, const AABB& b2, float& outFraction, glm::vec3& outNormal) {
+    float txEntry, tyEntry, tzEntry;
+    float txExit, tyExit, tzExit;
+
+    if (v.x == 0.0f) {
+        txEntry = -std::numeric_limits<float>::infinity();
+        txExit = std::numeric_limits<float>::infinity();
+    } else {
+        txEntry = (v.x > 0) ? (b2.min.x - b1.max.x) / v.x : (b2.max.x - b1.min.x) / v.x;
+        txExit  = (v.x > 0) ? (b2.max.x - b1.min.x) / v.x : (b2.min.x - b1.max.x) / v.x;
+    }
+
+    if (v.y == 0.0f) {
+        tyEntry = -std::numeric_limits<float>::infinity();
+        tyExit = std::numeric_limits<float>::infinity();
+    } else {
+        tyEntry = (v.y > 0) ? (b2.min.y - b1.max.y) / v.y : (b2.max.y - b1.min.y) / v.y;
+        tyExit  = (v.y > 0) ? (b2.max.y - b1.min.y) / v.y : (b2.min.y - b1.max.y) / v.y;
+    }
+
+    if (v.z == 0.0f) {
+        tzEntry = -std::numeric_limits<float>::infinity();
+        tzExit = std::numeric_limits<float>::infinity();
+    } else {
+        tzEntry = (v.z > 0) ? (b2.min.z - b1.max.z) / v.z : (b2.max.z - b1.min.z) / v.z;
+        tzExit  = (v.z > 0) ? (b2.max.z - b1.min.z) / v.z : (b2.min.z - b1.max.z) / v.z;
+    }
+
+    float entryTime = std::max({txEntry, tyEntry, tzEntry});
+    float exitTime = std::min({txExit, tyExit, tzExit});
+
+    if (entryTime > exitTime || (txEntry < 0.0f && tyEntry < 0.0f && tzEntry < 0.0f) || entryTime < -0.01f || entryTime > 1.0f) {
+        return false;
+    }
+
+    // Clamp per sicurezza per evitare rimbalzi inversi
+    if (entryTime < 0.0f) entryTime = 0.0f;
+
+    outFraction = entryTime;
+
+    if (entryTime == txEntry) {
+        outNormal = glm::vec3((v.x > 0.0f) ? -1.0f : 1.0f, 0.0f, 0.0f);
+    } else if (entryTime == tyEntry) {
+        outNormal = glm::vec3(0.0f, (v.y > 0.0f) ? -1.0f : 1.0f, 0.0f);
+    } else {
+        outNormal = glm::vec3(0.0f, 0.0f, (v.z > 0.0f) ? -1.0f : 1.0f);
+    }
+
+    return true;
+}
+
+bool PhysicsEngine::SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& outHit, const fw::ForgeWorld& world) {
+    outHit.hit = false;
+    outHit.fraction = 1.0f;
+    
+    AABB expandedBounds;
+    expandedBounds.min = playerBounds.min + glm::min(glm::vec3(0.0f), movement);
+    expandedBounds.max = playerBounds.max + glm::max(glm::vec3(0.0f), movement);
+
+    int minX = static_cast<int>(std::floor(expandedBounds.min.x));
+    int maxX = static_cast<int>(std::ceil(expandedBounds.max.x));
+    int minY = static_cast<int>(std::floor(expandedBounds.min.y));
+    int maxY = static_cast<int>(std::ceil(expandedBounds.max.y));
+    int minZ = static_cast<int>(std::floor(expandedBounds.min.z));
+    int maxZ = static_cast<int>(std::ceil(expandedBounds.max.z));
+
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                fw::BlockType b = world.GetBlock(x, y, z);
+                if (b == fw::BlockType::Air || b == fw::BlockType::Water || b == fw::BlockType::Lava || b == fw::BlockType::StargatePortal) {
+                    continue; 
+                }
+
+                AABB voxelBounds;
+                voxelBounds.min = glm::vec3(x, y, z);
+                voxelBounds.max = glm::vec3(x + 1, y + 1, z + 1);
+
+                float hitFraction;
+                glm::vec3 hitNormal;
+
+                if (SweptAABB(playerBounds, movement, voxelBounds, hitFraction, hitNormal)) {
+                    if (hitFraction < outHit.fraction) {
+                        outHit.hit = true;
+                        outHit.fraction = hitFraction;
+                        outHit.normal = hitNormal;
+                    }
+                }
+            }
+        }
+    }
+
+    return outHit.hit;
+}

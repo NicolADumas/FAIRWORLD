@@ -10,6 +10,7 @@ typedef struct VkBuffer_T* VkBuffer;
 typedef struct VkQueue_T* VkQueue;
 typedef struct VkSemaphore_T* VkSemaphore;
 typedef struct VkCommandPool_T* VkCommandPool;
+typedef struct VkDeviceMemory_T* VkDeviceMemory;
 
 typedef struct VkCommandBuffer_T* VkCommandBuffer;
 
@@ -22,7 +23,7 @@ public:
 
     // Inizializza il Dma Manager con gli handle di Vulkan generati da RenderManager
     void Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool, 
-                    VkBuffer stagingBuffer, void* mappedStaging, uint32_t stagingSize,
+                    VkBuffer stagingBuffer, VkDeviceMemory stagingDeviceMemory, void* mappedStaging, uint32_t stagingSize,
                     VkBuffer globalVramBuffer, std::mutex* queueMutex);
 
     // Funzione chiamata dal Worker Thread (Job System).
@@ -47,6 +48,7 @@ private:
     
     VkDevice m_device = nullptr;
     VkBuffer m_stagingVkBuffer = nullptr;
+    VkDeviceMemory m_stagingVkDeviceMemory = nullptr;
     VkQueue m_transferQueue = nullptr;
     VkCommandPool m_transferPool = nullptr;
     VkBuffer m_globalVramBuffer = nullptr;

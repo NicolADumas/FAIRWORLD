@@ -25,7 +25,15 @@ public:
     // Helper globale o metodi per polling UI
     fw::InputID GetFirstPressedKey(bool checkForGamepad);
     bool IsActionActive(entt::id_type actionHash);
+    
+    // Ritorna true finché il tasto è tenuto premuto
     bool IsPhysicalKeyPressed(fw::InputID key);
+    
+    // Ritorna true SOLO nel frame esatto in cui il tasto viene abbassato
+    bool IsKeyJustPressed(fw::InputID key);
+    
+    // Ritorna true nel frame esatto in cui il tasto viene rilasciato
+    bool IsKeyReleased(fw::InputID key);
     
     void InitDefaultBindings();
     const char* InputIDToString(fw::InputID key);
@@ -51,7 +59,10 @@ private:
     InputState m_currentInput;
     
     // Hardware State
-    unsigned char m_keyboardState[256] = {0};
+    unsigned char m_currentKeyboardState[256] = {0};
+    unsigned char m_previousKeyboardState[256] = {0};
+    
+    bool m_ignoreGameInput = false; // Flag per bloccare l'input se ImGui ha il focus
     
     GamepadData m_gamepadInput;
     int m_gamepadIndex = -1;

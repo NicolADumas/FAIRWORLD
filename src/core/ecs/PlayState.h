@@ -15,9 +15,11 @@ public:
     std::expected<void, std::string> Init() override;
     void Update(float dt) override;
     void Render() override;
+    
+    entt::registry* GetRegistry() override { return &m_registry; }
 
 private:
     SharedContext* m_context;
     entt::registry m_registry;
-    std::vector<std::unique_ptr<fw::ISystem>> m_systems;
+    std::vector<std::unique_ptr<System>> m_systems;
 };

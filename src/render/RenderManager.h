@@ -42,6 +42,7 @@ public:
     VkQueue GetTransferQueue() const { return m_transferQueue; }
     VkCommandPool GetTransferCommandPool() const { return m_transferCommandPool; }
     VkBuffer GetStagingRingBuffer() const { return m_stagingRingBuffer; }
+    VkDeviceMemory GetStagingDeviceMemory() const;
     void* GetMappedStagingData() const { return m_mappedStagingData; }
     uint64_t GetStagingBufferSize() const { return STAGING_BUFFER_SIZE; }
     VkBuffer GetGlobalVramBuffer() const { return m_globalVramBuffer; }

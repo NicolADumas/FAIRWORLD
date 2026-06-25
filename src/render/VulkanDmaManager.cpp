@@ -18,12 +18,13 @@ VulkanDmaManager::~VulkanDmaManager() {
 }
 
 void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool, 
-                                  VkBuffer stagingBuffer, void* mappedStaging, uint32_t stagingSize,
+                                  VkBuffer stagingBuffer, VkDeviceMemory stagingDeviceMemory, void* mappedStaging, uint32_t stagingSize,
                                   VkBuffer globalVramBuffer, std::mutex* queueMutex) {
     m_device = device;
     m_transferQueue = transferQueue;
     m_transferPool = transferPool;
     m_stagingVkBuffer = stagingBuffer;
+    m_stagingVkDeviceMemory = stagingDeviceMemory;
     m_mappedStagingBuffer = mappedStaging;
     m_stagingBufferSize = stagingSize;
     m_globalVramBuffer = globalVramBuffer;
@@ -93,6 +94,16 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
     void* dstPtr = static_cast<char*>(m_mappedStagingBuffer) + stagingOffset;
     std::memcpy(dstPtr, meshData, sizeInBytes);
     
+    // Flush the mapped memory so the GPU sees the new data
+    if (m_stagingVkDeviceMemory != VK_NULL_HANDLE) {
+        VkMappedMemoryRange flushRange{};
+        flushRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        flushRange.memory = m_stagingVkDeviceMemory;
+        flushRange.offset = 0;
+        flushRange.size = VK_WHOLE_SIZE;
+        vkFlushMappedMemoryRanges(m_device, 1, &flushRange);
+    }
+    
     // 3. Registrazione del comando Vulkan
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -158,6 +169,12 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
     
     if (resSubmit != VK_SUCCESS) {
         std::cerr << "[VulkanDmaManager] ERROR: vkQueueSubmit fallito con codice " << resSubmit << "!\n";
+    } else {
+        // Aspetta che il trasferimento sia completo PRIMA di segnare la mesh come pronta.
+        // Questo elimina la race condition: senza questo, il RenderManager potrebbe disegnare
+        // dalla VRAM ancora non aggiornata dal DMA.
+        // NOTA: m_queueMutex è già stato usato nella submit, non rilocchiamo.
+        vkQueueWaitIdle(m_transferQueue);
     }
 
     std::cout << "[DMA Transfer] Mesh da " << (sizeInBytes / 1024) << "KB sparata sul PCIe. "

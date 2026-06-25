@@ -18,8 +18,23 @@
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_impl_vulkan.h>
+#include <fstream>
+#include <sstream>
+
+
+
+
 
 RenderManager::RenderManager() : m_isVRMode(false) {}
+
+VkDeviceMemory RenderManager::GetStagingDeviceMemory() const {
+    if (m_vmaAllocator != VK_NULL_HANDLE && m_stagingAllocation != VK_NULL_HANDLE) {
+        VmaAllocationInfo allocInfo;
+        vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &allocInfo);
+        return allocInfo.deviceMemory;
+    }
+    return VK_NULL_HANDLE;
+}
 
 RenderManager::~RenderManager() {
     Shutdown();
@@ -114,6 +129,22 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     vramBufInfo.size = 512 * 1024 * 1024; // 512 MB
     vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    
+    std::vector<uint32_t> uniqueQueueFamilies;
+    if (indices.graphicsFamily.has_value()) {
+        uniqueQueueFamilies.push_back(indices.graphicsFamily.value());
+    }
+    if (indices.transferFamily.has_value() && indices.transferFamily.value() != indices.graphicsFamily.value()) {
+        uniqueQueueFamilies.push_back(indices.transferFamily.value());
+    }
+
+    if (uniqueQueueFamilies.size() > 1) {
+        vramBufInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        vramBufInfo.queueFamilyIndexCount = static_cast<uint32_t>(uniqueQueueFamilies.size());
+        vramBufInfo.pQueueFamilyIndices = uniqueQueueFamilies.data();
+    } else {
+        vramBufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    }
     
     VmaAllocationCreateInfo vramAllocInfo = {};
     vramAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;

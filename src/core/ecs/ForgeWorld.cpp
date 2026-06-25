@@ -172,6 +172,7 @@ void ForgeWorld::Initialize(SharedContext* context) {
                     rm->GetTransferQueue(),
                     rm->GetTransferCommandPool(),
                     rm->GetStagingRingBuffer(),
+                    rm->GetStagingDeviceMemory(),
                     rm->GetMappedStagingData(),
                     rm->GetStagingBufferSize(),
                     rm->GetGlobalVramBuffer(),
@@ -280,7 +281,7 @@ void ForgeWorld::Update(float dt) {
     {
         std::lock_guard<std::mutex> lock(m_deferredMutex);
         if (!m_deferredMeshes.empty()) {
-            std::cout << "[ForgeWorld::Update] Elaborazione " << m_deferredMeshes.size() << " mesh differiti dalla coda asincrona.\n";
+            std::cout << "[DEBUG ProcessDeferred] Elaborazione " << m_deferredMeshes.size() << " mesh differiti dalla coda asincrona.\n";
         }
         for (auto& def : m_deferredMeshes) {
             // Aggiorna l'entità originaria del chunk invece di crearne una nuova
@@ -290,10 +291,18 @@ void ForgeWorld::Update(float dt) {
                     auto& chunk = m_registry.get<VoxelChunkComponent>(def.targetEntity);
                     memcpy(chunk.blocks, def.chunkData->blocks, sizeof(chunk.blocks));
                     memcpy(chunk.light, def.chunkData->light, sizeof(chunk.light));
+                    chunk.isGenerated = true; // BUG FIX CRITICO: Evita che il chunk venga rigenerato!
                 }
                 
                 m_registry.emplace_or_replace<PBRMaterialComponent>(def.targetEntity);
+                std::cout << "[DEBUG ProcessDeferred] Aggiornando entity, mesh vertices=" << def.mesh.vertices.size() << "\n";
                 if (!def.mesh.vertices.empty()) {
+                    if (m_registry.all_of<MeshComponent>(def.targetEntity)) {
+                        auto& oldMesh = m_registry.get<MeshComponent>(def.targetEntity);
+                        if (oldMesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+                            m_context->vramAllocator->Free(oldMesh.vramAlloc);
+                        }
+                    }
                     m_registry.emplace_or_replace<MeshComponent>(def.targetEntity, std::move(def.mesh));
                 }
                 

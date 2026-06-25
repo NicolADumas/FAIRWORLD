@@ -12,6 +12,18 @@ struct PhysicsEvent {
     float value; // es. entità del danno
 };
 
+struct AABB {
+    glm::vec3 min;
+    glm::vec3 max;
+};
+
+// Struttura per i risultati di sweep/raycast
+struct RaycastHit {
+    float fraction = 1.0f;
+    glm::vec3 normal = glm::vec3(0.0f);
+    bool hit = false;
+};
+
 struct RigidBody {
     glm::vec3 position     = glm::vec3(0.0f); // r(t)
     glm::vec3 velocity     = glm::vec3(0.0f); // v(t)
@@ -48,6 +60,9 @@ public:
 
     // Integra il moto e risolve collisioni nel timestep dt
     void StepSimulation(RigidBody& rb, float dt, const fw::ForgeWorld& world);
+
+    // Esegue uno sweep di un AABB contro il mondo voxel, restituendo il punto di collisione
+    bool SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& hitResult, const fw::ForgeWorld& world);
 
     // Calcola il danno da caduta basato sulla variazione istantanea di velocità all'impatto (Cap. 12/13)
     float ComputeFallDamage(float deltaV, float mass);

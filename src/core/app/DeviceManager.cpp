@@ -9,6 +9,7 @@
 #include <Xinput.h>
 #include <cmath>
 #include <algorithm>
+#include <imgui.h>
 
 // Auto-link della libreria XInput per MSVC
 #pragma comment(lib, "XInput.lib")
@@ -24,35 +25,36 @@ static float NormalizeStick(SHORT value, SHORT deadzone) {
 }
 
 bool DeviceManager::IsPhysicalKeyPressed(fw::InputID key) {
+    if (m_ignoreGameInput) return false; // Silenzia il gioco se ImGui ha il focus
     if (key == fw::InputID::NONE) return true;
 
     switch (key) {
         // --- MOUSE ---
-        case fw::InputID::MOUSE_LEFT:   return (m_keyboardState[VK_LBUTTON] & 0x80) != 0;
-        case fw::InputID::MOUSE_RIGHT:  return (m_keyboardState[VK_RBUTTON] & 0x80) != 0;
-        case fw::InputID::MOUSE_MIDDLE: return (m_keyboardState[VK_MBUTTON] & 0x80) != 0;
+        case fw::InputID::MOUSE_LEFT:   return (m_currentKeyboardState[VK_LBUTTON] & 0x80) != 0;
+        case fw::InputID::MOUSE_RIGHT:  return (m_currentKeyboardState[VK_RBUTTON] & 0x80) != 0;
+        case fw::InputID::MOUSE_MIDDLE: return (m_currentKeyboardState[VK_MBUTTON] & 0x80) != 0;
 
         // --- TASTIERA: Movimento ---
-        case fw::InputID::KEY_W:     return (m_keyboardState['W'] & 0x80) != 0;
-        case fw::InputID::KEY_S:     return (m_keyboardState['S'] & 0x80) != 0;
-        case fw::InputID::KEY_A:     return (m_keyboardState['A'] & 0x80) != 0;
-        case fw::InputID::KEY_D:     return (m_keyboardState['D'] & 0x80) != 0;
+        case fw::InputID::KEY_W:     return (m_currentKeyboardState['W'] & 0x80) != 0;
+        case fw::InputID::KEY_S:     return (m_currentKeyboardState['S'] & 0x80) != 0;
+        case fw::InputID::KEY_A:     return (m_currentKeyboardState['A'] & 0x80) != 0;
+        case fw::InputID::KEY_D:     return (m_currentKeyboardState['D'] & 0x80) != 0;
 
         // --- TASTIERA: Azioni ---
-        case fw::InputID::KEY_SPACE: return (m_keyboardState[VK_SPACE]   & 0x80) != 0;
-        case fw::InputID::KEY_ESC:   return (m_keyboardState[VK_ESCAPE]  & 0x80) != 0;
-        case fw::InputID::KEY_ENTER: return (m_keyboardState[VK_RETURN]  & 0x80) != 0;
+        case fw::InputID::KEY_SPACE: return (m_currentKeyboardState[VK_SPACE]   & 0x80) != 0;
+        case fw::InputID::KEY_ESC:   return (m_currentKeyboardState[VK_ESCAPE]  & 0x80) != 0;
+        case fw::InputID::KEY_ENTER: return (m_currentKeyboardState[VK_RETURN]  & 0x80) != 0;
 
         // --- TASTIERA: Modificatori ---
-        case fw::InputID::KEY_SHIFT: return (m_keyboardState[VK_SHIFT]   & 0x80) != 0;
-        case fw::InputID::KEY_CTRL:  return (m_keyboardState[VK_CONTROL] & 0x80) != 0;
-        case fw::InputID::KEY_ALT:   return (m_keyboardState[VK_MENU]    & 0x80) != 0;
+        case fw::InputID::KEY_SHIFT: return (m_currentKeyboardState[VK_SHIFT]   & 0x80) != 0;
+        case fw::InputID::KEY_CTRL:  return (m_currentKeyboardState[VK_CONTROL] & 0x80) != 0;
+        case fw::InputID::KEY_ALT:   return (m_currentKeyboardState[VK_MENU]    & 0x80) != 0;
 
         // --- TASTIERA: Frecce ---
-        case fw::InputID::KEY_UP:    return (m_keyboardState[VK_UP]    & 0x80) != 0;
-        case fw::InputID::KEY_DOWN:  return (m_keyboardState[VK_DOWN]  & 0x80) != 0;
-        case fw::InputID::KEY_LEFT:  return (m_keyboardState[VK_LEFT]  & 0x80) != 0;
-        case fw::InputID::KEY_RIGHT: return (m_keyboardState[VK_RIGHT] & 0x80) != 0;
+        case fw::InputID::KEY_UP:    return (m_currentKeyboardState[VK_UP]    & 0x80) != 0;
+        case fw::InputID::KEY_DOWN:  return (m_currentKeyboardState[VK_DOWN]  & 0x80) != 0;
+        case fw::InputID::KEY_LEFT:  return (m_currentKeyboardState[VK_LEFT]  & 0x80) != 0;
+        case fw::InputID::KEY_RIGHT: return (m_currentKeyboardState[VK_RIGHT] & 0x80) != 0;
 
         // --- GAMEPAD ---
         case fw::InputID::PAD_FACE_DOWN:  return m_gamepadInput.buttonA;
@@ -73,6 +75,72 @@ bool DeviceManager::IsPhysicalKeyPressed(fw::InputID key) {
         case fw::InputID::PAD_SELECT:     return m_gamepadInput.buttonSelect;
 
         default: return false;
+    }
+}
+
+bool DeviceManager::IsKeyJustPressed(fw::InputID key) {
+    if (m_ignoreGameInput) return false;
+    if (key == fw::InputID::NONE) return false;
+
+    switch (key) {
+        // MOUSE
+        case fw::InputID::MOUSE_LEFT:   return (m_currentKeyboardState[VK_LBUTTON] & 0x80) != 0 && (m_previousKeyboardState[VK_LBUTTON] & 0x80) == 0;
+        case fw::InputID::MOUSE_RIGHT:  return (m_currentKeyboardState[VK_RBUTTON] & 0x80) != 0 && (m_previousKeyboardState[VK_RBUTTON] & 0x80) == 0;
+        case fw::InputID::MOUSE_MIDDLE: return (m_currentKeyboardState[VK_MBUTTON] & 0x80) != 0 && (m_previousKeyboardState[VK_MBUTTON] & 0x80) == 0;
+
+        // TASTIERA
+        case fw::InputID::KEY_W:     return (m_currentKeyboardState['W'] & 0x80) != 0 && (m_previousKeyboardState['W'] & 0x80) == 0;
+        case fw::InputID::KEY_S:     return (m_currentKeyboardState['S'] & 0x80) != 0 && (m_previousKeyboardState['S'] & 0x80) == 0;
+        case fw::InputID::KEY_A:     return (m_currentKeyboardState['A'] & 0x80) != 0 && (m_previousKeyboardState['A'] & 0x80) == 0;
+        case fw::InputID::KEY_D:     return (m_currentKeyboardState['D'] & 0x80) != 0 && (m_previousKeyboardState['D'] & 0x80) == 0;
+
+        case fw::InputID::KEY_SPACE: return (m_currentKeyboardState[VK_SPACE]   & 0x80) != 0 && (m_previousKeyboardState[VK_SPACE]   & 0x80) == 0;
+        case fw::InputID::KEY_ESC:   return (m_currentKeyboardState[VK_ESCAPE]  & 0x80) != 0 && (m_previousKeyboardState[VK_ESCAPE]  & 0x80) == 0;
+        case fw::InputID::KEY_ENTER: return (m_currentKeyboardState[VK_RETURN]  & 0x80) != 0 && (m_previousKeyboardState[VK_RETURN]  & 0x80) == 0;
+
+        case fw::InputID::KEY_SHIFT: return (m_currentKeyboardState[VK_SHIFT]   & 0x80) != 0 && (m_previousKeyboardState[VK_SHIFT]   & 0x80) == 0;
+        case fw::InputID::KEY_CTRL:  return (m_currentKeyboardState[VK_CONTROL] & 0x80) != 0 && (m_previousKeyboardState[VK_CONTROL] & 0x80) == 0;
+        case fw::InputID::KEY_ALT:   return (m_currentKeyboardState[VK_MENU]    & 0x80) != 0 && (m_previousKeyboardState[VK_MENU]    & 0x80) == 0;
+
+        case fw::InputID::KEY_UP:    return (m_currentKeyboardState[VK_UP]    & 0x80) != 0 && (m_previousKeyboardState[VK_UP]    & 0x80) == 0;
+        case fw::InputID::KEY_DOWN:  return (m_currentKeyboardState[VK_DOWN]  & 0x80) != 0 && (m_previousKeyboardState[VK_DOWN]  & 0x80) == 0;
+        case fw::InputID::KEY_LEFT:  return (m_currentKeyboardState[VK_LEFT]  & 0x80) != 0 && (m_previousKeyboardState[VK_LEFT]  & 0x80) == 0;
+        case fw::InputID::KEY_RIGHT: return (m_currentKeyboardState[VK_RIGHT] & 0x80) != 0 && (m_previousKeyboardState[VK_RIGHT] & 0x80) == 0;
+
+        default: return false; // Per il gamepad andrebbe gestito a parte
+    }
+}
+
+bool DeviceManager::IsKeyReleased(fw::InputID key) {
+    if (m_ignoreGameInput) return false;
+    if (key == fw::InputID::NONE) return false;
+
+    switch (key) {
+        // MOUSE
+        case fw::InputID::MOUSE_LEFT:   return (m_currentKeyboardState[VK_LBUTTON] & 0x80) == 0 && (m_previousKeyboardState[VK_LBUTTON] & 0x80) != 0;
+        case fw::InputID::MOUSE_RIGHT:  return (m_currentKeyboardState[VK_RBUTTON] & 0x80) == 0 && (m_previousKeyboardState[VK_RBUTTON] & 0x80) != 0;
+        case fw::InputID::MOUSE_MIDDLE: return (m_currentKeyboardState[VK_MBUTTON] & 0x80) == 0 && (m_previousKeyboardState[VK_MBUTTON] & 0x80) != 0;
+
+        // TASTIERA
+        case fw::InputID::KEY_W:     return (m_currentKeyboardState['W'] & 0x80) == 0 && (m_previousKeyboardState['W'] & 0x80) != 0;
+        case fw::InputID::KEY_S:     return (m_currentKeyboardState['S'] & 0x80) == 0 && (m_previousKeyboardState['S'] & 0x80) != 0;
+        case fw::InputID::KEY_A:     return (m_currentKeyboardState['A'] & 0x80) == 0 && (m_previousKeyboardState['A'] & 0x80) != 0;
+        case fw::InputID::KEY_D:     return (m_currentKeyboardState['D'] & 0x80) == 0 && (m_previousKeyboardState['D'] & 0x80) != 0;
+
+        case fw::InputID::KEY_SPACE: return (m_currentKeyboardState[VK_SPACE]   & 0x80) == 0 && (m_previousKeyboardState[VK_SPACE]   & 0x80) != 0;
+        case fw::InputID::KEY_ESC:   return (m_currentKeyboardState[VK_ESCAPE]  & 0x80) == 0 && (m_previousKeyboardState[VK_ESCAPE]  & 0x80) != 0;
+        case fw::InputID::KEY_ENTER: return (m_currentKeyboardState[VK_RETURN]  & 0x80) == 0 && (m_previousKeyboardState[VK_RETURN]  & 0x80) != 0;
+
+        case fw::InputID::KEY_SHIFT: return (m_currentKeyboardState[VK_SHIFT]   & 0x80) == 0 && (m_previousKeyboardState[VK_SHIFT]   & 0x80) != 0;
+        case fw::InputID::KEY_CTRL:  return (m_currentKeyboardState[VK_CONTROL] & 0x80) == 0 && (m_previousKeyboardState[VK_CONTROL] & 0x80) != 0;
+        case fw::InputID::KEY_ALT:   return (m_currentKeyboardState[VK_MENU]    & 0x80) == 0 && (m_previousKeyboardState[VK_MENU]    & 0x80) != 0;
+
+        case fw::InputID::KEY_UP:    return (m_currentKeyboardState[VK_UP]    & 0x80) == 0 && (m_previousKeyboardState[VK_UP]    & 0x80) != 0;
+        case fw::InputID::KEY_DOWN:  return (m_currentKeyboardState[VK_DOWN]  & 0x80) == 0 && (m_previousKeyboardState[VK_DOWN]  & 0x80) != 0;
+        case fw::InputID::KEY_LEFT:  return (m_currentKeyboardState[VK_LEFT]  & 0x80) == 0 && (m_previousKeyboardState[VK_LEFT]  & 0x80) != 0;
+        case fw::InputID::KEY_RIGHT: return (m_currentKeyboardState[VK_RIGHT] & 0x80) == 0 && (m_previousKeyboardState[VK_RIGHT] & 0x80) != 0;
+
+        default: return false; // Gamepad
     }
 }
 
@@ -158,7 +226,11 @@ void DeviceManager::Update(SharedContext* context) {
     using namespace entt::literals;
 
     // 0. --- CACHE STATO TASTIERA (Zero Latenza per IsActionActive) ---
-    GetKeyboardState(m_keyboardState);
+    std::memcpy(m_previousKeyboardState, m_currentKeyboardState, 256);
+    GetKeyboardState(m_currentKeyboardState);
+
+    ImGuiIO& io = ImGui::GetIO();
+    m_ignoreGameInput = io.WantCaptureKeyboard || io.WantCaptureMouse;
 
     // 1. --- POLLING GAMEPAD (XINPUT) ---
     XINPUT_STATE state;
@@ -237,7 +309,7 @@ void DeviceManager::Update(SharedContext* context) {
     HWND hwnd = (HWND)context->window;
     
     // Unlock forzato se l'engine lo richiede (es. UI, Inventario aperti) o se si preme ESC/PAUSE
-    bool escDown = fw::IsActionActive("PAUSE"_hs, this) || (m_keyboardState[VK_ESCAPE] & 0x80) != 0;
+    bool escDown = fw::IsActionActive("PAUSE"_hs, this) || (m_currentKeyboardState[VK_ESCAPE] & 0x80) != 0;
     if (escDown && !m_escWasDown) {
         m_cursorLocked = false;
     }
@@ -247,7 +319,7 @@ void DeviceManager::Update(SharedContext* context) {
         m_cursorLocked = false;
     }
 
-    bool rawLeftClick = (m_keyboardState[VK_LBUTTON] & 0x80) != 0;
+    bool rawLeftClick = (m_currentKeyboardState[VK_LBUTTON] & 0x80) != 0;
     
     // Se clicchiamo e non siamo in un menu, blocchiamo il cursore (o se si usa il pad)
     if (!m_cursorLocked && !requireFreeCursor) {
@@ -312,10 +384,10 @@ void DeviceManager::Update(SharedContext* context) {
     }
 
     // Freccette tastiera (legacy look)
-    if (m_keyboardState[VK_UP]    & 0x80) in.lookPitch += 1.5f;
-    if (m_keyboardState[VK_DOWN]  & 0x80) in.lookPitch -= 1.5f;
-    if (m_keyboardState[VK_LEFT]  & 0x80) in.lookYaw -= 1.5f;
-    if (m_keyboardState[VK_RIGHT] & 0x80) in.lookYaw += 1.5f;
+    if (m_currentKeyboardState[VK_UP]    & 0x80) in.lookPitch += 1.5f;
+    if (m_currentKeyboardState[VK_DOWN]  & 0x80) in.lookPitch -= 1.5f;
+    if (m_currentKeyboardState[VK_LEFT]  & 0x80) in.lookYaw -= 1.5f;
+    if (m_currentKeyboardState[VK_RIGHT] & 0x80) in.lookYaw += 1.5f;
 
     // Azioni da ActionMap (Kernel Bus) - Astrazione Hardware
     bool actionMining = fw::IsActionActive("DESTROY_BLOCK"_hs, this);

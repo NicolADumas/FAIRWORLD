@@ -1454,9 +1454,9 @@ void FairWorldEngine::Render() {
             ImGui::End();
         }
 
-        if (m_current == GameState::PLAYING && m_gameMode == GameMode::Dev) {
-            m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView);
-        }
+    if (m_gameMode == GameMode::Dev && m_editor.isOpen) {
+        m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView, m_sharedContext);
+    }
         
         // --- DIARIO MAGICO (AI ASSISTANT) ---
         if (m_isDiaryOpen) {
@@ -1682,7 +1682,7 @@ void FairWorldEngine::renderPauseMenu() {
     ImGui::Spacing();
 
     // ---- Parte inferiore: le vere tab dell'editor ----
-    m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView);
+    m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView, m_sharedContext);
 
     ImGui::End();
 }

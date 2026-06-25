@@ -9,6 +9,7 @@ class RenderManager;
 class Player;
 class MobManager;
 struct RenderViewData;
+struct SharedContext;
 
 class EditorPanel {
 public:
@@ -18,7 +19,7 @@ public:
 
     // Chiamata ogni frame dentro il render loop, PRIMA di ImGui::Render()
     // Ora riceve anche il RenderManager per aggiornare le texture in real-time
-    void Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const RenderViewData& cameraView);
+    void Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const RenderViewData& cameraView, SharedContext* context);
 
 private:
     void DrawBlocksTab(AssetManager& assets, RenderManager* renderer);

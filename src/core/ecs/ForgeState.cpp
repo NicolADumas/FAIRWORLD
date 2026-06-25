@@ -43,16 +43,17 @@ std::expected<void, std::string> ForgeState::Init() {
     if (!m_context->dmaManager) {
         m_context->dmaManager = new fw::VulkanDmaManager();
         if (auto* rm = m_context->engine->GetRenderManager()) {
-            m_context->dmaManager->Initialize(
-                rm->GetDevice(),
-                rm->GetTransferQueue(),
-                rm->GetTransferCommandPool(),
-                rm->GetStagingRingBuffer(),
-                rm->GetMappedStagingData(),
-                rm->GetStagingBufferSize(),
-                rm->GetGlobalVramBuffer(),
-                rm->GetQueueMutex()
-            );
+                m_context->dmaManager->Initialize(
+                    rm->GetDevice(),
+                    rm->GetTransferQueue(),
+                    rm->GetTransferCommandPool(),
+                    rm->GetStagingRingBuffer(),
+                    rm->GetStagingDeviceMemory(),
+                    rm->GetMappedStagingData(),
+                    rm->GetStagingBufferSize(),
+                    rm->GetGlobalVramBuffer(),
+                    rm->GetQueueMutex()
+                );
         }
     }
     

@@ -38,6 +38,11 @@ public:
         return m_currentState != nullptr;
     }
 
+    entt::registry* GetActiveRegistry() const {
+        if (m_currentState) return m_currentState->GetRegistry();
+        return nullptr;
+    }
+
 private:
     std::unique_ptr<State> m_currentState = nullptr;
     std::unique_ptr<State> m_pendingState = nullptr;

@@ -6,13 +6,18 @@
 #include "Player.h"
 #include "MobManager.h"
 #include "SharedContext.h"
+#include "StateManager.h"
+#include "Components.h"
 #include <imgui.h>
+#include "ImGuizmo.h"
 #include <windows.h>
 #include <commdlg.h>
 #include <math.h>
 #include <algorithm>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 
-void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const RenderViewData& cameraView) {
+void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* renderer, MobManager* mobManager, Player* player, const RenderViewData& cameraView, SharedContext* context) {
     // Il menu radiale TAB è stato rimosso.
     // Questa funzione disegna solo le tab dell'editor.
     // Deve essere chiamata dall'interno di un BeginTabBar esistente (nel menu di pausa).
@@ -22,6 +27,63 @@ void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* render
     if (m_activeTab != -1) {
         forceSelectTab = m_activeTab;
         m_activeTab = -1;
+    }
+
+    // --- IMGUIZMO INTEGRATION ---
+    if (context && context->stateManager) {
+        entt::registry* registry = context->stateManager->GetActiveRegistry();
+        if (registry) {
+            ImGuizmo::SetOrthographic(false);
+            ImGuizmo::SetDrawlist();
+
+            ImVec2 windowPos = ImGui::GetWindowPos();
+            ImVec2 windowSize = ImGui::GetWindowSize();
+            ImGuizmo::SetRect(windowPos.x, windowPos.y, windowSize.x, windowSize.y);
+
+            const float* viewMatrix = glm::value_ptr(cameraView.viewMatrix);
+            const float* projMatrix = glm::value_ptr(cameraView.projectionMatrix);
+
+            // Cerchiamo un'entità con TransformComponent e NameComponent (per non prendere la telecamera)
+            auto view = registry->view<TransformComponent, NameComponent>();
+            entt::entity selectedEntity = entt::null;
+            for (auto entity : view) {
+                if (view.get<NameComponent>(entity).name != "MainCamera") {
+                    selectedEntity = entity;
+                    break;
+                }
+            }
+
+            if (selectedEntity != entt::null) {
+                auto& transform = registry->get<TransformComponent>(selectedEntity);
+                
+                glm::mat4 t = glm::translate(glm::mat4(1.0f), glm::vec3(transform.x, transform.y, transform.z));
+                glm::mat4 r = glm::mat4_cast(transform.rotation);
+                // Assume scale 1.0f per ora, per semplicità
+                glm::mat4 objectMatrix = t * r;
+
+                ImGuizmo::Manipulate(
+                    viewMatrix, 
+                    projMatrix, 
+                    ImGuizmo::TRANSLATE, 
+                    ImGuizmo::WORLD,     
+                    glm::value_ptr(objectMatrix)
+                );
+
+                if (ImGuizmo::IsUsing()) {
+                    glm::vec3 scale;
+                    glm::quat rotation;
+                    glm::vec3 translation;
+                    glm::vec3 skew;
+                    glm::vec4 perspective;
+                    glm::decompose(objectMatrix, scale, rotation, translation, skew, perspective);
+                    
+                    transform.x = translation.x;
+                    transform.y = translation.y;
+                    transform.z = translation.z;
+                    transform.rotation = rotation;
+                }
+            }
+        }
     }
 
     if (ImGui::BeginTabBar("EditorTabs", ImGuiTabBarFlags_None)) {
