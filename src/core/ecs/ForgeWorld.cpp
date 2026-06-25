@@ -262,7 +262,10 @@ entt::entity ForgeWorld::CreatePrimitive(const std::string& name, const Vec3& po
 }
 
 void ForgeWorld::MarkChunkDirty(entt::entity chunkEntity) {
-    if (!m_registry.all_of<ChunkDirtyComponent>(chunkEntity)) {
+    if (m_registry.all_of<ChunkDirtyComponent>(chunkEntity)) {
+        auto& dirty = m_registry.get<ChunkDirtyComponent>(chunkEntity);
+        if (dirty.pendingJob) dirty.needsRebuild = true;
+    } else {
         m_registry.emplace<ChunkDirtyComponent>(chunkEntity);
     }
 }
@@ -282,18 +285,27 @@ void ForgeWorld::Update(float dt) {
         for (auto& def : m_deferredMeshes) {
             // Aggiorna l'entità originaria del chunk invece di crearne una nuova
             if (m_registry.valid(def.targetEntity)) {
-                // Sincronizza i dati procedurali generati in background
-                auto& chunk = m_registry.get<VoxelChunkComponent>(def.targetEntity);
-                memcpy(chunk.blocks, def.chunkData->blocks, sizeof(chunk.blocks));
-                memcpy(chunk.light, def.chunkData->light, sizeof(chunk.light));
+                // Sincronizza i dati procedurali generati in background SOLO se sono stati creati da zero
+                if (def.isNewlyGenerated) {
+                    auto& chunk = m_registry.get<VoxelChunkComponent>(def.targetEntity);
+                    memcpy(chunk.blocks, def.chunkData->blocks, sizeof(chunk.blocks));
+                    memcpy(chunk.light, def.chunkData->light, sizeof(chunk.light));
+                }
                 
                 m_registry.emplace_or_replace<PBRMaterialComponent>(def.targetEntity);
                 if (!def.mesh.vertices.empty()) {
                     m_registry.emplace_or_replace<MeshComponent>(def.targetEntity, std::move(def.mesh));
                 }
                 
-                // Rimuoviamo il tag Dirty SOLO ORA, indicando che il chunk è completato e pronto per la fisica
-                m_registry.remove<ChunkDirtyComponent>(def.targetEntity);
+                // Controlliamo se durante la generazione il chunk è stato modificato di nuovo (es. il giocatore ha spaccato un altro blocco)
+                auto& dirty = m_registry.get<ChunkDirtyComponent>(def.targetEntity);
+                if (dirty.needsRebuild) {
+                    dirty.pendingJob = false;
+                    dirty.needsRebuild = false;
+                } else {
+                    // Rimuoviamo il tag Dirty SOLO ORA, indicando che il chunk è completato e pronto per la fisica
+                    m_registry.remove<ChunkDirtyComponent>(def.targetEntity);
+                }
                 // std::cout << "[ForgeWorld ECS] " << def.name << " aggiornato nell'ECS con successo!\n";
             }
         }
@@ -400,8 +412,13 @@ void ForgeWorld::Update(float dt) {
             
             // Sottomette il job
             m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx]() {
+                bool newlyGen = false;
                 // 1. GENERAZIONE DATI PROCEDURALI IN BACKGROUND (Niente più CPU stall sul Main Thread)
-                GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                if (!chunkData->isGenerated) {
+                    GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                    chunkData->isGenerated = true;
+                    newlyGen = true;
+                }
                 
                 // 2. GENERAZIONE MESH
                 std::vector<Vertex> vertices;
@@ -510,7 +527,8 @@ void ForgeWorld::Update(float dt) {
                         {(float)chunkData->cx * 16.0f, 0.0f, (float)chunkData->cz * 16.0f}, 
                         MeshComponent{}, // mesh vuota
                         chunkData,
-                        entity
+                        entity,
+                        newlyGen
                     });
                     return;
                 }
@@ -541,7 +559,8 @@ void ForgeWorld::Update(float dt) {
                     {(float)chunkData->cx * 16.0f, 0.0f, (float)chunkData->cz * 16.0f}, 
                     std::move(newMesh),
                     chunkData,
-                    entity
+                    entity,
+                    newlyGen
                 });
             });
             
@@ -601,7 +620,12 @@ void ForgeWorld::SetBlock(int x, int y, int z, BlockType type) {
             uint8_t oldType = chunk.blocks[lx][y][lz];
             if (oldType != static_cast<uint8_t>(type)) {
                 chunk.blocks[lx][y][lz] = static_cast<uint8_t>(type);
-                m_registry.emplace_or_replace<ChunkDirtyComponent>(it->second);
+                if (m_registry.all_of<ChunkDirtyComponent>(it->second)) {
+                    auto& dirty = m_registry.get<ChunkDirtyComponent>(it->second);
+                    if (dirty.pendingJob) dirty.needsRebuild = true;
+                } else {
+                    m_registry.emplace<ChunkDirtyComponent>(it->second);
+                }
 
                 // Emette eventi di aggiornamento fisico ai blocchi adiacenti e a sé stesso
                 // Usiamo QueueEvent per non sfasciare lo stack con chiamate ricorsive.

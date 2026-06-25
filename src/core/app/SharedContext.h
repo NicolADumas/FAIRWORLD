@@ -6,11 +6,25 @@
 #include "entt/entt.hpp"
 #include <glm/glm.hpp>
 
-// Forward declarations
+// === FORWARD DECLARATIONS ===
 struct HWND__;
 using WindowHandle = HWND__*;
+
 class StateManager;
 class FairWorldEngine;
+class DeviceManager;
+class RenderManager;
+
+// Classi che vivono nel namespace fw
+namespace fw {
+    class TimeManager;
+    class JobSystem;
+    class AsyncInput;
+    class VulkanDmaManager;
+    class VramSlabAllocator;
+    class DiagnosticsManager;
+    class ForgeWorld;
+}
 
 // Struttura dati per il monitoraggio delle onde cerebrali (BCI)
 struct BciData {
@@ -20,131 +34,61 @@ struct BciData {
     float theta = 0.0f;
 };
 
-// === TIPI DEL NAMESPACE fw (solo quelli che NON dipendono da SharedContext) ===
-namespace fw {
-    class JobSystem;
-    class AsyncInput;
-    class VulkanDmaManager;
-    class VramSlabAllocator;
-    class ForgeWorld;
-
-    // Associazione tra un'azione logica e i suoi tasti fisici (es: W + Shift)
-    struct ActionBinding {
-        InputID primaryKey;
-        InputID modifierKey = InputID::NONE; // NONE = nessun modificatore richiesto
-    };
-
-    // Il registro di tutte le associazioni azione -> tasti
-    struct ActionMap {
-        std::unordered_map<entt::id_type, std::vector<ActionBinding>> bindings;
-
-        // Stato per la UI "Premi un tasto" nell'HubState
-        bool isListening = false;
-        entt::id_type actionBeingMapped = 0;
-    };
-}
-
-// === IL BUS GLOBALE DELL'OS ===
 // Struttura dati pura per il renderer, calcolata dai sistemi ECS
 struct RenderViewData {
-    glm::mat4 viewMatrix = glm::mat4(1.0f);
+    glm::mat4 viewMatrix       = glm::mat4(1.0f);
     glm::mat4 projectionMatrix = glm::mat4(1.0f);
-    glm::vec3 cameraPosition = glm::vec3(0.0f);
-    glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 cameraPosition   = glm::vec3(0.0f);
+    glm::vec3 cameraFront      = glm::vec3(0.0f, 0.0f, -1.0f);
 };
 
-// Struttura dati pura dell'input (Astratta e Indipendente dall'Hardware)
-struct InputState {
-    float moveForward = 0.0f; // -1.0 a 1.0 (W/S o Levetta Y sinistra)
-    float moveRight   = 0.0f; // -1.0 a 1.0 (A/D o Levetta X sinistra)
-    float lookYaw     = 0.0f; // Mouse X Delta o Levetta X destra
-    float lookPitch   = 0.0f; // Mouse Y Delta o Levetta Y destra
-    
-    bool isJumping    = false; // true solo nel frame in cui premi
-    bool isRunning    = false; // true finché W+Shift sono tenuti premuti
-    bool isMining     = false; // true finché tenuto premuto
-    bool isPlacing    = false; // true solo nel frame in cui premi (per piazzare blocchi/attaccare)
-};
-
-// Definito prima di IsActionActive perché quella funzione lo referenzia
+// === IL BUS GLOBALE DEL SERVICE LOCATOR ===
 struct SharedContext {
     // --- SISTEMA CORE ---
-    WindowHandle window         = nullptr;
-    StateManager* stateManager  = nullptr;
-    FairWorldEngine* engine     = nullptr;
-    
+    WindowHandle    window        = nullptr;
+    StateManager*   stateManager  = nullptr;
+    FairWorldEngine* engine       = nullptr;
+
+    // --- SERVIZI FONDAMENTALI ---
+    DeviceManager*          deviceManager       = nullptr;
+    fw::TimeManager*        timeManager         = nullptr;
+    fw::DiagnosticsManager* diagnosticsManager  = nullptr;
+
     // --- INFRASTRUTTURA ASINCRONA E RENDER ---
-    fw::JobSystem* jobSystem    = nullptr;
-    fw::AsyncInput* asyncInput  = nullptr;
-    fw::VulkanDmaManager* dmaManager = nullptr;
-    fw::VramSlabAllocator* vramAllocator = nullptr;
-    fw::ForgeWorld* forgeWorld = nullptr;
+    fw::JobSystem*          jobSystem    = nullptr;
+    fw::AsyncInput*         asyncInput   = nullptr;
+    fw::VulkanDmaManager*   dmaManager   = nullptr;
+    fw::VramSlabAllocator*  vramAllocator= nullptr;
+    fw::ForgeWorld*         forgeWorld   = nullptr;
 
     // --- RENDER DATA ---
     RenderViewData activeCameraView;
-    glm::vec3 playerVelocity = glm::vec3(0.0f); // Velocità RigidBody corrente (aggiornata da PlayState)
-    float worldTimeOfDay = 0.5f;                // 0.0=Mezzanotte, 0.5=Mezzogiorno
-    int worldCurrentDay = 0;                    // Giorno in-game
-    float moonPhase = 0.5f;                     // 0.0=Nuova, 0.5=Piena, 1.0=Nuova
-    glm::vec3 worldSkyColor = glm::vec3(0.5f, 0.7f, 1.0f); // Colore dinamico cielo
+    glm::vec3 playerVelocity = glm::vec3(0.0f);
 
-    // --- BUS DATI (LA CARTUCCIA) ---
+    // --- BUS DATI ---
     std::string targetGameJsonPath;
 
     // 1. MODULO VR (OpenXR)
-    bool isVrSupported    = false;
-    bool isVrActive       = false;
-    void* xrSessionHandle = nullptr;
+    bool  isVrSupported    = false;
+    bool  isVrActive       = false;
+    void* xrSessionHandle  = nullptr;
 
     // 2. MODULO ROBOTICA / SERIALE (DESKARM)
-    void* serialPortHandle     = nullptr;
-    bool isSerialConnected     = false;
-    std::string serialPortName = "COM3";
+    void*       serialPortHandle  = nullptr;
+    bool        isSerialConnected = false;
+    std::string serialPortName    = "COM3";
 
     // 3. MODULO NEURALE / NETWORK SOCKET (BCI)
-    unsigned __int64 bciSocket = 0xFFFFFFFFFFFFFFFFULL; // INVALID_SOCKET
-    bool isBciConnected        = false;
-    BciData neuralInput;
+    unsigned __int64 bciSocket    = 0xFFFFFFFFFFFFFFFFULL; // INVALID_SOCKET
+    bool             isBciConnected = false;
+    BciData          neuralInput;
 
-    // 4. MODULO GAMEPAD / CONTROLLER (XInput)
-    // Tipi base, niente <xinput.h> in questo header
-    struct GamepadData {
-        float leftThumbX   = 0.0f;
-        float leftThumbY   = 0.0f;
-        float rightThumbX  = 0.0f;
-        float rightThumbY  = 0.0f;
-        float leftTrigger  = 0.0f;
-        float rightTrigger = 0.0f;
-        unsigned short buttons = 0; // Bitmask XInput grezzo
-        // Bottoni decodificati (popolati da DeviceManager ogni frame)
-        bool buttonA = false; bool buttonB = false;
-        bool buttonX = false; bool buttonY = false;
-        bool bumperLeft  = false; bool bumperRight  = false;
-        bool thumbLeft   = false; bool thumbRight   = false;
-        bool buttonStart = false; bool buttonSelect = false;
-        bool dpadUp   = false; bool dpadDown  = false;
-        bool dpadLeft = false; bool dpadRight = false;
-    };
-    bool isGamepadConnected = false;
-    int  gamepadIndex       = -1;
-    GamepadData gamepadInput;
+    // === DEBUG ===
+    bool  showDebugUI         = false;
 
-    // 5. MODULO INPUT LOGICO (Action Mapping)
-    fw::ActionMap actionMap;
-
-    // 6. INPUT HAL (Hardware Abstraction Layer)
-    InputState currentInput;
-    bool requireFreeCursor = false; // Se true, il DeviceManager sblocca il cursore
-    unsigned char keyboardState[256] = {0}; // Cache dello stato hardware tastiera (latenza zero)
+    // === RENDER INTERPOLATION ===
+    // Frazione di tempo residuo nell'accumulatore, normalizzata in [0.0, 1.0].
+    // Calcolata in main.cpp come: accumulator / FIXED_DT
+    // Usata da PlayState::Render per LERP posizione e SLERP rotazione.
+    float interpolationAlpha  = 0.0f;
 };
-
-// === HELPER DEL NAMESPACE fw (dichiarato DOPO SharedContext, che ora è completo) ===
-namespace fw {
-    // Interroga il bus input a costo zero tramite hash a compile-time
-    bool IsActionActive(entt::id_type actionHash, SharedContext* ctx);
-
-    // Helpers per la UI di remapping
-    const char* InputIDToString(InputID key);
-    InputID GetFirstPressedKey(SharedContext* ctx, bool checkForGamepad);
-    void InitDefaultBindings(SharedContext* ctx);
-}

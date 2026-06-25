@@ -82,6 +82,7 @@ void PhysicsEngine::Integrate(RigidBody& rb, float dt) {
 
 void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWorld& world) {
     rb.isGrounded = false;
+    rb.isAgainstWall = false;
     
     // Helper per verificare se un blocco è solido
     auto isSolid = [&](int x, int y, int z) {
@@ -135,12 +136,14 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
     while (anyPenetration && maxIters-- > 0) {
         anyPenetration = false;
         AABB box = getAABB();
-        int minX = (int)floor(box.minX + 0.001f);
-        int maxX = (int)floor(box.maxX - 0.001f);
-        int minY = (int)floor(box.minY + 0.001f);
-        int maxY = (int)floor(box.maxY - 0.001f);
-        int minZ = (int)floor(box.minZ + 0.001f);
-        int maxZ = (int)floor(box.maxZ - 0.001f);
+        // Margine per non triggerare la depenetration solo sfiorando i blocchi
+        float margin = 0.05f;
+        int minX = (int)floor(box.minX + margin);
+        int maxX = (int)floor(box.maxX - margin);
+        int minY = (int)floor(box.minY + margin);
+        int maxY = (int)floor(box.maxY - margin);
+        int minZ = (int)floor(box.minZ + margin);
+        int maxZ = (int)floor(box.maxZ - margin);
         
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
@@ -276,7 +279,11 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
             }
         }
 
-        // --- STEP-UP AUTOMATICO X ---
+        // --- STEP-UP AUTOMATICO X E WALL CLIMB ---
+        if (moveX != dx) {
+            rb.isAgainstWall = true;
+        }
+
         if (moveX != dx && rb.isGrounded) {
             const float MAX_STEP_HEIGHT = 0.6f;
             
@@ -408,7 +415,11 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWo
             }
         }
 
-        // --- STEP-UP AUTOMATICO Z ---
+        // --- STEP-UP AUTOMATICO Z E WALL CLIMB ---
+        if (moveZ != dz) {
+            rb.isAgainstWall = true;
+        }
+
         if (moveZ != dz && rb.isGrounded && !hasSteppedUp) {
             const float MAX_STEP_HEIGHT = 0.6f;
             

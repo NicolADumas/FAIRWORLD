@@ -24,6 +24,7 @@ struct RigidBody {
 
     bool isGrounded   = false;
     bool isInWater    = false;
+    bool isAgainstWall = false;
     bool touchedStargate = false;
     
     // Timer per platforming responsivo

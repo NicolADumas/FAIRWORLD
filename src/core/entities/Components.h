@@ -1,33 +1,54 @@
 #pragma once
 #include <string>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include "PhysicsEngine.h"
 
-// Componente di base per la posizione nello spazio 3D
+// =============================================================================
+// TransformComponent
+// Posizione + Rotazione (Quaternione) per la Physics/Logic e per l'Interpolazione.
+// prev_* vengono scritti all'inizio di ogni tick fisico (in Update) e letti
+// dal Render per il LERP/SLERP tra un tick e l'altro.
+// =============================================================================
 struct TransformComponent {
+    // --- Stato Corrente (scritto dalla Fisica a 60 Hz) ---
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
-    float pitch = 0.0f;
-    float yaw = -90.0f;
-    float roll = 0.0f;
+    glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identità
+
+    // --- Stato Precedente (snapshot preso all'inizio del tick) ---
+    float prev_x = 0.0f;
+    float prev_y = 0.0f;
+    float prev_z = 0.0f;
+    glm::quat prev_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 };
 
-// Componente per la telecamera (Data-Driven)
+// =============================================================================
+// CameraComponent
+// I vettori direzionali derivati dalla rotazione vengono aggiornati ogni tick.
+// pitch/yaw sono mantenuti qui (in float) solo come accumulatori per l'input
+// grezzo del mouse (FPS-style), prima della conversione in quaternione.
+// =============================================================================
 struct CameraComponent {
-    bool isMain = true;
-    float fov = 45.0f;
+    bool  isMain = true;
+    float fov       = 45.0f;
     float nearPlane = 0.1f;
-    float farPlane = 1000.0f;
-    
-    // Vettori di direzione
-    glm::vec3 front = glm::vec3(0.0f, 0.0f, -1.0f);
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::vec3 right = glm::vec3(1.0f, 0.0f, 0.0f);
+    float farPlane  = 1000.0f;
+
+    // Accumulatori angolari per input FPS (in gradi)
+    // Pitch è clampato a [-89, 89] per evitare gimbal lock a poli
+    float pitch = 0.0f;
+    float yaw   = -90.0f;
+
+    // Vettori direzionali derivati (aggiornati ogni tick dal pitch/yaw)
+    glm::vec3 front   = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 up      = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 right   = glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
-    
-    // Configurazioni input
-    float movementSpeed = 5.0f;
+
+    // Parametri input
+    float movementSpeed   = 5.0f;
     float mouseSensitivity = 0.1f;
 };
 
@@ -39,8 +60,8 @@ struct NameComponent {
 // Componente che indica che l'entità è un giocatore controllabile
 struct PlayerControllerComponent {
     float walkSpeed = 5.0f;
-    float runSpeed = 8.0f;
-    float jumpForce = 5.5f; // Salto di ~1.5 blocchi invece di 2.5
+    float runSpeed  = 8.0f;
+    float jumpForce = 5.5f;
 };
 
 // Componente per la simulazione fisica

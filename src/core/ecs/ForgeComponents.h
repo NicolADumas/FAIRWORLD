@@ -135,12 +135,16 @@ struct VoxelChunkComponent {
     double temperature = 293.15; // Kelvin
     double internalEnergy = 0.0; // Joule
     double heatCapacity = 0.0;   // J/K
+    
+    // Indica se i dati procedurali sono già stati generati
+    bool isGenerated = false;
 };
 
 // Tag Component: indica che il VoxelChunkComponent associato è stato modificato
 // e la sua mesh deve essere rigenerata dal Job System.
 struct ChunkDirtyComponent {
     bool pendingJob = false; // Se true, un Job è già in esecuzione per questo chunk
+    bool needsRebuild = false; // Se true, è stato modificato di nuovo MENTRE il Job era in esecuzione
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

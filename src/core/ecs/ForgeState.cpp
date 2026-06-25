@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ForgeState.h"
 #include "SharedContext.h"
+#include "DeviceManager.h"
 #include "StateManager.h"
 #include "HubState.h"
 #include "FAIRWORLD.h"
@@ -80,10 +81,10 @@ void ForgeState::Update(float dt) {
     if (!m_context) return;
     
     // --- FREE-CAM (NOCLIP) FORGE EDITOR ---
-    float forward = m_context->currentInput.moveForward;
-    float right = m_context->currentInput.moveRight;
-    float yawDelta = m_context->currentInput.lookYaw;
-    float pitchDelta = m_context->currentInput.lookPitch;
+    float forward = m_context->deviceManager->GetInput().moveForward;
+    float right = m_context->deviceManager->GetInput().moveRight;
+    float yawDelta = m_context->deviceManager->GetInput().lookYaw;
+    float pitchDelta = m_context->deviceManager->GetInput().lookPitch;
 
     static float yaw = -90.0f;
     static float pitch = 0.0f;
@@ -110,7 +111,7 @@ void ForgeState::Update(float dt) {
     
     glm::vec3 moveVec = (front * forward) + (camRight * right);
     // Controllo altezza assoluta con Spazio e Control
-    if (m_context->currentInput.isJumping) moveVec.y += 1.0f;
+    if (m_context->deviceManager->GetInput().isJumping) moveVec.y += 1.0f;
     if (GetAsyncKeyState(VK_CONTROL) & 0x8000) moveVec.y -= 1.0f;
     
     if (glm::length(moveVec) > 0.0f) {

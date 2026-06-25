@@ -8,6 +8,8 @@
 #include "StateManager.h"
 #include "HubState.h"
 #include "DeviceManager.h"
+#include "DiagnosticsManager.h"
+#include "TimeManager.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -63,7 +65,16 @@ int main() {
     // 3. Bootstrap (Isolamento Memoria)
     stateManager.ChangeState(std::make_unique<HubState>(&context));
 
-    // 4. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
+    // Configurazione DeviceManager, TimeManager e DiagnosticsManager
+    DeviceManager deviceManager;
+    fw::TimeManager timeManager;
+    fw::DiagnosticsManager diagnosticsManager;
+    
+    context.deviceManager = &deviceManager;
+    context.timeManager = &timeManager;
+    context.diagnosticsManager = &diagnosticsManager;
+
+    // 5. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
     engine.SetSharedContext(&context);
 
     std::cout << "\n[SYSTEM] Entro nel main loop guidato dalla State Machine...\n";
@@ -72,7 +83,6 @@ int main() {
 auto lastTime = std::chrono::high_resolution_clock::now();
 const float FIXED_DT = 1.0f / 60.0f; // 60 updates per second
 float accumulator = 0.0f;
-DeviceManager deviceManager;
 
 while (context.engine->IsRunning()) {
     // Poll hardware (window or VR)
@@ -103,10 +113,21 @@ while (context.engine->IsRunning()) {
         accumulator -= FIXED_DT;
     }
 
-    // Rendering (V‑Sync limits the rate)
+    // Calcola l'alpha per l'interpolazione del render:
+    // quanta frazione del FIXED_DT è già 'avanzata' nel tempo rimanente.
+    context.interpolationAlpha = accumulator / FIXED_DT;
+
+    // Rendering (V-Sync limits the rate)
     context.engine->BeginUIFrame();
     stateManager.Render();
     context.engine->EndUIFrame();
+    
+    // Telemetria (Diagnostics)
+    fw::FrameMetrics metrics;
+    metrics.frameTimeMs   = frameTime * 1000.0f;
+    metrics.physicsTimeMs = 0.0f;   // TODO: tracciare fisica
+    metrics.entityCountF  = 0.0f;   // TODO: contare entità reali dal registry
+    diagnosticsManager.PushFrame(metrics);
 }
 
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";

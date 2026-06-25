@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "RenderManager.h"
+#include "FAIRWORLD.h"
 #include "AssetManager.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -10,6 +11,7 @@
 #include "json.hpp"
 #include "MobManager.h"
 #include "SharedContext.h"
+#include "TimeManager.h"
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
 #include <algorithm>
@@ -1309,8 +1311,8 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         
         skyPC.invView = glm::inverse(skyView);
         skyPC.invProj = glm::inverse(projMatrix);
-        skyPC.timeOfDay = context ? context->worldTimeOfDay : 0.5f;
-        skyPC.moonPhase = context ? context->moonPhase : 0.5f;
+        skyPC.timeOfDay = context && context->engine ? context->engine->GetTimeManager().GetTimeOfDay() : 0.5f;
+        skyPC.moonPhase = context && context->engine ? context->engine->GetTimeManager().GetMoonPhase() : 0.5f;
         
         vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_skyPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants), &skyPC);
         

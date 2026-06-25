@@ -1,9 +1,12 @@
 #include "pch.h"
 #include "PlayState.h"
 #include "SharedContext.h"
+#include "DeviceManager.h"
 #include "FAIRWORLD.h"
 #include "Components.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <iostream>
 #include <fstream>
 #include "json.hpp"
@@ -26,7 +29,7 @@ std::expected<void, std::string> PlayState::Init() {
     // Le stringhe vengono hashate a compile-time da EnTT: costo zero a runtime
     using namespace entt::literals;
 
-    auto& bindings = m_context->actionMap.bindings;
+    auto& bindings = m_context->deviceManager->GetActionMap().bindings;
 
     // Movimento
     bindings["MOVE_FORWARD"_hs].push_back({fw::InputID::KEY_W});
@@ -115,8 +118,12 @@ std::expected<void, std::string> PlayState::Init() {
     // --- Creazione Telecamera Principale (Player) ---
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
-    m_registry.emplace<TransformComponent>(cameraEntity, 0.0f, 70.0f, 0.0f, 0.0f, -90.0f, 0.0f);
-    m_registry.emplace<CameraComponent>(cameraEntity);
+    // Posizione iniziale — rotazione inizializzata a identità (forward = -Z)
+    m_registry.emplace<TransformComponent>(cameraEntity, 0.0f, 70.0f, 0.0f);
+    auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
+    // Yaw -90 gradi così il forward di default punta verso -Z
+    cam.yaw   = -90.0f;
+    cam.pitch =   0.0f;
     m_registry.emplace<PlayerControllerComponent>(cameraEntity);
     
     // Inizializza il RigidBody per la fisica
@@ -151,7 +158,13 @@ std::expected<void, std::string> PlayState::Init() {
     registry.get<fw::PortalComponent>(portalA).targetPortal = portalB;
     registry.get<fw::PortalComponent>(portalB).targetPortal = portalA;
 
-    std::cout << "[PlayState] Inizializzato (ECS + ForgeWorld + Portali)\n";
+    // --- REGISTRAZIONE SISTEMI ECS ---
+    m_systems.push_back(std::make_unique<fw::CameraSystem>());
+    m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>());
+    m_systems.push_back(std::make_unique<fw::PhysicsSystem>());
+    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>());
+
+    std::cout << "[PlayState] Inizializzato (ECS + ForgeWorld + Portali + Systems)\n";
     return {};
 }
 
@@ -161,228 +174,21 @@ void PlayState::Update(float dt) {
     // Aggiorna le matrici di tutti i portali
     fw::PortalSystem::UpdatePortals(m_registry);
 
-    // main.cpp gestisce già il fixed timestep esterno a 60fps:
-    // PlayState::Update riceve sempre dt == PhysicsEngine::FIXED_DT.
-    // Eseguiamo un singolo passo fisico per frame.
-    constexpr int numPhysicsSteps = 1;
+    // --- F1: CAMBIO MODALITÀ ---
+    static bool f1WasDown = false;
+    bool f1Down = m_context->deviceManager->IsActionActive("PAUSE"_hs) == false && (GetAsyncKeyState(VK_F1) & 0x8000) != 0; 
+    if (f1Down && !f1WasDown) {
+        GameMode currentMode = m_context->engine->GetGameMode();
+        m_context->engine->SetGameMode(currentMode == GameMode::Dev ? GameMode::Play : GameMode::Dev);
+        m_context->engine->GetPlayer().SaveToJson("assets/player.json");
+        std::cout << "[PlayState] GameMode cambiata in: " << (m_context->engine->GetGameMode() == GameMode::Dev ? "Dev" : "Play") << "\n";
+    }
+    f1WasDown = f1Down;
 
-
-        // --- F1: CAMBIO MODALITÀ ---
-        static bool f1WasDown = false;
-        bool f1Down = fw::IsActionActive("PAUSE"_hs, m_context) == false && (m_context->keyboardState[VK_F1] & 0x80) != 0; 
-        if (f1Down && !f1WasDown) {
-            GameMode currentMode = m_context->engine->GetGameMode();
-            m_context->engine->SetGameMode(currentMode == GameMode::Dev ? GameMode::Play : GameMode::Dev);
-            m_context->engine->GetPlayer().SaveToJson("assets/player.json");
-            std::cout << "[PlayState] GameMode cambiata in: " << (m_context->engine->GetGameMode() == GameMode::Dev ? "Dev" : "Play") << "\n";
-        }
-        f1WasDown = f1Down;
-
-        // --- CAMERA SYSTEM, INPUT HAL & FISICA ---
-        auto view = m_registry.view<CameraComponent, TransformComponent, PlayerControllerComponent, RigidBodyComponent>();
-        for (auto entity : view) {
-            auto& cam = view.get<CameraComponent>(entity);
-            auto& trans = view.get<TransformComponent>(entity);
-            auto& controller = view.get<PlayerControllerComponent>(entity);
-            auto& rbComp = view.get<RigidBodyComponent>(entity);
-            RigidBody& rb = rbComp.body;
-
-            // Lettura pulita dal demone
-            float forward = m_context->currentInput.moveForward;
-            float right = m_context->currentInput.moveRight;
-            float yawDelta = m_context->currentInput.lookYaw;
-            float pitchDelta = m_context->currentInput.lookPitch;
-
-            // Rotazione Camera
-            trans.yaw += yawDelta;
-            trans.pitch += pitchDelta;
-            if (trans.pitch > 89.0f) trans.pitch = 89.0f;
-            if (trans.pitch < -89.0f) trans.pitch = -89.0f;
-
-            // Ricalcolo vettori direzionali della camera
-            glm::vec3 front;
-            front.x = cos(glm::radians(trans.yaw)) * cos(glm::radians(trans.pitch));
-            front.y = sin(glm::radians(trans.pitch));
-            front.z = sin(glm::radians(trans.yaw)) * cos(glm::radians(trans.pitch));
-            cam.front = glm::normalize(front);
-            cam.right = glm::normalize(glm::cross(cam.front, cam.worldUp));
-            cam.up = glm::normalize(glm::cross(cam.right, cam.front));
-
-            // Vettori "piatti" (senza componente Y) per il movimento a terra
-            glm::vec3 flatFront = glm::normalize(glm::vec3(cam.front.x, 0.0f, cam.front.z));
-            glm::vec3 flatRight = glm::normalize(glm::vec3(cam.right.x, 0.0f, cam.right.z));
-            glm::vec3 moveDir = (flatFront * forward) + (flatRight * right);
-            float hLen = glm::length(moveDir);
-            if (hLen > 0.0f) moveDir = (moveDir / hLen);
-
-            if (m_context->engine->GetGameMode() == GameMode::Dev) {
-                // Modalità Dev: Noclip (Volo Libero senza gravità)
-                glm::vec3 flyMoveVec = (cam.front * forward) + (cam.right * right);
-                if (glm::length(flyMoveVec) > 0.0f) flyMoveVec = glm::normalize(flyMoveVec);
-                
-                rb.velocity = flyMoveVec * controller.walkSpeed;
-                if (m_context->currentInput.isJumping) rb.velocity.y = controller.walkSpeed;
-                else if (m_context->keyboardState[VK_SHIFT] & 0x80) rb.velocity.y = -controller.walkSpeed;
-                else rb.velocity.y = 0.0f; // Azzera Y se non stiamo salendo o scendendo in Noclip
-                
-                rb.position += rb.velocity * dt;
-                rb.isGrounded = false;
-            } else {
-                for (int step = 0; step < numPhysicsSteps; ++step) {
-                    float stepDt = PhysicsEngine::FIXED_DT;
-                    
-                    // Gestione Timer Coyote Time e Jump Buffer
-                    if (rb.isGrounded) {
-                        rb.coyoteTimer = 0.15f; // 150ms di coyote time
-                    } else {
-                        rb.coyoteTimer = std::max(0.0f, rb.coyoteTimer - stepDt);
-                    }
-                    
-                    if (m_context->currentInput.isJumping) {
-                        rb.jumpBuffer = 0.1f; // 100ms di jump buffer
-                    } else {
-                        rb.jumpBuffer = std::max(0.0f, rb.jumpBuffer - stepDt);
-                    }
-                    
-                    bool canJump = rb.isGrounded || rb.coyoteTimer > 0.0f;
-
-                    // --- MASSA DINAMICA: corpo + inventario ---
-                    // rb.mass viene aggiornata ogni step con la massa totale reale del player.
-                    // Questo influenza: gravità (F=ma), fall damage (E=0.5mv^2),
-                    // galleggiamento (spinta Archimede) e inerzia in acqua.
-                    const Player& playerRef = m_context->engine->GetPlayer();
-                    rb.mass = playerRef.GetTotalMassKg();
-
-                    // Penale velocità per sovraccarico (encumbrance > 1.0)
-                    float encumbrance = playerRef.GetEncumbranceRatio();
-                    float speedMultiplier = 1.0f;
-                    if (encumbrance > 1.0f) {
-                        // Penale lineare: al 200% carico (enc=2.0) la velocità è dimezzata
-                        // Formula: mult = 1.0 / encumbrance, clampato a min 0.2 (passo faticoso)
-                        speedMultiplier = std::max(0.2f, 1.0f / encumbrance);
-                    }
-
-                    // QUAKE-STYLE MOVEMENT (Friction & Acceleration)
-                    float friction = rb.isGrounded ? 8.0f : 0.0f;
-                    float accel = rb.isGrounded ? 10.0f : 2.0f; // Air control limitato
-                    // Usa runSpeed se W+Shift sono premuti, altrimenti walkSpeed
-                    // (la corsa è disabilitata se sovraccarico)
-                    bool canRun = m_context->currentInput.isRunning && encumbrance <= 1.0f;
-                    float maxSpeed = (canRun ? controller.runSpeed : controller.walkSpeed) * speedMultiplier;
-                    
-                    // 1. Applica attrito al suolo
-                    float speed = sqrt(rb.velocity.x * rb.velocity.x + rb.velocity.z * rb.velocity.z);
-                    if (speed > 0.01f) {
-                        float drop = speed * friction * stepDt;
-                        float newSpeed = speed - drop;
-                        if (newSpeed < 0.0f) newSpeed = 0.0f;
-                        newSpeed /= speed;
-                        rb.velocity.x *= newSpeed;
-                        rb.velocity.z *= newSpeed;
-                    } else {
-                        rb.velocity.x = 0.0f;
-                        rb.velocity.z = 0.0f;
-                    }
-                    
-                    // 2. Accelerazione verso la direzione di input
-                    if (hLen > 0.0f) {
-                        float currentSpeed = glm::dot(glm::vec3(rb.velocity.x, 0.0f, rb.velocity.z), moveDir);
-                        float addSpeed = maxSpeed - currentSpeed;
-                        if (addSpeed > 0.0f) {
-                            float accelSpeed = accel * maxSpeed * stepDt;
-                            if (accelSpeed > addSpeed) accelSpeed = addSpeed;
-                            rb.velocity.x += accelSpeed * moveDir.x;
-                            rb.velocity.z += accelSpeed * moveDir.z;
-                        }
-                    }
-                    
-                    // Salto (Jump Buffer & Coyote Time)
-                    if (rb.jumpBuffer > 0.0f && canJump) {
-                        rb.velocity.y = controller.jumpForce;
-                        rb.jumpBuffer = 0.0f;
-                        rb.coyoteTimer = 0.0f; // Consuma il salto
-                    }
-
-                    // Eseguiamo il passo di simulazione fisica (chiama il motore)
-                    glm::vec3 oldPos = rb.position;
-                    
-                    if (m_context->forgeWorld) {
-                        // FIX CHUNK: divisione per 16.0f prima del floor per gestire coordinate negative in sicurezza.
-                        int cx = (int)std::floor(rb.position.x / 16.0f);
-                        int cz = (int)std::floor(rb.position.z / 16.0f);
-                        // Se il chunk sotto i piedi non è pronto, congegliamo la fisica
-                        if (m_context->forgeWorld->IsChunkReady(cx, cz)) {
-                            m_context->engine->GetPhysicsEngine().StepSimulation(rb, stepDt, *(m_context->forgeWorld));
-                        } else {
-                            rb.velocity = glm::vec3(0.0f);
-                        }
-                    }
-                    
-                    // PORTAL CHECK: Verifichiamo se il giocatore ha attraversato un portale
-                    auto portalView = m_registry.view<fw::PortalComponent, fw::TransformComponent>();
-                    for (auto pEntity : portalView) {
-                        const auto& portal = portalView.get<fw::PortalComponent>(pEntity);
-                        const auto& pTrans = portalView.get<fw::TransformComponent>(pEntity);
-                        
-                        fw::Vec3 pos = {rb.position.x, rb.position.y, rb.position.z};
-                        fw::Vec3 vel = {rb.velocity.x, rb.velocity.y, rb.velocity.z};
-                        fw::Vec3 old = {oldPos.x, oldPos.y, oldPos.z};
-                        
-                        if (fw::PortalSystem::CheckAndTeleport(pos, vel, old, portal, pTrans)) {
-                            rb.position = glm::vec3(pos.x, pos.y, pos.z);
-                            rb.velocity = glm::vec3(vel.x, vel.y, vel.z);
-                            std::cout << "[PlayState] PORTALE ATTRAVERSATO! Teletrasporto non-euclideo completato.\n";
-                            break; // Ne attraversiamo uno solo alla volta
-                        }
-                    }
-                } // End Fixed Timestep Loop
-
-                // Svuotamento coda eventi fisica (Danni da caduta, ecc.)
-                for (const auto& ev : rb.pendingEvents) {
-                    if (ev.type == PhysicsEvent::Type::FallDamage) {
-                        Player& player = m_context->engine->GetPlayer();
-                        int dex = player.stats.GetDEX();
-                        
-                        // Mitigazione DEX: La destrezza riduce il danno da caduta (Parkour roll)
-                        // 1% di riduzione ogni punto DEX, fino a un massimo di 70% di riduzione.
-                        float reduction = std::min(0.70f, dex * 0.01f);
-                        int finalDamage = std::max(0, (int)(ev.value * (1.0f - reduction)));
-                        
-                        if (finalDamage > 0) {
-                            player.stats.currentHP -= finalDamage;
-                            std::cout << "[PlayState] Danno da caduta subito: " << finalDamage 
-                                      << " HP (mitigato del " << (int)(reduction * 100) << "% da DEX)\n";
-                        }
-                    }
-                }
-                rb.pendingEvents.clear();
-                
-                // TODO: Gestione Nuoto Danni e Stargate (possono essere portati qui o lasciati ai trigger)
-            }
-
-            // Sincronizzazione: RigaBody (fisica) -> Transform (Visuale)
-            trans.x = rb.position.x;
-            trans.y = rb.position.y + rb.eyeOffset; // Telecamera all'altezza degli occhi
-            trans.z = rb.position.z;
-            
-            // Applica Head Bobbing
-            float hSpeed = sqrt(rb.velocity.x * rb.velocity.x + rb.velocity.z * rb.velocity.z);
-            if (rb.isGrounded && hSpeed > 0.1f) {
-                static float bobTime = 0.0f;
-                bobTime += hSpeed * dt * 0.15f;
-                trans.y += sin(bobTime * 10.0f) * 0.1f; // Oscillazione verticale
-            }
-
-            // Aggiorna i dati crudi per il renderer usando la posizione della telecamera (Transform)
-            glm::vec3 pos(trans.x, trans.y, trans.z);
-            m_context->activeCameraView.viewMatrix = glm::lookAt(pos, pos + cam.front, cam.up);
-            m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(cam.fov), 16.0f / 9.0f, cam.nearPlane, cam.farPlane);
-            m_context->activeCameraView.cameraPosition = pos;
-            
-            // Propaga velocità fisica all'HUD
-            m_context->playerVelocity = rb.velocity;
-            break; // Assumiamo una sola telecamera attiva principale
-        }
+    // --- ESECUZIONE SISTEMI ECS ---
+    for (auto& system : m_systems) {
+        system->Update(m_registry, m_context, dt);
+    }
 
     // Aggiunto l'aggiornamento di ForgeWorld per permettere la generazione asincrona dei chunk
     if (m_context && m_context->forgeWorld) {
@@ -393,5 +199,40 @@ void PlayState::Update(float dt) {
 }
 
 void PlayState::Render() {
+    // === INTERPOLAZIONE FRAME ===
+    // Fonde la posizione e la rotazione del frame precedente con quella corrente
+    // usando il fattore alpha = accumulator / FIXED_DT (in [0, 1]).
+    // In questo modo, il renderer gira a velocità massima (es. 144 Hz) senza
+    // aspettare il tick fisico a 60 Hz, ottenendo movimento impeccabilmente fluido.
+    const float alpha = m_context->interpolationAlpha;
+
+    auto view = m_registry.view<CameraComponent, TransformComponent, PlayerControllerComponent>();
+    for (auto entity : view) {
+        const auto& cam   = view.get<CameraComponent>(entity);
+        const auto& trans = view.get<TransformComponent>(entity);
+
+        // LERP posizione (interpolazione lineare, perfetta per vettori)
+        const glm::vec3 prevPos(trans.prev_x, trans.prev_y, trans.prev_z);
+        const glm::vec3 currPos(trans.x,      trans.y,      trans.z);
+        const glm::vec3 iPos = glm::mix(prevPos, currPos, alpha);
+
+        // SLERP rotazione (interpolazione sferica, corretta per quaternioni)
+        // glm::slerp gestisce autonomamente il wrap-around a 360 deg senza scatti
+        const glm::quat iRot = glm::slerp(trans.prev_rotation, trans.rotation, alpha);
+
+        // Rigenera il vettore front dal quaternione interpolato
+        const glm::vec3 iFront = glm::normalize(iRot * glm::vec3(1.0f, 0.0f, 0.0f));
+        const glm::vec3 iUp    = glm::normalize(iRot * glm::vec3(0.0f, 1.0f,  0.0f));
+
+        // Scrivi nel bus: il RenderManager leggerà queste matrici già interpolate
+        m_context->activeCameraView.viewMatrix       = glm::lookAt(iPos, iPos + iFront, iUp);
+        m_context->activeCameraView.projectionMatrix = glm::perspective(
+            glm::radians(cam.fov), 16.0f / 9.0f, cam.nearPlane, cam.farPlane);
+        m_context->activeCameraView.cameraPosition   = iPos;
+        m_context->activeCameraView.cameraFront      = iFront;
+
+        break; // Una sola telecamera principale
+    }
+
     m_context->engine->Render();
 }

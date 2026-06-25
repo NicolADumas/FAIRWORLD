@@ -89,6 +89,7 @@ private:
         MeshComponent mesh;
         std::shared_ptr<VoxelChunkComponent> chunkData;
         entt::entity targetEntity;
+        bool isNewlyGenerated = false;
     };
     std::vector<DeferredMeshSpawn> m_deferredMeshes;
     std::mutex m_deferredMutex;

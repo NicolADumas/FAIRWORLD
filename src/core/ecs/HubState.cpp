@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "HubState.h"
 #include "SharedContext.h"
+#include "DeviceManager.h"
 #include "StateManager.h"
 #include "PlayState.h"
 #include "ForgeState.h"
@@ -18,7 +19,7 @@ HubState::~HubState() {
 
 std::expected<void, std::string> HubState::Init() {
     std::cout << "[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.\n";
-    fw::InitDefaultBindings(m_context);
+    m_context->deviceManager->InitDefaultBindings();
     return {};
 }
 
@@ -117,28 +118,23 @@ void HubState::Render() {
             if (ImGui::Begin("Gestore Dispositivi Hardware", &showDeviceManager, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                 
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "--- CONNESSIONE GAMEPAD ---");
-                if (m_context->isGamepadConnected) {
-                    ImGui::Text("Stato: CONNESSO (Player %d)", m_context->gamepadIndex + 1);
-                    ImGui::Separator();
+                ImGui::Text("Connesso: %s", m_context->deviceManager->GetGamepadData().isConnected ? "SI" : "NO");
+                ImGui::Text("Indice: %d", m_context->deviceManager->GetGamepadData().index);
+                ImGui::Separator();
+                
+                ImGui::Text("Stick Sinistro: (%.2f, %.2f)", 
+                    m_context->deviceManager->GetGamepadData().leftThumbX, 
+                    m_context->deviceManager->GetGamepadData().leftThumbY);
                     
-                    // Mostriamo i dati in tempo reale dal Bus Dati (SharedContext)
-                    ImGui::Text("Analogico Sinistro:");
-                    ImGui::ProgressBar((m_context->gamepadInput.leftThumbX + 1.0f) / 2.0f, ImVec2(-1, 0), "X Axis");
-                    ImGui::ProgressBar((m_context->gamepadInput.leftThumbY + 1.0f) / 2.0f, ImVec2(-1, 0), "Y Axis");
-                    
-                    ImGui::Text("Analogico Destro:");
-                    ImGui::ProgressBar((m_context->gamepadInput.rightThumbX + 1.0f) / 2.0f, ImVec2(-1, 0), "X Axis");
-                    ImGui::ProgressBar((m_context->gamepadInput.rightThumbY + 1.0f) / 2.0f, ImVec2(-1, 0), "Y Axis");
-                } else {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Stato: DISCONNESSO");
-                    ImGui::Text("In attesa di controller XInput...");
-                }
+                ImGui::Text("Grilletti: L=%.2f R=%.2f", 
+                    m_context->deviceManager->GetGamepadData().leftTrigger, 
+                    m_context->deviceManager->GetGamepadData().rightTrigger);
                 
                 ImGui::Spacing();
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "--- MAPPATURA COMANDI ---");
                 
-                bool isPad = m_context->isGamepadConnected;
+                bool isPad = m_context->deviceManager->GetGamepadData().isConnected;
                 ImGui::Text("Modalita' Input: %s", isPad ? "CONTROLLER" : "TASTIERA / MOUSE");
                 ImGui::Spacing();
 
@@ -156,9 +152,11 @@ void HubState::Render() {
                         
                         entt::id_type hash = entt::hashed_string(actName);
                         fw::InputID currentKey = fw::InputID::NONE;
+                        static bool waitingForGamepad = false;
                         
-                        auto it = m_context->actionMap.bindings.find(hash);
-                        if (it != m_context->actionMap.bindings.end()) {
+                        auto& bindings = m_context->deviceManager->GetActionMap().bindings;
+                        auto it = bindings.find(hash);
+                        if (it != bindings.end()) {
                             for (const auto& b : it->second) {
                                 bool bIsPad = ((int)b.primaryKey >= (int)fw::InputID::PAD_FACE_DOWN);
                                 if (bIsPad == isPad) {
@@ -169,10 +167,9 @@ void HubState::Render() {
                         }
 
                         ImGui::PushID(actName);
-                        const char* btnLabel = fw::InputIDToString(currentKey);
+                        const char* btnLabel = m_context->deviceManager->InputIDToString(currentKey);
                         if (ImGui::Button(btnLabel, ImVec2(150, 0))) {
-                            m_context->actionMap.isListening = true;
-                            m_context->actionMap.actionBeingMapped = hash;
+                            waitingForGamepad = isPad;
                             ImGui::OpenPopup("Premi un tasto...");
                         }
 
@@ -180,10 +177,9 @@ void HubState::Render() {
                             ImGui::Text("Premi il nuovo tasto per:\n\n %s\n\n", actName);
                             ImGui::Separator();
                             
-                            fw::InputID newKey = fw::GetFirstPressedKey(m_context, isPad);
+                            fw::InputID newKey = m_context->deviceManager->GetFirstPressedKey(waitingForGamepad);
                             if (newKey != fw::InputID::NONE) {
-                                // Aggiorna o Inserisci il binding
-                                if (it != m_context->actionMap.bindings.end()) {
+                                if (it != bindings.end()) {
                                     bool found = false;
                                     for (auto& b : it->second) {
                                         bool bIsPad = ((int)b.primaryKey >= (int)fw::InputID::PAD_FACE_DOWN);
@@ -198,14 +194,14 @@ void HubState::Render() {
                                         it->second.push_back({newKey, fw::InputID::NONE});
                                     }
                                 } else {
-                                    m_context->actionMap.bindings[hash].push_back({newKey, fw::InputID::NONE});
+                                    bindings[hash].push_back({newKey, fw::InputID::NONE});
                                 }
-                                m_context->actionMap.isListening = false;
+                                m_context->deviceManager->GetActionMap().isListening = false;
                                 ImGui::CloseCurrentPopup();
                             }
 
                             if (ImGui::Button("Annulla", ImVec2(120, 0))) {
-                                m_context->actionMap.isListening = false;
+                                m_context->deviceManager->GetActionMap().isListening = false;
                                 ImGui::CloseCurrentPopup();
                             }
                             ImGui::EndPopup();

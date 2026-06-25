@@ -84,6 +84,7 @@ public:
     PhysicsEngine& GetPhysicsEngine() { return m_physics; }
     Player& GetPlayer() { return m_player; }
     World& GetWorld() { return m_world; }
+    fw::TimeManager& GetTimeManager() { return *m_timeManager; }
     RenderManager* GetRenderManager() { return m_renderManager.get(); }
     GameMode GetGameMode() const { return m_gameMode; }
     void SetGameMode(GameMode mode) { m_gameMode = mode; }

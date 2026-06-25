@@ -1,7 +1,11 @@
 #include "pch.h"
 #include "FAIRWORLD.h"
-#include "BlockMaterial.h"
+#include "HubState.h"
+#include "Components.h"
+#include "SharedContext.h"
+#include "DeviceManager.h"
 #include "TimeManager.h"
+#include "DiagnosticsManager.h"
 #include "XrManager.h"
 #include "RenderManager.h"
 #include "WindowManager.h"
@@ -290,7 +294,7 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
         ctx->forgeWorld = m_forgeWorld.get();
         // Inizializza i sistemi col context appena disponibile
         m_forgeWorld->Initialize(ctx);
-        m_timeManager->Initialize(ctx);
+        m_timeManager->Initialize();
     }
 }
 
@@ -349,7 +353,7 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // Toggle Diario AI con 'J'
     static bool jWasDown = false;
-    bool jDown = m_sharedContext && (m_sharedContext->keyboardState['J'] & 0x80) != 0;
+    bool jDown = (GetAsyncKeyState('J') & 0x8000) != 0;
     if (jDown && !jWasDown && !m_isDiaryOpen) {
         m_isDiaryOpen = true;
         m_diaryFocusRequested = true;
@@ -359,7 +363,7 @@ bool FairWorldEngine::Update(float deltaTime) {
     
     // Apri Browser Web Integrato con 'H'
     static bool hWasDown = false;
-    bool hDown = m_sharedContext && (m_sharedContext->keyboardState['H'] & 0x80) != 0;
+    bool hDown = (GetAsyncKeyState('H') & 0x8000) != 0;
     if (hDown && !hWasDown) {
         if (m_current == GameState::WEB_BROWSER) {
             transitionTo(GameState::PLAYING);
@@ -372,8 +376,8 @@ bool FairWorldEngine::Update(float deltaTime) {
     
     // --- ESC / START: apre/chiude il menu di pausa ---
     static bool escWasDownEngine = false;
-    bool escDownEngine = (m_sharedContext && (m_sharedContext->keyboardState[VK_ESCAPE] & 0x80) != 0)
-                      || fw::IsActionActive("PAUSE"_hs, m_sharedContext);
+    bool escDownEngine = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0
+                      || (m_sharedContext && m_sharedContext->deviceManager->IsActionActive("PAUSE"_hs));
     if (escDownEngine && !escWasDownEngine) {
         if (m_current == GameState::PLAYING) {
             transitionTo(GameState::PAUSE_MENU);
@@ -385,9 +389,9 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // Comunichiamo al DeviceManager se i menu richiedono il cursore libero
     if (m_current == GameState::MAIN_MENU || m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen || m_current == GameState::WEB_BROWSER || io.WantCaptureMouse) {
-        m_sharedContext->requireFreeCursor = true;
+        if (m_sharedContext && m_sharedContext->deviceManager) m_sharedContext->deviceManager->requireFreeCursor = true;
     } else {
-        m_sharedContext->requireFreeCursor = false;
+        if (m_sharedContext && m_sharedContext->deviceManager) m_sharedContext->deviceManager->requireFreeCursor = false;
     }
 
     if (!isWorldRunning()) return true;
@@ -403,7 +407,7 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // Toggle Inventory con 'E' (TAB ora è menu principale)
     static bool eWasDown = false;
-    bool eDown = m_sharedContext && (m_sharedContext->keyboardState['E'] & 0x80) != 0;
+    bool eDown = (GetAsyncKeyState('E') & 0x8000) != 0;
     if (eDown && !eWasDown && !m_isDiaryOpen && !io.WantCaptureKeyboard) {
         m_isInventoryOpen = !m_isInventoryOpen;
         if (m_isInventoryOpen) {
@@ -417,7 +421,7 @@ bool FairWorldEngine::Update(float deltaTime) {
         // I tasti '1'-'9' mappano agli slot 0-8, '0' mappa allo slot 9
         const int keyMap[10] = { '1','2','3','4','5','6','7','8','9','0' };
         for (int i = 0; i < Inventory::HOTBAR_SIZE; i++) {
-            if (m_sharedContext && (m_sharedContext->keyboardState[keyMap[i]] & 0x80) != 0) {
+            if ((GetAsyncKeyState(keyMap[i]) & 0x8000) != 0) {
                 if (m_selectedSlot != i) {
                     m_selectedSlot  = i;
                     std::cout << "[INVENTORY] Slot " << (i + 1 == 10 ? 0 : i + 1)
@@ -440,9 +444,9 @@ bool FairWorldEngine::Update(float deltaTime) {
     bool holdingBreak = false;
 
     if (!io.WantCaptureMouse && m_sharedContext) {
-        placeBlock = m_sharedContext->currentInput.isPlacing;
-        breakBlock = m_sharedContext->currentInput.isMining;
-        holdingBreak = m_sharedContext->currentInput.isMining;
+        placeBlock = m_sharedContext->deviceManager->GetInput().isPlacing;
+        breakBlock = m_sharedContext->deviceManager->GetInput().isMining;
+        holdingBreak = m_sharedContext->deviceManager->GetInput().isMining;
     }
         
         // --- 1. SIMULAZIONE DESKTOP VIEW-MODEL (Prima Persona) ---
@@ -538,9 +542,9 @@ bool FairWorldEngine::Update(float deltaTime) {
                     if (hitGhost) break;
                 }
 
-                // 2. Controlla collisione col mondo
-                if (m_world.IsInBounds(bPos.x, bPos.y, bPos.z) &&
-                    m_world.GetBlock(bPos.x, bPos.y, bPos.z) != BlockType::Air) {
+                // 2. Controlla collisione col mondo (utilizzando ForgeWorld!)
+                fw::BlockType bType = m_forgeWorld->GetBlock(bPos.x, bPos.y, bPos.z);
+                if (bType != fw::BlockType::Air && bType != fw::BlockType::OutOfBounds) {
                     hitBlock = bPos;
                     break;
                 }
@@ -573,12 +577,12 @@ bool FairWorldEngine::Update(float deltaTime) {
                     }
                 } else if (breakBlock && hitBlock.x >= 0 && !hitGhost) {
                     // DevMode: scavo ISTANTANEO (nessun timer)
-                    BlockType brokenType = m_world.GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
-                    if (brokenType != BlockType::Air) {
-                        EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenType));
+                    fw::BlockType brokenType = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
+                        EventManager::Get().Dispatch(Event_BlockMined(hitBlock, (BlockType)brokenType));
                         worldChanged = true;
                     }
-                } else if (placeBlock && hitBlock.x >= 0 && m_world.IsInBounds(prevBlock.x, prevBlock.y, prevBlock.z) && !hitGhost) {
+                } else if (placeBlock && hitBlock.x >= 0 && prevBlock.y >= 0 && !hitGhost) {
                     const InventoryItem& activeItem = m_player.inventory.slots[m_selectedSlot];
                     if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
                         EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
@@ -623,9 +627,9 @@ bool FairWorldEngine::Update(float deltaTime) {
                         
                         // Blocco rotto!
                         if (m_miningProgress >= 1.0f) {
-                            fw::BlockType brokenFW = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
-                            if (brokenFW != fw::BlockType::Air && brokenFW != fw::BlockType::OutOfBounds) {
-                                BlockType brokenLegacy = static_cast<BlockType>((uint8_t)brokenFW);
+                            fw::BlockType brokenType = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                            if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
+                                BlockType brokenLegacy = static_cast<BlockType>((uint8_t)brokenType);
                                 EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenLegacy));
                             }
                             
@@ -849,9 +853,9 @@ void FairWorldEngine::Render() {
 
         // --- INFO MATERIALE blocco puntato (PlayMode) ---
         if (m_hasTarget && m_gameMode == GameMode::Play) {
-            BlockType targetType = m_world.GetBlock(m_targetedBlock.x, m_targetedBlock.y, m_targetedBlock.z);
-            if (targetType != BlockType::Air) {
-                const auto& mat = GetBlockMaterial(targetType);
+            fw::BlockType targetType = m_forgeWorld->GetBlock(m_targetedBlock.x, m_targetedBlock.y, m_targetedBlock.z);
+            if (targetType != fw::BlockType::Air && targetType != fw::BlockType::OutOfBounds) {
+                const auto& mat = GetBlockMaterial((BlockType)targetType);
                 char matInfo[128];
                 snprintf(matInfo, sizeof(matInfo), "%s | %.0f kg/m3 | %.0f J/kg*K | t=%.1fs", 
                     mat.name, mat.density, mat.heatCapacitySp, mat.miningTime);
@@ -1166,11 +1170,15 @@ void FairWorldEngine::Render() {
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.3f, 0.4f, 0.5f));
         if (ImGui::Begin("ClockWidget", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
             // Formattazione Giorno
-            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "GIORNO %d", m_sharedContext->worldCurrentDay);
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "GIORNO %d", m_timeManager->GetCurrentDay());
             ImGui::Separator();
             
             // Formattazione Ora
-            float t = m_sharedContext->worldTimeOfDay;
+            float t = m_timeManager->GetTimeOfDay();
+            ImGui::SliderFloat("Time Of Day", &t, 0.0f, 1.0f);
+            if (t != m_timeManager->GetTimeOfDay()) {
+                m_timeManager->SetTimeOfDay(t);
+            }
             int totalMinutes = (int)(t * 24.0f * 60.0f);
             int hours = totalMinutes / 60;
             int minutes = totalMinutes % 60;
@@ -1179,7 +1187,7 @@ void FairWorldEngine::Render() {
             // Formattazione Fase Lunare
             const char* phaseIcon = "Luna";
             const char* phaseName = "Nuova";
-            float phase = m_sharedContext->moonPhase;
+            float phase = m_timeManager->GetMoonPhase();
             
             if (phase == 0.0f) { phaseIcon = "O"; phaseName = "Nuova"; }
             else if (phase == 0.125f) { phaseIcon = ")"; phaseName = "Crescente"; }
@@ -1228,7 +1236,9 @@ void FairWorldEngine::Render() {
         ImGui::PopStyleColor();
 
         // Orologio
-        float tod = m_sharedContext->worldTimeOfDay;
+        float tod = m_timeManager->GetTimeOfDay();
+        ImGui::Text("Time Of Day: %.2f (Day %d)", tod, m_timeManager->GetCurrentDay());
+        float phase = m_timeManager->GetMoonPhase();
         int h = (int)(tod * 24.0f);
         int m = (int)((tod * 24.0f - h) * 60.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "🕒 Orologio In-Game: %02d:%02d", h, m);
@@ -1550,11 +1560,41 @@ void FairWorldEngine::Render() {
 }
 
 void FairWorldEngine::EndUIFrame() {
+    // --- F3: TOGGLE DIAGNOSTICS OVERLAY ---
+    static bool f3WasDown = false;
+    static bool showDiagnostics = false;
+    bool f3Down = (GetAsyncKeyState(VK_F3) & 0x8000) != 0;
+    if (f3Down && !f3WasDown) {
+        showDiagnostics = !showDiagnostics;
+    }
+    f3WasDown = f3Down;
+
+    if (showDiagnostics && m_sharedContext && m_sharedContext->diagnosticsManager) {
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+        ImGui::Begin("Telemetria Engine (F3)", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize);
+        
+        auto* diag = m_sharedContext->diagnosticsManager;
+        float avgFps = diag->GetAverageFPS();
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "FPS: %.1f", avgFps);
+        
+        // Usiamo GetFilledCount per non mostrare i valori zero non ancora scritti
+        ImGui::PlotLines("##frametime", 
+                         diag->GetFrameTimeRawData(), 
+                         diag->GetFilledCount(),      // quanti slot usati realmente
+                         diag->GetHeadIndex(),         // oldest first (offset)
+                         nullptr, 0.0f, 33.3f, ImVec2(280, 60),
+                         sizeof(fw::FrameMetrics));   // stride = salto fisico tra un frameTimeMs e il successivo
+        ImGui::Text("Latenza frame (ms): %.2f | Max: 33.3 = 30fps", 
+                    m_sharedContext->diagnosticsManager->GetTotalTime() / 
+                    (float)(m_sharedContext->diagnosticsManager->GetFilledCount() + 1));
+        ImGui::End();
+    }
+
     if (m_isVrMode) {
         m_xrManager->EndFrame();
     } else {
         ImGui::Render();
-        glm::vec3 skyColor = m_sharedContext ? m_sharedContext->worldSkyColor : m_world.GetSkyColor();
+        glm::vec3 skyColor = m_timeManager->GetSkyColor();
         m_renderManager->RenderDesktop(m_sharedContext->activeCameraView.viewMatrix, skyColor, m_sharedContext, &m_assets, &m_mobManager, &m_player);
     }
 }

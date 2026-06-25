@@ -5,6 +5,8 @@
 #include <memory>
 #include <typeindex>
 #include <iostream>
+#include <mutex>
+#include <shared_mutex>
 #include <glm/glm.hpp>
 #include "World.h" // Per BlockType
 
@@ -62,8 +64,10 @@ public:
 class EventManager {
 private:
     std::unordered_map<std::type_index, std::vector<std::unique_ptr<IEventListener>>> listeners;
+    std::shared_mutex listenersMutex;
 
     std::vector<std::function<void()>> eventQueue;
+    std::mutex queueMutex;
 
     EventManager() = default;
     ~EventManager() = default;
@@ -79,12 +83,14 @@ public:
 
     template<typename EventType>
     void Subscribe(std::function<void(const EventType&)> callback) {
+        std::unique_lock<std::shared_mutex> lock(listenersMutex);
         listeners[typeid(EventType)].push_back(std::make_unique<EventListener<EventType>>(callback));
     }
 
     // Dispatch Immediato (Sincrono)
     template<typename EventType>
     void Dispatch(const EventType& e) {
+        std::shared_lock<std::shared_mutex> lock(listenersMutex);
         auto it = listeners.find(typeid(EventType));
         if (it != listeners.end()) {
             for (auto& listener : it->second) {
@@ -96,6 +102,7 @@ public:
     // Dispatch Differito (Asincrono/Coda)
     template<typename EventType>
     void QueueEvent(const EventType& e) {
+        std::lock_guard<std::mutex> lock(queueMutex);
         eventQueue.push_back([this, e]() {
             this->Dispatch(e);
         });
@@ -103,12 +110,16 @@ public:
 
     // Processa tutti gli eventi in coda in blocco
     void ProcessEvents() {
-        if (eventQueue.empty()) return;
-        
-        // Spostiamo la coda attuale in una locale per permettere l'aggiunta 
-        // di nuovi eventi durante il processing senza finire in loop infiniti
-        std::vector<std::function<void()>> currentQueue = std::move(eventQueue);
-        eventQueue.clear();
+        std::vector<std::function<void()>> currentQueue;
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            if (eventQueue.empty()) return;
+            
+            // Spostiamo la coda attuale in una locale per permettere l'aggiunta 
+            // di nuovi eventi durante il processing senza finire in deadlock
+            currentQueue = std::move(eventQueue);
+            eventQueue.clear();
+        }
         
         for (auto& task : currentQueue) {
             task();
