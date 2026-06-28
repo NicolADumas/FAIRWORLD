@@ -64,6 +64,11 @@ public:
     // Genera i dati di un chunk usando PerlinNoise
     void GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz);
 
+    // Salvataggio/Caricamento Chunks
+    bool SaveChunk(int cx, int cz) const;
+    bool LoadChunk(int cx, int cz, VoxelChunkComponent& chunkData) const;
+    void SaveAllChunks() const;
+
 private:
     entt::registry m_registry;
     SharedContext* m_context = nullptr;

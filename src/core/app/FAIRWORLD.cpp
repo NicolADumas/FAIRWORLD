@@ -381,6 +381,12 @@ bool FairWorldEngine::Update(float deltaTime) {
     }
     hWasDown = hDown;
     
+    static bool f5WasDown = false;
+    bool f5Down = (GetAsyncKeyState(VK_F5) & 0x8000) != 0;
+    if (f5Down && !f5WasDown) {
+        if (m_forgeWorld) m_forgeWorld->SaveAllChunks();
+    }
+    f5WasDown = f5Down;
     
     // --- ESC / START: apre/chiude il menu di pausa ---
     static bool escWasDownEngine = false;
@@ -525,24 +531,46 @@ bool FairWorldEngine::Update(float deltaTime) {
 
         // Raycast SEMPRE attivo ogni frame (aggiorna il mirino HUD)
         {
-            glm::vec3 rayPos = m_sharedContext->activeCameraView.cameraPosition;
+            // Aggiungiamo 0.5f perché le mesh procedurali dei chunk centrano i blocchi sull'intero (es. [-0.5, 0.5])
+            // ma l'algoritmo DDA assume che i blocchi inizino dall'intero (es. [0.0, 1.0]).
+            glm::vec3 rayPos = m_sharedContext->activeCameraView.cameraPosition + glm::vec3(0.5f, 0.5f, 0.5f);
             glm::vec3 rayDir = glm::normalize(m_sharedContext->activeCameraView.cameraFront);
-            const float STEP     = 0.05f;
             const float MAX_DIST = 8.0f;
 
             glm::ivec3 hitBlock(-1, -1, -1);
             glm::ivec3 prevBlock(-1, -1, -1);
             bool hitGhost = false;
 
-            for (float t = 0.0f; t < MAX_DIST; t += STEP) {
-                glm::vec3  p    = rayPos + rayDir * t;
-                glm::ivec3 bPos = { (int)floor(p.x), (int)floor(p.y), (int)floor(p.z) };
-                
+            // Algoritmo DDA (Fast Voxel Traversal - Amanatides & Woo)
+            glm::ivec3 currentPos(floor(rayPos.x), floor(rayPos.y), floor(rayPos.z));
+            glm::ivec3 step(
+                (rayDir.x > 0) ? 1 : ((rayDir.x < 0) ? -1 : 0),
+                (rayDir.y > 0) ? 1 : ((rayDir.y < 0) ? -1 : 0),
+                (rayDir.z > 0) ? 1 : ((rayDir.z < 0) ? -1 : 0)
+            );
+            
+            glm::vec3 tDelta(
+                (rayDir.x != 0) ? std::abs(1.0f / rayDir.x) : std::numeric_limits<float>::max(),
+                (rayDir.y != 0) ? std::abs(1.0f / rayDir.y) : std::numeric_limits<float>::max(),
+                (rayDir.z != 0) ? std::abs(1.0f / rayDir.z) : std::numeric_limits<float>::max()
+            );
+            
+            glm::vec3 tMax(
+                (rayDir.x > 0) ? (currentPos.x + 1.0f - rayPos.x) * tDelta.x : (rayDir.x < 0 ? (rayPos.x - currentPos.x) * tDelta.x : std::numeric_limits<float>::max()),
+                (rayDir.y > 0) ? (currentPos.y + 1.0f - rayPos.y) * tDelta.y : (rayDir.y < 0 ? (rayPos.y - currentPos.y) * tDelta.y : std::numeric_limits<float>::max()),
+                (rayDir.z > 0) ? (currentPos.z + 1.0f - rayPos.z) * tDelta.z : (rayDir.z < 0 ? (rayPos.z - currentPos.z) * tDelta.z : std::numeric_limits<float>::max())
+            );
+
+            float t = 0.0f;
+            glm::ivec3 lastPos = currentPos;
+            
+            while (t < MAX_DIST) {
                 // 1. Controlla collisione con ologrammi se in attesa di approvazione
                 if (m_aiAssistant.GetState() == AIState::WaitingForApproval) {
                     for (const auto& ghost : m_aiAssistant.GetPreviewBlocks()) {
-                        if (ghost.pos == bPos) {
-                            hitBlock = bPos;
+                        if (ghost.pos == currentPos) {
+                            hitBlock = currentPos;
+                            prevBlock = lastPos;
                             hitGhost = true;
                             break;
                         }
@@ -551,12 +579,37 @@ bool FairWorldEngine::Update(float deltaTime) {
                 }
 
                 // 2. Controlla collisione col mondo (utilizzando ForgeWorld!)
-                fw::BlockType bType = m_forgeWorld->GetBlock(bPos.x, bPos.y, bPos.z);
+                fw::BlockType bType = m_forgeWorld->GetBlock(currentPos.x, currentPos.y, currentPos.z);
                 if (bType != fw::BlockType::Air && bType != fw::BlockType::OutOfBounds) {
-                    hitBlock = bPos;
+                    hitBlock = currentPos;
+                    prevBlock = lastPos;
                     break;
                 }
-                prevBlock = bPos;
+
+                lastPos = currentPos;
+
+                // 3. Avanza al prossimo voxel (DDA Step)
+                if (tMax.x < tMax.y) {
+                    if (tMax.x < tMax.z) {
+                        currentPos.x += step.x;
+                        t = tMax.x;
+                        tMax.x += tDelta.x;
+                    } else {
+                        currentPos.z += step.z;
+                        t = tMax.z;
+                        tMax.z += tDelta.z;
+                    }
+                } else {
+                    if (tMax.y < tMax.z) {
+                        currentPos.y += step.y;
+                        t = tMax.y;
+                        tMax.y += tDelta.y;
+                    } else {
+                        currentPos.z += step.z;
+                        t = tMax.z;
+                        tMax.z += tDelta.z;
+                    }
+                }
             }
 
             m_hasTarget     = (hitBlock.x >= 0);
@@ -1784,6 +1837,10 @@ void FairWorldEngine::renderTab_Engine() {
 }
 
 void FairWorldEngine::Shutdown() {
+    if (m_forgeWorld) {
+        m_forgeWorld->SaveAllChunks();
+    }
+
     if (m_sharedContext && m_sharedContext->jobSystem) {
         m_sharedContext->jobSystem->Shutdown();
         delete m_sharedContext->jobSystem;

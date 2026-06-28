@@ -12,6 +12,9 @@
 #include "RenderManager.h"
 #include "EventManager.h"
 #include <iostream>
+#include <fstream>
+#include <filesystem>
+#include "Systems.h"
 #include <cmath>
 #include <vector>
 
@@ -213,37 +216,108 @@ entt::entity ForgeWorld::CreateChunkEntity(const std::string& name, const Vec3& 
 }
 
 void ForgeWorld::GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz) {
-    // Generazione Procedurale con Perlin Noise
+    chunk.cx = cx;
+    chunk.cz = cz;
+    
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            // Coordinate globali
             double worldX = cx * 16.0 + x;
             double worldZ = cz * 16.0 + z;
-
+            
             // FBM (Fractal Brownian Motion)
-            // Parametri: scala x/z, octaves, persistence
             double scale = 0.02; 
             double noiseVal = m_noiseGen.octaveNoise(worldX * scale, 0.0, worldZ * scale, 4, 0.5);
-            
-            // Mappa il noise (0.0 - 1.0) all'altezza (es. 20 a 60 blocchi)
             int height = 20 + (int)(noiseVal * 40.0);
             
-            // Limita l'altezza per evitare overflow
-            if (height >= 128) height = 127;
-            if (height < 1) height = 1;
-
-            // Riempi la colonna
             for (int y = 0; y < height; ++y) {
                 if (y == height - 1) {
-                    chunk.blocks[x][y][z] = 1; // Erba in cima
+                    chunk.blocks[x][y][z] = (uint8_t)BlockType::Grass;
                 } else if (y > height - 4) {
-                    chunk.blocks[x][y][z] = 2; // Terra sotto
+                    chunk.blocks[x][y][z] = (uint8_t)BlockType::Dirt;
                 } else {
-                    chunk.blocks[x][y][z] = 3; // Pietra in profondità
+                    chunk.blocks[x][y][z] = (uint8_t)BlockType::Stone;
+                }
+                chunk.light[x][y][z] = 255;
+            }
+            
+            for (int y = height; y < 128; ++y) {
+                chunk.blocks[x][y][z] = (uint8_t)BlockType::Air;
+                chunk.light[x][y][z] = 255; 
+            }
+            
+            // Generazione procedurale alberi
+            if (x > 2 && x < 13 && z > 2 && z < 13) {
+                double treeNoise = m_noiseGen.noise(worldX * 0.5, 0.0, worldZ * 0.5);
+                if (treeNoise > 0.8) {
+                    int treeHeight = 4 + (int)(treeNoise * 5.0) % 3;
+                    for (int ty = 0; ty < treeHeight; ++ty) {
+                        chunk.blocks[x][height + ty][z] = (uint8_t)BlockType::Wood;
+                    }
+                    for (int lx = x - 2; lx <= x + 2; ++lx) {
+                        for (int ly = height + treeHeight - 2; ly <= height + treeHeight + 1; ++ly) {
+                            for (int lz = z - 2; lz <= z + 2; ++lz) {
+                                if (lx >= 0 && lx < 16 && lz >= 0 && lz < 16 && ly < 128) {
+                                    if (chunk.blocks[lx][ly][lz] == (uint8_t)BlockType::Air) {
+                                        chunk.blocks[lx][ly][lz] = (uint8_t)BlockType::Leaves;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+bool ForgeWorld::SaveChunk(int cx, int cz) const {
+    uint64_t hashKey = ((uint64_t)(uint32_t)cx << 32) | (uint32_t)cz;
+    auto it = m_activeChunks.find(hashKey);
+    if (it == m_activeChunks.end() || !m_registry.valid(it->second)) return false;
+
+    const auto& chunk = m_registry.get<VoxelChunkComponent>(it->second);
+    if (!chunk.isGenerated) return false;
+
+    std::filesystem::create_directories("saves/world");
+    std::string filename = "saves/world/chunk_" + std::to_string(cx) + "_" + std::to_string(cz) + ".bin";
+    
+    std::ofstream file(filename, std::ios::binary);
+    if (!file) return false;
+
+    // Salviamo solo i blocchi e l'illuminazione per risparmiare spazio (32KB + 32KB = 64KB per chunk)
+    file.write(reinterpret_cast<const char*>(chunk.blocks), sizeof(chunk.blocks));
+    file.write(reinterpret_cast<const char*>(chunk.light), sizeof(chunk.light));
+    file.close();
+    
+    return true;
+}
+
+bool ForgeWorld::LoadChunk(int cx, int cz, VoxelChunkComponent& chunkData) const {
+    std::string filename = "saves/world/chunk_" + std::to_string(cx) + "_" + std::to_string(cz) + ".bin";
+    if (!std::filesystem::exists(filename)) return false;
+
+    std::ifstream file(filename, std::ios::binary);
+    if (!file) return false;
+
+    file.read(reinterpret_cast<char*>(chunkData.blocks), sizeof(chunkData.blocks));
+    file.read(reinterpret_cast<char*>(chunkData.light), sizeof(chunkData.light));
+    file.close();
+    
+    chunkData.cx = cx;
+    chunkData.cz = cz;
+    chunkData.isGenerated = true;
+    
+    return true;
+}
+
+void ForgeWorld::SaveAllChunks() const {
+    int count = 0;
+    for (auto it : m_activeChunks) {
+        int cx = (int)(it.first >> 32);
+        int cz = (int)(it.first & 0xFFFFFFFF);
+        if (SaveChunk(cx, cz)) count++;
+    }
+    std::cout << "[ForgeWorld] Salvati " << count << " chunk su disco in saves/world/." << std::endl;
 }
 
 entt::entity ForgeWorld::CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type) {
@@ -422,9 +496,12 @@ void ForgeWorld::Update(float dt) {
             // Sottomette il job
             m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx]() {
                 bool newlyGen = false;
-                // 1. GENERAZIONE DATI PROCEDURALI IN BACKGROUND (Niente più CPU stall sul Main Thread)
+                // 1. CARICAMENTO O GENERAZIONE DATI
                 if (!chunkData->isGenerated) {
-                    GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                    // Prova a caricare da disco prima di generare
+                    if (!LoadChunk(chunkData->cx, chunkData->cz, *chunkData)) {
+                        GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                    }
                     chunkData->isGenerated = true;
                     newlyGen = true;
                 }
@@ -629,6 +706,7 @@ void ForgeWorld::SetBlock(int x, int y, int z, BlockType type) {
             uint8_t oldType = chunk.blocks[lx][y][lz];
             if (oldType != static_cast<uint8_t>(type)) {
                 chunk.blocks[lx][y][lz] = static_cast<uint8_t>(type);
+                std::cout << "[DEBUG SetBlock] Blocco (" << x << "," << y << "," << z << ") cambiato da " << (int)oldType << " a " << (int)type << " nel chunk cx=" << cx << " cz=" << cz << "\n";
                 if (m_registry.all_of<ChunkDirtyComponent>(it->second)) {
                     auto& dirty = m_registry.get<ChunkDirtyComponent>(it->second);
                     if (dirty.pendingJob) dirty.needsRebuild = true;
