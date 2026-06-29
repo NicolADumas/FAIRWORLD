@@ -61,8 +61,13 @@ struct SharedContext {
     fw::VramSlabAllocator*  vramAllocator= nullptr;
     fw::ForgeWorld*         forgeWorld   = nullptr;
 
-    // --- RENDER DATA ---
-    RenderViewData activeCameraView;
+    // Sincronizzazione per RenderManager
+    RenderViewData          activeCameraView;
+    bool                    isForgeMode = false; // TRUE = siamo nell'editor Forge, FALSE = siamo in Game
+
+    entt::registry          ecsRegistry;
+    BciData                 latestBciData;
+
     glm::vec3 playerVelocity = glm::vec3(0.0f);
 
     // --- BUS DATI ---
@@ -87,6 +92,7 @@ struct SharedContext {
     bool  showDebugUI         = false;
 
     // === RENDER INTERPOLATION ===
+    float lastFrameTimeMs     = 0.0f;
     // Frazione di tempo residuo nell'accumulatore, normalizzata in [0.0, 1.0].
     // Calcolata in main.cpp come: accumulator / FIXED_DT
     // Usata da PlayState::Render per LERP posizione e SLERP rotazione.

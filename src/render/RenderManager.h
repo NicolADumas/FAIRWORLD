@@ -24,6 +24,12 @@ struct QueueFamilyIndices {
     }
 };
 
+struct ForgePushConstantData {
+    glm::mat4 mvp;
+    glm::vec4 colorOverride;
+    int useColorOverride;
+};
+
 class RenderManager {
 public:
     RenderManager();
@@ -113,6 +119,10 @@ private:
     VkPipeline m_portalPipeline{ VK_NULL_HANDLE };      // Pipeline per scrivere nello Stencil Buffer
     VkPipeline m_otherWorldPipeline{ VK_NULL_HANDLE };  // Pipeline per disegnare dove Stencil == 1
 
+    // --- FORGE PIPELINE ---
+    VkPipelineLayout m_forgePipelineLayout{ VK_NULL_HANDLE };
+    VkPipeline m_forgePipeline{ VK_NULL_HANDLE };
+
     // --- TEXTURE ARRAY (In-Game Pixel Editor) ---
     VkImage m_textureImage{ VK_NULL_HANDLE };
     VmaAllocation m_textureImageAllocation{ VK_NULL_HANDLE };
@@ -146,6 +156,8 @@ private:
 public:
     float GetFov() const { return m_fov; }
     void SetFov(float fov) { m_fov = fov; }
+    uint32_t GetWindowWidth() const { return m_swapchainExtent.width; }
+    uint32_t GetWindowHeight() const { return m_swapchainExtent.height; }
 
     // Chiamata dall'Editor per aggiornare la texture in real-time
     void UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height);
@@ -245,6 +257,7 @@ public:
     static std::vector<char> ReadFile(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
     bool CreateGraphicsPipeline();
+    bool CreateForgePipeline();
     bool CreateDescriptorSetLayout();
     bool CreateUniformBuffers();
     bool CreateDescriptorPoolAndSets();
@@ -268,7 +281,12 @@ public:
     
     // Carica la geometria dei blocchi fantasma sulla GPU
     void UploadGhostMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
-    
+
+private:
+    void RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, struct SharedContext* context, class AssetManager* assets, class MobManager* mobManager, class Player* player);
+
+public:
     // Metodo da chiamare nel Game Loop
     void RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, struct SharedContext* context = nullptr, class AssetManager* assets = nullptr, class MobManager* mobManager = nullptr, class Player* player = nullptr);
+    void RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, struct SharedContext* context);
 };

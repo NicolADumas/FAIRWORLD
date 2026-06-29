@@ -25,33 +25,30 @@ MeshComponent MeshGenerators::MakeCube(float size) {
     MeshComponent m; 
     m.name = "Cube";
     float h = size * 0.5f;
+    fw::Vec3 color = {1.0f, 1.0f, 1.0f};
     
-    // Vertices (PBR format)
-    // format: {position, color, uv, texIndex, normal, ao, light}
-    m.vertices = {
-        {{-h,-h,-h}, {1,1,1}, {0,0}, 0.0f, {0,0,-1}, 1.0f, 1.0f}, {{h,-h,-h}, {1,1,1}, {1,0}, 0.0f, {0,0,-1}, 1.0f, 1.0f},
-        {{h, h,-h}, {1,1,1}, {1,1}, 0.0f, {0,0,-1}, 1.0f, 1.0f}, {{-h, h,-h}, {1,1,1}, {0,1}, 0.0f, {0,0,-1}, 1.0f, 1.0f},
-        {{-h,-h, h}, {1,1,1}, {0,0}, 0.0f, {0,0, 1}, 1.0f, 1.0f}, {{h,-h, h}, {1,1,1}, {1,0}, 0.0f, {0,0, 1}, 1.0f, 1.0f},
-        {{h, h, h}, {1,1,1}, {1,1}, 0.0f, {0,0, 1}, 1.0f, 1.0f}, {{-h, h, h}, {1,1,1}, {0,1}, 0.0f, {0,0, 1}, 1.0f, 1.0f},
-        {{-h,-h,-h}, {1,1,1}, {0,0}, 0.0f, {-1,0,0}, 1.0f, 1.0f}, {{-h, h,-h}, {1,1,1}, {1,0}, 0.0f, {-1,0,0}, 1.0f, 1.0f},
-        {{-h, h, h}, {1,1,1}, {1,1}, 0.0f, {-1,0,0}, 1.0f, 1.0f}, {{-h,-h, h}, {1,1,1}, {0,1}, 0.0f, {-1,0,0}, 1.0f, 1.0f},
-        {{h,-h,-h}, {1,1,1}, {0,0}, 0.0f, { 1,0,0}, 1.0f, 1.0f}, {{h, h,-h}, {1,1,1}, {1,0}, 0.0f, { 1,0,0}, 1.0f, 1.0f},
-        {{h, h, h}, {1,1,1}, {1,1}, 0.0f, { 1,0,0}, 1.0f, 1.0f}, {{h,-h, h}, {1,1,1}, {0,1}, 0.0f, { 1,0,0}, 1.0f, 1.0f},
-        {{-h,-h,-h}, {1,1,1}, {0,0}, 0.0f, {0,-1,0}, 1.0f, 1.0f}, {{h,-h,-h}, {1,1,1}, {1,0}, 0.0f, {0,-1,0}, 1.0f, 1.0f},
-        {{h,-h, h}, {1,1,1}, {1,1}, 0.0f, {0,-1,0}, 1.0f, 1.0f}, {{-h,-h, h}, {1,1,1}, {0,1}, 0.0f, {0,-1,0}, 1.0f, 1.0f},
-        {{-h, h,-h}, {1,1,1}, {0,0}, 0.0f, {0, 1,0}, 1.0f, 1.0f}, {{h, h,-h}, {1,1,1}, {1,0}, 0.0f, {0, 1,0}, 1.0f, 1.0f},
-        {{h, h, h}, {1,1,1}, {1,1}, 0.0f, {0, 1,0}, 1.0f, 1.0f}, {{-h, h, h}, {1,1,1}, {0,1}, 0.0f, {0, 1,0}, 1.0f, 1.0f}
+    // Vertices (PBR format): {position, color, uv, texIndex, normal, ao, light}
+    auto addFace = [&](fw::Vec3 v0, fw::Vec3 v1, fw::Vec3 v2, fw::Vec3 v3, fw::Vec3 n) {
+        m.vertices.push_back({v0, color, {0,0}, -1.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v1, color, {1,0}, -1.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v2, color, {1,1}, -1.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v0, color, {0,0}, -1.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v2, color, {1,1}, -1.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v3, color, {0,1}, -1.0f, n, 1.0f, 1.0f});
     };
-    
-    // Faces
-    for(int i = 0; i < 6; i++) {
-        Face f; 
-        int b = i * 4;
-        f.indices = {b, b+1, b+2, b+3};
-        // Face normal (simplified)
-        f.faceNormal = m.vertices[b].normal;
-        m.faces.push_back(f);
-    }
+
+    // Front (-Z)
+    addFace({-h,-h,-h}, { h,-h,-h}, { h, h,-h}, {-h, h,-h}, {0,0,-1});
+    // Back (+Z)
+    addFace({ h,-h, h}, {-h,-h, h}, {-h, h, h}, { h, h, h}, {0,0, 1});
+    // Left (-X)
+    addFace({-h,-h, h}, {-h,-h,-h}, {-h, h,-h}, {-h, h, h}, {-1,0,0});
+    // Right (+X)
+    addFace({ h,-h,-h}, { h,-h, h}, { h, h, h}, { h, h,-h}, { 1,0,0});
+    // Bottom (-Y)
+    addFace({-h,-h, h}, { h,-h, h}, { h,-h,-h}, {-h,-h,-h}, {0,-1,0});
+    // Top (+Y)
+    addFace({-h, h,-h}, { h, h,-h}, { h, h, h}, {-h, h, h}, {0, 1,0});
     
     return m;
 }
@@ -61,6 +58,7 @@ MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
     m.name = "Sphere";
     const float PI = 3.14159265f;
     
+    std::vector<Vertex> tempVerts;
     for(int ri = 0; ri <= rings; ri++) {
         float phi = PI * ri / rings;
         for(int si = 0; si <= segs; si++) {
@@ -70,12 +68,12 @@ MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
                           r * std::cos(phi),
                           r * std::sin(phi) * std::sin(theta)};
             v.color = {1.0f, 1.0f, 1.0f};
-            v.texIndex = 0.0f;
+            v.texIndex = -1.0f;
             v.normal = v.position.norm();
             v.uv = {(float)si / segs, (float)ri / rings};
             v.ao = 1.0f;
             v.light = 1.0f;
-            m.vertices.push_back(v);
+            tempVerts.push_back(v);
         }
     }
     
@@ -85,9 +83,55 @@ MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
             int b = a + 1;
             int c = a + (segs + 1);
             int d = c + 1;
-            Face f; 
-            f.indices = {a, b, d, c};
-            m.faces.push_back(f);
+            
+            // Triangle 1: a, b, c
+            m.vertices.push_back(tempVerts[a]);
+            m.vertices.push_back(tempVerts[b]);
+            m.vertices.push_back(tempVerts[c]);
+            
+            // Triangle 2: c, b, d
+            m.vertices.push_back(tempVerts[c]);
+            m.vertices.push_back(tempVerts[b]);
+            m.vertices.push_back(tempVerts[d]);
+        }
+    }
+    
+    return m;
+}
+
+MeshComponent MeshGenerators::MakeGridBox(int width, int height, int depth, float thickness) {
+    MeshComponent m;
+    m.name = "GridBox";
+    
+    // Aumentiamo lo spessore per renderla estremamente visibile
+    float thick = 0.15f; 
+
+    auto addBar = [&](glm::vec3 pos, glm::vec3 size) {
+        MeshComponent bar = MakeCube(1.0f);
+        int vertexOffset = (int)m.vertices.size();
+        for (auto& v : bar.vertices) {
+            v.position.x = v.position.x * size.x + pos.x;
+            v.position.y = v.position.y * size.y + pos.y;
+            v.position.z = v.position.z * size.z + pos.z;
+            v.color = {0.8f, 0.8f, 0.0f}; // Giallo acceso
+            m.vertices.push_back(v);
+        }
+    };
+    
+    // Generiamo una griglia REALE (linee ogni 1 unità) alla base e in cima
+    for (int y : {0, height}) {
+        for (int x = 0; x <= width; ++x) {
+            addBar({(float)x, (float)y, depth/2.0f}, {thick, thick, (float)depth}); // Linee asse Z
+        }
+        for (int z = 0; z <= depth; ++z) {
+            addBar({width/2.0f, (float)y, (float)z}, {(float)width, thick, thick}); // Linee asse X
+        }
+    }
+    
+    // Pilastri verticali solo agli angoli per non ostruire la vista
+    for (int x : {0, width}) {
+        for (int z : {0, depth}) {
+            addBar({(float)x, height/2.0f, (float)z}, {thick, (float)height, thick});
         }
     }
     
@@ -189,13 +233,20 @@ void ForgeWorld::Initialize(SharedContext* context) {
     EventManager::Get().Subscribe<Event_BlockUpdated>([this](const Event_BlockUpdated& e) {
         this->ProcessFluidUpdate(e.position.x, e.position.y, e.position.z);
     });
+    // --- SETUP WORKSPACE FORGE ---
+    // Creiamo l'unico chunk che funge da area di lavoro per il blocco (micro-voxel)
+    CreateChunkEntity("WorkspaceBlock", {0.0f, 0.0f, 0.0f});
 }
 
 entt::entity ForgeWorld::CreateChunkEntity(const std::string& name, const Vec3& position) {
     auto entity = m_registry.create();
     
     m_registry.emplace<MetadataComponent>(entity, name, true, false);
-    m_registry.emplace<TransformComponent>(entity, position);
+    fw::TransformComponent trans;
+    trans.location = position;
+    trans.rotation = {0.0f, 0.0f, 0.0f};
+    trans.scale = {1.0f, 1.0f, 1.0f};
+    m_registry.emplace<TransformComponent>(entity, trans);
     m_registry.emplace<VoxelChunkComponent>(entity, (int)position.x / 16, (int)position.z / 16);
     
     // Inizializza a zero
@@ -323,8 +374,14 @@ void ForgeWorld::SaveAllChunks() const {
 entt::entity ForgeWorld::CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type) {
     auto entity = m_registry.create();
     
-    m_registry.emplace<MetadataComponent>(entity, name, true, false);
-    m_registry.emplace<TransformComponent>(entity, position);
+    m_registry.emplace<MetadataComponent>(entity, name, true, true); // Interattivo
+    
+    fw::TransformComponent trans;
+    trans.location = position;
+    trans.rotation = {0.0f, 0.0f, 0.0f};
+    trans.scale = {1.0f, 1.0f, 1.0f};
+    m_registry.emplace<TransformComponent>(entity, trans);
+    
     m_registry.emplace<PBRMaterialComponent>(entity);
     
     if (type == "Cube") {
@@ -390,92 +447,41 @@ void ForgeWorld::Update(float dt) {
                     m_registry.remove<ChunkDirtyComponent>(def.targetEntity);
                 }
                 // std::cout << "[ForgeWorld ECS] " << def.name << " aggiornato nell'ECS con successo!\n";
+            } else {
+                // Se non c'è una targetEntity valida, creiamo una nuova entità (es. Primitive asincrone)
+                auto newEntity = m_registry.create();
+                
+                // Allocazione VRAM e DMA per mesh fisse come la Griglia (PRIMA del move!)
+                if (!def.mesh.vramAlloc.valid && !def.mesh.vertices.empty() && m_context->vramAllocator && m_context->dmaManager) {
+                    uint32_t meshSizeBytes = (uint32_t)(def.mesh.vertices.size() * sizeof(fw::Vertex));
+                    def.mesh.vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
+                    if (def.mesh.vramAlloc.valid) {
+                        m_context->dmaManager->UploadMeshAsync(
+                            def.mesh.vertices.data(), 
+                            meshSizeBytes, 
+                            def.mesh.vramAlloc
+                        );
+                    }
+                }
+                
+                m_registry.emplace<MetadataComponent>(newEntity, def.name, true, false);
+                m_registry.emplace<MeshComponent>(newEntity, std::move(def.mesh));
+                
+                fw::TransformComponent trans;
+                trans.location = def.position;
+                trans.rotation = {0.0f, 0.0f, 0.0f};
+                trans.scale = {1.0f, 1.0f, 1.0f}; // Fissa il bug della scala a zero!
+                m_registry.emplace<TransformComponent>(newEntity, trans);
+                
+                m_registry.emplace<PBRMaterialComponent>(newEntity);
             }
         }
         m_deferredMeshes.clear();
     }
 
     // ECS Systems: Iterazione iper-veloce O(1) cache-friendly
-    
-    // 2. Chunk Streaming System: Carica i chunk attorno alla telecamera
-    int viewDistance = 3; // Raggio di chunk
-    
-    if (m_context) {
-        float px = m_context->activeCameraView.cameraPosition.x;
-        float py = m_context->activeCameraView.cameraPosition.y;
-        float pz = m_context->activeCameraView.cameraPosition.z;
-        
-        static int frameCounter = 0;
-        if (frameCounter++ % 60 == 0) {
-            std::cout << "[ForgeWorld::Update] Camera a (" << px << ", " << py << ", " << pz << ")\n";
-        }
-        
-        // FIX CHUNK: divisione per 16.0f all'interno di floor() per supportare coordinate negative in modo simmetrico
-        int pcx = (int)std::floor(px / 16.0f);
-        int pcz = (int)std::floor(pz / 16.0f);
-        
-        for (int dx = -viewDistance; dx <= viewDistance; dx++) {
-            for (int dz = -viewDistance; dz <= viewDistance; dz++) {
-                int cx = pcx + dx;
-                int cz = pcz + dz;
-                uint64_t hashKey = ((uint64_t)(uint32_t)cx << 32) | (uint32_t)cz;
-                
-                if (m_activeChunks.find(hashKey) == m_activeChunks.end()) {
-                    // Crea il chunk!
-                    std::string name = "Chunk_" + std::to_string(cx) + "_" + std::to_string(cz);
-                    // std::cout << "[ForgeWorld] Triggering Creation for " << name << std::endl;
-                    CreateChunkEntity(name, {cx * 16.0f, 0, cz * 16.0f});
-                }
-            }
-        }
-        
-        // --- 2.b Caricamento Predittivo tramite Portali ---
-        auto portalView = m_registry.view<PortalComponent, VolumeComponent, TransformComponent>();
-        
-        struct PortalTarget { float px; float py; float pz; float radius; Mat4 mTel; };
-        std::vector<PortalTarget> activePortals;
-
-        for (auto pEntity : portalView) {
-            const auto& portal = portalView.get<PortalComponent>(pEntity);
-            const auto& vol = portalView.get<VolumeComponent>(pEntity);
-            const auto& pTrans = portalView.get<TransformComponent>(pEntity);
-            if (portal.isActive) {
-                activePortals.push_back({pTrans.location.x, pTrans.location.y, pTrans.location.z, vol.radius, portal.mTeleport});
-            }
-        }
-        
-        for (const auto& pt : activePortals) {
-            // Distanza dal portale
-            Vec3 diff = {px - pt.px, py - pt.py, pz - pt.pz};
-            float distSq = diff.dot(diff);
-            
-            if (distSq < pt.radius * pt.radius) {
-                // Il giocatore è nell'area del portale. Calcoliamo la posizione virtuale!
-                Mat4 mTel = pt.mTel;
-                Vec3 virtualPos = {
-                    mTel.m[0][0]*px + mTel.m[0][1]*py + mTel.m[0][2]*pz + mTel.m[0][3],
-                    mTel.m[1][0]*px + mTel.m[1][1]*py + mTel.m[1][2]*pz + mTel.m[1][3],
-                    mTel.m[2][0]*px + mTel.m[2][1]*py + mTel.m[2][2]*pz + mTel.m[2][3]
-                };
-                
-                int vcx = (int)std::floor(virtualPos.x / 16.0f);
-                int vcz = (int)std::floor(virtualPos.z / 16.0f);
-                
-                for (int dx = -viewDistance; dx <= viewDistance; dx++) {
-                    for (int dz = -viewDistance; dz <= viewDistance; dz++) {
-                        int cx = vcx + dx;
-                        int cz = vcz + dz;
-                        uint64_t hashKey = ((uint64_t)(uint32_t)cx << 32) | (uint32_t)cz;
-                        
-                        if (m_activeChunks.find(hashKey) == m_activeChunks.end()) {
-                            std::string name = "PortalDestChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
-                            CreateChunkEntity(name, {cx * 16.0f, virtualPos.y, cz * 16.0f});
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // [NOTA FORGE]: Chunk Streaming infinito e Portali rimossi. 
+    // La Forge opera su un'area di lavoro statica o guidata dagli strumenti, non dallo spostamento del giocatore.
 
     // 3. Chunk System: Rileva i chunk "Dirty" e innesca la rigenerazione in background
     if (m_context && m_context->jobSystem) {
@@ -492,15 +498,21 @@ void ForgeWorld::Update(float dt) {
             auto chunkData = std::shared_ptr<VoxelChunkComponent>(new VoxelChunkComponent());
             *chunkData = chunk;
             SharedContext* ctx = m_context;
+            ForgeMaterialPalette paletteCopy = m_palette;
             
             // Sottomette il job
-            m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx]() {
+            m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx, paletteCopy]() {
                 bool newlyGen = false;
                 // 1. CARICAMENTO O GENERAZIONE DATI
                 if (!chunkData->isGenerated) {
-                    // Prova a caricare da disco prima di generare
-                    if (!LoadChunk(chunkData->cx, chunkData->cz, *chunkData)) {
-                        GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                    if (ctx && ctx->isForgeMode) {
+                        // In Forge Mode partiamo con un chunk vuoto (tutto Air)
+                        // I dati sono già a 0 (Air) grazie al memset in CreateChunkEntity
+                    } else {
+                        // Prova a caricare da disco prima di generare
+                        if (!LoadChunk(chunkData->cx, chunkData->cz, *chunkData)) {
+                            GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                        }
                     }
                     chunkData->isGenerated = true;
                     newlyGen = true;
@@ -536,6 +548,8 @@ void ForgeWorld::Update(float dt) {
                             float px = x;
                             float py = y;
                             float pz = z;
+                            
+                            fw::Vec3 color = paletteCopy.materials[block].baseColor;
 
                             // Top (+Y)
                             if (getBlock(x, y + 1, z) == 0) {
@@ -544,62 +558,62 @@ void ForgeWorld::Update(float dt) {
                                 float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
                                 float ao11 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z+1), getBlock(x+1, y+1, z+1));
                                 float ao01 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z+1), getBlock(x-1, y+1, z+1));
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {0,1,0}, ao00, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {1,0}, (float)block, {0,1,0}, ao10, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {0,1,0}, ao11, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {0,1,0}, ao00, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {0,1,0}, ao11, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {0,1}, (float)block, {0,1,0}, ao01, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,1,0}, ao00, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,1,0}, ao10, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,1,0}, ao11, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,1,0}, ao00, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,1,0}, ao11, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,1,0}, ao01, light});
                             }
                             // Bottom (-Y)
                             if (getBlock(x, y - 1, z) == 0) {
                                 float light = getLight(x, y - 1, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {0,1}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {1,0}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {0,1}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {1,0}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,-1,0}, 1.0f, light});
                             }
                             // Left (-X)
                             if (getBlock(x - 1, y, z) == 0) {
                                 float light = getLight(x - 1, y, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {0,1}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {1,0}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {0,1}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {1,0}, (float)block, {-1,0,0}, 1.0f, light});
                             }
                             // Right (+X)
                             if (getBlock(x + 1, y, z) == 0) {
                                 float light = getLight(x + 1, y, z);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {0,0}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {0,1}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {1,1}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {0,0}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {1,1}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {1,0}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {0,1}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {1,0,0}, 1.0f, light});
                             }
                             // Front (+Z)
                             if (getBlock(x, y, z + 1) == 0) {
                                 float light = getLight(x, y, z + 1);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {0,0}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {1,0}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {1,1,1}, {0,0}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {1,1}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {1,1,1}, {0,1}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {1,0}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,0,1}, 1.0f, light});
                             }
                             // Back (-Z)
                             if (getBlock(x, y, z - 1) == 0) {
                                 float light = getLight(x, y, z - 1);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {1,0}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {1,1}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {1,1,1}, {0,0}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {1,1}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {1,1,1}, {0,1}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {0,1}, (float)block, {0,0,-1}, 1.0f, light});
                             }
                         }
                     }

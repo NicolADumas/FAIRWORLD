@@ -37,6 +37,43 @@ struct PBRMaterialComponent {
     std::string normalMap;
 };
 
+struct ForgeMaterial {
+    Vec3  baseColor        = {0.8f, 0.8f, 0.8f};
+    float metallic         = 0.0f;
+    float roughness        = 0.5f;
+    
+    // --- Indispensabili ---
+    float emissiveStrength = 0.0f;
+    Vec3  emissiveColor    = {0.0f, 0.0f, 0.0f};
+    float normalIntensity  = 1.0f; // Utile per scalare il dettaglio della Normal Map
+    float alphaCutoff      = 0.5f; // Threshold per il discard nello shader
+    
+    // --- Altamente Raccomandati ---
+    float aoStrength         = 1.0f; // Moltiplicatore per l'Ambient Occlusion
+    float clearcoat          = 0.0f; // Vernice/Smalto trasparente (0.0 = assente, 1.0 = massima)
+    float clearcoatRoughness = 0.0f; // Rugosità del solo strato di smalto
+    float transmission       = 0.0f; // Trasparenza PBR (vetro, liquidi)
+    float ior                = 1.5f; // Indice di Rifrazione (1.0 aria, 1.33 acqua, 1.5 vetro)
+    
+    // Per ora non usiamo le texture, ma le lasciamo per il futuro
+    std::string albedoMap;
+    std::string normalMap;
+};
+
+struct ForgeMaterialPalette {
+    ForgeMaterial materials[256];
+    
+    ForgeMaterialPalette() {
+        // Inizializza con colori di default per evitare il bianco assoluto
+        for (int i = 0; i < 256; ++i) {
+            float hue = (float)i / 255.0f;
+            // Un semplice gradiente HSV to RGB semplificato per i materiali base
+            materials[i].baseColor = {0.8f, 0.8f, 0.8f};
+            materials[i].roughness = 0.8f;
+        }
+    }
+};
+
 // Mesh element structures (Trivially Copyable dove possibile)
 struct Vertex {
     Vec3 position;
@@ -59,6 +96,7 @@ struct MeshComponent {
     std::vector<Vertex> vertices;
     std::vector<Face> faces;
     VramAllocation vramAlloc;
+    float colorOverride[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // RGBA, se A > 0.5f il vertex shader ignora il colore del vertice
     
     AABB bounds() const {
         AABB bb;

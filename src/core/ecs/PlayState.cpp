@@ -13,6 +13,8 @@
 #include "PortalSystem.h"
 #include "ForgeComponents.h"
 #include "ForgeWorld.h"
+#include "RenderManager.h"
+#include "AsyncInput.h"
 
 using json = nlohmann::json;
 
@@ -169,6 +171,9 @@ std::expected<void, std::string> PlayState::Init() {
 }
 
 void PlayState::Update(float dt) {
+    if (!m_context) return;
+    m_context->isForgeMode = false;
+    
     using namespace entt::literals;
 
     // Aggiorna le matrici di tutti i portali
@@ -226,8 +231,15 @@ void PlayState::Render() {
 
         // Scrivi nel bus: il RenderManager leggerà queste matrici già interpolate
         m_context->activeCameraView.viewMatrix       = glm::lookAt(iPos, iPos + iFront, iUp);
+        float aspect = 16.0f / 9.0f;
+        if (m_context->engine && m_context->engine->GetRenderManager()) {
+            uint32_t width = m_context->engine->GetRenderManager()->GetWindowWidth();
+            uint32_t height = m_context->engine->GetRenderManager()->GetWindowHeight();
+            if (height > 0) aspect = static_cast<float>(width) / static_cast<float>(height);
+        }
+
         m_context->activeCameraView.projectionMatrix = glm::perspective(
-            glm::radians(cam.fov), 16.0f / 9.0f, cam.nearPlane, cam.farPlane);
+            glm::radians(cam.fov), aspect, cam.nearPlane, cam.farPlane);
         m_context->activeCameraView.cameraPosition   = iPos;
         m_context->activeCameraView.cameraFront      = iFront;
 

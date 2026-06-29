@@ -60,6 +60,12 @@ add_custom_command(TARGET FairworldCore POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/src/render/sky_frag.spv"
         $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/forge_vert.spv"
+        $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/forge_frag.spv"
+        $<TARGET_FILE_DIR:FairworldCore>
 )
 
 # Ottimizzazioni specifiche per il compilatore (MSVC vs GCC/Clang)

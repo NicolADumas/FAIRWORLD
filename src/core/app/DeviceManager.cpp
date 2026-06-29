@@ -428,6 +428,14 @@ void DeviceManager::InitDefaultBindings() {
     m_actionMap.bindings[entt::hashed_string("JUMP")].push_back({InputID::KEY_SPACE, InputID::NONE});
     m_actionMap.bindings[entt::hashed_string("JUMP")].push_back({InputID::PAD_FACE_DOWN, InputID::NONE});
 
+    // FLY_BOOST
+    m_actionMap.bindings[entt::hashed_string("FLY_BOOST")].push_back({InputID::KEY_SHIFT, InputID::NONE});
+    m_actionMap.bindings[entt::hashed_string("FLY_BOOST")].push_back({InputID::PAD_TRIGGER_R, InputID::NONE});
+
+    // FLY_DOWN
+    m_actionMap.bindings[entt::hashed_string("FLY_DOWN")].push_back({InputID::KEY_CTRL, InputID::NONE});
+    m_actionMap.bindings[entt::hashed_string("FLY_DOWN")].push_back({InputID::PAD_TRIGGER_L, InputID::NONE});
+
     // DESTROY_BLOCK
     m_actionMap.bindings[entt::hashed_string("DESTROY_BLOCK")].push_back({InputID::MOUSE_LEFT, InputID::NONE});
     m_actionMap.bindings[entt::hashed_string("DESTROY_BLOCK")].push_back({InputID::PAD_TRIGGER_R, InputID::NONE});

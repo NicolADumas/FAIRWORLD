@@ -9,6 +9,29 @@
 #include <mutex>
 #include <vector>
 #include <unordered_map>
+#include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+
+// Gestione Stato Editor FORGE
+enum class EditorMode {
+    PLACEMENT_MODE,
+    SELECTION_MODE,
+    DELETE_MODE
+};
+
+// Struttura blocco isolata per FORGE
+struct ForgeBlock {
+    int type;
+    glm::vec4 color;
+};
+
+// Funzione Hash per glm::ivec3 nel caso in cui gtx/hash non sia sufficiente
+struct Ivec3Hash {
+    size_t operator()(const glm::ivec3& v) const {
+        return std::hash<int>()(v.x) ^ (std::hash<int>()(v.y) << 1) ^ (std::hash<int>()(v.z) << 2);
+    }
+};
 
 // Forward declarations per gli allocatori (già esistenti nel progetto)
 namespace fw::memory {
@@ -57,6 +80,10 @@ public:
 
     // Ritorna il registro EnTT per interrogarlo
     entt::registry& GetRegistry() { return m_registry; }
+    
+    // Accesso alla Palette Materiali della Forge (256 slot)
+    ForgeMaterialPalette& GetPalette() { return m_palette; }
+    const ForgeMaterialPalette& GetPalette() const { return m_palette; }
 
     // Forza un chunk ad essere ricostruito asincronamente
     void MarkChunkDirty(entt::entity chunkEntity);
@@ -69,13 +96,35 @@ public:
     bool LoadChunk(int cx, int cz, VoxelChunkComponent& chunkData) const;
     void SaveAllChunks() const;
 
+    // --- EDITOR STATE MACHINE ---
+    EditorMode GetEditorMode() const { return m_editorMode; }
+    void SetEditorMode(EditorMode mode) { m_editorMode = mode; }
+
+    // --- DATI SPAZIALI ISOLATI FORGE ---
+    void PlaceForgeBlock(const glm::ivec3& pos, const ForgeBlock& block) {
+        m_forgeBlocks[pos] = block;
+    }
+    bool RemoveForgeBlock(const glm::ivec3& pos) {
+        return m_forgeBlocks.erase(pos) > 0;
+    }
+    const ForgeBlock* GetForgeBlock(const glm::ivec3& pos) const {
+        auto it = m_forgeBlocks.find(pos);
+        if (it != m_forgeBlocks.end()) return &it->second;
+        return nullptr;
+    }
+
 private:
     entt::registry m_registry;
     SharedContext* m_context = nullptr;
     PerlinNoise m_noiseGen;
+    ForgeMaterialPalette m_palette;
 
     // Mappa hash dei chunk attivi: uint64_t(cx, cz) -> entity
     std::unordered_map<uint64_t, entt::entity> m_activeChunks;
+
+    // Architettura Dati Isolati FORGE
+    EditorMode m_editorMode = EditorMode::PLACEMENT_MODE;
+    std::unordered_map<glm::ivec3, ForgeBlock, Ivec3Hash> m_forgeBlocks;
 
     // --- TIER MEMORY SYSTEM ---
     // 1. Persistent Memory
@@ -92,8 +141,8 @@ private:
         std::string name;
         Vec3 position;
         MeshComponent mesh;
-        std::shared_ptr<VoxelChunkComponent> chunkData;
-        entt::entity targetEntity;
+        std::shared_ptr<VoxelChunkComponent> chunkData = nullptr;
+        entt::entity targetEntity = entt::null;
         bool isNewlyGenerated = false;
     };
     std::vector<DeferredMeshSpawn> m_deferredMeshes;
@@ -105,6 +154,7 @@ class MeshGenerators {
 public:
     static MeshComponent MakeCube(float size = 1.0f);
     static MeshComponent MakeSphere(int segs = 16, int rings = 8, float r = 1.0f);
+    static MeshComponent MakeGridBox(int width, int height, int depth, float thickness = 0.05f);
 };
 
 } // namespace fw

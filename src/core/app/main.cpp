@@ -7,6 +7,7 @@
 #include "SharedContext.h"
 #include "StateManager.h"
 #include "HubState.h"
+#include "ForgeState.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
@@ -62,8 +63,8 @@ int main() {
     context.stateManager = &stateManager;
     context.engine = &engine; // SharedContext come osservatore non-owning
 
-    // 3. Bootstrap (Isolamento Memoria)
-    stateManager.ChangeState(std::make_unique<HubState>(&context));
+    // 3. Bootstrap: Avvia direttamente la Forge per debugging
+    stateManager.ChangeState(std::make_unique<ForgeState>(&context));
 
     // Configurazione DeviceManager, TimeManager e DiagnosticsManager
     DeviceManager deviceManager;

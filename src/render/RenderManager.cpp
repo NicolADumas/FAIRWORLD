@@ -177,6 +177,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     if (!CreateDescriptorPoolAndSets()) return false;
 
     if (!CreateGraphicsPipeline()) return false;
+    if (!CreateForgePipeline()) return false;
 
     // Depth buffer: creato DOPO la pipeline (ha bisogno del command pool per i layout)
     if (!CreateDepthResources()) {
@@ -1282,6 +1283,160 @@ bool RenderManager::CreateSyncObjects() {
 }
 
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
+void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
+    // --- SKY PASS ---
+    if (m_skyPipeline != VK_NULL_HANDLE) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline);
+        
+        struct SkyPushConstants {
+            glm::mat4 invView;
+            glm::mat4 invProj;
+            float timeOfDay;
+            float moonPhase;
+            glm::vec2 dummy;
+        } skyPC;
+        
+        // Per il cielo vogliamo solo la rotazione, quindi azzeriamo la traslazione (W=0 e P=0,0,0,1)
+        glm::mat4 skyView = viewMatrix;
+        skyView[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        
+        glm::mat4 projMatrix = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 100.0f);
+        projMatrix[1][1] *= -1; // Y flip per Vulkan
+        
+        skyPC.invView = glm::inverse(skyView);
+        skyPC.invProj = glm::inverse(projMatrix);
+        skyPC.timeOfDay = context && context->engine ? context->engine->GetTimeManager().GetTimeOfDay() : 0.5f;
+        skyPC.moonPhase = context && context->engine ? context->engine->GetTimeManager().GetMoonPhase() : 0.5f;
+        
+        vkCmdPushConstants(cmd, m_skyPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants), &skyPC);
+        
+        // 3 vertici autogenerati in glsl (gl_VertexIndex)
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+    }
+
+    // Calcolo progresso stagionale
+    float rawYearProgress = 0.0f;
+    if (context && context->engine) {
+        int currentDay = context->engine->GetTimeManager().GetCurrentDay();
+        // Mappiamo i giorni in un ciclo annuale di 365 giorni
+        rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
+    }
+    // Applica distorsione per rallentare estate/inverno (modello biologico)
+    float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
+
+    UpdateUniformBuffer(m_currentFrame, viewMatrix, seasonalUboValue);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+
+    // Disegna tutti i chunk legacy (se presenti)
+    for (const auto& pair : m_chunkBuffers) {
+        const auto& chunkBuf = pair.second;
+        if (chunkBuf.vertexBuffer != VK_NULL_HANDLE && chunkBuf.indexBuffer != VK_NULL_HANDLE && chunkBuf.indexCount > 0) {
+            VkBuffer vertexBuffers[] = { chunkBuf.vertexBuffer };
+            VkDeviceSize offsets[]   = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(cmd, chunkBuf.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            glm::mat4 identityModel = glm::mat4(1.0f);
+            glm::vec4 noColorOffset = glm::vec4(0.0f);
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &identityModel);
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &noColorOffset);
+
+            vkCmdDrawIndexed(cmd, chunkBuf.indexCount, 1, 0, 0, 0);
+        }
+    }
+
+    // --- DISEGNO MESH GHOST ---
+        if (m_ghostVertexBuffer != VK_NULL_HANDLE && m_ghostIndexBuffer != VK_NULL_HANDLE && m_ghostIndexCount > 0) {
+            VkBuffer ghostBuffers[] = { m_ghostVertexBuffer };
+            VkDeviceSize offsets[]   = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, ghostBuffers, offsets);
+            vkCmdBindIndexBuffer(cmd, m_ghostIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            glm::mat4 ghostModel = glm::mat4(1.0f);
+            // Usa a>0.5 per forzare il vertex shader a usare il colore dell'offset.
+            // E usa alpha = 0.5 per la trasparenza (richiede blending abilitato).
+            glm::vec4 ghostColorOffset = glm::vec4(0.0f, 0.8f, 1.0f, 0.6f); 
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &ghostModel);
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &ghostColorOffset);
+
+            vkCmdDrawIndexed(cmd, m_ghostIndexCount, 1, 0, 0, 0);
+        }
+
+        // --- DISEGNO MOB TRAMITE PUSH CONSTANTS E INSTANCING MANUALE ---
+        if (mobManager && assets) {
+            for (const auto& mob : mobManager->instances) {
+                if (!mob.isAlive) continue;
+
+                auto* tmpl = assets->GetMobByID(mob.templateID);
+                if (!tmpl) continue;
+
+                std::string path = tmpl->resources.modelPath;
+                if (path.empty()) path = "assets/models/mob.vox"; // fallback
+
+                auto it = m_mobMeshes.find(path);
+                if (it == m_mobMeshes.end() || it->second.indexCount == 0) continue;
+
+                VoxelMesh& mesh = it->second;
+
+                VkBuffer mobVertexBuffers[] = { mesh.vertexBuffer };
+                VkDeviceSize offsets[]   = { 0 };
+                vkCmdBindVertexBuffers(cmd, 0, 1, mobVertexBuffers, offsets);
+                vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+                glm::mat4 mobModel = glm::translate(glm::mat4(1.0f), mob.position);
+                
+                // Applica il colore in base al danno ricevuto (Rosso se in cooldown attacco per feedback)
+                glm::vec4 colorOffset = glm::vec4(0.0f);
+                if (mob.attackCooldownTimer > 0.0f) {
+                    colorOffset = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f); // Override colore a rosso
+                }
+                vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mobModel);
+                vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &colorOffset);
+
+                vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
+            }
+        }
+
+    // --- DISEGNO ARMA DEL PLAYER (Prima Persona / VR) ---
+    if (player && !player->equippedWeaponPath.empty()) {
+        auto it = m_mobMeshes.find(player->equippedWeaponPath);
+        if (it == m_mobMeshes.end()) {
+            LoadMobMesh(player->equippedWeaponPath);
+            it = m_mobMeshes.find(player->equippedWeaponPath);
+        }
+
+        if (it != m_mobMeshes.end() && it->second.indexCount > 0) {
+            // Disabilita il Depth Test per l'arma (per simulare il render in overlay come negli FPS, 
+            // ma dato che non stiamo ricreando la pipeline al volo, la posizioneremo semplicemente 
+            // molto vicina alla telecamera, oppure la disegneremo normalmente). 
+            // In VR è corretto che subisca il depth test rispetto al mondo.
+            
+            VoxelMesh& mesh = it->second;
+
+            VkBuffer weaponVertexBuffers[] = { mesh.vertexBuffer };
+            VkDeviceSize offsets[]   = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, weaponVertexBuffers, offsets);
+            vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            // La matrice è GIA' IN WORLD-SPACE (calcolata nel Player.rightHandTransform)!
+            glm::mat4 weaponModel = player->rightHandTransform;
+            
+            // Scaliamo un po' l'arma per farla sembrare un oggetto in mano (0.4x)
+            weaponModel = glm::scale(weaponModel, glm::vec3(0.4f));
+
+            glm::vec4 colorOffset = glm::vec4(0.0f); // Nessun feedback danno sull'arma
+
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &weaponModel);
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &colorOffset);
+
+            vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
+        }
+    }
+
+}
+
 void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
     if (m_device == VK_NULL_HANDLE) return;
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
@@ -1324,189 +1479,16 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
 
     vkCmdBeginRenderPass(m_commandBuffers[m_currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // --- SKY PASS ---
-    if (m_skyPipeline != VK_NULL_HANDLE) {
-        vkCmdBindPipeline(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline);
+    bool isForge = (context && context->isForgeMode);
+    if (isForge) {
+        float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+        glm::mat4 projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
+        projMatrix[1][1] *= -1; // Inverti Y per Vulkan
+        glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
         
-        struct SkyPushConstants {
-            glm::mat4 invView;
-            glm::mat4 invProj;
-            float timeOfDay;
-            float moonPhase;
-            glm::vec2 dummy;
-        } skyPC;
-        
-        // Per il cielo vogliamo solo la rotazione, quindi azzeriamo la traslazione (W=0 e P=0,0,0,1)
-        glm::mat4 skyView = viewMatrix;
-        skyView[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-        
-        glm::mat4 projMatrix = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 100.0f);
-        projMatrix[1][1] *= -1; // Y flip per Vulkan
-        
-        skyPC.invView = glm::inverse(skyView);
-        skyPC.invProj = glm::inverse(projMatrix);
-        skyPC.timeOfDay = context && context->engine ? context->engine->GetTimeManager().GetTimeOfDay() : 0.5f;
-        skyPC.moonPhase = context && context->engine ? context->engine->GetTimeManager().GetMoonPhase() : 0.5f;
-        
-        vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_skyPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants), &skyPC);
-        
-        // 3 vertici autogenerati in glsl (gl_VertexIndex)
-        vkCmdDraw(m_commandBuffers[m_currentFrame], 3, 1, 0, 0);
-    }
-
-    // Calcolo progresso stagionale
-    float rawYearProgress = 0.0f;
-    if (context && context->engine) {
-        int currentDay = context->engine->GetTimeManager().GetCurrentDay();
-        // Mappiamo i giorni in un ciclo annuale di 365 giorni
-        rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
-    }
-    // Applica distorsione per rallentare estate/inverno (modello biologico)
-    float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
-
-    UpdateUniformBuffer(m_currentFrame, viewMatrix, seasonalUboValue);
-
-    vkCmdBindPipeline(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-    vkCmdBindDescriptorSets(m_commandBuffers[m_currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
-
-    // Disegna tutti i chunk legacy (se presenti)
-    for (const auto& pair : m_chunkBuffers) {
-        const auto& chunkBuf = pair.second;
-        if (chunkBuf.vertexBuffer != VK_NULL_HANDLE && chunkBuf.indexBuffer != VK_NULL_HANDLE && chunkBuf.indexCount > 0) {
-            VkBuffer vertexBuffers[] = { chunkBuf.vertexBuffer };
-            VkDeviceSize offsets[]   = { 0 };
-            vkCmdBindVertexBuffers(m_commandBuffers[m_currentFrame], 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(m_commandBuffers[m_currentFrame], chunkBuf.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            glm::mat4 identityModel = glm::mat4(1.0f);
-            glm::vec4 noColorOffset = glm::vec4(0.0f);
-            vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &identityModel);
-            vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &noColorOffset);
-
-            vkCmdDrawIndexed(m_commandBuffers[m_currentFrame], chunkBuf.indexCount, 1, 0, 0, 0);
-        }
-    }
-
-    // --- DISEGNO FORGEWORLD (ECS) ---
-    if (context && context->forgeWorld && m_globalVramBuffer != VK_NULL_HANDLE) {
-        auto& registry = context->forgeWorld->GetRegistry();
-        auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
-        
-        for (auto entity : view) {
-            const auto& mesh = view.get<fw::MeshComponent>(entity);
-            const auto& trans = view.get<fw::TransformComponent>(entity);
-            
-            // Disegniamo solo mesh che sono state allocate con successo nella VRAM
-            if (mesh.vramAlloc.valid && mesh.vertices.size() > 0) {
-                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
-                VkDeviceSize offsets[]   = { mesh.vramAlloc.offset };
-                vkCmdBindVertexBuffers(m_commandBuffers[m_currentFrame], 0, 1, vertexBuffers, offsets);
-                
-                fw::Mat4 fwModel = trans.worldMatrix();
-                glm::mat4 model;
-                for (int col = 0; col < 4; ++col) {
-                    for (int row = 0; row < 4; ++row) {
-                        model[col][row] = fwModel.m[row][col];
-                    }
-                }
-                
-                glm::vec4 noColorOffset = glm::vec4(0.0f);
-                vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model);
-                vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &noColorOffset);
-                
-                // Le mesh procedurali non hanno un index buffer, disegniamo direttamente i vertici!
-                vkCmdDraw(m_commandBuffers[m_currentFrame], (uint32_t)mesh.vertices.size(), 1, 0, 0);
-            }
-        }
-    }
-
-    // --- DISEGNO MESH GHOST ---
-    if (m_ghostVertexBuffer != VK_NULL_HANDLE && m_ghostIndexBuffer != VK_NULL_HANDLE && m_ghostIndexCount > 0) {
-        VkBuffer ghostBuffers[] = { m_ghostVertexBuffer };
-        VkDeviceSize offsets[]   = { 0 };
-        vkCmdBindVertexBuffers(m_commandBuffers[m_currentFrame], 0, 1, ghostBuffers, offsets);
-        vkCmdBindIndexBuffer(m_commandBuffers[m_currentFrame], m_ghostIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-        glm::mat4 ghostModel = glm::mat4(1.0f);
-        // Usa a>0.5 per forzare il vertex shader a usare il colore dell'offset.
-        // E usa alpha = 0.5 per la trasparenza (richiede blending abilitato).
-        glm::vec4 ghostColorOffset = glm::vec4(0.0f, 0.8f, 1.0f, 0.6f); 
-        vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &ghostModel);
-        vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &ghostColorOffset);
-
-        vkCmdDrawIndexed(m_commandBuffers[m_currentFrame], m_ghostIndexCount, 1, 0, 0, 0);
-    }
-
-    // --- DISEGNO MOB TRAMITE PUSH CONSTANTS E INSTANCING MANUALE ---
-    if (mobManager && assets) {
-        for (const auto& mob : mobManager->instances) {
-            if (!mob.isAlive) continue;
-
-            auto* tmpl = assets->GetMobByID(mob.templateID);
-            if (!tmpl) continue;
-
-            std::string path = tmpl->resources.modelPath;
-            if (path.empty()) path = "assets/models/mob.vox"; // fallback
-
-            auto it = m_mobMeshes.find(path);
-            if (it == m_mobMeshes.end() || it->second.indexCount == 0) continue;
-
-            VoxelMesh& mesh = it->second;
-
-            VkBuffer mobVertexBuffers[] = { mesh.vertexBuffer };
-            VkDeviceSize offsets[]   = { 0 };
-            vkCmdBindVertexBuffers(m_commandBuffers[m_currentFrame], 0, 1, mobVertexBuffers, offsets);
-            vkCmdBindIndexBuffer(m_commandBuffers[m_currentFrame], mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            glm::mat4 mobModel = glm::translate(glm::mat4(1.0f), mob.position);
-            
-            // Applica il colore in base al danno ricevuto (Rosso se in cooldown attacco per feedback)
-            glm::vec4 colorOffset = glm::vec4(0.0f);
-            if (mob.attackCooldownTimer > 0.0f) {
-                colorOffset = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f); // Override colore a rosso
-            }
-
-            vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mobModel);
-            vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &colorOffset);
-
-            vkCmdDrawIndexed(m_commandBuffers[m_currentFrame], mesh.indexCount, 1, 0, 0, 0);
-        }
-    }
-
-    // --- DISEGNO ARMA DEL PLAYER (Prima Persona / VR) ---
-    if (player && !player->equippedWeaponPath.empty()) {
-        auto it = m_mobMeshes.find(player->equippedWeaponPath);
-        if (it == m_mobMeshes.end()) {
-            LoadMobMesh(player->equippedWeaponPath);
-            it = m_mobMeshes.find(player->equippedWeaponPath);
-        }
-
-        if (it != m_mobMeshes.end() && it->second.indexCount > 0) {
-            // Disabilita il Depth Test per l'arma (per simulare il render in overlay come negli FPS, 
-            // ma dato che non stiamo ricreando la pipeline al volo, la posizioneremo semplicemente 
-            // molto vicina alla telecamera, oppure la disegneremo normalmente). 
-            // In VR è corretto che subisca il depth test rispetto al mondo.
-            
-            VoxelMesh& mesh = it->second;
-
-            VkBuffer weaponVertexBuffers[] = { mesh.vertexBuffer };
-            VkDeviceSize offsets[]   = { 0 };
-            vkCmdBindVertexBuffers(m_commandBuffers[m_currentFrame], 0, 1, weaponVertexBuffers, offsets);
-            vkCmdBindIndexBuffer(m_commandBuffers[m_currentFrame], mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            // La matrice è GIA' IN WORLD-SPACE (calcolata nel Player.rightHandTransform)!
-            glm::mat4 weaponModel = player->rightHandTransform;
-            
-            // Scaliamo un po' l'arma per farla sembrare un oggetto in mano (0.4x)
-            weaponModel = glm::scale(weaponModel, glm::vec3(0.4f));
-
-            glm::vec4 colorOffset = glm::vec4(0.0f); // Nessun feedback danno sull'arma
-
-            vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &weaponModel);
-            vkCmdPushConstants(m_commandBuffers[m_currentFrame], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::vec4), &colorOffset);
-
-            vkCmdDrawIndexed(m_commandBuffers[m_currentFrame], mesh.indexCount, 1, 0, 0, 0);
-        }
+        RenderForge(m_commandBuffers[m_currentFrame], viewProjMatrix, context);
+    } else {
+        RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
     }
 
     ImDrawData* draw_data = ImGui::GetDrawData();
@@ -1964,6 +1946,15 @@ void RenderManager::Shutdown() {
     if (m_skyPipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device, m_skyPipelineLayout, nullptr);
             m_skyPipelineLayout = VK_NULL_HANDLE;
+        }
+
+        if (m_forgePipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, m_forgePipeline, nullptr);
+            m_forgePipeline = VK_NULL_HANDLE;
+        }
+        if (m_forgePipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device, m_forgePipelineLayout, nullptr);
+            m_forgePipelineLayout = VK_NULL_HANDLE;
         }
 
         for (size_t i = 0; i < m_imageAvailableSemaphores.size(); i++) {
@@ -2519,7 +2510,16 @@ void RenderManager::RecreateSwapchain() {
         vkDestroyPipelineLayout(m_device, m_skyPipelineLayout, nullptr);
         m_skyPipelineLayout = VK_NULL_HANDLE;
     }
+    if (m_forgePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_forgePipeline, nullptr);
+        m_forgePipeline = VK_NULL_HANDLE;
+    }
+    if (m_forgePipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_device, m_forgePipelineLayout, nullptr);
+        m_forgePipelineLayout = VK_NULL_HANDLE;
+    }
     CreateGraphicsPipeline();
+    CreateForgePipeline();
 
     std::cout << "[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (" << width << "x" << height << ")" << std::endl;
 }
@@ -2552,5 +2552,244 @@ void RenderManager::DefragmentVRAM() {
         }
         vmaEndDefragmentation(m_vmaAllocator, defragCtx, nullptr);
         std::cout << "[VMA] DefragmentVRAM() Fast-Pass completato." << std::endl;
+    }
+}
+
+bool RenderManager::CreateForgePipeline() {
+    auto vertShaderCode = ReadFile("forge_vert.spv");
+    auto fragShaderCode = ReadFile("forge_frag.spv");
+
+    VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+    // Vertex Input — legge dalla struttura Vertex definita in RenderManager.h
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding   = 0;
+    bindingDesc.stride    = sizeof(Vertex);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 7> attrDescs{};
+    attrDescs[0].binding  = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
+    attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
+    attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, texCoord);
+    attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32_SFLOAT;       attrDescs[3].offset = offsetof(Vertex, texIndex);
+    attrDescs[4].binding  = 0; attrDescs[4].location = 4; attrDescs[4].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[4].offset = offsetof(Vertex, normal);
+    attrDescs[5].binding  = 0; attrDescs[5].location = 5; attrDescs[5].format = VK_FORMAT_R32_SFLOAT;       attrDescs[5].offset = offsetof(Vertex, ao);
+    attrDescs[6].binding  = 0; attrDescs[6].location = 6; attrDescs[6].format = VK_FORMAT_R32_SFLOAT;       attrDescs[6].offset = offsetof(Vertex, light);
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attrDescs.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    // Viewport State, Rasterizer, Multisample
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // Nessun culling per Forge
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Alpha Blending abilitato per la griglia/selezioni fantasma
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    // --- PUSH CONSTANTS FORGE ---
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(ForgePushConstantData);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    pipelineLayoutInfo.setLayoutCount = 0; // Niente descriptor sets!
+
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_forgePipelineLayout) != VK_SUCCESS) {
+        std::cerr << "[VULKAN] Errore creazione Forge Pipeline Layout!\n";
+        return false;
+    }
+
+    std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_forgePipelineLayout;
+    pipelineInfo.renderPass = m_renderPass;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_forgePipeline) != VK_SUCCESS) {
+        std::cerr << "[VULKAN] Errore creazione Forge Graphics Pipeline!\n";
+        return false;
+    }
+
+    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+
+    return true;
+}
+
+void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, SharedContext* context) {
+    if (!context || !context->forgeWorld) return;
+    auto* forgeWorld = context->forgeWorld;
+
+    // ==========================================
+    // 1. SETUP GLOBALE (Cambio di stato singolo)
+    // ==========================================
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
+
+    ForgePushConstantData pcData{};
+    VkDeviceSize offsets[] = {0};
+
+    // ==========================================
+    // 2. FASE STATICA: La Griglia di Lavoro
+    // ==========================================
+    
+    // Configura Viewport e Scissor dinamicamente
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)m_swapchainExtent.width;
+    viewport.height = (float)m_swapchainExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_swapchainExtent;
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    if (m_globalVramBuffer != VK_NULL_HANDLE) {
+        auto& registry = forgeWorld->GetRegistry();
+        auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
+
+        for (auto entity : view) {
+            const auto& mesh = view.get<fw::MeshComponent>(entity);
+            const auto& trans = view.get<fw::TransformComponent>(entity);
+
+            if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+
+            if (mesh.name == "GridBox" || mesh.name.find("Chunk") != std::string::npos) {
+                fw::Mat4 fwModel = trans.worldMatrix();
+                glm::mat4 model;
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        model[col][row] = fwModel.m[row][col];
+                    }
+                }
+
+                pcData.mvp = viewProjMatrix * model;
+                pcData.useColorOverride = 0;
+
+                vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
+
+                offsets[0] = mesh.vramAlloc.offset;
+                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+                
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            }
+        }
+
+        // ==========================================
+        // 3. FASE DINAMICA / TRASPARENTE: Elementi di Selezione
+        // ==========================================
+        pcData.useColorOverride = 1;
+        for (auto entity : view) {
+            const auto& mesh = view.get<fw::MeshComponent>(entity);
+            const auto& trans = view.get<fw::TransformComponent>(entity);
+
+            if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+
+            if (mesh.name != "GridBox" && mesh.name.find("Chunk") == std::string::npos) {
+                fw::Mat4 fwModel = trans.worldMatrix();
+                glm::mat4 model;
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        model[col][row] = fwModel.m[row][col];
+                    }
+                }
+
+
+                pcData.mvp = viewProjMatrix * model;
+                pcData.colorOverride = glm::vec4(mesh.colorOverride[0], mesh.colorOverride[1], mesh.colorOverride[2], mesh.colorOverride[3] > 0.0f ? mesh.colorOverride[3] : 1.0f);
+
+                vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
+
+                offsets[0] = mesh.vramAlloc.offset;
+                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+                
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            }
+        }
     }
 }

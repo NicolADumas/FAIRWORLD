@@ -1670,6 +1670,10 @@ void FairWorldEngine::EndUIFrame() {
     } else {
         ImGui::Render();
         glm::vec3 skyColor = m_timeManager->GetSkyColor();
+        // Se siamo in Forge, forziamo uno sfondo grigio scuro neutro invece del cielo diurno
+        if (m_sharedContext && m_sharedContext->isForgeMode) {
+            skyColor = {0.12f, 0.12f, 0.15f};
+        }
         m_renderManager->RenderDesktop(m_sharedContext->activeCameraView.viewMatrix, skyColor, m_sharedContext, &m_assets, &m_mobManager, &m_player);
     }
 }
