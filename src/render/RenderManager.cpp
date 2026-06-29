@@ -2737,7 +2737,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
 
-            if (mesh.name == "GridBox" || mesh.name.find("Chunk") != std::string::npos) {
+            if (mesh.name == "GridBox" || mesh.name == "PreviewSphere" || mesh.name.find("Chunk") != std::string::npos) {
                 fw::Mat4 fwModel = trans.worldMatrix();
                 glm::mat4 model;
                 for (int col = 0; col < 4; ++col) {
@@ -2748,6 +2748,11 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
+                
+                if (mesh.colorOverride[3] > 0.0f) {
+                    pcData.useColorOverride = 1;
+                    pcData.colorOverride = glm::vec4(mesh.colorOverride[0], mesh.colorOverride[1], mesh.colorOverride[2], mesh.colorOverride[3]);
+                }
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 

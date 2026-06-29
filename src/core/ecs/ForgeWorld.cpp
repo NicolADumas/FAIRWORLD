@@ -29,12 +29,12 @@ MeshComponent MeshGenerators::MakeCube(float size) {
     
     // Vertices (PBR format): {position, color, uv, texIndex, normal, ao, light}
     auto addFace = [&](fw::Vec3 v0, fw::Vec3 v1, fw::Vec3 v2, fw::Vec3 v3, fw::Vec3 n) {
-        m.vertices.push_back({v0, color, {0,0}, -1.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v1, color, {1,0}, -1.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v2, color, {1,1}, -1.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v0, color, {0,0}, -1.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v2, color, {1,1}, -1.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v3, color, {0,1}, -1.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v0, color, {0,0}, 0.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v1, color, {1,0}, 0.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v2, color, {1,1}, 0.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v0, color, {0,0}, 0.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v2, color, {1,1}, 0.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v3, color, {0,1}, 0.0f, n, 1.0f, 1.0f});
     };
 
     // Front (-Z)
@@ -254,7 +254,9 @@ entt::entity ForgeWorld::CreateChunkEntity(const std::string& name, const Vec3& 
     memset(chunk.blocks, 0, sizeof(chunk.blocks));
     memset(chunk.light, 255, sizeof(chunk.light)); // Luce massima di default
 
-    // GenerateChunkData(chunk, chunk.cx, chunk.cz); // RIMOSSO: Spostato nel Worker Thread!
+    if (m_context && m_context->isForgeMode) {
+        chunk.isGenerated = true; // BUG FIX: In ForgeMode non abbiamo bisogno della generazione procedurale, il chunk è già un foglio bianco! Evita l'overwrite dei voxel piazzati.
+    }
     
     // Hash (cx, cz) -> entity
     uint64_t hashKey = ((uint64_t)(uint32_t)chunk.cx << 32) | (uint32_t)chunk.cz;
@@ -550,6 +552,9 @@ void ForgeWorld::Update(float dt) {
                             float pz = z;
                             
                             fw::Vec3 color = paletteCopy.materials[block].baseColor;
+                            float rough = paletteCopy.materials[block].roughness;
+                            float metal = paletteCopy.materials[block].metallic;
+                            float emissive = paletteCopy.materials[block].emissiveStrength;
 
                             // Top (+Y)
                             if (getBlock(x, y + 1, z) == 0) {
@@ -558,62 +563,62 @@ void ForgeWorld::Update(float dt) {
                                 float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
                                 float ao11 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z+1), getBlock(x+1, y+1, z+1));
                                 float ao01 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z+1), getBlock(x-1, y+1, z+1));
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,1,0}, ao00, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,1,0}, ao10, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,1,0}, ao11, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,1,0}, ao00, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,1,0}, ao11, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,1,0}, ao01, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao10, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao01, light});
                             }
                             // Bottom (-Y)
                             if (getBlock(x, y - 1, z) == 0) {
                                 float light = getLight(x, y - 1, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
                             }
                             // Left (-X)
                             if (getBlock(x - 1, y, z) == 0) {
                                 float light = getLight(x - 1, y, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {0,1}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {1,0}, (float)block, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
                             }
                             // Right (+X)
                             if (getBlock(x + 1, y, z) == 0) {
                                 float light = getLight(x + 1, y, z);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {0,1}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
                             }
                             // Front (+Z)
                             if (getBlock(x, y, z + 1) == 0) {
                                 float light = getLight(x, y, z + 1);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {1,0}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {0,0}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {1,1}, (float)block, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {0,1}, (float)block, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
                             }
                             // Back (-Z)
                             if (getBlock(x, y, z - 1) == 0) {
                                 float light = getLight(x, y, z - 1);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {1,0}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {0,0}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {1,1}, (float)block, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {0,1}, (float)block, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
                             }
                         }
                     }

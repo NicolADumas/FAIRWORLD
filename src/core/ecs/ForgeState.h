@@ -35,10 +35,18 @@ private:
     // --- Editor Tools ---
     int m_selectedTool = 1; // 0: Select, 1: Place, 2: Erase
     int m_selectedColorIndex = 1; // Default to Palette Index 1
+    int m_activeMaterialsCount = 1; // Number of currently active materials (starts with 1)
     bool m_isMouseOverUI = false;
 
     // --- CAD-Style Cursor (X, Y, Z) ---
     int m_cursorX = 8;
     int m_cursorY = 0;
     int m_cursorZ = 8;
+    
+    // --- Camera & POV ---
+    bool m_isFirstPerson = false;
+    float m_cameraFov = 45.0f;
+    float m_fpYaw = -90.0f;
+    float m_fpPitch = 0.0f;
+    glm::vec3 m_fpPosition = glm::vec3(8.0f, 8.0f, 25.0f);
 };
