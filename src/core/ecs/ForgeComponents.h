@@ -58,6 +58,9 @@ struct ForgeMaterial {
     // Per ora non usiamo le texture, ma le lasciamo per il futuro
     std::string albedoMap;
     std::string normalMap;
+    
+    // --- Iniezione Minivoxel ---
+    uint8_t fallbackBlockId = 1; // Default to Grass/Stone ID per l'iniezione in Fairworld
 };
 
 struct ForgeMaterialPalette {

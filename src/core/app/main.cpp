@@ -8,6 +8,7 @@
 #include "StateManager.h"
 #include "HubState.h"
 #include "ForgeState.h"
+#include "PlayState.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
@@ -49,6 +50,23 @@ int main() {
 
     StartAIServer();
 
+    std::cout << "\nSeleziona la modalita' di avvio:\n";
+    std::cout << "1. PlayState (Mondo di Gioco, Esplorazione e Costruzione)\n";
+    std::cout << "2. ForgeState (Editor Strutture e Minivoxel)\n";
+    std::cout << "3. HubState (Hub Principale)\n";
+    std::cout << "Scelta [1-3] (predefinito 1): ";
+    
+    int choice = 1;
+    std::string input;
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try {
+            choice = std::stoi(input);
+        } catch (...) {
+            choice = 1;
+        }
+    }
+
     // 1. Inizializza il VERO motore grafico (Incapsulato come Servitore)
     FairWorldEngine engine;
     if (!engine.Init()) {
@@ -63,8 +81,17 @@ int main() {
     context.stateManager = &stateManager;
     context.engine = &engine; // SharedContext come osservatore non-owning
 
-    // 3. Bootstrap: Avvia direttamente la Forge per debugging
-    stateManager.ChangeState(std::make_unique<ForgeState>(&context));
+    // 3. Bootstrap: Avvia lo stato selezionato
+    if (choice == 2) {
+        stateManager.ChangeState(std::make_unique<ForgeState>(&context));
+        std::cout << "[SYSTEM] Avviato ForgeState...\n";
+    } else if (choice == 3) {
+        stateManager.ChangeState(std::make_unique<HubState>(&context));
+        std::cout << "[SYSTEM] Avviato HubState...\n";
+    } else {
+        stateManager.ChangeState(std::make_unique<PlayState>(&context));
+        std::cout << "[SYSTEM] Avviato PlayState...\n";
+    }
 
     // Configurazione DeviceManager, TimeManager e DiagnosticsManager
     DeviceManager deviceManager;

@@ -70,6 +70,10 @@ struct SharedContext {
 
     glm::vec3 playerVelocity = glm::vec3(0.0f);
 
+    // --- DEVMODE INVENTORY BUS ---
+    std::string devSelectedBlock = ""; // Se vuota, usa inventario standard
+    int devPlacementMode = 0; // 0 = Prefab, 1 = Minivoxel
+
     // --- BUS DATI ---
     std::string targetGameJsonPath;
 

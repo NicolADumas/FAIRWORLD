@@ -3,6 +3,7 @@
 #include "HubState.h"
 #include "Components.h"
 #include "SharedContext.h"
+#include "StateManager.h"
 #include "DeviceManager.h"
 #include "TimeManager.h"
 #include "DiagnosticsManager.h"
@@ -10,6 +11,8 @@
 #include "RenderManager.h"
 #include "WindowManager.h"
 #include "EventManager.h"
+#include "PlayState.h"
+#include "HubState.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -1146,6 +1149,77 @@ void FairWorldEngine::Render() {
                 }
             }
             ImGui::End();
+            
+            // --- DEVMODE UI (Solo in DevMode) ---
+            if (m_gameMode == GameMode::Dev) {
+                PlayState* playState = dynamic_cast<PlayState*>(m_sharedContext->stateManager->GetCurrentState());
+                if (playState) {
+                    ImGui::SetNextWindowPos(ImVec2(center.x + 260.0f, center.y), ImGuiCond_Once, ImVec2(0.0f, 0.5f));
+                    ImGui::SetNextWindowSize(ImVec2(500, 350), ImGuiCond_Once);
+                    if (ImGui::Begin("Inventario Costruzione (DevMode)", &m_isInventoryOpen, ImGuiWindowFlags_NoCollapse)) {
+                        ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "Seleziona Struttura / Prefab da Piazzare");
+                        ImGui::Separator();
+                        
+                        if (ImGui::Button("Aggiorna Lista (assets/blocks)")) {
+                            playState->RefreshAvailableStructures();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Deseleziona (Usa Hotbar)", ImVec2(180, 0))) {
+                            m_sharedContext->devSelectedBlock = "";
+                        }
+                        
+                        ImGui::Spacing();
+                        ImGui::BeginChild("StructuresList", ImVec2(0, 200), true);
+                        if (playState->m_availableStructures.empty()) {
+                            ImGui::TextDisabled("Nessun file .fwblock trovato in assets/blocks/");
+                        } else {
+                            int columns = 4;
+                            if (ImGui::BeginTable("DevInventoryTable", columns)) {
+                                for (int i = 0; i < playState->m_availableStructures.size(); ++i) {
+                                    if (i % columns == 0) ImGui::TableNextRow();
+                                    ImGui::TableNextColumn();
+                                    
+                                    const auto& structure = playState->m_availableStructures[i];
+                                    bool isSelected = (m_sharedContext->devSelectedBlock == structure.name);
+                                    
+                                    if (isSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
+                                    
+                                    std::string shortName = structure.name.length() > 8 ? structure.name.substr(0, 8) + ".." : structure.name;
+                                    if (ImGui::Button(shortName.c_str(), ImVec2(80, 80))) {
+                                        m_sharedContext->devSelectedBlock = structure.name;
+                                        m_sharedContext->devPlacementMode = structure.mode;
+                                    }
+                                    
+                                    if (isSelected) ImGui::PopStyleColor();
+                                    
+                                    if (ImGui::IsItemHovered()) {
+                                        ImGui::SetTooltip("%s\nModo: %s", structure.name.c_str(), structure.mode == 0 ? "Minivoxel" : "Prefab");
+                                    }
+                                }
+                                ImGui::EndTable();
+                            }
+                        }
+                        ImGui::EndChild();
+                        
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        ImGui::Text("Modalità Piazzamento:");
+                        ImGui::RadioButton("Minivoxel (Oggetto 3D Dinamico)", &m_sharedContext->devPlacementMode, 0);
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Alta fedeltà. Crea una nuova Entity con la propria Palette. Usa molte Draw Call se spammato.");
+                        
+                        ImGui::RadioButton("Prefab (Struttura Terreno Statico)", &m_sharedContext->devPlacementMode, 1);
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fusione perfetta. Converte la struttura usando i Fallback Voxel e la inietta nel terreno. 0 Draw Call.");
+                        
+                        ImGui::Spacing();
+                        if (!m_sharedContext->devSelectedBlock.empty()) {
+                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Punta sul terreno e fai Click Sinistro per piazzare: %s", m_sharedContext->devSelectedBlock.c_str());
+                        } else {
+                            ImGui::TextDisabled("Seleziona una struttura o usa la Hotbar normale...");
+                        }
+                    }
+                    ImGui::End();
+                }
+            }
         }
 
         // 3. Menu grafico di selezione per il Blocco Custom (Slot 4 - tasto 4)
@@ -1727,8 +1801,14 @@ void FairWorldEngine::renderPauseMenu() {
         transitionTo(GameState::PLAYING);
 
     ImGui::SameLine();
-    if (ImGui::Button("  Menu Principale", ImVec2(btnW, btnH)))
-        transitionTo(GameState::MAIN_MENU);
+    if (ImGui::Button("  Menu Principale", ImVec2(btnW, btnH))) {
+        if (m_sharedContext && m_sharedContext->stateManager) {
+            m_sharedContext->stateManager->ChangeState(std::make_unique<HubState>(m_sharedContext));
+            transitionTo(GameState::PLAYING); // Chiudi il menu di pausa interno
+        } else {
+            transitionTo(GameState::MAIN_MENU);
+        }
+    }
 
     ImGui::SameLine();
     if (ImGui::Button("  Esci dal gioco", ImVec2(btnW, btnH)))

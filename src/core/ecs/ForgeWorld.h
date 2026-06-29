@@ -54,6 +54,9 @@ public:
     // Inizializza il mondo della FORGE allocando la memoria dedicata e passandogli l'infrastruttura asincrona
     void Initialize(SharedContext* context);
     
+    // Pulisce tutti i chunk attuali per preparare un nuovo stato
+    void ClearWorld();
+    
     // Aggiornamento principale della FORGE (ECS Systems & Jobs)
     void Update(float dt);
     
@@ -94,7 +97,13 @@ public:
     // Salvataggio/Caricamento Chunks
     bool SaveChunk(int cx, int cz) const;
     bool LoadChunk(int cx, int cz, VoxelChunkComponent& chunkData) const;
+    // Salvataggio di tutta l'area in memoria su disco
     void SaveAllChunks() const;
+
+    // --- STRUTTURE (FORMATO .FWBLOCK) ---
+    bool SaveStructure(const std::string& name, uint8_t placementMode = 0, int pivotX = 0, int pivotY = 0, int pivotZ = 0);
+    entt::entity LoadStructureAsPrefab(const std::string& filepath, const fw::Vec3& position);
+    bool LoadStructureAsVoxels(const std::string& filepath, int startX, int startY, int startZ);
 
     // --- EDITOR STATE MACHINE ---
     EditorMode GetEditorMode() const { return m_editorMode; }

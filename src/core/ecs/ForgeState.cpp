@@ -81,7 +81,14 @@ std::expected<void, std::string> ForgeState::Init() {
 
 
     std::cout << "[ForgeState] (ForgeWorld è ora globale e persistente in SharedContext)\n";
-    // Generiamo la griglia visiva 16x16x16
+    
+    // Assicuriamoci che il mondo sia pulito da altri stati (es. PlayState)
+    if (m_context && m_context->forgeWorld) {
+        m_context->forgeWorld->ClearWorld();
+        m_context->forgeWorld->CreateChunkEntity("WorkspaceBlock", {0.0f, 0.0f, 0.0f});
+    }
+
+    // Grid Mesh Setup
     auto gridMesh = fw::MeshGenerators::MakeGridBox(16, 16, 16, 0.05f);
     m_context->forgeWorld->EnqueueDeferredMesh("WorkspaceGrid", {0.0f, 0.0f, 0.0f}, std::move(gridMesh));
 

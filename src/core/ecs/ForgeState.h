@@ -36,6 +36,8 @@ private:
     int m_selectedTool = 1; // 0: Select, 1: Place, 2: Erase
     int m_selectedColorIndex = 1; // Default to Palette Index 1
     int m_activeMaterialsCount = 1; // Number of currently active materials (starts with 1)
+    char m_structureNameBuffer[64] = "NuovaStruttura"; // Buffer per il nome del salvataggio
+    int m_exportPlacementMode = 0; // 0 = Prefab (Struttura PBR), 1 = Minivoxel (Iniezione)
     bool m_isMouseOverUI = false;
 
     // --- CAD-Style Cursor (X, Y, Z) ---

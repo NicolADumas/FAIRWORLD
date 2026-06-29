@@ -6,10 +6,12 @@
 #include "Components.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/quaternion.hpp>
+#include "TimeManager.h"
+#include "StateManager.h"
 #include <iostream>
 #include <fstream>
 #include "json.hpp"
+#include <windows.h>
 #include "PortalSystem.h"
 #include "ForgeComponents.h"
 #include "ForgeWorld.h"
@@ -24,6 +26,31 @@ PlayState::PlayState(SharedContext* context) : m_context(context) {
 
 PlayState::~PlayState() {
     std::cout << "[PlayState] Distrutto.\n";
+}
+
+#include <filesystem>
+
+// (End of previous code)
+
+void PlayState::RefreshAvailableStructures() {
+    m_availableStructures.clear();
+    
+    // Fallback/Default test item se la cartella non esiste
+    m_availableStructures.push_back({"Blocco Erba", 0});
+    m_availableStructures.push_back({"Blocco Roccia", 0});
+    m_availableStructures.push_back({"Albero", 1});
+
+    try {
+        if (std::filesystem::exists("assets/structures")) {
+            for (const auto& entry : std::filesystem::directory_iterator("assets/structures")) {
+                if (entry.path().extension() == ".fwblock" || entry.path().extension() == ".json") {
+                    m_availableStructures.push_back({entry.path().stem().string(), 1});
+                }
+            }
+        }
+    } catch (...) {
+        // Ignora eventuali errori di file system
+    }
 }
 
 std::expected<void, std::string> PlayState::Init() {
@@ -62,35 +89,29 @@ std::expected<void, std::string> PlayState::Init() {
               << bindings.size() << " azioni logiche nel Kernel Bus.\n";
 
     // === CARICAMENTO CONFIGURAZIONE DATA-DRIVEN (JSON) ===
-    if (m_context->targetGameJsonPath.empty()) {
-        return std::unexpected("Percorso JSON non specificato dal contesto globale!");
+    std::string configPath = m_context->targetGameJsonPath;
+    if (configPath.empty()) {
+        std::cout << "[PlayState] Nessun JSON specificato. Utilizzo fallback predefinito.\n";
+        configPath = "projects/default_game.json"; // Un fallback fittizio per non crashare
     }
 
-    std::cout << "[PlayState] Avvio parsing configurazione Data-Driven da: "
-              << m_context->targetGameJsonPath << "\n";
-    
-    std::ifstream file(m_context->targetGameJsonPath);
+    std::cout << "[PlayState] Avvio parsing configurazione Data-Driven da: " 
+              << configPath << "\n";
+              
+    std::ifstream file(configPath);
     json data;
-    
     if (!file.is_open()) {
-        std::cerr << "[StateManager WARNING] Impossibile aprire il file di configurazione: " 
-                  << m_context->targetGameJsonPath 
-                  << " -> Caricamento FALLBACK di emergenza.\n";
-                  
+        std::cerr << "[StateManager WARNING] Impossibile aprire file JSON: " 
+                  << configPath 
+                  << " -> Procedo con ambiente vuoto.\n";
         // Costruiamo un JSON di default in memoria per salvare la situazione
-        data = {
-            {"entities", {
-                {
-                    {"name", "SpawnPoint"},
-                    {"transform", {{"x", 0.0f}, {"y", 50.0f}, {"z", 0.0f}}}
-                }
-            }}
-        };
+        data = json::parse(R"({"entities": []})");
     } else {
-        data = json::parse(file, nullptr, false);
-        if (data.is_discarded()) {
+        try {
+            data = json::parse(file);
+        } catch (...) {
             std::cerr << "[StateManager ERROR] Errore di sintassi nel JSON -> Fallback.\n";
-            data = {{"entities", json::array()}};
+            data = json::parse(R"({"entities": []})");
         }
     }
 
@@ -121,7 +142,7 @@ std::expected<void, std::string> PlayState::Init() {
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
     // Posizione iniziale — rotazione inizializzata a identità (forward = -Z)
-    m_registry.emplace<TransformComponent>(cameraEntity, 0.0f, 70.0f, 0.0f);
+    m_registry.emplace<TransformComponent>(cameraEntity, 8.0f, 52.0f, 8.0f);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
     // Yaw -90 gradi così il forward di default punta verso -Z
     cam.yaw   = -90.0f;
@@ -130,20 +151,80 @@ std::expected<void, std::string> PlayState::Init() {
     
     // Inizializza il RigidBody per la fisica
     auto& rbOpt = m_registry.emplace<RigidBodyComponent>(cameraEntity);
-    rbOpt.body.position = glm::vec3(0.0f, 70.0f, 0.0f);
+    rbOpt.body.position = glm::vec3(8.0f, 52.0f, 8.0f);
     rbOpt.body.mass = 70.0f;
 
     // --- INIZIALIZZAZIONE FORGE ---
-    m_context->forgeWorld->Initialize(m_context);
+    m_context->forgeWorld->ClearWorld();
+    
+    // Setup Base Palette per Fairworld
+    auto& palette = m_context->forgeWorld->GetPalette();
+    // 1: Grass (Erba)
+    palette.materials[1].baseColor = {0.2f, 0.7f, 0.2f};
+    palette.materials[1].roughness = 0.9f;
+    // 2: Stone (Roccia / Montagna)
+    palette.materials[2].baseColor = {0.4f, 0.4f, 0.4f};
+    palette.materials[2].roughness = 1.0f;
+    // 3: Dirt (Terra)
+    palette.materials[3].baseColor = {0.35f, 0.25f, 0.15f};
+    palette.materials[3].roughness = 1.0f;
+
+    auto& registry = m_context->forgeWorld->GetRegistry();
+
+    // Generazione procedurale di un prato circondato da montagne (11x11 chunk)
+    int chunkRadius = 5; // Enorme prato
+    for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
+        for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
+            // Ignoriamo il chunk {0,0} se è già stato creato dal WorkspaceBlock, ma per sicurezza usiamo nomi univoci
+            std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
+            entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
+            auto& chunk = registry.get<fw::VoxelChunkComponent>(chunkEnt);
+            
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
+                    float worldX = cx * 16.0f + x;
+                    float worldZ = cz * 16.0f + z;
+                    // Centro esatto della griglia chunk è 8X, 8Z
+                    float dx = worldX - 8.0f;
+                    float dz = worldZ - 8.0f;
+                    float distFromCenter = std::sqrt(dx * dx + dz * dz);
+                    
+                    int height = 50; // Livello base del prato
+                    bool isMountain = false;
+                    
+                    // Creiamo l'anello di montagne ai bordi
+                    float mountainRadius = (chunkRadius - 1) * 16.0f;
+                    if (distFromCenter > mountainRadius) {
+                        float intensity = distFromCenter - mountainRadius;
+                        height += static_cast<int>(intensity * 1.8f); // Pendenza della montagna
+                        isMountain = true;
+                    }
+                    
+                    if (height > 127) height = 127;
+                    
+                    for (int y = 0; y <= height; ++y) {
+                        if (y == height) {
+                            chunk.blocks[x][y][z] = isMountain ? 2 : 1; // Cima: Roccia o Erba
+                        } else if (y > height - 3 && !isMountain) {
+                            chunk.blocks[x][y][z] = 3; // Terra sotto l'erba
+                        } else {
+                            chunk.blocks[x][y][z] = 2; // Roccia per il resto
+                        }
+                    }
+                }
+            }
+            
+            // Forza la generazione della mesh per questo chunk (ora gestito in sicurezza da ForgeWorld)
+            m_context->forgeWorld->MarkChunkDirty(chunkEnt);
+        }
+    }
     
     // Creiamo due portali di test per il rendering non-euclideo!
-    auto& registry = m_context->forgeWorld->GetRegistry();
-    
     auto portalA = registry.create();
     registry.emplace<fw::PortalComponent>(portalA);
     registry.get<fw::PortalComponent>(portalA).isActive = true;
     auto& transA = registry.emplace<fw::TransformComponent>(portalA);
-    transA.location = fw::Vec3{5.0f, 32.0f, 0.0f};
+    transA.location = fw::Vec3{5.0f, 52.0f, 0.0f}; // Rialzati, per stare sopra l'erba
     transA.scale = fw::Vec3{2.0f, 3.0f, 1.0f};
     registry.emplace<fw::VolumeComponent>(portalA, 3.0f);
     
@@ -151,9 +232,9 @@ std::expected<void, std::string> PlayState::Init() {
     registry.emplace<fw::PortalComponent>(portalB);
     registry.get<fw::PortalComponent>(portalB).isActive = true;
     auto& transB = registry.emplace<fw::TransformComponent>(portalB);
-    transB.location = fw::Vec3{100.0f, 60.0f, 100.0f}; // Lontano, magari nel cielo!
+    transB.location = fw::Vec3{30.0f, 52.0f, 30.0f};
     transB.scale = fw::Vec3{2.0f, 3.0f, 1.0f};
-    transB.rotation = fw::Vec3{0.0f, 180.0f, 0.0f}; // Girato per entrare/uscire correttamente
+    transB.rotation = fw::Vec3{0.0f, 180.0f, 0.0f};
     registry.emplace<fw::VolumeComponent>(portalB, 3.0f);
     
     // Colleghiamoli tra loro!
@@ -166,7 +247,7 @@ std::expected<void, std::string> PlayState::Init() {
     m_systems.push_back(std::make_unique<fw::PhysicsSystem>());
     m_systems.push_back(std::make_unique<fw::CameraSyncSystem>());
 
-    std::cout << "[PlayState] Inizializzato (ECS + ForgeWorld + Portali + Systems)\n";
+    std::cout << "[PlayState] Generazione procedurale prato e montagne completata. Avvio ciclo di gioco...\n";
     return {};
 }
 

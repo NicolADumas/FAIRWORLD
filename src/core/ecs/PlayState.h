@@ -18,6 +18,16 @@ public:
     
     entt::registry* GetRegistry() override { return &m_registry; }
 
+    // --- DevMode Inventory ---
+    bool m_showDevInventory = true; // Toggle visibilità inventario dev
+    
+    struct DevStructure {
+        std::string name;
+        uint8_t mode;
+    };
+    std::vector<DevStructure> m_availableStructures;
+    void RefreshAvailableStructures();
+
 private:
     SharedContext* m_context;
     entt::registry m_registry;

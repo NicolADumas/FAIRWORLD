@@ -88,6 +88,8 @@ public:
     RenderManager* GetRenderManager() { return m_renderManager.get(); }
     GameMode GetGameMode() const { return m_gameMode; }
     void SetGameMode(GameMode mode) { m_gameMode = mode; }
+    bool IsInventoryOpen() const { return m_isInventoryOpen; }
+    void SetInventoryOpen(bool open) { m_isInventoryOpen = open; }
 
 private:
     std::string GetSlotName(int slotIndex);

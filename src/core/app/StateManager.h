@@ -43,6 +43,10 @@ public:
         return nullptr;
     }
 
+    State* GetCurrentState() const {
+        return m_currentState.get();
+    }
+
 private:
     std::unique_ptr<State> m_currentState = nullptr;
     std::unique_ptr<State> m_pendingState = nullptr;

@@ -162,22 +162,36 @@ ForgeWorld::~ForgeWorld() {
     }
 }
 
+void ForgeWorld::ClearWorld() {
+    std::cout << "[ForgeWorld] Salvataggio automatico e pulizia della memoria (ClearWorld)...\n";
+    
+    // 1. Salva sempre tutto su disco prima di distruggere per sicurezza!
+    SaveAllChunks();
+    
+    // 2. Rimuovi le entità dalla RAM per fare spazio al nuovo stato
+    for (auto& pair : m_activeChunks) {
+        if (m_registry.valid(pair.second)) {
+            m_registry.destroy(pair.second);
+        }
+    }
+    m_activeChunks.clear();
+}
+
 void ForgeWorld::Initialize(SharedContext* context) {
     m_context = context;
     
-    // Pulisci stato precedente in caso di reinizializzazione
-    m_registry.clear();
-    m_activeChunks.clear();
     {
         std::lock_guard<std::mutex> lock(m_deferredMutex);
         m_deferredMeshes.clear();
     }
 
-    std::cout << "[ForgeWorld] Inizializzazione Memory Partitioning per FORGE...\n";
-    
-    // Allocazione monolitica di 128 MB per la Forge per isolare la frammentazione
-    const size_t TOTAL_FORGE_MEMORY = 128 * 1024 * 1024; 
-    m_masterMemoryBlock = malloc(TOTAL_FORGE_MEMORY);
+    if (!m_masterMemoryBlock) {
+        std::cout << "[ForgeWorld] Inizializzazione Memory Partitioning per FORGE...\n";
+        
+        // Allocazione monolitica di 128 MB per la Forge per isolare la frammentazione
+        const size_t TOTAL_FORGE_MEMORY = 128 * 1024 * 1024; 
+        m_masterMemoryBlock = malloc(TOTAL_FORGE_MEMORY);
+    }
     
     // 1. Persistent Memory (32 MB)
     size_t persistentSize = 32 * 1024 * 1024;
@@ -809,6 +823,370 @@ bool ForgeWorld::IsChunkReady(int cx, int cz) const {
         }
     }
     return false;
+}
+
+#include <filesystem>
+#include <fstream>
+
+struct FWBlockHeader {
+    char magic[4] = {'F', 'W', 'B', 'K'};
+    uint32_t version = 3; // RLE + Pivot + PlacementMode
+    uint32_t voxelCount = 0;
+    int32_t pivotX = 0;
+    int32_t pivotY = 0;
+    int32_t pivotZ = 0;
+    uint32_t compressedSize = 0;
+    uint8_t placementMode = 0; // 0 = Prefab, 1 = Voxel Injection
+};
+
+struct RLEChunk {
+    uint8_t count;
+    uint8_t blockId;
+};
+
+bool ForgeWorld::SaveStructure(const std::string& name, uint8_t placementMode, int pivotX, int pivotY, int pivotZ) {
+    if (name.empty()) return false;
+    
+    std::filesystem::create_directories("assets/blocks");
+    std::string path = "assets/blocks/" + name + ".fwblock";
+    std::ofstream file(path, std::ios::binary);
+    
+    if (!file.is_open()) {
+        std::cerr << "[ForgeWorld] Errore salvataggio file: " << path << "\n";
+        return false;
+    }
+    
+    FWBlockHeader header;
+    header.placementMode = placementMode;
+    
+    // Troviamo l'entità del chunk {0,0}
+    uint64_t hashKey = 0;
+    auto it = m_activeChunks.find(hashKey);
+    if (it != m_activeChunks.end()) {
+        auto& chunk = m_registry.get<VoxelChunkComponent>(it->second);
+        
+        for(int x=0; x<16; ++x) {
+            for(int y=0; y<128; ++y) {
+                for(int z=0; z<16; ++z) {
+                    if (chunk.blocks[x][y][z] != (uint8_t)BlockType::Air) {
+                        header.voxelCount++;
+                    }
+                }
+            }
+        }
+        
+        if (header.voxelCount > 0) {
+            // Root Bone Manuale (Dal cursore 3D)
+            header.pivotX = pivotX;
+            header.pivotY = pivotY;
+            header.pivotZ = pivotZ;
+        }
+        
+        // 2. Compressione RLE (solo blocks per ora)
+        std::vector<RLEChunk> compressedBlocks;
+        if (header.voxelCount > 0) {
+            uint8_t currentBlock = chunk.blocks[0][0][0];
+            uint8_t currentCount = 0;
+            
+            for(int x=0; x<16; ++x) {
+                for(int y=0; y<128; ++y) {
+                    for(int z=0; z<16; ++z) {
+                        uint8_t block = chunk.blocks[x][y][z];
+                        if (block == currentBlock && currentCount < 255) {
+                            currentCount++;
+                        } else {
+                            compressedBlocks.push_back({currentCount, currentBlock});
+                            currentBlock = block;
+                            currentCount = 1;
+                        }
+                    }
+                }
+            }
+            if (currentCount > 0) {
+                compressedBlocks.push_back({currentCount, currentBlock});
+            }
+        } else {
+            // File vuoto
+            compressedBlocks.push_back({0, 0});
+        }
+        
+        header.compressedSize = (uint32_t)(compressedBlocks.size() * sizeof(RLEChunk));
+        
+        file.write(reinterpret_cast<const char*>(&header), sizeof(FWBlockHeader));
+        file.write(reinterpret_cast<const char*>(m_palette.materials), sizeof(ForgeMaterial) * 256);
+        file.write(reinterpret_cast<const char*>(compressedBlocks.data()), header.compressedSize);
+        // Non salviamo la luce nel file RLE per risparmiare spazio (o se la salvassimo, andrebbe compressa a parte)
+        
+    } else {
+        // Fallback file vuoto
+        file.write(reinterpret_cast<const char*>(&header), sizeof(FWBlockHeader));
+        file.write(reinterpret_cast<const char*>(m_palette.materials), sizeof(ForgeMaterial) * 256);
+    }
+    
+    file.close();
+    std::cout << "[ForgeWorld] Struttura salvata con successo in: " << path << " (Voxel Pieni: " << header.voxelCount << ", Compresso a " << header.compressedSize << " bytes)\n";
+    return true;
+}
+
+entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw::Vec3& position) {
+    std::string path = "assets/blocks/" + name + ".fwblock";
+    std::ifstream file(path, std::ios::binary);
+    
+    if (!file.is_open()) {
+        std::cerr << "[ForgeWorld] Errore caricamento file: " << path << "\n";
+        return entt::null;
+    }
+    
+    FWBlockHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(FWBlockHeader));
+    if (header.magic[0] != 'F' || header.magic[1] != 'W' || header.magic[2] != 'B' || header.magic[3] != 'K') {
+        std::cerr << "[ForgeWorld] File non valido o versione non supportata: " << path << "\n";
+        return entt::null;
+    }
+    
+    // Leggi Palette Custom per questa entità
+    auto customPalette = std::make_shared<ForgeMaterialPalette>();
+    file.read(reinterpret_cast<char*>(customPalette->materials), sizeof(ForgeMaterial) * 256);
+    
+    // Leggi dati Voxel (Decompressione RLE)
+    auto chunkData = std::make_shared<VoxelChunkComponent>();
+    memset(chunkData->blocks, 0, sizeof(chunkData->blocks));
+    memset(chunkData->light, 255, sizeof(chunkData->light)); // default light
+    
+    if (header.compressedSize > 0) {
+        std::vector<RLEChunk> compressedBlocks(header.compressedSize / sizeof(RLEChunk));
+        file.read(reinterpret_cast<char*>(compressedBlocks.data()), header.compressedSize);
+        
+        int blockIndex = 0;
+        for (const auto& rle : compressedBlocks) {
+            for (int i = 0; i < rle.count; ++i) {
+                if (blockIndex < 16 * 128 * 16) {
+                    int x = blockIndex / (128 * 16);
+                    int y = (blockIndex / 16) % 128;
+                    int z = blockIndex % 16;
+                    chunkData->blocks[x][y][z] = rle.blockId;
+                    blockIndex++;
+                }
+            }
+        }
+    }
+    
+    chunkData->cx = 0;
+    chunkData->cz = 0;
+    chunkData->isGenerated = true;
+    
+    file.close();
+    
+    // Creiamo una nuova entità (Prefab) in Fairworld
+    entt::entity prefabEntity = m_registry.create();
+    auto& trans = m_registry.emplace<TransformComponent>(prefabEntity);
+    // Sottrai il Pivot in modo che la base della struttura tocchi terra al centro
+    trans.location = position - fw::Vec3{(float)header.pivotX, (float)header.pivotY, (float)header.pivotZ};
+    // Scala standard
+    trans.scale = fw::Vec3{1.0f, 1.0f, 1.0f};
+    
+    // Aggiungiamo un tag per riconoscerla
+    auto& meta = m_registry.emplace<MetadataComponent>(prefabEntity);
+    meta.name = "Prefab_" + name;
+    
+    auto& mesh = m_registry.emplace<MeshComponent>(prefabEntity);
+    mesh.name = "Prefab_" + name;
+    mesh.colorOverride[3] = 0.0f; // Disabilita override trasparente
+    
+    // Aggiungiamo il componente chunk così sappiamo cosa contiene se serve in futuro
+    m_registry.emplace<VoxelChunkComponent>(prefabEntity, *chunkData);
+    
+    // Avviamo il job per generare la Mesh asincronamente usando la SUA palette
+    if (m_context && m_context->jobSystem) {
+        std::string chunkName = meta.name;
+        SharedContext* ctx = m_context;
+        
+        // Passiamo la customPalette copiata per valore al job
+        ForgeMaterialPalette paletteCopy = *customPalette;
+        
+        m_context->jobSystem->Execute([this, prefabEntity, chunkName, chunkData, ctx, paletteCopy]() {
+            std::vector<Vertex> vertices;
+            vertices.reserve(16384);
+            
+            auto getBlock = [&](int x, int y, int z) -> uint8_t {
+                if (static_cast<unsigned>(x) >= 16 || static_cast<unsigned>(y) >= 128 || static_cast<unsigned>(z) >= 16) return 0;
+                return chunkData->blocks[x][y][z];
+            };
+            auto getLight = [&](int x, int y, int z) -> float {
+                if (static_cast<unsigned>(x) >= 16 || static_cast<unsigned>(y) >= 128 || static_cast<unsigned>(z) >= 16) return 1.0f;
+                return chunkData->light[x][y][z] / 255.0f;
+            };
+            auto calcAO = [&](bool side1, bool side2, bool corner) -> float {
+                if (side1 && side2) return 0.25f;
+                return 1.0f - (side1 + side2 + corner) * 0.25f;
+            };
+
+            for (int x = 0; x < 16; x++) {
+                for (int y = 0; y < 128; y++) {
+                    for (int z = 0; z < 16; z++) {
+                        uint8_t block = chunkData->blocks[x][y][z];
+                        if (block == 0) continue;
+                        
+                        float px = x; float py = y; float pz = z;
+                        fw::Vec3 color = paletteCopy.materials[block].baseColor;
+                        float rough = paletteCopy.materials[block].roughness;
+                        float metal = paletteCopy.materials[block].metallic;
+                        float emissive = paletteCopy.materials[block].emissiveStrength;
+
+                        // Top (+Y)
+                        if (getBlock(x, y + 1, z) == 0) {
+                            float light = getLight(x, y + 1, z);
+                            float ao00 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z-1), getBlock(x-1, y+1, z-1));
+                            float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
+                            float ao11 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z+1), getBlock(x+1, y+1, z+1));
+                            float ao01 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z+1), getBlock(x-1, y+1, z+1));
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao10, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao01, light});
+                        }
+                        // Bottom (-Y)
+                        if (getBlock(x, y - 1, z) == 0) {
+                            float light = getLight(x, y - 1, z);
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                        }
+                        // Left (-X)
+                        if (getBlock(x - 1, y, z) == 0) {
+                            float light = getLight(x - 1, y, z);
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                        }
+                        // Right (+X)
+                        if (getBlock(x + 1, y, z) == 0) {
+                            float light = getLight(x + 1, y, z);
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                        }
+                        // Front (+Z)
+                        if (getBlock(x, y, z + 1) == 0) {
+                            float light = getLight(x, y, z + 1);
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                        }
+                        // Back (-Z)
+                        if (getBlock(x, y, z - 1) == 0) {
+                            float light = getLight(x, y, z - 1);
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                        }
+                    }
+                }
+            }
+
+            if (vertices.empty()) return; // Struttura vuota
+            
+            if (ctx && ctx->dmaManager && ctx->vramAllocator) {
+                uint32_t meshSizeBytes = (uint32_t)(vertices.size() * sizeof(Vertex));
+                auto vramAlloc = ctx->vramAllocator->Allocate(meshSizeBytes);
+                if (vramAlloc.valid) {
+                    ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, vramAlloc);
+                    
+                    MeshComponent newMesh;
+                    newMesh.name = chunkName + "_Mesh";
+                    newMesh.vertices = std::move(vertices);
+                    newMesh.vramAlloc = vramAlloc;
+                    
+                    std::lock_guard<std::mutex> lock(m_deferredMutex);
+                    DeferredMeshSpawn spawn;
+                    spawn.name = chunkName + "_Ready";
+                    spawn.position = {0.0f, 0.0f, 0.0f}; // Prefab position handled by TransformComponent
+                    spawn.mesh = std::move(newMesh);
+                    spawn.chunkData = chunkData;
+                    spawn.targetEntity = prefabEntity;
+                    spawn.isNewlyGenerated = false;
+                    
+                    m_deferredMeshes.push_back(std::move(spawn));
+                }
+            }
+        });
+    }
+    
+    std::cout << "[ForgeWorld] Struttura " << name << " istanziata come Prefab a (" << position.x << ", " << position.y << ", " << position.z << ").\n";
+    return prefabEntity;
+}
+
+bool ForgeWorld::LoadStructureAsVoxels(const std::string& name, int startX, int startY, int startZ) {
+    std::string path = "assets/blocks/" + name + ".fwblock";
+    std::ifstream file(path, std::ios::binary);
+    
+    if (!file.is_open()) return false;
+    
+    FWBlockHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(FWBlockHeader));
+    if (header.magic[0] != 'F' || header.magic[1] != 'W' || header.magic[2] != 'B' || header.magic[3] != 'K') {
+        std::cerr << "[ForgeWorld] File non valido o versione non supportata: " << path << "\n";
+        return false;
+    }
+    
+    ForgeMaterialPalette palette;
+    file.read(reinterpret_cast<char*>(palette.materials), sizeof(ForgeMaterial) * 256);
+    
+    std::vector<RLEChunk> compressedBlocks;
+    if (header.compressedSize > 0) {
+        compressedBlocks.resize(header.compressedSize / sizeof(RLEChunk));
+        file.read(reinterpret_cast<char*>(compressedBlocks.data()), header.compressedSize);
+    }
+    file.close();
+    
+    // Decompressione e Inject nei chunk attuali di ForgeWorld (Opzione B)
+    if (!compressedBlocks.empty()) {
+        int blockIndex = 0;
+        for (const auto& rle : compressedBlocks) {
+            for (int i = 0; i < rle.count; ++i) {
+                if (blockIndex < 16 * 128 * 16) {
+                    if (rle.blockId != (uint8_t)BlockType::Air) {
+                        int x = blockIndex / (128 * 16);
+                        int y = (blockIndex / 16) % 128;
+                        int z = blockIndex % 16;
+                        
+                        // Uso del Fallback!
+                        uint8_t fallbackId = palette.materials[rle.blockId].fallbackBlockId;
+                        
+                        // Sottraiamo il Pivot per centrare
+                        int px = startX + x - header.pivotX;
+                        int py = startY + y - header.pivotY;
+                        int pz = startZ + z - header.pivotZ;
+                        
+                        if (py >= 0 && py < 128) {
+                            SetBlock(px, py, pz, (BlockType)fallbackId);
+                        }
+                    }
+                    blockIndex++;
+                }
+            }
+        }
+    }
+    
+    std::cout << "[ForgeWorld] Struttura " << name << " iniettata nel terreno a (" << startX << ", " << startY << ", " << startZ << ") usando i Fallback Voxel.\n";
+    return true;
 }
 
 } // namespace fw

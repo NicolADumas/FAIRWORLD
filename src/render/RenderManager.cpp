@@ -1347,7 +1347,57 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         }
     }
 
-    // --- DISEGNO MESH GHOST ---
+    // --- DISEGNO CHUNK FORGEWORLD (Nuovo mondo procedurale in PlayState) ---
+    if (context && context->forgeWorld && m_globalVramBuffer != VK_NULL_HANDLE) {
+        // Le mesh del ForgeWorld usano PBR e push constants dedicate
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
+        
+        ForgePushConstantData pcData{};
+        VkDeviceSize offsets[] = { 0 };
+
+        auto& registry = context->forgeWorld->GetRegistry();
+        auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
+
+        // ATTENZIONE: In RenderFairworld viewMatrix è SOLO la View matrix!
+        // Dobbiamo calcolare la projection!
+        float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+        glm::mat4 projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
+        projMatrix[1][1] *= -1; // Inverti Y per Vulkan
+        glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
+
+        for (auto entity : view) {
+            const auto& mesh = view.get<fw::MeshComponent>(entity);
+            const auto& trans = view.get<fw::TransformComponent>(entity);
+
+            if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+
+            // Renderizziamo solo i Chunk (escludiamo griglia e sfere di preview dell'editor)
+            if (mesh.name.find("Chunk") != std::string::npos) {
+                fw::Mat4 fwModel = trans.worldMatrix();
+                glm::mat4 model;
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        model[col][row] = fwModel.m[row][col];
+                    }
+                }
+
+                pcData.mvp = viewProjMatrix * model;
+                pcData.useColorOverride = 0;
+
+                vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
+
+                offsets[0] = mesh.vramAlloc.offset;
+                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+                
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            }
+        }
+        
+        // RIPRISTINA LA PIPELINE ORIGINALE PER GLI ALTRI ELEMENTI DI FAIRWORLD
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+    }
         if (m_ghostVertexBuffer != VK_NULL_HANDLE && m_ghostIndexBuffer != VK_NULL_HANDLE && m_ghostIndexCount > 0) {
             VkBuffer ghostBuffers[] = { m_ghostVertexBuffer };
             VkDeviceSize offsets[]   = { 0 };
