@@ -162,11 +162,14 @@ ForgeWorld::~ForgeWorld() {
     }
 }
 
-void ForgeWorld::ClearWorld() {
-    std::cout << "[ForgeWorld] Salvataggio automatico e pulizia della memoria (ClearWorld)...\n";
-    
-    // 1. Salva sempre tutto su disco prima di distruggere per sicurezza!
-    SaveAllChunks();
+void ForgeWorld::ClearWorld(bool saveToDisk) {
+    if (saveToDisk) {
+        std::cout << "[ForgeWorld] Salvataggio automatico e pulizia della memoria (ClearWorld)...\n";
+        // 1. Salva sempre tutto su disco prima di distruggere per sicurezza!
+        SaveAllChunks();
+    } else {
+        std::cout << "[ForgeWorld] Pulizia della memoria (ClearWorld) senza salvataggio automatico...\n";
+    }
     
     // 2. Rimuovi le entità dalla RAM per fare spazio al nuovo stato
     for (auto& pair : m_activeChunks) {
@@ -176,6 +179,7 @@ void ForgeWorld::ClearWorld() {
     }
     m_activeChunks.clear();
 }
+
 
 void ForgeWorld::Initialize(SharedContext* context) {
     m_context = context;
@@ -353,13 +357,12 @@ bool ForgeWorld::SaveChunk(int cx, int cz) const {
     const auto& chunk = m_registry.get<VoxelChunkComponent>(it->second);
     if (!chunk.isGenerated) return false;
 
-    std::filesystem::create_directories("saves/world");
-    std::string filename = "saves/world/chunk_" + std::to_string(cx) + "_" + std::to_string(cz) + ".bin";
+    std::filesystem::create_directories(m_saveDir);
+    std::string filename = m_saveDir + "/chunk_" + std::to_string(cx) + "_" + std::to_string(cz) + ".bin";
     
     std::ofstream file(filename, std::ios::binary);
     if (!file) return false;
 
-    // Salviamo solo i blocchi e l'illuminazione per risparmiare spazio (32KB + 32KB = 64KB per chunk)
     file.write(reinterpret_cast<const char*>(chunk.blocks), sizeof(chunk.blocks));
     file.write(reinterpret_cast<const char*>(chunk.light), sizeof(chunk.light));
     file.close();
@@ -368,7 +371,7 @@ bool ForgeWorld::SaveChunk(int cx, int cz) const {
 }
 
 bool ForgeWorld::LoadChunk(int cx, int cz, VoxelChunkComponent& chunkData) const {
-    std::string filename = "saves/world/chunk_" + std::to_string(cx) + "_" + std::to_string(cz) + ".bin";
+    std::string filename = m_saveDir + "/chunk_" + std::to_string(cx) + "_" + std::to_string(cz) + ".bin";
     if (!std::filesystem::exists(filename)) return false;
 
     std::ifstream file(filename, std::ios::binary);
@@ -392,7 +395,7 @@ void ForgeWorld::SaveAllChunks() const {
         int cz = (int)(it.first & 0xFFFFFFFF);
         if (SaveChunk(cx, cz)) count++;
     }
-    std::cout << "[ForgeWorld] Salvati " << count << " chunk su disco in saves/world/." << std::endl;
+    std::cout << "[ForgeWorld] Salvati " << count << " chunk su disco in " << m_saveDir << "/." << std::endl;
 }
 
 entt::entity ForgeWorld::CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type) {
@@ -462,13 +465,15 @@ void ForgeWorld::Update(float dt) {
                 }
                 
                 // Controlliamo se durante la generazione il chunk è stato modificato di nuovo (es. il giocatore ha spaccato un altro blocco)
-                auto& dirty = m_registry.get<ChunkDirtyComponent>(def.targetEntity);
-                if (dirty.needsRebuild) {
-                    dirty.pendingJob = false;
-                    dirty.needsRebuild = false;
-                } else {
-                    // Rimuoviamo il tag Dirty SOLO ORA, indicando che il chunk è completato e pronto per la fisica
-                    m_registry.remove<ChunkDirtyComponent>(def.targetEntity);
+                auto* dirty = m_registry.try_get<ChunkDirtyComponent>(def.targetEntity);
+                if (dirty) {
+                    if (dirty->needsRebuild) {
+                        dirty->pendingJob = false;
+                        dirty->needsRebuild = false;
+                    } else {
+                        // Rimuoviamo il tag Dirty SOLO ORA, indicando che il chunk è completato e pronto per la fisica
+                        m_registry.remove<ChunkDirtyComponent>(def.targetEntity);
+                    }
                 }
                 // std::cout << "[ForgeWorld ECS] " << def.name << " aggiornato nell'ECS con successo!\n";
             } else {

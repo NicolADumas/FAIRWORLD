@@ -18,9 +18,9 @@ public:
             // Applica il nuovo stato
             m_currentState = std::move(m_pendingState);
             
-            auto result = m_currentState->Init();
-            if (!result.has_value()) {
-                std::cerr << "[StateManager ERROR] Inizializzazione stato fallita: " << result.error() << "\n";
+            bool result = m_currentState->Init();
+            if (!result) {
+                std::cerr << "[StateManager ERROR] Inizializzazione stato fallita.\n";
                 m_currentState.reset(); // Azzera in caso di fallimento critico
             }
         }

@@ -1683,6 +1683,22 @@ void RenderManager::DestroyChunkBuffer(ChunkCoord coord) {
     }
 }
 
+void RenderManager::InvalidateForgeCache() {
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    vkDeviceWaitIdle(m_device);
+    
+    // Clear legacy chunk buffers
+    for (auto& pair : m_chunkBuffers) {
+        if (pair.second.vertexBuffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_vmaAllocator, pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
+        }
+        if (pair.second.indexBuffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_vmaAllocator, pair.second.indexBuffer, pair.second.indexBufferAllocation);
+        }
+    }
+    m_chunkBuffers.clear();
+}
+
 void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     DestroyChunkBuffer(coord);
     if (vertices.empty() || indices.empty()) return;

@@ -54,9 +54,13 @@ public:
     // Inizializza il mondo della FORGE allocando la memoria dedicata e passandogli l'infrastruttura asincrona
     void Initialize(SharedContext* context);
     
+    // Imposta la directory di salvataggio ("saves/world" per PlayState, "saves/forge" per ForgeState)
+    void SetSaveDirectory(const std::string& dir) { m_saveDir = dir; }
+    const std::string& GetSaveDirectory() const { return m_saveDir; }
+
     // Pulisce tutti i chunk attuali per preparare un nuovo stato
-    void ClearWorld();
-    
+    void ClearWorld(bool saveToDisk = false);
+
     // Aggiornamento principale della FORGE (ECS Systems & Jobs)
     void Update(float dt);
     
@@ -144,6 +148,7 @@ private:
     std::unique_ptr<fw::memory::StackAllocator> m_frameAllocator;
     
     void* m_masterMemoryBlock = nullptr;
+    std::string m_saveDir = "saves/world"; // Directory di salvataggio (cambia per Forge vs Play)
     
     // -- DEFERRED COMMANDS (Thread-Safe) --
     struct DeferredMeshSpawn {

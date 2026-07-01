@@ -27,7 +27,7 @@ ForgeState::~ForgeState() {
     std::cout << "[ForgeState] Distrutto.\n";
 }
 
-std::expected<void, std::string> ForgeState::Init() {
+bool ForgeState::Init() {
     std::cout << "[ForgeState] Inizializzazione completata. Preparazione infrastruttura VRAM/DMA...\n";
     
     // Inizializzazione infrastruttura asincrona se non è già stata fatta a livello globale
@@ -84,7 +84,9 @@ std::expected<void, std::string> ForgeState::Init() {
     
     // Assicuriamoci che il mondo sia pulito da altri stati (es. PlayState)
     if (m_context && m_context->forgeWorld) {
-        m_context->forgeWorld->ClearWorld();
+        // La Forge usa la sua directory separata — le sculture non sovrascrivono mai il mondo di gioco!
+        m_context->forgeWorld->SetSaveDirectory("saves/forge");
+        m_context->forgeWorld->ClearWorld(true); // Salva le sculture precedenti prima di pulire
         m_context->forgeWorld->CreateChunkEntity("WorkspaceBlock", {0.0f, 0.0f, 0.0f});
     }
 
@@ -98,7 +100,7 @@ std::expected<void, std::string> ForgeState::Init() {
     }
     m_context->forgeWorld->EnqueueDeferredMesh("PreviewSphere", { 8.0f, 0.0f, 8.0f }, std::move(previewMesh));
     
-    return {};
+    return true;
 }
 
 void ForgeState::Update(float dt) {
@@ -106,27 +108,6 @@ void ForgeState::Update(float dt) {
     
     // Attiviamo il bypass della skybox nel renderer
     m_context->isForgeMode = true;
-
-    // Aggiorna l'anteprima colore e posizione del cursore
-    if (m_context->forgeWorld) {
-        auto view = m_context->forgeWorld->GetRegistry().view<fw::MeshComponent, fw::TransformComponent, fw::MetadataComponent>();
-        for(auto e : view) {
-            auto& meta = view.get<fw::MetadataComponent>(e);
-            if (meta.name == "PreviewSphere") {
-                auto& mesh = view.get<fw::MeshComponent>(e);
-                auto& mat = m_context->forgeWorld->GetPalette().materials[m_selectedColorIndex];
-                mesh.colorOverride[0] = mat.baseColor.x;
-                mesh.colorOverride[1] = mat.baseColor.y;
-                mesh.colorOverride[2] = mat.baseColor.z;
-                mesh.colorOverride[3] = 0.6f; // Semitrasparente
-                
-                auto& trans = view.get<fw::TransformComponent>(e);
-                trans.location.x = m_cursorX;
-                trans.location.y = m_cursorY;
-                trans.location.z = m_cursorZ;
-            }
-        }
-    }
 
     // --- ESECUZIONE SISTEMI ECS PER FREE-CAM ---
     for (auto& system : m_systems) {
@@ -138,23 +119,18 @@ void ForgeState::Update(float dt) {
         m_context->engine->Update(dt);
     }
     
-    // --- TELECAMERA ORBITALE (SOFTWARE EDITOR) ---
+    glm::vec3 rayTargetPos(-1000.0f);
+    bool validRayTarget = false;
+    
+    // --- TELECAMERA ORBITALE E RAYCASTING ---
     auto view = m_registry.view<CameraComponent, TransformComponent>();
     for (auto entity : view) {
         auto& cam = view.get<CameraComponent>(entity);
         auto& trans = view.get<TransformComponent>(entity);
         
-        // Input ImGui per l'orbit
         ImGuiIO& io = ImGui::GetIO();
         m_isMouseOverUI = io.WantCaptureMouse;
         
-        if (!m_isMouseOverUI && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-            m_orbitYaw += io.MouseDelta.x * 0.5f;
-            m_orbitPitch -= io.MouseDelta.y * 0.5f;
-            m_orbitPitch = std::clamp(m_orbitPitch, -89.0f, 89.0f);
-        }
-        
-        // Zoom con la rotellina
         // --- GESTIONE TELECAMERA (Orbitale vs Prima Persona POV) ---
         if (m_isFirstPerson) {
             // First Person POV (WASD + Mouse Look tenendo premuto il tasto destro)
@@ -233,16 +209,14 @@ void ForgeState::Update(float dt) {
         m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(m_cameraFov), aspect, 0.1f, 1000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Y flip per Vulkan
         
-        // --- INTERAZIONE / RAYCASTING (Software Style) ---
-        if (!m_isMouseOverUI && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        // --- CALCOLO RAYCAST (OGNI FRAME) ---
+        if (!m_isMouseOverUI) {
             glm::vec3 rayPos = m_context->activeCameraView.cameraPosition;
             glm::vec3 rayDir;
             
             if (m_isFirstPerson) {
-                // In POV spariamo il raggio esattamente in mezzo allo schermo (FPS style)
                 rayDir = m_context->activeCameraView.cameraFront;
             } else {
-                // In Orbitale usiamo la posizione del mouse
                 ImVec2 mousePos = ImGui::GetMousePos();
                 uint32_t width = m_context->engine->GetRenderManager()->GetWindowWidth();
                 uint32_t height = m_context->engine->GetRenderManager()->GetWindowHeight();
@@ -260,12 +234,10 @@ void ForgeState::Update(float dt) {
             }
             
             // Simple Raymarch (0.05 steps, max 50 units in FPS, 100 in Orbit)
-            float maxDist = m_isFirstPerson ? 10.0f : 100.0f; // POV ha range più corto, stile Minecraft
+            float maxDist = m_isFirstPerson ? 10.0f : 100.0f;
             glm::vec3 currentPos = rayPos;
             glm::vec3 prevPos = rayPos;
             bool hit = false;
-            fw::BlockType hitBlock = fw::BlockType::Air;
-            glm::vec3 normal = glm::vec3(0.0f);
             
             int maxSteps = (int)(maxDist / 0.05f);
             for (int i = 0; i < maxSteps; ++i) {
@@ -274,17 +246,9 @@ void ForgeState::Update(float dt) {
                 int by = std::floor(currentPos.y);
                 int bz = std::floor(currentPos.z);
                 
-                if (by >= 0 && by < 128) {
-                    fw::BlockType block = m_context->forgeWorld->GetBlock(bx, by, bz);
-                    if (block != fw::BlockType::Air) {
+                if (by >= 0 && by < 128 && bx >= 0 && bx < 16 && bz >= 0 && bz < 16) {
+                    if (m_context->forgeWorld->GetBlock(bx, by, bz) != fw::BlockType::Air) {
                         hit = true;
-                        hitBlock = block;
-                        
-                        // Calcola normale basata sulla differenza tra prevPos e currentPos
-                        int pbx = std::floor(prevPos.x);
-                        int pby = std::floor(prevPos.y);
-                        int pbz = std::floor(prevPos.z);
-                        normal = glm::vec3(pbx - bx, pby - by, pbz - bz);
                         break;
                     }
                 }
@@ -292,37 +256,123 @@ void ForgeState::Update(float dt) {
             }
             
             if (hit) {
+                validRayTarget = true;
                 if (m_selectedTool == 1) { // Place
-                    int px = std::floor(prevPos.x);
-                    int py = std::floor(prevPos.y);
-                    int pz = std::floor(prevPos.z);
-                    if(px >= 0 && px < 16 && py >= 0 && py < 128 && pz >= 0 && pz < 16) {
-                        m_context->forgeWorld->SetBlock(px, py, pz, (fw::BlockType)m_selectedColorIndex);
-                    }
+                    rayTargetPos = glm::vec3(std::floor(prevPos.x), std::floor(prevPos.y), std::floor(prevPos.z));
                 } else if (m_selectedTool == 2) { // Erase
-                    int bx = std::floor(currentPos.x);
-                    int by = std::floor(currentPos.y);
-                    int bz = std::floor(currentPos.z);
-                    if(bx >= 0 && bx < 16 && by >= 0 && by < 128 && bz >= 0 && bz < 16) {
-                        m_context->forgeWorld->SetBlock(bx, by, bz, fw::BlockType::Air);
-                    }
+                    rayTargetPos = glm::vec3(std::floor(currentPos.x), std::floor(currentPos.y), std::floor(currentPos.z));
+                } else { // Select (Default)
+                    rayTargetPos = glm::vec3(std::floor(currentPos.x), std::floor(currentPos.y), std::floor(currentPos.z));
                 }
             } else if (m_selectedTool == 1) { // Place (nel vuoto)
                 glm::vec3 placePos = rayPos + rayDir * (m_isFirstPerson ? 3.0f : m_orbitDistance);
-                int px = std::floor(placePos.x);
-                int py = std::floor(placePos.y);
-                int pz = std::floor(placePos.z);
-                if(px >= 0 && px < 16 && py >= 0 && py < 128 && pz >= 0 && pz < 16) {
-                    m_context->forgeWorld->SetBlock(px, py, pz, (fw::BlockType)m_selectedColorIndex);
+                rayTargetPos = glm::vec3(std::floor(placePos.x), std::floor(placePos.y), std::floor(placePos.z));
+                validRayTarget = true;
+            }
+            
+            // --- KEYBOARD CURSOR LOGIC (Camera-Relative) ---
+            static float move_timer = 0.0f;
+            move_timer -= dt;
+            
+            bool isUp = (GetAsyncKeyState(VK_UP) & 0x8000) != 0;
+            bool isDown = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
+            bool isLeft = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+            bool isRight = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+            bool isTab = (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
+            bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            bool isEnter = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+            
+            static bool enter_was_down = false;
+
+            if ((isUp || isDown || isLeft || isRight || isTab || isShift) && move_timer <= 0.0f) {
+                // Determina la direzione cardinale in base alla telecamera
+                glm::vec3 flatFront = glm::normalize(glm::vec3(cam.front.x, 0.0f, cam.front.z));
+                glm::vec3 flatRight = glm::normalize(glm::vec3(cam.right.x, 0.0f, cam.right.z));
+                
+                glm::vec3 cardinalFront(0,0,0);
+                if (std::abs(flatFront.x) > std::abs(flatFront.z)) {
+                    cardinalFront.x = flatFront.x > 0 ? 1.0f : -1.0f;
+                } else {
+                    cardinalFront.z = flatFront.z > 0 ? 1.0f : -1.0f;
+                }
+                
+                glm::vec3 cardinalRight(0,0,0);
+                if (std::abs(flatRight.x) > std::abs(flatRight.z)) {
+                    cardinalRight.x = flatRight.x > 0 ? 1.0f : -1.0f;
+                } else {
+                    cardinalRight.z = flatRight.z > 0 ? 1.0f : -1.0f;
+                }
+                
+                if (isUp) m_keyboardCursorPos += cardinalFront;
+                if (isDown) m_keyboardCursorPos -= cardinalFront;
+                if (isRight) m_keyboardCursorPos += cardinalRight;
+                if (isLeft) m_keyboardCursorPos -= cardinalRight;
+                if (isTab) m_keyboardCursorPos.y += 1.0f;
+                if (isShift) m_keyboardCursorPos.y -= 1.0f;
+                
+                m_useKeyboardCursor = true;
+                move_timer = 0.15f; // Cooldown per non schizzare via velocemente
+            }
+            
+            if (ImGui::GetIO().MouseDelta.x != 0.0f || ImGui::GetIO().MouseDelta.y != 0.0f || ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                m_useKeyboardCursor = false;
+            }
+
+            if (m_useKeyboardCursor) {
+                validRayTarget = true;
+                rayTargetPos = m_keyboardCursorPos;
+            } else {
+                // Sincronizza il cursore testiera con l'ultimo hit del mouse
+                if (validRayTarget) {
+                    m_keyboardCursorPos = rayTargetPos;
                 }
             }
+
+            // --- AZIONE AL CLICK O INVIO ---
+            if ((ImGui::IsMouseClicked(ImGuiMouseButton_Left) && validRayTarget) || (m_useKeyboardCursor && isEnter && !enter_was_down)) {
+                int px = (int)rayTargetPos.x;
+                int py = (int)rayTargetPos.y;
+                int pz = (int)rayTargetPos.z;
+                
+                if(px >= 0 && px < 16 && py >= 0 && py < 128 && pz >= 0 && pz < 16) {
+                    if (m_selectedTool == 1) { // Place
+                        m_context->forgeWorld->SetBlock(px, py, pz, (fw::BlockType)m_selectedColorIndex);
+                    } else if (m_selectedTool == 2) { // Erase
+                        m_context->forgeWorld->SetBlock(px, py, pz, fw::BlockType::Air);
+                    }
+                }
+            }
+            enter_was_down = isEnter;
         }
         
         break; // Only one camera
     }
     
-    // Aggiorniamo il mondo ECS della Forge
+    // --- AGGIORNA ANTEPRIMA VISIVA ---
     if (m_context->forgeWorld) {
+        auto viewWorld = m_context->forgeWorld->GetRegistry().view<fw::MeshComponent, fw::TransformComponent, fw::MetadataComponent>();
+        for(auto e : viewWorld) {
+            auto& meta = viewWorld.get<fw::MetadataComponent>(e);
+            if (meta.name == "PreviewSphere") {
+                auto& mesh = viewWorld.get<fw::MeshComponent>(e);
+                auto& trans = viewWorld.get<fw::TransformComponent>(e);
+                
+                if (validRayTarget) {
+                    // Offset di 0.5f per centrare il wireframe/cubo sulle coordinate intere
+                    trans.location.x = rayTargetPos.x + 0.5f;
+                    trans.location.y = rayTargetPos.y + 0.5f;
+                    trans.location.z = rayTargetPos.z + 0.5f;
+                    
+                    auto& mat = m_context->forgeWorld->GetPalette().materials[m_selectedColorIndex];
+                    mesh.colorOverride[0] = mat.baseColor.x;
+                    mesh.colorOverride[1] = mat.baseColor.y;
+                    mesh.colorOverride[2] = mat.baseColor.z;
+                    mesh.colorOverride[3] = 0.6f; // Alpha for transparency
+                } else {
+                    trans.location.y = -100.0f; // Nascondi
+                }
+            }
+        }
         m_context->forgeWorld->Update(dt);
     }
 }
@@ -391,23 +441,7 @@ void ForgeState::Render() {
         
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::Text("Cursore 3D (Coordinate)");
-        ImGui::SliderInt("Asse X", &m_cursorX, 0, 15);
-        ImGui::SliderInt("Asse Y", &m_cursorY, 0, 15);
-        ImGui::SliderInt("Asse Z", &m_cursorZ, 0, 15);
-        
-        if (m_context && m_context->forgeWorld) {
-            if (ImGui::Button("Piazza Blocco", ImVec2(100, 25))) {
-                m_context->forgeWorld->SetBlock(m_cursorX, m_cursorY, m_cursorZ, (fw::BlockType)m_selectedColorIndex);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Rimuovi Blocco", ImVec2(100, 25))) {
-                m_context->forgeWorld->SetBlock(m_cursorX, m_cursorY, m_cursorZ, fw::BlockType::Air);
-            }
-        }
-        
-        ImGui::Spacing();
-        ImGui::Separator();
+
         ImGui::Text("Materiali PBR (Selezionato: %d / %d)", m_selectedColorIndex, m_activeMaterialsCount);
         
         // Pulsanti di navigazione tra i materiali attivi
@@ -511,6 +545,13 @@ void ForgeState::Render() {
             if (mat.transmission > 0.0f) {
                 if (ImGui::SliderFloat("IOR (Rifrazione)", &mat.ior, 1.0f, 3.0f)) paletteChanged = true;
             }
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Text("Proprietà Fisiche (Jolt)");
+            if (ImGui::SliderFloat("Massa (kg)", &mat.mass, 0.0f, 500.0f, "%.1f")) paletteChanged = true;
+            if (ImGui::SliderFloat("Attrito", &mat.friction, 0.0f, 1.0f)) paletteChanged = true;
+            if (ImGui::SliderFloat("Rimbalzo", &mat.restitution, 0.0f, 1.0f)) paletteChanged = true;
             
             ImGui::Spacing();
             

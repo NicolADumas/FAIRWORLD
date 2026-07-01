@@ -56,8 +56,13 @@ struct ForgeMaterial {
     float ior                = 1.5f; // Indice di Rifrazione (1.0 aria, 1.33 acqua, 1.5 vetro)
     
     // Per ora non usiamo le texture, ma le lasciamo per il futuro
-    std::string albedoMap;
-    std::string normalMap;
+    char albedoMap[64] = {0};
+    char normalMap[64] = {0};
+    
+    // --- Fisica (Jolt) ---
+    float mass               = 1.0f;  // Massa del materiale in kg (se 0.0f il blocco è statico/cinematico)
+    float friction           = 0.5f;  // Attrito (0.0 scivoloso, 1.0 massima aderenza)
+    float restitution        = 0.0f;  // Bounciness (Rimbalzo)
     
     // --- Iniezione Minivoxel ---
     uint8_t fallbackBlockId = 1; // Default to Grass/Stone ID per l'iniezione in Fairworld

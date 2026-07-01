@@ -282,6 +282,9 @@ public:
     // Carica la geometria dei blocchi fantasma sulla GPU
     void UploadGhostMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
 
+    // Invalida la cache di rendering del mondo procedurale (es. Chunk, buffer pendenti)
+    void InvalidateForgeCache();
+
 private:
     void RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, struct SharedContext* context, class AssetManager* assets, class MobManager* mobManager, class Player* player);
 

@@ -15,7 +15,7 @@ public:
     explicit ForgeState(SharedContext* context);
     ~ForgeState() override;
 
-    std::expected<void, std::string> Init() override;
+    bool Init() override;
     void Update(float dt) override;
     void Render() override;
     
@@ -40,15 +40,14 @@ private:
     int m_exportPlacementMode = 0; // 0 = Prefab (Struttura PBR), 1 = Minivoxel (Iniezione)
     bool m_isMouseOverUI = false;
 
-    // --- CAD-Style Cursor (X, Y, Z) ---
-    int m_cursorX = 8;
-    int m_cursorY = 0;
-    int m_cursorZ = 8;
-    
     // --- Camera & POV ---
     bool m_isFirstPerson = false;
-    float m_cameraFov = 45.0f;
+    float m_cameraFov = 75.0f;
     float m_fpYaw = -90.0f;
     float m_fpPitch = 0.0f;
     glm::vec3 m_fpPosition = glm::vec3(8.0f, 8.0f, 25.0f);
+
+    // --- Keyboard Cursor ---
+    bool m_useKeyboardCursor = false;
+    glm::vec3 m_keyboardCursorPos = glm::vec3(8.0f, 0.0f, 8.0f);
 };

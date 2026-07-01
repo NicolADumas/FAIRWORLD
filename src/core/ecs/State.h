@@ -1,5 +1,5 @@
 #pragma once
-#include <expected>
+
 #include <string>
 #include <entt/entt.hpp>
 
@@ -12,7 +12,7 @@ public:
     State(const State&) = delete;
     State& operator=(const State&) = delete;
 
-    virtual std::expected<void, std::string> Init() = 0;
+    virtual bool Init() = 0;
     virtual void Update(float dt) = 0;
     virtual void Render() = 0;
     

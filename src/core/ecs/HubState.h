@@ -8,7 +8,7 @@ public:
     explicit HubState(SharedContext* context);
     ~HubState() override;
 
-    std::expected<void, std::string> Init() override;
+    bool Init() override;
     void Update(float dt) override;
     void Render() override;
 

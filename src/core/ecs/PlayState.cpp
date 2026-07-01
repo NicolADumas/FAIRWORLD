@@ -17,6 +17,7 @@
 #include "ForgeWorld.h"
 #include "RenderManager.h"
 #include "AsyncInput.h"
+#include <imgui.h>
 
 using json = nlohmann::json;
 
@@ -53,7 +54,7 @@ void PlayState::RefreshAvailableStructures() {
     }
 }
 
-std::expected<void, std::string> PlayState::Init() {
+bool PlayState::Init() {
     // === REGISTRAZIONE DEL KERNEL BUS INPUT (Action Mapping) ===
     // Le stringhe vengono hashate a compile-time da EnTT: costo zero a runtime
     using namespace entt::literals;
@@ -155,6 +156,10 @@ std::expected<void, std::string> PlayState::Init() {
     rbOpt.body.mass = 70.0f;
 
     // --- INIZIALIZZAZIONE FORGE ---
+    m_context->isForgeMode = false;
+    // Il PlayState usa la directory saves/world/ — separata dalla Forge (saves/forge/)
+    // I chunk già esistenti vengono caricati dal disco, quelli mancanti sono generati proceduralmente
+    m_context->forgeWorld->SetSaveDirectory("saves/world");
     m_context->forgeWorld->ClearWorld();
     
     // Setup Base Palette per Fairworld
@@ -217,7 +222,7 @@ std::expected<void, std::string> PlayState::Init() {
     m_systems.push_back(std::make_unique<fw::CameraSyncSystem>());
 
     std::cout << "[PlayState] Generazione procedurale prato e montagne completata. Avvio ciclo di gioco...\n";
-    return {};
+    return true;
 }
 
 void PlayState::Update(float dt) {
@@ -248,6 +253,71 @@ void PlayState::Update(float dt) {
     // Aggiunto l'aggiornamento di ForgeWorld per permettere la generazione asincrona dei chunk
     if (m_context && m_context->forgeWorld) {
         m_context->forgeWorld->Update(dt);
+    }
+
+    // --- ASSET BROWSER (Key 'B') ---
+    static bool bKeyWasDown = false;
+    bool bKeyDown = (GetAsyncKeyState('B') & 0x8000) != 0;
+    if (bKeyDown && !bKeyWasDown) {
+        m_showAssetBrowser = !m_showAssetBrowser;
+        if (m_showAssetBrowser) {
+            RefreshAvailableRigs();
+            m_context->deviceManager->requireFreeCursor = true;
+        } else {
+            m_context->deviceManager->requireFreeCursor = false;
+            m_isPlacingRig = false;
+        }
+    }
+    bKeyWasDown = bKeyDown;
+
+    if (m_showAssetBrowser) {
+        ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Global Asset Browser", &m_showAssetBrowser)) {
+            ImGui::Text("Rigs Disponibili:");
+            ImGui::Separator();
+            for (const auto& rig : m_availableRigs) {
+                if (ImGui::Button(rig.name.c_str(), ImVec2(-1, 30))) {
+                    m_isPlacingRig = true;
+                    m_rigToPlace = rig.path;
+                    m_showAssetBrowser = false; // Nascondi browser per piazzare
+                    // Mantieni il cursore libero disabilitato per guardarsi attorno mentre si piazza (opzionale)
+                }
+            }
+        }
+        ImGui::End();
+        
+        if (!m_showAssetBrowser && !m_isPlacingRig) {
+            m_context->deviceManager->requireFreeCursor = false;
+        }
+    }
+
+    if (m_isPlacingRig) {
+        glm::vec3 rayOrigin = m_context->activeCameraView.cameraPosition;
+        glm::vec3 rayDir = glm::normalize(m_context->activeCameraView.cameraFront);
+        
+        // Raycast semplificato al piano Y=0 per spawnare veicoli/mob
+        // In un caso reale useresti m_context->engine->GetPhysicsEngine()
+        float t = -rayOrigin.y / rayDir.y;
+        if (t > 0 && t < 50.0f) {
+            m_ghostPos = rayOrigin + rayDir * t;
+            m_ghostPos.y += 0.5f; // Offset altezza
+            
+            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2 - 150, ImGui::GetIO().DisplaySize.y - 100));
+            ImGui::Begin("Placing UI", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Click Sinistro: Piazza | Click Destro: Annulla");
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Target: %.1f, %.1f, %.1f", m_ghostPos.x, m_ghostPos.y, m_ghostPos.z);
+            ImGui::End();
+            
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().WantCaptureMouse) {
+                SpawnRig(m_rigToPlace, m_ghostPos);
+                m_isPlacingRig = false;
+                m_context->deviceManager->requireFreeCursor = false;
+            }
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::GetIO().WantCaptureMouse) {
+                m_isPlacingRig = false;
+                m_context->deviceManager->requireFreeCursor = false;
+            }
+        }
     }
 
     m_context->engine->Update(dt);
@@ -297,4 +367,55 @@ void PlayState::Render() {
     }
 
     m_context->engine->Render();
+}
+
+void PlayState::RefreshAvailableRigs() {
+    m_availableRigs.clear();
+    try {
+        if (std::filesystem::exists("assets/rigs")) {
+            for (const auto& entry : std::filesystem::directory_iterator("assets/rigs")) {
+                if (entry.path().extension() == ".fwrig") {
+                    m_availableRigs.push_back({entry.path().stem().string(), entry.path().string()});
+                }
+            }
+        }
+    } catch (...) {}
+}
+
+void PlayState::SpawnRig(const std::string& rigPath, const glm::vec3& position) {
+    std::cout << "[PlayState] Spawning Rig " << rigPath << " a " << position.x << ", " << position.y << ", " << position.z << std::endl;
+    try {
+        std::ifstream file(rigPath);
+        if (!file.is_open()) {
+            std::cerr << "Errore: Impossibile aprire " << rigPath << std::endl;
+            return;
+        }
+        json j;
+        file >> j;
+        
+        entt::entity rootEntity = entt::null;
+        
+        if (j.contains("joints") && j["joints"].is_array()) {
+            // Per ora lo spawn carica le entità visive associate alla rig
+            for (const auto& jointJson : j["joints"]) {
+                std::string meshPath = jointJson.value("meshPath", "");
+                if (!meshPath.empty()) {
+                    auto entity = m_registry.create();
+                    if (rootEntity == entt::null) rootEntity = entity;
+                    
+                    m_registry.emplace<NameComponent>(entity, jointJson.value("name", "Bone"));
+                    
+                    auto& tc = m_registry.emplace<TransformComponent>(entity);
+                    // Applica l'offset locale combinato alla posizione base
+                    tc.x = position.x;
+                    tc.y = position.y;
+                    tc.z = position.z;
+                    // L'integrazione completa del PhysicsEngine creerebbe i Constraint SixDOF qui.
+                }
+            }
+        }
+        std::cout << "[PlayState] Rig instanziata con successo!\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[PlayState] Errore nello spawn del rig: " << e.what() << std::endl;
+    }
 }

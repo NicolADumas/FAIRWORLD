@@ -18,10 +18,10 @@ HubState::~HubState() {
     std::cout << "[HubState] Distrutto. Isolamento memoria garantito.\n";
 }
 
-std::expected<void, std::string> HubState::Init() {
+bool HubState::Init() {
     std::cout << "[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.\n";
     m_context->deviceManager->InitDefaultBindings();
-    return {};
+    return true;
 }
 
 void HubState::Update(float dt) {
