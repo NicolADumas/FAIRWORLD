@@ -5,6 +5,7 @@ project(FAIRWORLD VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
 
 # Direzioniamo gli output di compilazione nella cartella 'bin'
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
@@ -13,6 +14,26 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/modules)
 # --- 1. DIPENDENZE ---
 # Trova l'SDK di Vulkan installato nel sistema
 find_package(Vulkan REQUIRED)
+
+include(FetchContent)
+
+# JoltPhysics Configuration (Strict AAA Performance settings)
+set(TARGET_ENABLE_RTTI OFF CACHE BOOL "Enable RTTI in Jolt" FORCE)
+set(TARGET_ENABLE_EXCEPTIONS OFF CACHE BOOL "Enable exceptions in Jolt" FORCE)
+set(USE_AVX2 ON CACHE BOOL "Enable AVX2 for Jolt" FORCE)
+set(USE_SSE4_2 ON CACHE BOOL "Enable SSE4.2 for Jolt" FORCE)
+set(ENABLE_PROFILER OFF CACHE BOOL "Disable Jolt Profiler" FORCE)
+set(ENABLE_ASSERTS OFF CACHE BOOL "Disable Jolt Asserts" FORCE)
+
+FetchContent_Declare(
+    joltphysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG        v5.0.0
+    SOURCE_SUBDIR  Build
+)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "Disable warnings as errors in Jolt" FORCE)
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "Use dynamic MSVC runtime for Jolt" FORCE)
+FetchContent_MakeAvailable(joltphysics)
 
 file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/render/*.cpp")
 list(APPEND CORE_SOURCES "src/core/ecs/PortalSystem.cpp")
@@ -33,10 +54,11 @@ target_include_directories(FairworldCore PRIVATE
     third_party/imgui 
     packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/include 
     packages/OpenXR.Headers.1.0.10.2/include
+    ${joltphysics_SOURCE_DIR}
 )
 
-# Linkiamo Vulkan e librerie OS al Core
-target_link_libraries(FairworldCore PRIVATE Vulkan::Vulkan)
+# Linkiamo Vulkan, Jolt e librerie OS al Core
+target_link_libraries(FairworldCore PRIVATE Vulkan::Vulkan Jolt)
 target_link_libraries(FairworldCore PRIVATE ${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll.lib)
 target_link_libraries(FairworldCore PRIVATE ${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/lib/openxr_loader.lib)
 
@@ -87,3 +109,4 @@ target_include_directories(Module_Sculpting PRIVATE src/core src/core/ecs src/co
 target_include_directories(Module_GeometryNodes PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
 
 # Trigger CMake re-generation (Systems.cpp aggiunto)
+ 

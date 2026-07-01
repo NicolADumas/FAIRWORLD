@@ -73,6 +73,13 @@ struct SharedContext {
     // --- DEVMODE INVENTORY BUS ---
     std::string devSelectedBlock = ""; // Se vuota, usa inventario standard
     int devPlacementMode = 0; // 0 = Prefab, 1 = Minivoxel
+    
+    struct InventoryItem {
+        std::string name;
+        int type; // 0 = Structure/Prefab, 1 = Minivoxel
+    };
+    std::vector<InventoryItem> devInventory;
+    std::vector<InventoryItem> playInventory;
 
     // --- BUS DATI ---
     std::string targetGameJsonPath;

@@ -292,9 +292,17 @@ void ForgeWorld::GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz) {
             double worldZ = cz * 16.0 + z;
             
             // FBM (Fractal Brownian Motion)
-            double scale = 0.02; 
+            double scale = 0.01; // Scala più grande per rendere le montagne più ampie e distanziate
             double noiseVal = m_noiseGen.octaveNoise(worldX * scale, 0.0, worldZ * scale, 4, 0.5);
-            int height = 20 + (int)(noiseVal * 40.0);
+            
+            // Il noise standard di solito va da -1 a 1, lo mappiamo a 0..1
+            double normalizedNoise = (noiseVal + 1.0) * 0.5;
+            
+            // Usiamo una potenza (es. 3.0) per "schiacciare" le valli e trasformarle in ampie pianure piatte
+            // mentre i picchi (valori alti del rumore) rimarranno prominenti (montagne).
+            double shapedNoise = std::pow(normalizedNoise, 3.0);
+            
+            int height = 20 + (int)(shapedNoise * 80.0);
             
             for (int y = 0; y < height; ++y) {
                 if (y == height - 1) {
@@ -995,6 +1003,69 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
     
     // Aggiungiamo il componente chunk così sappiamo cosa contiene se serve in futuro
     m_registry.emplace<VoxelChunkComponent>(prefabEntity, *chunkData);
+    
+    // --- CALCOLO MASS PROPERTIES PROCEDURALE ---
+    MassPropertiesComponent massProps;
+    float totalMass = 0.0f;
+    glm::vec3 com(0.0f);
+    
+    // 1. Calcolo Massa Totale e Centro di Massa
+    for (int x = 0; x < 16; ++x) {
+        for (int y = 0; y < 128; ++y) {
+            for (int z = 0; z < 16; ++z) {
+                uint8_t block = chunkData->blocks[x][y][z];
+                if (block != 0) {
+                    // Massa di base: potremmo usare la densità dal materiale, per ora 10 kg per voxel
+                    float m = 10.0f; 
+                    totalMass += m;
+                    com += glm::vec3(x, y, z) * m;
+                }
+            }
+        }
+    }
+    
+    if (totalMass > 0.0f) {
+        com /= totalMass;
+        massProps.mass = totalMass;
+        massProps.centerOfMass = com;
+        
+        // 2. Calcolo Tensore di Inerzia rispetto al Centro di Massa
+        float Ixx = 0, Iyy = 0, Izz = 0;
+        float Ixy = 0, Ixz = 0, Iyz = 0;
+        
+        for (int x = 0; x < 16; ++x) {
+            for (int y = 0; y < 128; ++y) {
+                for (int z = 0; z < 16; ++z) {
+                    uint8_t block = chunkData->blocks[x][y][z];
+                    if (block != 0) {
+                        float m = 10.0f;
+                        glm::vec3 r = glm::vec3(x, y, z) - com;
+                        
+                        Ixx += m * (r.y * r.y + r.z * r.z);
+                        Iyy += m * (r.x * r.x + r.z * r.z);
+                        Izz += m * (r.x * r.x + r.y * r.y);
+                        
+                        Ixy -= m * (r.x * r.y);
+                        Ixz -= m * (r.x * r.z);
+                        Iyz -= m * (r.y * r.z);
+                    }
+                }
+            }
+        }
+        
+        // Assegna alla matrice colonna-major
+        massProps.inertiaTensor[0] = glm::vec3(Ixx, Ixy, Ixz);
+        massProps.inertiaTensor[1] = glm::vec3(Ixy, Iyy, Iyz);
+        massProps.inertiaTensor[2] = glm::vec3(Ixz, Iyz, Izz);
+    } else {
+        // Fallback per entità vuote
+        massProps.mass = 1.0f;
+        massProps.inertiaTensor = glm::mat3(1.0f);
+    }
+    
+    m_registry.emplace<MassPropertiesComponent>(prefabEntity, massProps);
+    // -------------------------------------------
+
     
     // Avviamo il job per generare la Mesh asincronamente usando la SUA palette
     if (m_context && m_context->jobSystem) {

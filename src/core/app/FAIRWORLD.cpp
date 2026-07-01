@@ -32,7 +32,7 @@ using namespace entt::literals;
 using json = nlohmann::json;
 
 std::string FairWorldEngine::GetSlotName(int slotIndex) {
-    if (slotIndex < 0 || slotIndex >= Inventory::HOTBAR_SIZE) return "Unknown";
+    if (slotIndex < 0 || slotIndex >= Inventory::INVENTORY_SIZE) return "Unknown";
     
     const InventoryItem& item = m_player.inventory.slots[slotIndex];
     if (item.IsEmpty()) return "Empty";
@@ -48,6 +48,12 @@ std::string FairWorldEngine::GetSlotName(int slotIndex) {
         return "Weapon";
     } else if (item.type == ItemType::Consumable) {
         return "Consumable";
+    } else if (item.type == ItemType::Structure) {
+        return "Struttura: " + item.stringId;
+    } else if (item.type == ItemType::MiniVoxel) {
+        return "Voxel: " + item.stringId;
+    } else if (item.type == ItemType::Creature) {
+        return "Mob: " + item.stringId;
     } else if (item.type == ItemType::Tool) {
         if (!item.stringId.empty()) {
             return item.stringId;
@@ -187,6 +193,18 @@ FairWorldEngine::~FairWorldEngine() {
 }
 
 bool FairWorldEngine::Init() {
+    std::cout << "==========================================\n";
+    std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE V2   \n";
+    std::cout << "==========================================\n\n";
+
+    // Mostra il menu testuale sulla console
+    std::cout << "Seleziona la modalita' di avvio:\n";
+    std::cout << "1. PlayState (Mondo di Gioco, Esplorazione e Costruzione)\n";
+    std::cout << "2. ForgeState (Editor Strutture e Minivoxel)\n";
+    std::cout << "3. HubState (Hub Principale)\n";
+    std::cout << "4. PhysicsLabState (Test Fisica e Materiali)\n";
+    std::cout << "Scelta [1-4] (predefinito 1): ";
+
     std::cout << "[SYSTEM] Inizializzazione Finestra Principale..." << std::endl;
     if (!m_windowManager->Init(1280, 720, "FAIRWORLD")) {
         return false;
@@ -1804,7 +1822,7 @@ void FairWorldEngine::renderPauseMenu() {
     if (ImGui::Button("  Menu Principale", ImVec2(btnW, btnH))) {
         if (m_sharedContext && m_sharedContext->stateManager) {
             m_sharedContext->stateManager->ChangeState(std::make_unique<HubState>(m_sharedContext));
-            transitionTo(GameState::PLAYING); // Chiudi il menu di pausa interno
+            transitionTo(GameState::MAIN_MENU); // Ritorna al menu principale
         } else {
             transitionTo(GameState::MAIN_MENU);
         }

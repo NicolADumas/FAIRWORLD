@@ -8,7 +8,10 @@ enum class ItemType {
     Block,
     Weapon,
     Consumable,
-    Tool
+    Tool,
+    Structure,
+    MiniVoxel,
+    Creature
 };
 
 struct InventoryItem {

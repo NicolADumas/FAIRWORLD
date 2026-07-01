@@ -205,4 +205,50 @@ struct PortalComponent {
     bool isActive = true;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENTI GIUNTI E CINEMATICA (PHYSICS LAB)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum class JointType { Hinge, Pivot, Universal, BallAndSocket, Fixed };
+
+struct JointComponent {
+    entt::entity parentEntity = entt::null;
+    entt::entity childEntity = entt::null;
+    
+    JointType type = JointType::Hinge;
+    
+    // Matrice di offset locale rispetto al parent
+    Mat4 localRestTransform = Mat4::identity();
+    
+    // Asse di rotazione (es. per Hinge)
+    Vec3 axis = {1.0f, 0.0f, 0.0f};
+    
+    float limitMin = -3.14159f;
+    float limitMax = 3.14159f;
+};
+
+struct MotorControllerComponent {
+    float targetAngle = 0.0f; // Target gestito dall'animazione
+    
+    // Guadagni PID
+    float Kp = 10.0f;
+    float Ki = 0.0f;
+    float Kd = 1.0f;
+    
+    float maxTorque = 100.0f; // Coppia massima erogabile
+    
+    // Stato interno del PID (aggiornato dal Fixed Timestep Loop)
+    float integralError = 0.0f;
+    float previousError = 0.0f;
+};
+
+// Lock-Free Command Queue element (per ImGui -> Physics Thread)
+struct SetPidCommand {
+    entt::entity entity;
+    float Kp;
+    float Ki;
+    float Kd;
+    float maxTorque;
+};
+
 } // namespace fw

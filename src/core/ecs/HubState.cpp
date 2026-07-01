@@ -6,6 +6,7 @@
 #include "PlayState.h"
 #include "ForgeState.h"
 #include "FAIRWORLD.h"
+#include "PhysicsLabState.h"
 #include <iostream>
 #include "imgui.h"
 
@@ -62,11 +63,11 @@ void HubState::Render() {
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
 
-        // --- GRIGLIA CANALI WII ---
+        // --- GRIGLIA CANALI WII (2x2) ---
         float channelWidth = 300.0f;
         float channelHeight = 200.0f;
         float padding = 30.0f;
-        float startX = (viewport->Size.x - (channelWidth * 3 + padding * 2)) / 2.0f;
+        float startX = (viewport->Size.x - (channelWidth * 2 + padding)) / 2.0f;
         float startY = 150.0f;
 
         // Canale 1: Esecuzione Progetti (Il "Disco" del Gioco)
@@ -77,6 +78,8 @@ void HubState::Render() {
         if (ImGui::Button("FAIRWORLD\n[ Avvia Progetto JSON ]", ImVec2(channelWidth, channelHeight))) {
             std::cout << "[HubState] Avvio Cartuccia JSON richiesto.\n";
             m_context->targetGameJsonPath = "projects/game_config.json";
+            m_context->engine->SetGameMode(GameMode::Play);
+            m_context->engine->ForceGameState(GameState::PLAYING);
             m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
         }
         ImGui::PopStyleColor(3);
@@ -88,17 +91,30 @@ void HubState::Render() {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
         if (ImGui::Button("LA FORGE\n[ Entra in Officina 3D ]", ImVec2(channelWidth, channelHeight))) {
             std::cout << "[HubState] Transizione alla Forge 3D.\n";
+            m_context->engine->SetGameMode(GameMode::Dev);
+            m_context->engine->ForceGameState(GameState::PLAYING);
             m_context->stateManager->ChangeState(std::make_unique<ForgeState>(m_context));
         }
         ImGui::PopStyleColor(3);
 
-        // Canale 3: Gestione Dispositivi (Spostato giu' o a destra)
-        ImGui::SetCursorPos(ImVec2(startX + (channelWidth + padding) * 2, startY));
+        // Canale 3: PHYSICS LAB (Nuova Aggiunta)
+        ImGui::SetCursorPos(ImVec2(startX, startY + channelHeight + padding));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.8f, 0.4f, 1.0f)); // Verde
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
+        if (ImGui::Button("PHYSICS LAB\n[ Calibrazione Materiali ]", ImVec2(channelWidth, channelHeight))) {
+            std::cout << "[HubState] Transizione a Physics Lab.\n";
+            m_context->engine->SetGameMode(GameMode::PhysicsLab);
+            m_context->engine->ForceGameState(GameState::PLAYING);
+            m_context->stateManager->ChangeState(std::make_unique<PhysicsLabState>(m_context));
+        }
+        ImGui::PopStyleColor(3);
+
+        // Canale 4: Gestione Dispositivi
+        ImGui::SetCursorPos(ImVec2(startX + channelWidth + padding, startY + channelHeight + padding));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.9f, 0.9f, 1.0f)); // Grigio
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        
-
         if (ImGui::Button("CONNESSIONE DISPOSITIVI\n[ Impostazioni Hardware ]", ImVec2(channelWidth, channelHeight))) {
             showDeviceManager = true;
         }

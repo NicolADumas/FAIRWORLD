@@ -179,40 +179,9 @@ std::expected<void, std::string> PlayState::Init() {
             std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
             entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
             auto& chunk = registry.get<fw::VoxelChunkComponent>(chunkEnt);
-            
-            for (int x = 0; x < 16; ++x) {
-                for (int z = 0; z < 16; ++z) {
-                    float worldX = cx * 16.0f + x;
-                    float worldZ = cz * 16.0f + z;
-                    // Centro esatto della griglia chunk è 8X, 8Z
-                    float dx = worldX - 8.0f;
-                    float dz = worldZ - 8.0f;
-                    float distFromCenter = std::sqrt(dx * dx + dz * dz);
-                    
-                    int height = 50; // Livello base del prato
-                    bool isMountain = false;
-                    
-                    // Creiamo l'anello di montagne ai bordi
-                    float mountainRadius = (chunkRadius - 1) * 16.0f;
-                    if (distFromCenter > mountainRadius) {
-                        float intensity = distFromCenter - mountainRadius;
-                        height += static_cast<int>(intensity * 1.8f); // Pendenza della montagna
-                        isMountain = true;
-                    }
-                    
-                    if (height > 127) height = 127;
-                    
-                    for (int y = 0; y <= height; ++y) {
-                        if (y == height) {
-                            chunk.blocks[x][y][z] = isMountain ? 2 : 1; // Cima: Roccia o Erba
-                        } else if (y > height - 3 && !isMountain) {
-                            chunk.blocks[x][y][z] = 3; // Terra sotto l'erba
-                        } else {
-                            chunk.blocks[x][y][z] = 2; // Roccia per il resto
-                        }
-                    }
-                }
-            }
+            // Non riempiamo più manualmente i blocchi qui.
+            // Il job in background di ForgeWorld chiamerà automaticamente GenerateChunkData
+            // che utilizza FBM noise per generare colline, montagne e alberi!
             
             // Forza la generazione della mesh per questo chunk (ora gestito in sicurezza da ForgeWorld)
             m_context->forgeWorld->MarkChunkDirty(chunkEnt);

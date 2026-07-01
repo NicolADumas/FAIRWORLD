@@ -1352,6 +1352,20 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         // Le mesh del ForgeWorld usano PBR e push constants dedicate
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
         
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float)m_swapchainExtent.width;
+        viewport.height = (float)m_swapchainExtent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = m_swapchainExtent;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
         ForgePushConstantData pcData{};
         VkDeviceSize offsets[] = { 0 };
 

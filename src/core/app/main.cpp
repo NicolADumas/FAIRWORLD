@@ -9,9 +9,11 @@
 #include "HubState.h"
 #include "ForgeState.h"
 #include "PlayState.h"
+#include "PhysicsLabState.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
+#include "JoltPhysicsSystem.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -48,13 +50,16 @@ int main() {
     std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE V2   \n";
     std::cout << "==========================================\n\n";
 
+    fw::JoltPhysicsSystem::InitializeGlobals();
+
     StartAIServer();
 
     std::cout << "\nSeleziona la modalita' di avvio:\n";
     std::cout << "1. PlayState (Mondo di Gioco, Esplorazione e Costruzione)\n";
     std::cout << "2. ForgeState (Editor Strutture e Minivoxel)\n";
     std::cout << "3. HubState (Hub Principale)\n";
-    std::cout << "Scelta [1-3] (predefinito 1): ";
+    std::cout << "4. PhysicsLabState (Test Fisica e Materiali)\n";
+    std::cout << "Scelta [1-4] (predefinito 1): ";
     
     int choice = 1;
     std::string input;
@@ -84,12 +89,19 @@ int main() {
     // 3. Bootstrap: Avvia lo stato selezionato
     if (choice == 2) {
         stateManager.ChangeState(std::make_unique<ForgeState>(&context));
+        engine.SetGameMode(GameMode::Dev);
         std::cout << "[SYSTEM] Avviato ForgeState...\n";
     } else if (choice == 3) {
         stateManager.ChangeState(std::make_unique<HubState>(&context));
+        engine.SetGameMode(GameMode::Hub);
         std::cout << "[SYSTEM] Avviato HubState...\n";
+    } else if (choice == 4) {
+        stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
+        engine.SetGameMode(GameMode::PhysicsLab);
+        std::cout << "[SYSTEM] Avviato PhysicsLabState...\n";
     } else {
         stateManager.ChangeState(std::make_unique<PlayState>(&context));
+        engine.SetGameMode(GameMode::Play);
         std::cout << "[SYSTEM] Avviato PlayState...\n";
     }
 
@@ -161,5 +173,6 @@ while (context.engine->IsRunning()) {
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";
     engine.Shutdown();
     StopAIServer();
+    fw::JoltPhysicsSystem::ShutdownGlobals();
     return 0;
 }

@@ -25,6 +25,16 @@ struct TransformComponent {
 };
 
 // =============================================================================
+// MassPropertiesComponent
+// Contiene le proprietà fisiche calcolate proceduralmente per un'entità.
+// =============================================================================
+struct MassPropertiesComponent {
+    float mass = 0.0f;
+    glm::vec3 centerOfMass = glm::vec3(0.0f);
+    glm::mat3 inertiaTensor = glm::mat3(0.0f);
+};
+
+// =============================================================================
 // CameraComponent
 // I vettori direzionali derivati dalla rotazione vengono aggiornati ogni tick.
 // pitch/yaw sono mantenuti qui (in float) solo come accumulatori per l'input

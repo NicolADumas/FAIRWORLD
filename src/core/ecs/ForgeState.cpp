@@ -522,10 +522,58 @@ void ForgeState::Render() {
         
         ImGui::Spacing();
         ImGui::Separator();
-        if (ImGui::Button("Salva Modello", ImVec2(-1, 30))) {
-            std::cout << "[Forge] Salvataggio modello...\n";
-            // TODO: Implementare esportazione .fwblock
+        ImGui::Text("Esportazione Asset");
+        
+        ImGui::InputText("Nome", m_structureNameBuffer, IM_ARRAYSIZE(m_structureNameBuffer));
+        ImGui::RadioButton("Struttura PBR (Mondo)", &m_exportPlacementMode, 0);
+        ImGui::RadioButton("MiniVoxel (Oggetto)", &m_exportPlacementMode, 1);
+
+        if (ImGui::Button("Salva in Inventario DEV", ImVec2(-1, 30))) {
+            std::string nameStr(m_structureNameBuffer);
+            if (!nameStr.empty()) {
+                std::cout << "[Forge] Salvataggio modello: " << nameStr << "\n";
+                // Salvataggio fisico su disco nella cartella assets/blocks/
+                m_context->forgeWorld->SaveStructure(nameStr, m_exportPlacementMode);
+                m_context->devInventory.push_back({nameStr, m_exportPlacementMode});
+            }
         }
     } // Chiude if (ImGui::Begin("Tavolozza"))
-        ImGui::End(); // Fine finestra Tavolozza
+    ImGui::End(); // Fine finestra Tavolozza
+
+    // --- NUOVA FINESTRA: GESTIONE INVENTARIO DEV/PLAY ---
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 400.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350.0f, 300.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Gestione Inventario")) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Inventario DEV (Forge)");
+        ImGui::Separator();
+        
+        if (m_context->devInventory.empty()) {
+            ImGui::TextDisabled("Nessun oggetto creato in DevMode.");
+        } else {
+            for (size_t i = 0; i < m_context->devInventory.size(); ++i) {
+                auto& item = m_context->devInventory[i];
+                ImGui::Text("%s [%s]", item.name.c_str(), item.type == 0 ? "Struttura" : "MiniVoxel");
+                ImGui::SameLine(ImGui::GetWindowWidth() - 140);
+                
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Button("Sposta -> PlayMode")) {
+                    InventoryItem newItem;
+                    newItem.type = (item.type == 0) ? ItemType::Structure : ItemType::MiniVoxel;
+                    newItem.stringId = item.name;
+                    newItem.count = 1;
+                    
+                    if (m_context->engine->GetPlayer().inventory.AddItem(newItem)) {
+                        std::cout << "[Forge] Spostato " << item.name << " nello zaino del giocatore.\n";
+                        m_context->devInventory.erase(m_context->devInventory.begin() + i);
+                    } else {
+                        std::cerr << "[Forge] Zaino pieno!\n";
+                    }
+                    ImGui::PopID();
+                    break; // Interrompi ciclo per evitare invalidazione iteratore
+                }
+                ImGui::PopID();
+            }
+        }
+    }
+    ImGui::End();
 }
