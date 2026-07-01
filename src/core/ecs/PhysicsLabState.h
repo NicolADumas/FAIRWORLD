@@ -57,10 +57,22 @@ private:
     // Funzioni di supporto
     void StartSimulation();
     void StopSimulation();
+    
+    // Metodi UI ImGui
+    void DrawLeftPanel();
+    void DrawRightPanel();
+    void DrawTimeline();
+    void DrawViewportOverlay();
+    
     void DrawSkeletonHierarchy();
     void DrawJointProperties(fw::JointData& joint);
     void DrawAngularLimitsGizmo(fw::JointData& joint, const glm::mat4& globalMat);
     void HandleArcPicking(fw::JointData& joint, const glm::mat4& globalMat, const glm::vec3& rayOrigin, const glm::vec3& rayDir);
+    
+    // Timeline state
+    int m_currentFrame = 0;
+    int m_maxFrames = 60;
+    bool m_isPlaying = false;
     void GenerateBipedSkeleton();
     void GenerateCentipedeSkeleton(int segments);
     void GenerateSnakeSkeleton(int segments);

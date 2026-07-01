@@ -5,6 +5,7 @@
 #include "ImGuizmo.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -65,12 +66,141 @@ void PhysicsLabState::ScanTemplates() {
 
 void PhysicsLabState::SaveRig(const std::string& path) {}
 void PhysicsLabState::LoadRig(const std::string& path) {}
-void PhysicsLabState::StartSimulation() {}
-void PhysicsLabState::StopSimulation() {}
-void PhysicsLabState::DrawSkeletonHierarchy() {}
-void PhysicsLabState::DrawJointProperties(fw::JointData& joint) {}
-void PhysicsLabState::DrawAngularLimitsGizmo(fw::JointData& joint, const glm::mat4& globalMat) {}
+void PhysicsLabState::StartSimulation() { m_simulateMode = true; }
+void PhysicsLabState::StopSimulation() { m_simulateMode = false; }
+
+void PhysicsLabState::DrawLeftPanel() {
+    // Il pannello Dev Inventory è già gestito nel Render(), qui mettiamo l'Hierarchy
+}
+
+void PhysicsLabState::DrawRightPanel() {
+    // Gestito parzialmente in Render() per ora
+}
+
+void PhysicsLabState::DrawSkeletonHierarchy() {
+    ImGui::SetNextWindowPos(ImVec2(10, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 300), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Skeleton Hierarchy")) {
+        for (size_t i = 0; i < m_skeleton.m_joints.size(); ++i) {
+            std::string label = m_skeleton.m_joints[i].name + "##" + std::to_string(i);
+            if (ImGui::Selectable(label.c_str(), m_selectedJointIndex == (int)i)) {
+                m_selectedJointIndex = (int)i;
+            }
+        }
+    }
+    ImGui::End();
+}
+
+void PhysicsLabState::DrawJointProperties(fw::JointData& joint) {
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 360, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Joint Properties")) {
+        ImGui::Text("Nome: %s", joint.name.c_str());
+        ImGui::Text("Mesh: %s", joint.meshPath.empty() ? "Nessuna" : joint.meshPath.c_str());
+        
+        int type = (int)joint.type;
+        const char* types[] = { "HINGE", "UNIVERSAL", "BALL" };
+        if (ImGui::Combo("Tipo Giunto", &type, types, 3)) {
+            joint.type = (fw::RigJointType)type;
+        }
+        
+        ImGui::DragFloat3("Limit Min", joint.limitMin, 1.0f, -180.0f, 180.0f);
+        ImGui::DragFloat3("Limit Max", joint.limitMax, 1.0f, -180.0f, 180.0f);
+        
+        ImGui::Separator();
+        ImGui::Text("Gizmo Mode:");
+        ImGui::RadioButton("Translate", &m_gizmoMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Rotate", &m_gizmoMode, 2); ImGui::SameLine();
+        ImGui::RadioButton("Off", &m_gizmoMode, 0);
+        
+        if (ImGui::Button("BAKE & EXPORT", ImVec2(-1, 40))) {
+            SaveRig(std::string("saves/lab/templates/") + m_newTemplateName + "_baked.fwanimal");
+        }
+    }
+    ImGui::End();
+}
+
+void PhysicsLabState::DrawTimeline() {
+    ImGui::SetNextWindowPos(ImVec2(370, ImGui::GetIO().DisplaySize.y - 150), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x - 740, 140), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Animation Timeline & Notifies")) {
+        ImGui::SliderInt("Frame", &m_currentFrame, 0, m_maxFrames);
+        if (ImGui::Button(m_isPlaying ? "Pause" : "Play")) m_isPlaying = !m_isPlaying;
+        ImGui::SameLine();
+        ImGui::Text("Markers: Right-click on timeline to add Hitbox events.");
+        
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImVec2 size = ImVec2(ImGui::GetContentRegionAvail().x, 40);
+        ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + size.x, p.y + size.y), IM_COL32(50, 50, 50, 255));
+        
+        // Disegna i marker
+        for (auto& notify : m_skeleton.m_notifies) {
+            float xPos = p.x + (notify.frame / (float)m_maxFrames) * size.x;
+            ImU32 col = (notify.type == fw::NotifyType::START_HITBOX) ? IM_COL32(255, 0, 0, 255) : IM_COL32(0, 0, 255, 255);
+            ImGui::GetWindowDrawList()->AddTriangleFilled(ImVec2(xPos - 5, p.y + 10), ImVec2(xPos + 5, p.y + 10), ImVec2(xPos, p.y + 20), col);
+        }
+        
+        if (ImGui::IsMouseHoveringRect(p, ImVec2(p.x + size.x, p.y + size.y)) && ImGui::IsMouseClicked(1)) {
+            ImGui::OpenPopup("AddNotifyMenu");
+        }
+        
+        if (ImGui::BeginPopup("AddNotifyMenu")) {
+            if (ImGui::MenuItem("START_HITBOX")) {
+                m_skeleton.m_notifies.push_back({m_currentFrame, fw::NotifyType::START_HITBOX, m_selectedJointIndex});
+            }
+            if (ImGui::MenuItem("END_HITBOX")) {
+                m_skeleton.m_notifies.push_back({m_currentFrame, fw::NotifyType::END_HITBOX, m_selectedJointIndex});
+            }
+            ImGui::EndPopup();
+        }
+    }
+    ImGui::End();
+}
+
+void PhysicsLabState::DrawViewportOverlay() {
+    if (m_renderMode != 1 && m_renderMode != 2) return;
+    
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    glm::mat4 vp = m_context->activeCameraView.projectionMatrix * m_context->activeCameraView.viewMatrix;
+    float w = (float)m_context->engine->GetRenderManager()->GetWindowWidth();
+    float h = (float)m_context->engine->GetRenderManager()->GetWindowHeight();
+    
+    auto Project = [&](const glm::vec3& p) -> ImVec2 {
+        glm::vec4 clip = vp * glm::vec4(p, 1.0f);
+        if (clip.w > 0.001f) {
+            glm::vec3 ndc = glm::vec3(clip) / clip.w;
+            return ImVec2((ndc.x * 0.5f + 0.5f) * w, (1.0f - (ndc.y * 0.5f + 0.5f)) * h);
+        }
+        return ImVec2(-1, -1);
+    };
+
+    const auto& transforms = m_skeleton.GetGlobalTransforms();
+    
+    // Disegna scheletro
+    if (m_renderMode == 1) {
+        for (size_t i = 0; i < m_skeleton.m_joints.size(); ++i) {
+            glm::vec3 p1 = glm::vec3(transforms[i][3]);
+            ImVec2 sp1 = Project(p1);
+            if (sp1.x >= 0) drawList->AddCircleFilled(sp1, 5.0f, IM_COL32(255, 255, 0, 255));
+            
+            if (m_skeleton.m_joints[i].parentIndex >= 0) {
+                glm::vec3 p0 = glm::vec3(transforms[m_skeleton.m_joints[i].parentIndex][3]);
+                ImVec2 sp0 = Project(p0);
+                if (sp0.x >= 0 && sp1.x >= 0) {
+                    drawList->AddLine(sp0, sp1, IM_COL32(200, 200, 200, 255), 2.0f);
+                }
+            }
+        }
+    }
+}
+
+void PhysicsLabState::DrawAngularLimitsGizmo(fw::JointData& joint, const glm::mat4& globalMat) {
+    if (m_renderMode != 2) return;
+    // Disegno archi in viewport overlay gestito separatamente o qui
+}
+
 void PhysicsLabState::HandleArcPicking(fw::JointData& joint, const glm::mat4& globalMat, const glm::vec3& rayOrigin, const glm::vec3& rayDir) {}
+
 void PhysicsLabState::GenerateBipedSkeleton() {}
 void PhysicsLabState::GenerateCentipedeSkeleton(int segments) {}
 void PhysicsLabState::GenerateSnakeSkeleton(int segments) {}
@@ -442,8 +572,25 @@ void PhysicsLabState::Render() {
                 float windowHeight = (float)ImGui::GetWindowHeight();
                 ImGuizmo::SetRect(0, 0, windowWidth, windowHeight);
 
-                // ... ImGuizmo logic ...
+                glm::mat4 parentGlobalMat = glm::mat4(1.0f);
+                if (joint.parentIndex >= 0) {
+                    parentGlobalMat = m_skeleton.GetGlobalTransforms()[joint.parentIndex];
+                }
+                
+                glm::mat4 workMat = parentGlobalMat * joint.meshOffset;
+                
+                ImGuizmo::OPERATION op = (m_gizmoMode == 1) ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE;
+                ImGuizmo::Manipulate(glm::value_ptr(m_context->activeCameraView.viewMatrix),
+                                     glm::value_ptr(m_context->activeCameraView.projectionMatrix),
+                                     op, ImGuizmo::LOCAL, glm::value_ptr(workMat));
+                                     
+                if (ImGuizmo::IsUsing()) {
+                    joint.meshOffset = glm::inverse(parentGlobalMat) * workMat;
+                }
             }
         }
     }
+    
+    DrawTimeline();
+    DrawViewportOverlay();
 }

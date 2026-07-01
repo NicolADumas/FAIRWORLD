@@ -5,6 +5,24 @@
 
 namespace fw {
 
+    enum class RigJointType {
+        HINGE,
+        UNIVERSAL,
+        BALL
+    };
+
+    enum class NotifyType {
+        START_HITBOX,
+        END_HITBOX,
+        PLAY_SOUND
+    };
+
+    struct AnimNotify {
+        int frame = 0;
+        NotifyType type = NotifyType::START_HITBOX;
+        int targetJoint = -1;
+    };
+
     struct JointData {
         std::string name;
         int parentIndex = -1;
@@ -14,13 +32,19 @@ namespace fw {
         glm::mat4 localRestTransform = glm::mat4(1.0f);
         glm::mat4 meshOffset = glm::mat4(1.0f);
         
-        // Per l'animazione / limiti
-        int GetDofCount() const { return 3; } // xyz
+        // Physics / Limits
+        RigJointType type = RigJointType::HINGE;
+        float limitMin[3] = { -45.0f, -45.0f, -45.0f };
+        float limitMax[3] = {  45.0f,  45.0f,  45.0f };
+        
+        // Per l'animazione
+        int GetDofCount() const { return 3; }
     };
 
     class Skeleton {
     public:
         std::vector<JointData> m_joints;
+        std::vector<AnimNotify> m_notifies;
         
         const std::vector<glm::mat4>& GetGlobalTransforms() const { return m_globalTransforms; }
         std::vector<float>& GetDofState() { return m_dofState; }
