@@ -24,6 +24,13 @@ bool PhysicsLabState::Init() {
     m_labWorld = new fw::ForgeWorld();
     m_context->forgeWorld = m_labWorld;
 
+    // Il Lab è un editor: il cursore deve essere sempre libero e visibile.
+    // Lo forziamo qui invece di affidarci al DeviceManager frame-per-frame,
+    // che altrimenti blocca il cursore al primo clic sinistro su ImGui.
+    if (m_context->deviceManager) {
+        m_context->deviceManager->requireFreeCursor = true;
+    }
+
     RefreshDevStructures();
     ScanTemplates();
 
@@ -69,13 +76,6 @@ void PhysicsLabState::LoadRig(const std::string& path) {}
 void PhysicsLabState::StartSimulation() { m_simulateMode = true; }
 void PhysicsLabState::StopSimulation() { m_simulateMode = false; }
 
-void PhysicsLabState::DrawLeftPanel() {
-    // Il pannello Dev Inventory è già gestito nel Render(), qui mettiamo l'Hierarchy
-}
-
-void PhysicsLabState::DrawRightPanel() {
-    // Gestito parzialmente in Render() per ora
-}
 
 void PhysicsLabState::DrawSkeletonHierarchy() {
     ImGui::SetNextWindowPos(ImVec2(10, 480), ImGuiCond_FirstUseEver);
@@ -93,26 +93,69 @@ void PhysicsLabState::DrawSkeletonHierarchy() {
 
 void PhysicsLabState::DrawJointProperties(fw::JointData& joint) {
     ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 360, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 480), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Joint Properties")) {
-        ImGui::Text("Nome: %s", joint.name.c_str());
-        ImGui::Text("Mesh: %s", joint.meshPath.empty() ? "Nessuna" : joint.meshPath.c_str());
-        
+        ImGui::TextColored(ImVec4(1.0f,0.85f,0.1f,1.0f), "%s", joint.name.c_str());
+        ImGui::TextDisabled("Mesh: %s", joint.meshPath.empty() ? "Nessuna" : joint.meshPath.c_str());
+        ImGui::Separator();
+
+        // Tipo giunto
         int type = (int)joint.type;
         const char* types[] = { "HINGE", "UNIVERSAL", "BALL" };
-        if (ImGui::Combo("Tipo Giunto", &type, types, 3)) {
+        if (ImGui::Combo("Tipo Giunto", &type, types, 3))
             joint.type = (fw::RigJointType)type;
-        }
         
         ImGui::DragFloat3("Limit Min", joint.limitMin, 1.0f, -180.0f, 180.0f);
         ImGui::DragFloat3("Limit Max", joint.limitMax, 1.0f, -180.0f, 180.0f);
         
         ImGui::Separator();
-        ImGui::Text("Gizmo Mode:");
-        ImGui::RadioButton("Translate", &m_gizmoMode, 1); ImGui::SameLine();
-        ImGui::RadioButton("Rotate", &m_gizmoMode, 2); ImGui::SameLine();
-        ImGui::RadioButton("Off", &m_gizmoMode, 0);
+        // Offset posizione locale del giunto
+        glm::vec3 pos = glm::vec3(joint.localRestTransform[3]);
+        if (ImGui::DragFloat3("Posizione##jpos", &pos.x, 0.05f)) {
+            joint.localRestTransform[3] = glm::vec4(pos, 1.0f);
+            m_skeleton.UpdateForwardKinematics();
+        }
+
+        ImGui::Separator();
+        // --- BUG FIX #4: Color Picker ---
+        ImGui::TextColored(ImVec4(0.4f,0.8f,1.0f,1.0f), "Colore Voxel");
+        glm::vec4& col = m_jointColors[m_selectedJointIndex];
+        // Inizializza al bianco se non esiste ancora
+        if (col.a == 0.0f && col.r == 0.0f) col = glm::vec4(1,1,1,1);
+        if (ImGui::ColorEdit4("##colpick", &col.x)) {
+            // Applica subito al voxel associato
+            if (joint.voxelEntity != 0xFFFFFFFF && m_labWorld) {
+                entt::entity e = static_cast<entt::entity>(joint.voxelEntity);
+                if (m_labWorld->GetRegistry().valid(e)) {
+                    auto* mesh = m_labWorld->GetRegistry().try_get<fw::MeshComponent>(e);
+                    if (mesh) {
+                        mesh->colorOverride[0] = col.r;
+                        mesh->colorOverride[1] = col.g;
+                        mesh->colorOverride[2] = col.b;
+                        mesh->colorOverride[3] = col.a;
+                    }
+                }
+            }
+        }
+        if (ImGui::Button("Reset Colore", ImVec2(-1,20))) {
+            col = glm::vec4(1,1,1,0); // 0 alpha = usa colore originale del voxel
+            if (joint.voxelEntity != 0xFFFFFFFF && m_labWorld) {
+                entt::entity e = static_cast<entt::entity>(joint.voxelEntity);
+                if (m_labWorld->GetRegistry().valid(e)) {
+                    auto* mesh = m_labWorld->GetRegistry().try_get<fw::MeshComponent>(e);
+                    if (mesh) { mesh->colorOverride[3] = 0.0f; }
+                }
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.4f,1.0f,0.4f,1.0f), "Gizmo 3D");
+        ImGui::RadioButton("Off",       &m_gizmoMode, 0); ImGui::SameLine();
+        ImGui::RadioButton("Sposta",    &m_gizmoMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Ruota",     &m_gizmoMode, 2);
+        ImGui::TextDisabled("Attiva Sposta/Ruota, poi trascina le frecce nel viewport");
         
+        ImGui::Separator();
         if (ImGui::Button("BAKE & EXPORT", ImVec2(-1, 40))) {
             SaveRig(std::string("saves/lab/templates/") + m_newTemplateName + "_baked.fwanimal");
         }
@@ -158,37 +201,92 @@ void PhysicsLabState::DrawTimeline() {
 }
 
 void PhysicsLabState::DrawViewportOverlay() {
-    if (m_renderMode != 1 && m_renderMode != 2) return;
-    
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-    glm::mat4 vp = m_context->activeCameraView.projectionMatrix * m_context->activeCameraView.viewMatrix;
+
     float w = (float)m_context->engine->GetRenderManager()->GetWindowWidth();
     float h = (float)m_context->engine->GetRenderManager()->GetWindowHeight();
-    
-    auto Project = [&](const glm::vec3& p) -> ImVec2 {
-        glm::vec4 clip = vp * glm::vec4(p, 1.0f);
-        if (clip.w > 0.001f) {
+    if (w <= 0 || h <= 0) return;
+
+    // Usa m_projEditor (senza Y-flip Vulkan) per proiezione corretta
+    glm::mat4 vp = m_projEditor * m_context->activeCameraView.viewMatrix;
+
+    auto Project = [&](const glm::vec3& pt, bool& inFront) -> ImVec2 {
+        glm::vec4 clip = vp * glm::vec4(pt, 1.0f);
+        inFront = clip.w > 0.001f;
+        if (inFront) {
             glm::vec3 ndc = glm::vec3(clip) / clip.w;
-            return ImVec2((ndc.x * 0.5f + 0.5f) * w, (1.0f - (ndc.y * 0.5f + 0.5f)) * h);
+            return ImVec2((ndc.x * 0.5f + 0.5f) * w, (0.5f - ndc.y * 0.5f) * h);
         }
         return ImVec2(-1, -1);
     };
 
-    const auto& transforms = m_skeleton.GetGlobalTransforms();
-    
-    // Disegna scheletro
-    if (m_renderMode == 1) {
+    // --- BUG FIX #3: Griglia di riferimento Y=0 ---
+    const int GRID_HALF = 10;
+    const float GRID_STEP = 1.0f;
+    ImU32 gridCol = IM_COL32(80, 80, 80, 120);
+    ImU32 originCol = IM_COL32(120, 120, 120, 200);
+    for (int i = -GRID_HALF; i <= GRID_HALF; ++i) {
+        bool f1, f2;
+        glm::vec3 a(-GRID_HALF * GRID_STEP, 0, i * GRID_STEP);
+        glm::vec3 b( GRID_HALF * GRID_STEP, 0, i * GRID_STEP);
+        glm::vec3 c(i * GRID_STEP, 0, -GRID_HALF * GRID_STEP);
+        glm::vec3 d(i * GRID_STEP, 0,  GRID_HALF * GRID_STEP);
+        ImVec2 sa = Project(a, f1), sb = Project(b, f2);
+        if (f1 && f2) drawList->AddLine(sa, sb, (i == 0) ? originCol : gridCol, (i == 0) ? 2.0f : 1.0f);
+        ImVec2 sc = Project(c, f1), sd = Project(d, f2);
+        if (f1 && f2) drawList->AddLine(sc, sd, (i == 0) ? originCol : gridCol, (i == 0) ? 2.0f : 1.0f);
+    }
+
+    // --- Assi XYZ all'origine ---
+    {
+        bool f0, fX, fY, fZ;
+        glm::vec3 orig(0,0,0);
+        ImVec2 sO  = Project(orig,          f0);
+        ImVec2 sX  = Project({2,0,0},       fX);
+        ImVec2 sY  = Project({0,2,0},       fY);
+        ImVec2 sZ  = Project({0,0,2},       fZ);
+        if (f0 && fX) drawList->AddLine(sO, sX, IM_COL32(220, 60,  60,  255), 3.0f);
+        if (f0 && fY) drawList->AddLine(sO, sY, IM_COL32(60,  220, 60,  255), 3.0f);
+        if (f0 && fZ) drawList->AddLine(sO, sZ, IM_COL32(60,  100, 220, 255), 3.0f);
+        // Label
+        if (f0 && fX) drawList->AddText(sX, IM_COL32(220,80,80,255), "X");
+        if (f0 && fY) drawList->AddText(sY, IM_COL32(80,220,80,255), "Y");
+        if (f0 && fZ) drawList->AddText(sZ, IM_COL32(80,120,220,255), "Z");
+    }
+
+    // --- Overlay ossa (Skeleton X-Ray e Physics Debug) ---
+    if (m_renderMode == 1 || m_renderMode == 2) {
+        const auto& transforms = m_skeleton.GetGlobalTransforms();
         for (size_t i = 0; i < m_skeleton.m_joints.size(); ++i) {
             glm::vec3 p1 = glm::vec3(transforms[i][3]);
-            ImVec2 sp1 = Project(p1);
-            if (sp1.x >= 0) drawList->AddCircleFilled(sp1, 5.0f, IM_COL32(255, 255, 0, 255));
-            
+            bool f1;
+            ImVec2 sp1 = Project(p1, f1);
+
+            // Colore: giunto selezionato = arancione, altrimenti giallo
+            bool isSelected = (m_selectedJointIndex == (int)i);
+            ImU32 jointCol = isSelected ? IM_COL32(255, 140, 0, 255) : IM_COL32(255, 230, 0, 220);
+            float radius = isSelected ? 8.0f : 5.0f;
+
+            if (f1) drawList->AddCircleFilled(sp1, radius, jointCol);
+
             if (m_skeleton.m_joints[i].parentIndex >= 0) {
                 glm::vec3 p0 = glm::vec3(transforms[m_skeleton.m_joints[i].parentIndex][3]);
-                ImVec2 sp0 = Project(p0);
-                if (sp0.x >= 0 && sp1.x >= 0) {
-                    drawList->AddLine(sp0, sp1, IM_COL32(200, 200, 200, 255), 2.0f);
-                }
+                bool f0;
+                ImVec2 sp0 = Project(p0, f0);
+                if (f0 && f1) drawList->AddLine(sp0, sp1, IM_COL32(200, 200, 200, 200), 2.0f);
+            }
+
+            // Physics debug: capsule wireframe semplice
+            if (m_renderMode == 2 && f1) {
+                float r = 12.0f;
+                drawList->AddCircle(sp1, r, IM_COL32(0, 255, 100, 180), 16, 1.5f);
+                drawList->AddCircle(sp1, r * 0.5f, IM_COL32(0, 200, 80, 120), 8, 1.0f);
+            }
+
+            // Etichetta nome sopra il giunto
+            if (f1 && isSelected) {
+                drawList->AddText(ImVec2(sp1.x + 8, sp1.y - 12), IM_COL32(255,200,0,255),
+                    m_skeleton.m_joints[i].name.c_str());
             }
         }
     }
@@ -201,10 +299,7 @@ void PhysicsLabState::DrawAngularLimitsGizmo(fw::JointData& joint, const glm::ma
 
 void PhysicsLabState::HandleArcPicking(fw::JointData& joint, const glm::mat4& globalMat, const glm::vec3& rayOrigin, const glm::vec3& rayDir) {}
 
-void PhysicsLabState::GenerateBipedSkeleton() {}
-void PhysicsLabState::GenerateCentipedeSkeleton(int segments) {}
-void PhysicsLabState::GenerateSnakeSkeleton(int segments) {}
-void PhysicsLabState::GenerateSpiderSkeleton() {}
+
 
 void PhysicsLabState::Update(float dt) {
     using namespace entt::literals;
@@ -232,7 +327,8 @@ void PhysicsLabState::Update(float dt) {
                 float ndcY = 1.0f - (2.0f * mousePos.y) / height;
                 
                 glm::vec4 rayClip = glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-                glm::mat4 invProj = glm::inverse(m_context->activeCameraView.projectionMatrix);
+                // BUG FIX #2: usa m_projEditor (senza Y-flip) per raycast corretto
+                glm::mat4 invProj = glm::inverse(m_projEditor);
                 glm::mat4 invView = glm::inverse(m_context->activeCameraView.viewMatrix);
                 
                 glm::vec4 rayEye = invProj * rayClip;
@@ -397,16 +493,23 @@ void PhysicsLabState::Update(float dt) {
     m_context->activeCameraView.viewMatrix = glm::lookAt(camPos, m_orbitTarget, glm::vec3(0,1,0));
     m_context->activeCameraView.cameraPosition = camPos;
     m_context->activeCameraView.cameraFront = camFront;
+
     float aspect = 16.0f / 9.0f;
-    uint32_t width = m_context->engine->GetRenderManager()->GetWindowWidth();
+    uint32_t width  = m_context->engine->GetRenderManager()->GetWindowWidth();
     uint32_t height = m_context->engine->GetRenderManager()->GetWindowHeight();
     if (height > 0) aspect = (float)width / (float)height;
-    
-    m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(m_labFov), aspect, 0.1f, 1000.0f);
-    m_context->activeCameraView.projectionMatrix[1][1] *= -1; 
+
+    // BUG FIX #2: proiezione SENZA flip Y → usata da ImGuizmo, overlay, raycast
+    m_projEditor = glm::perspective(glm::radians(m_labFov), aspect, 0.1f, 1000.0f);
+    // Proiezione CON flip Y → passata al renderer Vulkan
+    m_context->activeCameraView.projectionMatrix = m_projEditor;
+    m_context->activeCameraView.projectionMatrix[1][1] *= -1;
 }
 
 void PhysicsLabState::Render() {
+    // BUG FIX #1: ImGuizmo deve essere inizializzato all'inizio di ogni Render()
+    ImGuizmo::BeginFrame();
+
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
 
@@ -483,19 +586,18 @@ void PhysicsLabState::Render() {
             ImGui::Separator();
         }
         
-        ImGui::Text("Render Mode");
-        ImGui::RadioButton("Mesh Mode", &m_renderMode, 0);
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.1f, 1.0f), "Render Mode");
+        if (ImGui::RadioButton("Mesh", &m_renderMode, 0)) {}
         ImGui::SameLine();
-        ImGui::RadioButton("Skeleton (X-Ray)", &m_renderMode, 1);
+        if (ImGui::RadioButton("Skeleton X-Ray", &m_renderMode, 1)) {}
         ImGui::SameLine();
-        ImGui::RadioButton("Physics Debug", &m_renderMode, 2);
-        ImGui::SameLine();
-        ImGui::RadioButton("Texture Mode (WIP)", &m_renderMode, 3);
+        if (ImGui::RadioButton("Physics Debug", &m_renderMode, 2)) {}
         
         ImGui::Separator();
-        ImGui::Text("Camera");
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Camera Orbitale");
         ImGui::SliderFloat("FOV##lab", &m_labFov, 20.0f, 120.0f);
-        ImGui::Text("Tasto Destro: Ruota | Scroll: Zoom | Tasto Medio: Pan");
+        ImGui::TextDisabled("Tasto Destro: Ruota | Scroll: Zoom | Medio: Pan");
     }
     ImGui::End();
 
@@ -566,26 +668,35 @@ void PhysicsLabState::Render() {
             DrawAngularLimitsGizmo(joint, baseGlobalMat);
             
             if (m_gizmoMode > 0) {
+                // BUG FIX #1: SetRect con dimensioni reali dello schermo
+                uint32_t sw = m_context->engine->GetRenderManager()->GetWindowWidth();
+                uint32_t sh = m_context->engine->GetRenderManager()->GetWindowHeight();
+
                 ImGuizmo::SetOrthographic(false);
                 ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
-                float windowWidth = (float)ImGui::GetWindowWidth();
-                float windowHeight = (float)ImGui::GetWindowHeight();
-                ImGuizmo::SetRect(0, 0, windowWidth, windowHeight);
+                ImGuizmo::SetRect(0, 0, (float)sw, (float)sh);
 
+                // BUG FIX #2: m_projEditor senza Y-flip per ImGuizmo
+                // BUG FIX: gizmo opera su localRestTransform (muove l'osso,
+                //          non solo il voxel attaccato)
                 glm::mat4 parentGlobalMat = glm::mat4(1.0f);
                 if (joint.parentIndex >= 0) {
                     parentGlobalMat = m_skeleton.GetGlobalTransforms()[joint.parentIndex];
                 }
-                
-                glm::mat4 workMat = parentGlobalMat * joint.meshOffset;
-                
+                // worldMatrix = globale del padre * transform locale dell'osso
+                glm::mat4 worldMat = parentGlobalMat * joint.localRestTransform;
+
                 ImGuizmo::OPERATION op = (m_gizmoMode == 1) ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE;
-                ImGuizmo::Manipulate(glm::value_ptr(m_context->activeCameraView.viewMatrix),
-                                     glm::value_ptr(m_context->activeCameraView.projectionMatrix),
-                                     op, ImGuizmo::LOCAL, glm::value_ptr(workMat));
-                                     
+                ImGuizmo::Manipulate(
+                    glm::value_ptr(m_context->activeCameraView.viewMatrix),
+                    glm::value_ptr(m_projEditor),  // <-- senza flip
+                    op, ImGuizmo::LOCAL,
+                    glm::value_ptr(worldMat));
+
                 if (ImGuizmo::IsUsing()) {
-                    joint.meshOffset = glm::inverse(parentGlobalMat) * workMat;
+                    // Riproietta in spazio locale del padre
+                    joint.localRestTransform = glm::inverse(parentGlobalMat) * worldMat;
+                    m_skeleton.UpdateForwardKinematics();
                 }
             }
         }
@@ -593,4 +704,188 @@ void PhysicsLabState::Render() {
     
     DrawTimeline();
     DrawViewportOverlay();
+
+    // --- Pannello Aggiungi Giunto Manuale ---
+    ImGui::SetNextWindowPos(ImVec2(370, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(300, 160), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Aggiungi Giunto", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        static char jointName[64] = "Nuovo_Giunto";
+        ImGui::InputText("Nome##jname", jointName, sizeof(jointName));
+
+        int parentOpt = m_selectedJointIndex;
+        std::string parentLabel = (parentOpt >= 0 && parentOpt < (int)m_skeleton.m_joints.size())
+            ? m_skeleton.m_joints[parentOpt].name
+            : "(Radice)";
+        ImGui::Text("Padre: %s (seleziona dall'albero)", parentLabel.c_str());
+
+        static int newJointType = 0;
+        ImGui::Combo("Tipo##njt", &newJointType, "HINGE\0UNIVERSAL\0BALL\0");
+
+        if (ImGui::Button("+ Aggiungi al Padre Selezionato", ImVec2(-1, 30))) {
+            fw::JointData nj;
+            nj.name = jointName;
+            nj.parentIndex = m_selectedJointIndex;
+            nj.type = (fw::RigJointType)newJointType;
+            // Offset di default verso il basso rispetto al padre
+            glm::vec3 defaultOff = (m_selectedJointIndex >= 0) ? glm::vec3(0, -0.5f, 0) : glm::vec3(0, 0, 0);
+            nj.localRestTransform = glm::translate(glm::mat4(1.0f), defaultOff);
+            m_skeleton.m_joints.push_back(nj);
+            m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
+            m_selectedJointIndex = (int)m_skeleton.m_joints.size() - 1;
+            m_skeleton.UpdateForwardKinematics();
+            std::cout << "[PhysicsLab] Aggiunto giunto: " << nj.name << " (padre: " << nj.parentIndex << ")\n";
+        }
+
+        if (m_selectedJointIndex >= 0 && !m_skeleton.m_joints.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
+            if (ImGui::Button("Rimuovi Giunto Selezionato", ImVec2(-1, 25))) {
+                m_skeleton.m_joints.erase(m_skeleton.m_joints.begin() + m_selectedJointIndex);
+                // Aggiusta gli indici dei figli
+                for (auto& j : m_skeleton.m_joints) {
+                    if (j.parentIndex == m_selectedJointIndex) j.parentIndex = -1;
+                    else if (j.parentIndex > m_selectedJointIndex) j.parentIndex--;
+                }
+                m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
+                m_selectedJointIndex = -1;
+                m_skeleton.UpdateForwardKinematics();
+            }
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::End();
+}
+
+void PhysicsLabState::GenerateBipedSkeleton() {
+    m_skeleton.m_joints.clear();
+    m_skeleton.GetDofState().clear();
+    m_selectedJointIndex = -1;
+
+    auto add = [&](const std::string& name, int parent, glm::vec3 off, fw::RigJointType type = fw::RigJointType::HINGE) {
+        fw::JointData j;
+        j.name = name; j.parentIndex = parent; j.type = type;
+        j.localRestTransform = glm::translate(glm::mat4(1.0f), off);
+        m_skeleton.m_joints.push_back(j);
+        m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
+    };
+
+    add("Root",      -1, {0,  0,    0},    fw::RigJointType::BALL);
+    add("Spine",      0, {0,  1.0f, 0},    fw::RigJointType::UNIVERSAL);
+    add("Chest",      1, {0,  0.8f, 0},    fw::RigJointType::UNIVERSAL);
+    add("Neck",       2, {0,  0.5f, 0},    fw::RigJointType::UNIVERSAL);
+    add("Head",       3, {0,  0.4f, 0},    fw::RigJointType::BALL);
+    add("ShoulderL",  2, {-0.6f, 0.4f, 0}, fw::RigJointType::BALL);
+    add("ElbowL",     5, {-0.6f, 0, 0},    fw::RigJointType::HINGE);
+    add("WristL",     6, {-0.5f, 0, 0},    fw::RigJointType::UNIVERSAL);
+    add("ShoulderR",  2, { 0.6f, 0.4f, 0}, fw::RigJointType::BALL);
+    add("ElbowR",     8, { 0.6f, 0, 0},    fw::RigJointType::HINGE);
+    add("WristR",     9, { 0.5f, 0, 0},    fw::RigJointType::UNIVERSAL);
+    add("HipL",       0, {-0.3f,-0.2f, 0}, fw::RigJointType::BALL);
+    add("KneeL",     11, {0, -0.8f, 0},    fw::RigJointType::HINGE);
+    add("AnkleL",    12, {0, -0.7f, 0},    fw::RigJointType::UNIVERSAL);
+    add("HipR",       0, { 0.3f,-0.2f, 0}, fw::RigJointType::BALL);
+    add("KneeR",     14, {0, -0.8f, 0},    fw::RigJointType::HINGE);
+    add("AnkleR",    15, {0, -0.7f, 0},    fw::RigJointType::UNIVERSAL);
+
+    m_skeleton.UpdateForwardKinematics();
+    m_animationPreset = 1;
+    m_renderMode = 1; // Mostra subito skeleton X-Ray
+    std::cout << "[PhysicsLab] Bipede: " << m_skeleton.m_joints.size() << " giunti\n";
+}
+
+void PhysicsLabState::GenerateCentipedeSkeleton(int segments) {
+    m_skeleton.m_joints.clear();
+    m_skeleton.GetDofState().clear();
+    m_selectedJointIndex = -1;
+
+    fw::JointData head;
+    head.name = "Head"; head.parentIndex = -1; head.type = fw::RigJointType::BALL;
+    head.localRestTransform = glm::mat4(1.0f);
+    m_skeleton.m_joints.push_back(head);
+    m_skeleton.GetDofState().resize(3, 0.0f);
+
+    for (int i = 0; i < segments; ++i) {
+        int bodyIdx = (int)m_skeleton.m_joints.size();
+        fw::JointData body;
+        body.name = "Body_" + std::to_string(i);
+        body.parentIndex = (i == 0) ? 0 : (bodyIdx - 3);
+        body.type = fw::RigJointType::UNIVERSAL;
+        body.localRestTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.8f, 0, 0));
+        m_skeleton.m_joints.push_back(body);
+
+        fw::JointData legL;
+        legL.name = "Leg_L_" + std::to_string(i);
+        legL.parentIndex = bodyIdx;
+        legL.type = fw::RigJointType::HINGE;
+        legL.localRestTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0,-0.5f, 0.4f));
+        m_skeleton.m_joints.push_back(legL);
+
+        fw::JointData legR;
+        legR.name = "Leg_R_" + std::to_string(i);
+        legR.parentIndex = bodyIdx;
+        legR.type = fw::RigJointType::HINGE;
+        legR.localRestTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0,-0.5f,-0.4f));
+        m_skeleton.m_joints.push_back(legR);
+
+        m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
+    }
+    m_skeleton.UpdateForwardKinematics();
+    m_animationPreset = 0;
+    m_renderMode = 1;
+    std::cout << "[PhysicsLab] Centopiedi: " << segments << " seg, " << m_skeleton.m_joints.size() << " giunti\n";
+}
+
+void PhysicsLabState::GenerateSnakeSkeleton(int segments) {
+    m_skeleton.m_joints.clear();
+    m_skeleton.GetDofState().clear();
+    m_selectedJointIndex = -1;
+
+    for (int i = 0; i < segments; ++i) {
+        fw::JointData j;
+        j.name = (i == 0) ? "Head" : ("Spine_" + std::to_string(i));
+        j.parentIndex = i - 1;
+        j.type = fw::RigJointType::UNIVERSAL;
+        j.limitMin[0] = -30.0f; j.limitMax[0] = 30.0f;
+        j.limitMin[1] = -15.0f; j.limitMax[1] = 15.0f;
+        j.localRestTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-0.6f, 0, 0));
+        m_skeleton.m_joints.push_back(j);
+    }
+    m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
+    m_skeleton.UpdateForwardKinematics();
+    m_animationPreset = 0;
+    m_renderMode = 1;
+    std::cout << "[PhysicsLab] Serpente: " << segments << " vertebre\n";
+}
+
+void PhysicsLabState::GenerateSpiderSkeleton() {
+    m_skeleton.m_joints.clear();
+    m_skeleton.GetDofState().clear();
+    m_selectedJointIndex = -1;
+
+    auto add = [&](const std::string& name, int parent, glm::vec3 off, fw::RigJointType type = fw::RigJointType::HINGE) -> int {
+        fw::JointData j;
+        j.name = name; j.parentIndex = parent; j.type = type;
+        j.localRestTransform = glm::translate(glm::mat4(1.0f), off);
+        m_skeleton.m_joints.push_back(j);
+        m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
+        return (int)m_skeleton.m_joints.size() - 1;
+    };
+
+    add("Thorax",  -1, {0, 0, 0},    fw::RigJointType::BALL);
+    add("Abdomen",  0, {-0.8f, 0, 0}, fw::RigJointType::UNIVERSAL);
+
+    const float degs[4] = { 30.0f, 60.0f, 100.0f, 130.0f };
+    for (int i = 0; i < 4; ++i) {
+        float a = glm::radians(degs[i]);
+        std::string s = std::to_string(i + 1);
+        int cL = add("CoxaL_"+s,  0, { cosf(a)*0.6f,0, sinf(a)*0.6f}, fw::RigJointType::BALL);
+        int fL = add("FemurL_"+s, cL, {0.7f,-0.2f,0});
+              add("TibiaL_"+s, fL, {0.7f,-0.3f,0});
+        int cR = add("CoxaR_"+s,  0, { cosf(a)*0.6f,0,-sinf(a)*0.6f}, fw::RigJointType::BALL);
+        int fR = add("FemurR_"+s, cR, {0.7f,-0.2f,0});
+              add("TibiaR_"+s, fR, {0.7f,-0.3f,0});
+    }
+    m_skeleton.UpdateForwardKinematics();
+    m_animationPreset = 0;
+    m_renderMode = 1;
+    std::cout << "[PhysicsLab] Ragno: " << m_skeleton.m_joints.size() << " giunti\n";
 }
