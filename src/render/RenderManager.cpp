@@ -820,7 +820,7 @@ bool RenderManager::CreateDescriptorPoolAndSets() {
     return true;
 }
 
-void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, float seasonProgress) {
+void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress) {
     UniformBufferObject ubo{};
     
     // Il triangolo resta fermo al centro (0,0,0)
@@ -830,12 +830,7 @@ void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMat
     ubo.view = viewMatrix;
     
     // La Proiezione: grandangolo dinamico regolabile
-    float aspect = 1.0f;
-    if (m_swapchainExtent.height > 0 && m_swapchainExtent.width > 0) {
-        aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
-    }
-    ubo.proj = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
-    ubo.proj[1][1] *= -1; // GLM nasce per OpenGL, invertiamo l'asse Y per Vulkan
+    ubo.proj = projMatrix;
 
     // Assegnamo il progresso stagionale passato dall'esterno
     ubo.seasonProgress = seasonProgress;
@@ -1300,9 +1295,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         glm::mat4 skyView = viewMatrix;
         skyView[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
         
-        glm::mat4 projMatrix = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 100.0f);
-        projMatrix[1][1] *= -1; // Y flip per Vulkan
-        
+        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 1000.0f);
         skyPC.invView = glm::inverse(skyView);
         skyPC.invProj = glm::inverse(projMatrix);
         skyPC.timeOfDay = context && context->engine ? context->engine->GetTimeManager().GetTimeOfDay() : 0.5f;
@@ -1324,7 +1317,11 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     // Applica distorsione per rallentare estate/inverno (modello biologico)
     float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
 
-    UpdateUniformBuffer(m_currentFrame, viewMatrix, seasonalUboValue);
+    float aspectUniform = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+    glm::mat4 uboProjMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspectUniform, 0.1f, 1000.0f);
+    if (!context) uboProjMatrix[1][1] *= -1;
+
+    UpdateUniformBuffer(m_currentFrame, viewMatrix, uboProjMatrix, seasonalUboValue);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
@@ -1373,10 +1370,8 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
         // ATTENZIONE: In RenderFairworld viewMatrix è SOLO la View matrix!
-        // Dobbiamo calcolare la projection!
         float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
-        glm::mat4 projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
-        projMatrix[1][1] *= -1; // Inverti Y per Vulkan
+        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
 
         for (auto entity : view) {
@@ -1397,6 +1392,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
+                pcData.seasonProgress = seasonalUboValue;
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
@@ -1546,8 +1542,7 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     bool isForge = (context && context->isForgeMode);
     if (isForge) {
         float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
-        glm::mat4 projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 100.0f);
-        projMatrix[1][1] *= -1; // Inverti Y per Vulkan
+        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
         
         RenderForge(m_commandBuffers[m_currentFrame], viewProjMatrix, context);
@@ -2787,6 +2782,14 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
     ForgePushConstantData pcData{};
     VkDeviceSize offsets[] = {0};
+
+    float rawYearProgress = 0.0f;
+    if (context && context->engine) {
+        int currentDay = context->engine->GetTimeManager().GetCurrentDay();
+        rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
+    }
+    float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
+    pcData.seasonProgress = seasonalUboValue;
 
     // ==========================================
     // 2. FASE STATICA: La Griglia di Lavoro

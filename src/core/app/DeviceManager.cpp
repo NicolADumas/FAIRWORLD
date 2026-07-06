@@ -230,7 +230,9 @@ void DeviceManager::Update(SharedContext* context) {
     GetKeyboardState(m_currentKeyboardState);
 
     ImGuiIO& io = ImGui::GetIO();
-    m_ignoreGameInput = io.WantCaptureKeyboard || io.WantCaptureMouse;
+    // Blocchiamo l'input del gioco (WASD, Spazio, Click) SOLO se ImGui vuole catturare l'input 
+    // E noi gli abbiamo esplicitamente dato il cursore (menu aperti).
+    m_ignoreGameInput = (io.WantCaptureKeyboard || io.WantCaptureMouse) && requireFreeCursor;
 
     // 1. --- POLLING GAMEPAD (XINPUT) ---
     XINPUT_STATE state;
@@ -276,9 +278,10 @@ void DeviceManager::Update(SharedContext* context) {
     InputState& in = m_currentInput;
     in.moveForward = 0.0f;
     in.moveRight = 0.0f;
-    // NON azzeriamo isJumping, lookYaw e lookPitch qui!
-    // Verranno consumati esplicitamente da Systems.cpp nel tick fisico.
+    in.lookYaw = 0.0f;
+    in.lookPitch = 0.0f;
     in.isRunning = false;
+    in.isJumping = false;
     in.isMining = false;
     in.isPlacing = false;
 
@@ -361,8 +364,8 @@ void DeviceManager::Update(SharedContext* context) {
         SetCursorPos(center.x, center.y);
 
         if (!m_firstMouse) {
-            // Sensibilità base del mouse (potrebbe essere letta da config in futuro)
-            float mouseSens = 0.1f;
+            // Sensibilità applicata solo in PlayerMovementSystem
+            float mouseSens = 1.0f;
             in.lookYaw += xoffset * mouseSens;
             in.lookPitch += yoffset * mouseSens;
         }
@@ -376,18 +379,19 @@ void DeviceManager::Update(SharedContext* context) {
         // Aumentata la deadzone a 0.25f per evitare stick drift ("guarda in alto da solo")
         const float deadzone = 0.25f;
         if (std::abs(m_gamepadInput.rightThumbX) > deadzone) {
-            in.lookYaw += m_gamepadInput.rightThumbX * 1.5f;
+            in.lookYaw += m_gamepadInput.rightThumbX * 35.0f;
         }
         if (std::abs(m_gamepadInput.rightThumbY) > deadzone) {
-            in.lookPitch += m_gamepadInput.rightThumbY * 1.5f;
+            in.lookPitch += m_gamepadInput.rightThumbY * 35.0f;
         }
     }
 
     // Freccette tastiera (legacy look)
-    if (m_currentKeyboardState[VK_UP]    & 0x80) in.lookPitch += 1.5f;
-    if (m_currentKeyboardState[VK_DOWN]  & 0x80) in.lookPitch -= 1.5f;
-    if (m_currentKeyboardState[VK_LEFT]  & 0x80) in.lookYaw -= 1.5f;
-    if (m_currentKeyboardState[VK_RIGHT] & 0x80) in.lookYaw += 1.5f;
+    // Moltiplicatori aumentati a 25.0f perché lookYaw/lookPitch non si accumulano più nel DeviceManager
+    if (m_currentKeyboardState[VK_UP]    & 0x80) in.lookPitch += 25.0f;
+    if (m_currentKeyboardState[VK_DOWN]  & 0x80) in.lookPitch -= 25.0f;
+    if (m_currentKeyboardState[VK_LEFT]  & 0x80) in.lookYaw -= 25.0f;
+    if (m_currentKeyboardState[VK_RIGHT] & 0x80) in.lookYaw += 25.0f;
 
     // Azioni da ActionMap (Kernel Bus) - Astrazione Hardware
     bool actionMining = fw::IsActionActive("DESTROY_BLOCK"_hs, this);

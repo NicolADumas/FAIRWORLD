@@ -31,30 +31,16 @@ bool PhysicsLabState::Init() {
         m_context->deviceManager->requireFreeCursor = true;
     }
 
-    RefreshDevStructures();
+    // RefreshDevStructures(); // Removed, replaced by GlobalAssetBrowser
     ScanTemplates();
 
     m_orbitTarget = glm::vec3(0, 2.0f, 0);
     m_orbitDistance = 15.0f;
     m_orbitYaw = 45.0f;
     m_orbitPitch = 30.0f;
+    m_assetBrowser.Initialize();
+    
     return true;
-}
-
-void PhysicsLabState::RefreshDevStructures() {
-    m_devStructures.clear();
-    try {
-        if (std::filesystem::exists("assets/blocks")) {
-            for (const auto& entry : std::filesystem::directory_iterator("assets/blocks")) {
-                if (entry.path().extension() == ".fwblock") {
-                    DevStructure ds;
-                    ds.name = entry.path().stem().string();
-                    ds.type = DevStructureType::Voxel;
-                    m_devStructures.push_back(ds);
-                }
-            }
-        }
-    } catch(...) {}
 }
 
 void PhysicsLabState::ScanTemplates() {
@@ -97,6 +83,35 @@ void PhysicsLabState::DrawJointProperties(fw::JointData& joint) {
     if (ImGui::Begin("Joint Properties")) {
         ImGui::TextColored(ImVec4(1.0f,0.85f,0.1f,1.0f), "%s", joint.name.c_str());
         ImGui::TextDisabled("Mesh: %s", joint.meshPath.empty() ? "Nessuna" : joint.meshPath.c_str());
+        
+        // Selezione Voxel ora gestita tramite Global Asset Browser (Tasto B)
+        ImGui::TextDisabled("Premi 'B' per assegnare una Mesh dal Global Asset Browser");
+        
+        // --- TEXTURE/MATERIAL SELETTORE ---
+        int bType = (int)joint.blockType;
+        const char* bTypes[] = { "Nessuno (Air)", "Erba", "Roccia", "Terra", "Legno", "Foglie", "Acqua", "Sabbia" };
+        if (ImGui::Combo("Texture Voxel", &bType, bTypes, 8)) {
+            joint.blockType = (uint8_t)bType;
+            
+            if (bType != 0 && joint.meshPath.empty() && m_labWorld) {
+                if (joint.voxelEntity != 0xFFFFFFFF) {
+                    entt::entity e = static_cast<entt::entity>(joint.voxelEntity);
+                    if (m_labWorld->GetRegistry().valid(e)) m_labWorld->GetRegistry().destroy(e);
+                }
+                
+                entt::entity cube = m_labWorld->CreatePrimitive("JointCube", fw::Vec3(0,0,0), "Chunk_Cube");
+                auto* meshComp = m_labWorld->GetRegistry().try_get<fw::MeshComponent>(cube);
+                if (meshComp) {
+                    const auto& mat = m_labWorld->GetPalette().materials[(uint8_t)bType];
+                    meshComp->colorOverride[0] = mat.baseColor.x;
+                    meshComp->colorOverride[1] = mat.baseColor.y;
+                    meshComp->colorOverride[2] = mat.baseColor.z;
+                    meshComp->colorOverride[3] = 1.0f; 
+                }
+                joint.voxelEntity = static_cast<uint32_t>(cube);
+            }
+        }
+        
         ImGui::Separator();
 
         // Tipo giunto
@@ -302,6 +317,11 @@ void PhysicsLabState::HandleArcPicking(fw::JointData& joint, const glm::mat4& gl
 
 
 void PhysicsLabState::Update(float dt) {
+    if (m_context && m_context->deviceManager) {
+        m_context->deviceManager->requireFreeCursor = true;
+    }
+    m_context->isForgeMode = true; // Forza il rendering del ForgeWorld
+
     using namespace entt::literals;
     if (m_context->deviceManager->IsActionActive("PAUSE"_hs)) {
         if (m_originalWorld) {
@@ -311,7 +331,8 @@ void PhysicsLabState::Update(float dt) {
                 m_context->engine->GetRenderManager()->InvalidateForgeCache();
             }
         }
-        m_context->deviceManager->requireFreeCursor = false;
+        // Nel LAB vogliamo SEMPRE il cursore libero, tranne in casi specifici FPS.
+        // m_context->deviceManager->requireFreeCursor = false; 
         m_context->engine->SetGameMode(GameMode::Hub);
         return;
     }
@@ -475,7 +496,7 @@ void PhysicsLabState::Update(float dt) {
         glm::vec3 front2 = glm::normalize(m_orbitTarget - camPos2);
         glm::vec3 right2 = glm::normalize(glm::cross(front2, glm::vec3(0,1,0)));
         glm::vec3 up2 = glm::cross(right2, front2);
-        float panSpeed = m_orbitDistance * 0.001f;
+        float panSpeed = m_orbitDistance * 0.020f;
         m_orbitTarget -= right2 * io.MouseDelta.x * panSpeed;
         m_orbitTarget += up2 * io.MouseDelta.y * panSpeed;
     }
@@ -504,6 +525,20 @@ void PhysicsLabState::Update(float dt) {
     // Proiezione CON flip Y → passata al renderer Vulkan
     m_context->activeCameraView.projectionMatrix = m_projEditor;
     m_context->activeCameraView.projectionMatrix[1][1] *= -1;
+
+    // Aggiornamento asincrono dei chunk caricati nel Lab
+    if (m_context && m_context->forgeWorld) {
+        m_context->forgeWorld->Update(dt);
+    }
+    
+    // --- ASSET BROWSER (Key 'B') ---
+    static bool bKeyWasDown = false;
+    bool bKeyDown = (GetAsyncKeyState('B') & 0x8000) != 0;
+    if (bKeyDown && !bKeyWasDown) {
+        m_showAssetBrowser = !m_showAssetBrowser;
+        if (m_showAssetBrowser) m_assetBrowser.RefreshAssets();
+    }
+    bKeyWasDown = bKeyDown;
 }
 
 void PhysicsLabState::Render() {
@@ -579,11 +614,16 @@ void PhysicsLabState::Render() {
                         m_context->engine->GetRenderManager()->InvalidateForgeCache();
                     }
                 }
-                m_context->deviceManager->requireFreeCursor = false;
+                // Lasciamo il cursore libero al passaggio
+                // m_context->deviceManager->requireFreeCursor = false;
                 m_context->engine->SetGameMode(GameMode::Dev);
             }
             ImGui::PopStyleColor();
             ImGui::Separator();
+            
+            if (ImGui::Button("Asset Browser Globale", ImVec2(-1, 30))) {
+                m_showAssetBrowser = true;
+            }
         }
         
         ImGui::Separator();
@@ -593,6 +633,8 @@ void PhysicsLabState::Render() {
         if (ImGui::RadioButton("Skeleton X-Ray", &m_renderMode, 1)) {}
         ImGui::SameLine();
         if (ImGui::RadioButton("Physics Debug", &m_renderMode, 2)) {}
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Textured", &m_renderMode, 3)) {}
         
         ImGui::Separator();
         ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Camera Orbitale");
@@ -601,38 +643,24 @@ void PhysicsLabState::Render() {
     }
     ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(10, 270), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Dev Inventory (.fwblock)", nullptr, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::TextDisabled("Doppio clic per assegnare al giunto");
-        if (ImGui::Button("Aggiorna Lista")) RefreshDevStructures();
-        
-        ImGui::Separator();
-        ImGui::BeginChild("DevInvList", ImVec2(0, 0), true);
-        if (m_devStructures.empty()) {
-            ImGui::TextDisabled("Nessun Voxel in assets/blocks/");
-        } else {
-            for (size_t i = 0; i < m_devStructures.size(); ++i) {
-                if (ImGui::Selectable(m_devStructures[i].name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(0) && m_selectedJointIndex >= 0 && m_selectedJointIndex < m_skeleton.m_joints.size()) {
-                        fw::JointData& j = m_skeleton.m_joints[m_selectedJointIndex];
-                        j.meshPath = m_devStructures[i].name; 
-                        
-                        if (j.voxelEntity != 0xFFFFFFFF) {
-                            entt::entity e = static_cast<entt::entity>(j.voxelEntity);
-                            if (m_labWorld->GetRegistry().valid(e)) m_labWorld->GetRegistry().destroy(e);
-                        }
-                        
-                        entt::entity spawned = m_labWorld->LoadStructureAsPrefab(j.meshPath, fw::Vec3(0,0,0));
-                        j.voxelEntity = static_cast<uint32_t>(spawned);
-                        std::cout << "[PhysicsLab] Assegnato " << m_devStructures[i].name << " al giunto " << m_selectedJointIndex << "\n";
-                    }
+    if (m_showAssetBrowser) {
+        m_assetBrowser.DrawUI(&m_showAssetBrowser, nullptr, m_labWorld);
+        std::string spawnTarget = m_assetBrowser.GetSelectedAssetToSpawn();
+        if (!spawnTarget.empty()) {
+            if (m_selectedJointIndex >= 0 && m_selectedJointIndex < m_skeleton.m_joints.size()) {
+                fw::JointData& j = m_skeleton.m_joints[m_selectedJointIndex];
+                j.meshPath = spawnTarget; 
+                if (j.voxelEntity != 0xFFFFFFFF) {
+                    entt::entity e = static_cast<entt::entity>(j.voxelEntity);
+                    if (m_labWorld->GetRegistry().valid(e)) m_labWorld->GetRegistry().destroy(e);
                 }
+                entt::entity spawned = m_labWorld->LoadStructureAsPrefab(j.meshPath, fw::Vec3(0,0,0));
+                j.voxelEntity = static_cast<uint32_t>(spawned);
             }
+            m_assetBrowser.ClearSelectedAsset();
+            m_showAssetBrowser = false;
         }
-        ImGui::EndChild();
     }
-    ImGui::End();
 
     DrawSkeletonHierarchy();
     if (m_selectedJointIndex >= 0 && m_selectedJointIndex < static_cast<int>(m_skeleton.m_joints.size())) {
@@ -753,6 +781,25 @@ void PhysicsLabState::Render() {
         }
     }
     ImGui::End();
+
+    if (m_showAssetBrowser) {
+        m_assetBrowser.DrawUI(&m_showAssetBrowser, nullptr, m_labWorld);
+        std::string spawnTarget = m_assetBrowser.GetSelectedAssetToSpawn();
+        if (!spawnTarget.empty()) {
+            if (m_selectedJointIndex >= 0 && m_selectedJointIndex < m_skeleton.m_joints.size()) {
+                auto& joint = m_skeleton.m_joints[m_selectedJointIndex];
+                joint.meshPath = spawnTarget;
+                if (joint.voxelEntity != 0xFFFFFFFF && m_labWorld) {
+                    entt::entity e = static_cast<entt::entity>(joint.voxelEntity);
+                    if (m_labWorld->GetRegistry().valid(e)) m_labWorld->GetRegistry().destroy(e);
+                }
+                entt::entity spawned = m_labWorld->LoadStructureAsPrefab(joint.meshPath, fw::Vec3(0,0,0));
+                joint.voxelEntity = static_cast<uint32_t>(spawned);
+            }
+            m_assetBrowser.ClearSelectedAsset();
+            m_showAssetBrowser = false;
+        }
+    }
 }
 
 void PhysicsLabState::GenerateBipedSkeleton() {

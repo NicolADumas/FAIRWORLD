@@ -109,6 +109,10 @@ public:
     entt::entity LoadStructureAsPrefab(const std::string& filepath, const fw::Vec3& position);
     bool LoadStructureAsVoxels(const std::string& filepath, int startX, int startY, int startZ);
 
+    // --- STRUTTURE (FORMATO JSON) ---
+    bool SaveStructureJSON(const std::string& name, uint8_t placementMode = 0, int pivotX = 0, int pivotY = 0, int pivotZ = 0);
+    bool LoadStructureJSON(const std::string& name);
+
     // --- EDITOR STATE MACHINE ---
     EditorMode GetEditorMode() const { return m_editorMode; }
     void SetEditorMode(EditorMode mode) { m_editorMode = mode; }
@@ -167,6 +171,7 @@ private:
 class MeshGenerators {
 public:
     static MeshComponent MakeCube(float size = 1.0f);
+    static MeshComponent MakeVoxelPreview(int colorIndex, const ForgeMaterialPalette& palette);
     static MeshComponent MakeSphere(int segs = 16, int rings = 8, float r = 1.0f);
     static MeshComponent MakeGridBox(int width, int height, int depth, float thickness = 0.05f);
 };

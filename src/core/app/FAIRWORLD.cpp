@@ -423,7 +423,7 @@ bool FairWorldEngine::Update(float deltaTime) {
     escWasDownEngine = escDownEngine;
 
     // Comunichiamo al DeviceManager se i menu richiedono il cursore libero
-    if (m_current == GameState::MAIN_MENU || m_editor.isOpen || m_isDiaryOpen || m_isInventoryOpen || m_current == GameState::WEB_BROWSER || io.WantCaptureMouse) {
+    if (m_current == GameState::MAIN_MENU || m_current == GameState::PAUSE_MENU || isEditorOpen() || m_isDiaryOpen || m_isInventoryOpen || m_current == GameState::WEB_BROWSER || io.WantCaptureMouse) {
         if (m_sharedContext && m_sharedContext->deviceManager) m_sharedContext->deviceManager->requireFreeCursor = true;
     } else {
         if (m_sharedContext && m_sharedContext->deviceManager) m_sharedContext->deviceManager->requireFreeCursor = false;
@@ -482,6 +482,9 @@ bool FairWorldEngine::Update(float deltaTime) {
         placeBlock = m_sharedContext->deviceManager->GetInput().isPlacing;
         breakBlock = m_sharedContext->deviceManager->GetInput().isMining;
         holdingBreak = m_sharedContext->deviceManager->GetInput().isMining;
+        
+        // Consume placeBlock to prevent multiple triggers per visual frame
+        m_sharedContext->deviceManager->GetInput().isPlacing = false;
     }
         
         // --- 1. SIMULAZIONE DESKTOP VIEW-MODEL (Prima Persona) ---
@@ -666,12 +669,20 @@ bool FairWorldEngine::Update(float deltaTime) {
                     }
                 } else if (placeBlock && hitBlock.x >= 0 && prevBlock.y >= 0 && !hitGhost) {
                     const InventoryItem& activeItem = m_player.inventory.slots[m_selectedSlot];
-                    if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
-                        EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
-                        worldChanged = true;
-                        
-                        // Consuma l'oggetto
-                        m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                    if (!activeItem.IsEmpty()) {
+                        if (activeItem.type == ItemType::Block) {
+                            EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
+                            worldChanged = true;
+                            m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                        } else if (activeItem.type == ItemType::Structure) {
+                            m_forgeWorld->LoadStructureAsVoxels(activeItem.stringId, prevBlock.x, prevBlock.y, prevBlock.z);
+                            worldChanged = true;
+                            m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                        } else if (activeItem.type == ItemType::MiniVoxel) {
+                            m_forgeWorld->LoadStructureAsPrefab(activeItem.stringId, fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
+                            worldChanged = true;
+                            m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                        }
                     }
                 }
 
@@ -734,20 +745,36 @@ bool FairWorldEngine::Update(float deltaTime) {
                     
                     if (!activeItem.IsEmpty() && activeItem.type == ItemType::Tool) {
                         if (activeItem.stringId == "TimeSkipper") {
-                            // Manda avanti il tempo di 1 ora (1.0f / 24.0f)
-                            m_timeManager->AdvanceTimeManual(1.0f / 24.0f);
+                            // Manda avanti il tempo di 1 ora
+                            m_timeManager->AdvanceTimeManual(1.0f);
                             std::cout << "[TIME] Mandato avanti il tempo con il TimeSkipper!\n";
                         }
                         else if (activeItem.stringId == "MonthSkipper") {
-                            // Manda avanti il tempo di 30 giorni (Cambio Stagione)
+                            // Manda avanti il tempo di 30 giorni (Cambio Mese)
                             m_timeManager->AdvanceDay(30);
-                            std::cout << "[TIME] Mandato avanti di 30 giorni con il MonthSkipper!\n";
+                            
+                            int currentDay = m_timeManager->GetCurrentDay();
+                            float rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
+                            const char* stagione = "Inverno";
+                            if (rawYearProgress < 0.25f) stagione = "Primavera";
+                            else if (rawYearProgress < 0.50f) stagione = "Estate";
+                            else if (rawYearProgress < 0.75f) stagione = "Autunno";
+                            
+                            std::cout << "[TIME] Mandato avanti il tempo di un mese (30 giorni)! Ora siamo in: " << stagione << "\n";
                         }
                     }
                     else if (hitBlock.x >= 0 && prevBlock.y >= 0 && prevBlock.y < 256 && !hitGhost) {
-                        if (!activeItem.IsEmpty() && activeItem.type == ItemType::Block) {
-                            EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
-                            m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                        if (!activeItem.IsEmpty()) {
+                            if (activeItem.type == ItemType::Block) {
+                                EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
+                                m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                            } else if (activeItem.type == ItemType::Structure) {
+                                m_forgeWorld->LoadStructureAsVoxels(activeItem.stringId, prevBlock.x, prevBlock.y, prevBlock.z);
+                                m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                            } else if (activeItem.type == ItemType::MiniVoxel) {
+                                m_forgeWorld->LoadStructureAsPrefab(activeItem.stringId, fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
+                                m_player.inventory.RemoveItem(m_selectedSlot, 1);
+                            }
                         }
                     }
                 }
@@ -1168,76 +1195,6 @@ void FairWorldEngine::Render() {
             }
             ImGui::End();
             
-            // --- DEVMODE UI (Solo in DevMode) ---
-            if (m_gameMode == GameMode::Dev) {
-                PlayState* playState = dynamic_cast<PlayState*>(m_sharedContext->stateManager->GetCurrentState());
-                if (playState) {
-                    ImGui::SetNextWindowPos(ImVec2(center.x + 260.0f, center.y), ImGuiCond_Once, ImVec2(0.0f, 0.5f));
-                    ImGui::SetNextWindowSize(ImVec2(500, 350), ImGuiCond_Once);
-                    if (ImGui::Begin("Inventario Costruzione (DevMode)", &m_isInventoryOpen, ImGuiWindowFlags_NoCollapse)) {
-                        ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "Seleziona Struttura / Prefab da Piazzare");
-                        ImGui::Separator();
-                        
-                        if (ImGui::Button("Aggiorna Lista (assets/blocks)")) {
-                            playState->RefreshAvailableStructures();
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Deseleziona (Usa Hotbar)", ImVec2(180, 0))) {
-                            m_sharedContext->devSelectedBlock = "";
-                        }
-                        
-                        ImGui::Spacing();
-                        ImGui::BeginChild("StructuresList", ImVec2(0, 200), true);
-                        if (playState->m_availableStructures.empty()) {
-                            ImGui::TextDisabled("Nessun file .fwblock trovato in assets/blocks/");
-                        } else {
-                            int columns = 4;
-                            if (ImGui::BeginTable("DevInventoryTable", columns)) {
-                                for (int i = 0; i < playState->m_availableStructures.size(); ++i) {
-                                    if (i % columns == 0) ImGui::TableNextRow();
-                                    ImGui::TableNextColumn();
-                                    
-                                    const auto& structure = playState->m_availableStructures[i];
-                                    bool isSelected = (m_sharedContext->devSelectedBlock == structure.name);
-                                    
-                                    if (isSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
-                                    
-                                    std::string shortName = structure.name.length() > 8 ? structure.name.substr(0, 8) + ".." : structure.name;
-                                    if (ImGui::Button(shortName.c_str(), ImVec2(80, 80))) {
-                                        m_sharedContext->devSelectedBlock = structure.name;
-                                        m_sharedContext->devPlacementMode = structure.mode;
-                                    }
-                                    
-                                    if (isSelected) ImGui::PopStyleColor();
-                                    
-                                    if (ImGui::IsItemHovered()) {
-                                        ImGui::SetTooltip("%s\nModo: %s", structure.name.c_str(), structure.mode == 0 ? "Minivoxel" : "Prefab");
-                                    }
-                                }
-                                ImGui::EndTable();
-                            }
-                        }
-                        ImGui::EndChild();
-                        
-                        ImGui::Spacing();
-                        ImGui::Separator();
-                        ImGui::Text("Modalità Piazzamento:");
-                        ImGui::RadioButton("Minivoxel (Oggetto 3D Dinamico)", &m_sharedContext->devPlacementMode, 0);
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Alta fedeltà. Crea una nuova Entity con la propria Palette. Usa molte Draw Call se spammato.");
-                        
-                        ImGui::RadioButton("Prefab (Struttura Terreno Statico)", &m_sharedContext->devPlacementMode, 1);
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fusione perfetta. Converte la struttura usando i Fallback Voxel e la inietta nel terreno. 0 Draw Call.");
-                        
-                        ImGui::Spacing();
-                        if (!m_sharedContext->devSelectedBlock.empty()) {
-                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Punta sul terreno e fai Click Sinistro per piazzare: %s", m_sharedContext->devSelectedBlock.c_str());
-                        } else {
-                            ImGui::TextDisabled("Seleziona una struttura o usa la Hotbar normale...");
-                        }
-                    }
-                    ImGui::End();
-                }
-            }
         }
 
         // 3. Menu grafico di selezione per il Blocco Custom (Slot 4 - tasto 4)
@@ -1402,9 +1359,18 @@ void FairWorldEngine::Render() {
         ImGui::SameLine(); ImGui::Text("EXP %d%% (Lv.%d)", (int)(expPercent*100), m_player.stats.level);
         ImGui::PopStyleColor();
 
-        // Orologio
+        // Orologio e Stagione
         float tod = m_timeManager->GetTimeOfDay();
-        ImGui::Text("Time Of Day: %.2f (Day %d)", tod, m_timeManager->GetCurrentDay());
+        int currentDay = m_timeManager->GetCurrentDay();
+        ImGui::Text("Time Of Day: %.2f (Day %d)", tod, currentDay);
+        
+        float rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
+        const char* stagione = "Inverno";
+        if (rawYearProgress < 0.25f) stagione = "Primavera";
+        else if (rawYearProgress < 0.50f) stagione = "Estate";
+        else if (rawYearProgress < 0.75f) stagione = "Autunno";
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Stagione Attuale: %s", stagione);
+        
         float phase = m_timeManager->GetMoonPhase();
         int h = (int)(tod * 24.0f);
         int m = (int)((tod * 24.0f - h) * 60.0f);

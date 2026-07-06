@@ -76,9 +76,8 @@ bool ForgeState::Init() {
     cam.pitch =   0.0f;
     
     // In Forge usiamo solo la Camera, niente PlayerMovementSystem
+    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // MUST BE FIRST per salvare il prev_state
     m_systems.push_back(std::make_unique<fw::CameraSystem>());
-    // m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // Lo facciamo manuale
-
 
     std::cout << "[ForgeState] (ForgeWorld è ora globale e persistente in SharedContext)\n";
     
@@ -90,14 +89,14 @@ bool ForgeState::Init() {
         m_context->forgeWorld->CreateChunkEntity("WorkspaceBlock", {0.0f, 0.0f, 0.0f});
     }
 
+    m_assetBrowser.Initialize();
+
     // Grid Mesh Setup
     auto gridMesh = fw::MeshGenerators::MakeGridBox(16, 16, 16, 0.05f);
     m_context->forgeWorld->EnqueueDeferredMesh("WorkspaceGrid", {0.0f, 0.0f, 0.0f}, std::move(gridMesh));
 
-    auto previewMesh = fw::MeshGenerators::MakeCube(1.01f); // Leggermente più grande di 1 voxel per evidenziarlo
-    for (auto& v : previewMesh.vertices) {
-        v.color = {1.0f, 1.0f, 1.0f}; // Colore base neutro, verrà sovrascritto
-    }
+    m_lastPreviewIndex = m_selectedColorIndex;
+    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(m_selectedColorIndex, m_context->forgeWorld->GetPalette());
     m_context->forgeWorld->EnqueueDeferredMesh("PreviewSphere", { 8.0f, 0.0f, 8.0f }, std::move(previewMesh));
     
     return true;
@@ -109,6 +108,11 @@ void ForgeState::Update(float dt) {
     // Attiviamo il bypass della skybox nel renderer
     m_context->isForgeMode = true;
 
+    if (m_selectedColorIndex != m_lastPreviewIndex) {
+        UpdatePreviewMesh(m_selectedColorIndex);
+        m_lastPreviewIndex = m_selectedColorIndex;
+    }
+
     // --- ESECUZIONE SISTEMI ECS PER FREE-CAM ---
     for (auto& system : m_systems) {
         system->Update(m_registry, m_context, dt);
@@ -118,6 +122,15 @@ void ForgeState::Update(float dt) {
     if (m_context->engine) {
         m_context->engine->Update(dt);
     }
+    
+    // --- ASSET BROWSER (Key 'B') ---
+    static bool bKeyWasDown = false;
+    bool bKeyDown = (GetAsyncKeyState('B') & 0x8000) != 0;
+    if (bKeyDown && !bKeyWasDown) {
+        m_showAssetBrowser = !m_showAssetBrowser;
+        if (m_showAssetBrowser) m_assetBrowser.RefreshAssets();
+    }
+    bKeyWasDown = bKeyDown;
     
     glm::vec3 rayTargetPos(-1000.0f);
     bool validRayTarget = false;
@@ -131,22 +144,38 @@ void ForgeState::Update(float dt) {
         ImGuiIO& io = ImGui::GetIO();
         m_isMouseOverUI = io.WantCaptureMouse;
         
+        // Toggle camera with V
+        if (ImGui::IsKeyPressed(ImGuiKey_V)) {
+            m_isFirstPerson = !m_isFirstPerson;
+        }
+        
         // --- GESTIONE TELECAMERA (Orbitale vs Prima Persona POV) ---
         if (m_isFirstPerson) {
-            // First Person POV (WASD + Mouse Look tenendo premuto il tasto destro)
-            if (!m_isMouseOverUI && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+            // First Person POV (WASD + Mouse Look con Toggle Tasto Destro)
+            if (!m_isMouseOverUI && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                m_fpCursorLocked = !m_fpCursorLocked;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                m_fpCursorLocked = false;
+            }
+            
+            if (m_context->deviceManager) {
+                m_context->deviceManager->requireFreeCursor = !m_fpCursorLocked;
+            }
+
+            if (m_fpCursorLocked) {
                 m_fpYaw += io.MouseDelta.x * 0.2f;
                 m_fpPitch -= io.MouseDelta.y * 0.2f;
                 m_fpPitch = std::clamp(m_fpPitch, -89.0f, 89.0f);
-                
-                float speed = 15.0f * dt;
-                if (ImGui::IsKeyDown(ImGuiKey_W)) m_fpPosition += cam.front * speed;
-                if (ImGui::IsKeyDown(ImGuiKey_S)) m_fpPosition -= cam.front * speed;
-                if (ImGui::IsKeyDown(ImGuiKey_A)) m_fpPosition -= cam.right * speed;
-                if (ImGui::IsKeyDown(ImGuiKey_D)) m_fpPosition += cam.right * speed;
-                if (ImGui::IsKeyDown(ImGuiKey_Space)) m_fpPosition += cam.up * speed;
-                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) m_fpPosition -= cam.up * speed;
             }
+            
+            float speed = 15.0f * dt;
+            if (ImGui::IsKeyDown(ImGuiKey_W)) m_fpPosition += cam.front * speed;
+            if (ImGui::IsKeyDown(ImGuiKey_S)) m_fpPosition -= cam.front * speed;
+            if (ImGui::IsKeyDown(ImGuiKey_A)) m_fpPosition -= cam.right * speed;
+            if (ImGui::IsKeyDown(ImGuiKey_D)) m_fpPosition += cam.right * speed;
+            if (ImGui::IsKeyDown(ImGuiKey_Space)) m_fpPosition += cam.up * speed;
+            if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) m_fpPosition -= cam.up * speed;
             
             float radYaw = glm::radians(m_fpYaw);
             float radPitch = glm::radians(m_fpPitch);
@@ -175,6 +204,22 @@ void ForgeState::Update(float dt) {
             if (!m_isMouseOverUI) {
                 m_orbitDistance -= io.MouseWheel * 2.0f;
                 m_orbitDistance = std::clamp(m_orbitDistance, 2.0f, 100.0f);
+            }
+            if (!m_isMouseOverUI && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+                float pitchRad2 = glm::radians(m_orbitPitch);
+                float yawRad2 = glm::radians(m_orbitYaw);
+                glm::vec3 camPos2;
+                camPos2.x = m_orbitTarget.x + m_orbitDistance * cos(pitchRad2) * cos(yawRad2);
+                camPos2.y = m_orbitTarget.y + m_orbitDistance * sin(pitchRad2);
+                camPos2.z = m_orbitTarget.z + m_orbitDistance * cos(pitchRad2) * sin(yawRad2);
+                
+                glm::vec3 front2 = glm::normalize(m_orbitTarget - camPos2);
+                glm::vec3 right2 = glm::normalize(glm::cross(front2, glm::vec3(0,1,0)));
+                glm::vec3 up2 = glm::cross(right2, front2);
+                
+                float panSpeed = m_orbitDistance * 0.005f;
+                m_orbitTarget -= right2 * io.MouseDelta.x * panSpeed;
+                m_orbitTarget += up2 * io.MouseDelta.y * panSpeed;
             }
             
             float radYaw = glm::radians(m_orbitYaw);
@@ -224,7 +269,8 @@ void ForgeState::Update(float dt) {
                 float x = (2.0f * mousePos.x) / width - 1.0f;
                 float y = 1.0f - (2.0f * mousePos.y) / height;
                 
-                glm::mat4 invProj = glm::inverse(m_context->activeCameraView.projectionMatrix);
+                glm::mat4 unFlippedProj = glm::perspective(glm::radians(m_cameraFov), aspect, 0.1f, 1000.0f);
+                glm::mat4 invProj = glm::inverse(unFlippedProj);
                 glm::mat4 invView = glm::inverse(m_context->activeCameraView.viewMatrix);
                 
                 glm::vec4 rayClip = glm::vec4(x, y, -1.0, 1.0);
@@ -284,7 +330,7 @@ void ForgeState::Update(float dt) {
             
             static bool enter_was_down = false;
 
-            if ((isUp || isDown || isLeft || isRight || isTab || isShift) && move_timer <= 0.0f) {
+            if ((m_controlMode == 0 || m_controlMode == 2) && (isUp || isDown || isLeft || isRight || isTab || isShift) && move_timer <= 0.0f) {
                 // Determina la direzione cardinale in base alla telecamera
                 glm::vec3 flatFront = glm::normalize(glm::vec3(cam.front.x, 0.0f, cam.front.z));
                 glm::vec3 flatRight = glm::normalize(glm::vec3(cam.right.x, 0.0f, cam.right.z));
@@ -310,13 +356,18 @@ void ForgeState::Update(float dt) {
                 if (isTab) m_keyboardCursorPos.y += 1.0f;
                 if (isShift) m_keyboardCursorPos.y -= 1.0f;
                 
-                m_useKeyboardCursor = true;
+                if (m_controlMode == 0) m_useKeyboardCursor = true;
                 move_timer = 0.15f; // Cooldown per non schizzare via velocemente
             }
             
-            if (ImGui::GetIO().MouseDelta.x != 0.0f || ImGui::GetIO().MouseDelta.y != 0.0f || ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                m_useKeyboardCursor = false;
+            if (m_controlMode == 0 || m_controlMode == 1) {
+                if (ImGui::GetIO().MouseDelta.x != 0.0f || ImGui::GetIO().MouseDelta.y != 0.0f || ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    if (m_controlMode == 0) m_useKeyboardCursor = false;
+                }
             }
+
+            if (m_controlMode == 1) m_useKeyboardCursor = false;
+            else if (m_controlMode == 2) m_useKeyboardCursor = true;
 
             if (m_useKeyboardCursor) {
                 validRayTarget = true;
@@ -350,27 +401,35 @@ void ForgeState::Update(float dt) {
     
     // --- AGGIORNA ANTEPRIMA VISIVA ---
     if (m_context->forgeWorld) {
-        auto viewWorld = m_context->forgeWorld->GetRegistry().view<fw::MeshComponent, fw::TransformComponent, fw::MetadataComponent>();
-        for(auto e : viewWorld) {
-            auto& meta = viewWorld.get<fw::MetadataComponent>(e);
-            if (meta.name == "PreviewSphere") {
-                auto& mesh = viewWorld.get<fw::MeshComponent>(e);
-                auto& trans = viewWorld.get<fw::TransformComponent>(e);
-                
-                if (validRayTarget) {
-                    // Offset di 0.5f per centrare il wireframe/cubo sulle coordinate intere
-                    trans.location.x = rayTargetPos.x + 0.5f;
-                    trans.location.y = rayTargetPos.y + 0.5f;
-                    trans.location.z = rayTargetPos.z + 0.5f;
-                    
-                    auto& mat = m_context->forgeWorld->GetPalette().materials[m_selectedColorIndex];
-                    mesh.colorOverride[0] = mat.baseColor.x;
-                    mesh.colorOverride[1] = mat.baseColor.y;
-                    mesh.colorOverride[2] = mat.baseColor.z;
-                    mesh.colorOverride[3] = 0.6f; // Alpha for transparency
-                } else {
-                    trans.location.y = -100.0f; // Nascondi
+        auto& registry = m_context->forgeWorld->GetRegistry();
+        if (m_previewEntity == entt::null || !registry.valid(m_previewEntity)) {
+            auto viewWorld = registry.view<fw::MeshComponent, fw::MetadataComponent>();
+            for(auto e : viewWorld) {
+                auto& meta = viewWorld.get<fw::MetadataComponent>(e);
+                if (meta.name == "PreviewSphere") {
+                    m_previewEntity = e;
+                    break;
                 }
+            }
+        }
+        
+        if (m_previewEntity != entt::null && registry.valid(m_previewEntity)) {
+            auto& mesh = registry.get<fw::MeshComponent>(m_previewEntity);
+            auto& trans = registry.get<fw::TransformComponent>(m_previewEntity);
+            
+            if (validRayTarget) {
+                // Offset di 0.5f per centrare il wireframe/cubo sulle coordinate intere
+                trans.location.x = rayTargetPos.x + 0.5f;
+                trans.location.y = rayTargetPos.y + 0.5f;
+                trans.location.z = rayTargetPos.z + 0.5f;
+                
+                auto& mat = m_context->forgeWorld->GetPalette().materials[m_selectedColorIndex];
+                mesh.colorOverride[0] = mat.baseColor.x;
+                mesh.colorOverride[1] = mat.baseColor.y;
+                mesh.colorOverride[2] = mat.baseColor.z;
+                mesh.colorOverride[3] = 0.6f; // Alpha for transparency
+            } else {
+                trans.location.y = -100.0f; // Nascondi
             }
         }
         m_context->forgeWorld->Update(dt);
@@ -408,6 +467,11 @@ void ForgeState::Render() {
         ImGui::RadioButton("Rimuovi Voxel", &m_selectedTool, 2);
         
         ImGui::Spacing();
+        if (ImGui::Button("Asset Browser Globale", ImVec2(-1, 30))) {
+            m_showAssetBrowser = true;
+        }
+        
+        ImGui::Spacing();
         ImGui::Separator();
         ImGui::Text("Telecamera / POV");
         
@@ -438,6 +502,15 @@ void ForgeState::Render() {
         }
         
         ImGui::SliderFloat("FOV (Field of View)", &m_cameraFov, 30.0f, 110.0f);
+        
+        ImGui::Spacing();
+        
+        ImGui::Text("Metodo di Posizionamento");
+        ImGui::RadioButton("Automatico", &m_controlMode, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Mouse (Raycast)", &m_controlMode, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("Tastiera (Frecce)", &m_controlMode, 2);
         
         ImGui::Spacing();
         ImGui::Separator();
@@ -563,19 +636,38 @@ void ForgeState::Render() {
         
         ImGui::Spacing();
         ImGui::Separator();
+        ImGui::Text("Controlli Telecamera");
+        int cameraModeInt = m_isFirstPerson ? 0 : 1;
+        if (ImGui::RadioButton("Mouse (Volo Libero)", &cameraModeInt, 0)) {
+            m_isFirstPerson = true;
+        }
+        if (ImGui::RadioButton("Frecce (Orbit)", &cameraModeInt, 1)) {
+            m_isFirstPerson = false;
+        }
+        ImGui::TextDisabled("Puoi usare 'V' per scambiare modalita'");
+        
+        ImGui::Spacing();
+        ImGui::Separator();
         ImGui::Text("Esportazione Asset");
         
         ImGui::InputText("Nome", m_structureNameBuffer, IM_ARRAYSIZE(m_structureNameBuffer));
         ImGui::RadioButton("Struttura PBR (Mondo)", &m_exportPlacementMode, 0);
         ImGui::RadioButton("MiniVoxel (Oggetto)", &m_exportPlacementMode, 1);
 
-        if (ImGui::Button("Salva in Inventario DEV", ImVec2(-1, 30))) {
+        if (ImGui::Button("Salva (JSON)", ImVec2(-1, 30))) {
             std::string nameStr(m_structureNameBuffer);
             if (!nameStr.empty()) {
-                std::cout << "[Forge] Salvataggio modello: " << nameStr << "\n";
-                // Salvataggio fisico su disco nella cartella assets/blocks/
-                m_context->forgeWorld->SaveStructure(nameStr, m_exportPlacementMode);
+                std::cout << "[Forge] Salvataggio JSON: " << nameStr << "\n";
+                m_context->forgeWorld->SaveStructureJSON(nameStr, m_exportPlacementMode);
                 m_context->devInventory.push_back({nameStr, m_exportPlacementMode});
+            }
+        }
+        
+        if (ImGui::Button("Carica (JSON)", ImVec2(-1, 30))) {
+            std::string nameStr(m_structureNameBuffer);
+            if (!nameStr.empty()) {
+                std::cout << "[Forge] Caricamento JSON: " << nameStr << "\n";
+                m_context->forgeWorld->LoadStructureJSON(nameStr);
             }
         }
     } // Chiude if (ImGui::Begin("Tavolozza"))
@@ -617,4 +709,43 @@ void ForgeState::Render() {
         }
     }
     ImGui::End();
+
+    if (m_showAssetBrowser) {
+        m_assetBrowser.DrawUI(&m_showAssetBrowser, nullptr, m_context->forgeWorld);
+        std::string spawnTarget = m_assetBrowser.GetSelectedAssetToSpawn();
+        if (!spawnTarget.empty()) {
+            if (m_context->forgeWorld) {
+                std::filesystem::path p(spawnTarget);
+                m_context->forgeWorld->LoadStructureAsVoxels(p.stem().string(), 8, 8, 8);
+            }
+            m_assetBrowser.ClearSelectedAsset();
+            m_showAssetBrowser = false;
+        }
+    }
+}
+
+void ForgeState::UpdatePreviewMesh(int colorIndex) {
+    if (!m_context || !m_context->forgeWorld) return;
+    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(colorIndex, m_context->forgeWorld->GetPalette());
+    previewMesh.colorOverride[3] = 0.6f;
+    
+    auto& registry = m_context->forgeWorld->GetRegistry();
+    if (m_previewEntity != entt::null && registry.valid(m_previewEntity)) {
+        auto& mesh = registry.get<fw::MeshComponent>(m_previewEntity);
+        mesh.vertices = std::move(previewMesh.vertices);
+        m_context->forgeWorld->MarkChunkDirty(m_previewEntity);
+    } else {
+        // Fallback if not cached yet
+        auto view = registry.view<fw::MeshComponent, fw::MetadataComponent>();
+        for(auto e : view) {
+            auto& meta = registry.get<fw::MetadataComponent>(e);
+            if (meta.name == "PreviewSphere") {
+                m_previewEntity = e;
+                auto& mesh = registry.get<fw::MeshComponent>(e);
+                mesh.vertices = std::move(previewMesh.vertices);
+                m_context->forgeWorld->MarkChunkDirty(e);
+                break;
+            }
+        }
+    }
 }

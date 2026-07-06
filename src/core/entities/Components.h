@@ -72,6 +72,8 @@ struct PlayerControllerComponent {
     float walkSpeed = 5.0f;
     float runSpeed  = 8.0f;
     float jumpForce = 5.5f;
+    float velocityY = 0.0f;
+    bool isGrounded = false;
 };
 
 // Componente per la simulazione fisica

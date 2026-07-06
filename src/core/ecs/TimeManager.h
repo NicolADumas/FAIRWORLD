@@ -18,7 +18,9 @@ namespace fw {
         }
 
         void Update(float dt) {
-            float inGameHoursPerRealSecond = 1.0f / 60.0f; 
+            // Giornata da 1 ora reale (3600 secondi)
+            // 24 ore / 3600 secondi
+            float inGameHoursPerRealSecond = 24.0f / 3600.0f; 
             m_timeOfDay += dt * inGameHoursPerRealSecond * m_timeScale;
             if (m_timeOfDay >= 24.0f) {
                 m_timeOfDay -= 24.0f;
@@ -73,10 +75,10 @@ namespace fw {
         }
 
     private:
-        float m_timeOfDay = 12.0f;
+        float m_timeOfDay = 0.0f; // Riparte da zero (Mezzanotte)
         int m_currentDay = 1;
         float m_moonPhase = 0.5f;
-        float m_timeScale = 60.0f;
+        float m_timeScale = 1.0f; // Riattivato ma con ciclo rallentato
     };
 
 }

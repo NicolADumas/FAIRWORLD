@@ -28,6 +28,7 @@ struct ForgePushConstantData {
     glm::mat4 mvp;
     glm::vec4 colorOverride;
     int useColorOverride;
+    float seasonProgress;
 };
 
 class RenderManager {
@@ -261,7 +262,7 @@ public:
     bool CreateDescriptorSetLayout();
     bool CreateUniformBuffers();
     bool CreateDescriptorPoolAndSets();
-    void UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, float seasonProgress);
+    void UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     // --- VERTEX/INDEX BUFFER ---

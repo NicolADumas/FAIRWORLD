@@ -32,6 +32,9 @@ namespace fw {
         glm::mat4 localRestTransform = glm::mat4(1.0f);
         glm::mat4 meshOffset = glm::mat4(1.0f);
         
+        // Texture/Material
+        uint8_t blockType = 1; // 1 = Erba di default, 0 = Air (nessuno)
+        
         // Physics / Limits
         RigJointType type = RigJointType::HINGE;
         float limitMin[3] = { -45.0f, -45.0f, -45.0f };

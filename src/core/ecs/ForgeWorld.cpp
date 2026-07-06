@@ -53,6 +53,43 @@ MeshComponent MeshGenerators::MakeCube(float size) {
     return m;
 }
 
+MeshComponent MeshGenerators::MakeVoxelPreview(int colorIndex, const ForgeMaterialPalette& palette) {
+    MeshComponent m;
+    m.name = "PreviewSphere";
+    
+    fw::Vec3 color = palette.materials[colorIndex].baseColor;
+    float rough = palette.materials[colorIndex].roughness;
+    float metal = palette.materials[colorIndex].metallic;
+    float emissive = palette.materials[colorIndex].emissiveStrength;
+
+    auto addFace = [&](const fw::Vec3& p1, const fw::Vec3& p2, const fw::Vec3& p3, const fw::Vec3& p4, const fw::Vec3& norm) {
+        float light = 1.0f;
+        float ao = 1.0f;
+        m.vertices.push_back({p1, color, {rough, metal}, emissive, norm, ao, light});
+        m.vertices.push_back({p2, color, {rough, metal}, emissive, norm, ao, light});
+        m.vertices.push_back({p3, color, {rough, metal}, emissive, norm, ao, light});
+        m.vertices.push_back({p1, color, {rough, metal}, emissive, norm, ao, light});
+        m.vertices.push_back({p3, color, {rough, metal}, emissive, norm, ao, light});
+        m.vertices.push_back({p4, color, {rough, metal}, emissive, norm, ao, light});
+    };
+
+    float h = 0.505f; // Slightly larger to avoid Z-fighting with grid
+    // Front (+Z)
+    addFace({-h,-h, h}, { h,-h, h}, { h, h, h}, {-h, h, h}, {0, 0, 1});
+    // Back (-Z)
+    addFace({ h,-h,-h}, {-h,-h,-h}, {-h, h,-h}, { h, h,-h}, {0, 0,-1});
+    // Left (-X)
+    addFace({-h,-h,-h}, {-h,-h, h}, {-h, h, h}, {-h, h,-h}, {-1,0, 0});
+    // Right (+X)
+    addFace({ h,-h, h}, { h,-h,-h}, { h, h,-h}, { h, h, h}, { 1,0, 0});
+    // Bottom (-Y)
+    addFace({-h,-h,-h}, { h,-h,-h}, { h,-h, h}, {-h,-h, h}, {0,-1,0});
+    // Top (+Y)
+    addFace({-h, h, h}, { h, h, h}, { h, h,-h}, {-h, h,-h}, {0, 1,0});
+    
+    return m;
+}
+
 MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
     MeshComponent m; 
     m.name = "Sphere";
@@ -888,16 +925,19 @@ bool ForgeWorld::SaveStructure(const std::string& name, uint8_t placementMode, i
             }
         }
         
-        if (header.voxelCount > 0) {
-            // Root Bone Manuale (Dal cursore 3D)
-            header.pivotX = pivotX;
-            header.pivotY = pivotY;
-            header.pivotZ = pivotZ;
+        if (header.voxelCount == 0) {
+            std::cerr << "[ForgeWorld] Attenzione: Nessun voxel trovato da salvare in " << name << ". Salvataggio annullato.\n";
+            file.close();
+            return false;
         }
+
+        // Root Bone Manuale (Dal cursore 3D)
+        header.pivotX = pivotX;
+        header.pivotY = pivotY;
+        header.pivotZ = pivotZ;
         
         // 2. Compressione RLE (solo blocks per ora)
         std::vector<RLEChunk> compressedBlocks;
-        if (header.voxelCount > 0) {
             uint8_t currentBlock = chunk.blocks[0][0][0];
             uint8_t currentCount = 0;
             
@@ -918,10 +958,6 @@ bool ForgeWorld::SaveStructure(const std::string& name, uint8_t placementMode, i
             if (currentCount > 0) {
                 compressedBlocks.push_back({currentCount, currentBlock});
             }
-        } else {
-            // File vuoto
-            compressedBlocks.push_back({0, 0});
-        }
         
         header.compressedSize = (uint32_t)(compressedBlocks.size() * sizeof(RLEChunk));
         
@@ -941,6 +977,99 @@ bool ForgeWorld::SaveStructure(const std::string& name, uint8_t placementMode, i
     return true;
 }
 
+bool ForgeWorld::SaveStructureJSON(const std::string& name, uint8_t placementMode, int pivotX, int pivotY, int pivotZ) {
+    if (name.empty()) return false;
+    
+    std::filesystem::create_directories("assets/blocks");
+    std::string path = "assets/blocks/" + name + ".json";
+    
+    nlohmann::json j;
+    j["name"] = name;
+    j["placementMode"] = placementMode;
+    j["pivot"] = {pivotX, pivotY, pivotZ};
+    
+    // Troviamo l'entità del chunk {0,0}
+    uint64_t hashKey = 0;
+    auto it = m_activeChunks.find(hashKey);
+    if (it == m_activeChunks.end()) return false;
+    
+    auto& chunk = m_registry.get<VoxelChunkComponent>(it->second);
+    
+    nlohmann::json blocksArray = nlohmann::json::array();
+    for(int x=0; x<16; ++x) {
+        for(int y=0; y<128; ++y) {
+            for(int z=0; z<16; ++z) {
+                if (chunk.blocks[x][y][z] != (uint8_t)BlockType::Air) {
+                    blocksArray.push_back({
+                        {"x", x},
+                        {"y", y},
+                        {"z", z},
+                        {"type", chunk.blocks[x][y][z]}
+                    });
+                }
+            }
+        }
+    }
+    j["blocks"] = blocksArray;
+    
+    std::ofstream file(path);
+    if (!file.is_open()) return false;
+    file << j.dump(4);
+    file.close();
+    return true;
+}
+
+bool ForgeWorld::LoadStructureJSON(const std::string& name) {
+    if (name.empty()) return false;
+    std::string path = "assets/blocks/" + name + ".json";
+    
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+    
+    nlohmann::json j;
+    try {
+        file >> j;
+    } catch (const std::exception& e) {
+        std::cerr << "[ForgeWorld] Errore parsing JSON: " << e.what() << "\n";
+        return false;
+    }
+    
+    // Troviamo o creiamo il chunk {0,0}
+    uint64_t hashKey = 0;
+    auto it = m_activeChunks.find(hashKey);
+    if (it == m_activeChunks.end()) {
+        CreateChunkEntity("WorkspaceBlock", {0.0f, 0.0f, 0.0f});
+        it = m_activeChunks.find(hashKey);
+        if (it == m_activeChunks.end()) return false;
+    }
+    
+    auto& chunk = m_registry.get<VoxelChunkComponent>(it->second);
+    
+    // Clear current chunk
+    for(int x=0; x<16; ++x) {
+        for(int y=0; y<128; ++y) {
+            for(int z=0; z<16; ++z) {
+                chunk.blocks[x][y][z] = (uint8_t)BlockType::Air;
+            }
+        }
+    }
+    
+    if (j.contains("blocks") && j["blocks"].is_array()) {
+        for (const auto& block : j["blocks"]) {
+            int x = block["x"];
+            int y = block["y"];
+            int z = block["z"];
+            uint8_t type = block["type"];
+            if (x >= 0 && x < 16 && y >= 0 && y < 128 && z >= 0 && z < 16) {
+                chunk.blocks[x][y][z] = type;
+            }
+        }
+    }
+    
+    MarkChunkDirty(it->second);
+    return true;
+}
+
 entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw::Vec3& position) {
     std::string path = "assets/blocks/" + name + ".fwblock";
     std::ifstream file(path, std::ios::binary);
@@ -954,6 +1083,11 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
     file.read(reinterpret_cast<char*>(&header), sizeof(FWBlockHeader));
     if (header.magic[0] != 'F' || header.magic[1] != 'W' || header.magic[2] != 'B' || header.magic[3] != 'K') {
         std::cerr << "[ForgeWorld] File non valido o versione non supportata: " << path << "\n";
+        return entt::null;
+    }
+
+    if (header.voxelCount == 0) {
+        std::cerr << "[ForgeWorld] Attenzione: la struttura (Prefab) " << name << " è vuota (0 voxel). Caricamento interrotto.\n";
         return entt::null;
     }
     
@@ -1219,6 +1353,11 @@ bool ForgeWorld::LoadStructureAsVoxels(const std::string& name, int startX, int 
     file.read(reinterpret_cast<char*>(&header), sizeof(FWBlockHeader));
     if (header.magic[0] != 'F' || header.magic[1] != 'W' || header.magic[2] != 'B' || header.magic[3] != 'K') {
         std::cerr << "[ForgeWorld] File non valido o versione non supportata: " << path << "\n";
+        return false;
+    }
+
+    if (header.voxelCount == 0) {
+        std::cerr << "[ForgeWorld] Attenzione: la struttura " << name << " è vuota (0 voxel). Caricamento interrotto.\n";
         return false;
     }
     

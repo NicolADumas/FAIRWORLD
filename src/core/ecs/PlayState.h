@@ -1,4 +1,6 @@
 #pragma once
+#include "../app/GlobalAssetBrowser.h"
+#include "../entities/Player.h"
 #include "State.h"
 #include "entt/entt.hpp"
 #include <vector>
@@ -18,29 +20,17 @@ public:
     
     entt::registry* GetRegistry() override { return &m_registry; }
 
-    // --- DevMode Inventory ---
-    bool m_showDevInventory = true; // Toggle visibilità inventario dev
-    
+    Player m_player;
+    glm::vec3 m_ghostPos = {0.0f, 0.0f, 0.0f};
+
     // --- Global Asset Browser ---
+    fw::GlobalAssetBrowser m_assetBrowser;
     bool m_showAssetBrowser = false;
-    struct RigAsset {
-        std::string name;
-        std::string path;
-    };
-    std::vector<RigAsset> m_availableRigs;
-    void RefreshAvailableRigs();
-    
     bool m_isPlacingRig = false;
     std::string m_rigToPlace = "";
-    glm::vec3 m_ghostPos = {0,0,0};
+
+    void RefreshAvailableRigs();
     void SpawnRig(const std::string& rigPath, const glm::vec3& position);
-    
-    struct DevStructure {
-        std::string name;
-        uint8_t mode;
-    };
-    std::vector<DevStructure> m_availableStructures;
-    void RefreshAvailableStructures();
 
 private:
     SharedContext* m_context;

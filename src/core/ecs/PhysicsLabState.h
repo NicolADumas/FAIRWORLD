@@ -3,20 +3,13 @@
 #include "SharedContext.h"
 #include "Skeleton.h"
 #include "Camera.h"
+#include "../app/GlobalAssetBrowser.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include <glm/glm.hpp>
 
-enum class DevStructureType {
-    Voxel,
-    Mesh
-};
 
-struct DevStructure {
-    std::string name;
-    DevStructureType type;
-};
 
 class PhysicsLabState : public State {
 public:
@@ -31,9 +24,11 @@ private:
     SharedContext* m_context;
     fw::Skeleton m_skeleton;
     
-    // UI e logica per i Voxel
-    std::vector<DevStructure> m_devStructures;
-    void RefreshDevStructures();
+    // Global Asset Browser
+    fw::GlobalAssetBrowser m_assetBrowser;
+    bool m_showAssetBrowser = false;
+    
+
     
     // UI template utente
     char m_newTemplateName[128] = "";
@@ -58,7 +53,7 @@ private:
     bool m_previewAnimation = false;
     float m_animationTime = 0.0f;
     int m_animationPreset = 0;
-    int m_renderMode = 1; // 0=Mesh, 1=Skeleton X-Ray, 2=Physics Debug
+    int m_renderMode = 1; // 0=Mesh, 1=Skeleton X-Ray, 2=Physics Debug, 3=Textured
     int m_gizmoMode = 0;  // 0=Off, 1=Translate, 2=Rotate
 
     // Colori per giunto (color picker)

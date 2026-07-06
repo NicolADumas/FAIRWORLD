@@ -33,26 +33,7 @@ PlayState::~PlayState() {
 
 // (End of previous code)
 
-void PlayState::RefreshAvailableStructures() {
-    m_availableStructures.clear();
-    
-    // Fallback/Default test item se la cartella non esiste
-    m_availableStructures.push_back({"Blocco Erba", 0});
-    m_availableStructures.push_back({"Blocco Roccia", 0});
-    m_availableStructures.push_back({"Albero", 1});
 
-    try {
-        if (std::filesystem::exists("assets/structures")) {
-            for (const auto& entry : std::filesystem::directory_iterator("assets/structures")) {
-                if (entry.path().extension() == ".fwblock" || entry.path().extension() == ".json") {
-                    m_availableStructures.push_back({entry.path().stem().string(), 1});
-                }
-            }
-        }
-    } catch (...) {
-        // Ignora eventuali errori di file system
-    }
-}
 
 bool PlayState::Init() {
     // === REGISTRAZIONE DEL KERNEL BUS INPUT (Action Mapping) ===
@@ -145,8 +126,8 @@ bool PlayState::Init() {
     // Posizione iniziale — rotazione inizializzata a identità (forward = -Z)
     m_registry.emplace<TransformComponent>(cameraEntity, 8.0f, 52.0f, 8.0f);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
-    // Yaw -90 gradi così il forward di default punta verso -Z
-    cam.yaw   = -90.0f;
+    // Yaw 0 gradi ora punta verso -Z (dopo il fix della camera)
+    cam.yaw   = 0.0f;
     cam.pitch =   0.0f;
     m_registry.emplace<PlayerControllerComponent>(cameraEntity);
     
@@ -216,10 +197,10 @@ bool PlayState::Init() {
     registry.get<fw::PortalComponent>(portalB).targetPortal = portalA;
 
     // --- REGISTRAZIONE SISTEMI ECS ---
+    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // MUST BE FIRST!
     m_systems.push_back(std::make_unique<fw::CameraSystem>());
     m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>());
     m_systems.push_back(std::make_unique<fw::PhysicsSystem>());
-    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>());
 
     std::cout << "[PlayState] Generazione procedurale prato e montagne completata. Avvio ciclo di gioco...\n";
     return true;
@@ -261,7 +242,7 @@ void PlayState::Update(float dt) {
     if (bKeyDown && !bKeyWasDown) {
         m_showAssetBrowser = !m_showAssetBrowser;
         if (m_showAssetBrowser) {
-            RefreshAvailableRigs();
+            m_assetBrowser.RefreshAssets();
             m_context->deviceManager->requireFreeCursor = true;
         } else {
             m_context->deviceManager->requireFreeCursor = false;
@@ -271,20 +252,15 @@ void PlayState::Update(float dt) {
     bKeyWasDown = bKeyDown;
 
     if (m_showAssetBrowser) {
-        ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Global Asset Browser", &m_showAssetBrowser)) {
-            ImGui::Text("Rigs Disponibili:");
-            ImGui::Separator();
-            for (const auto& rig : m_availableRigs) {
-                if (ImGui::Button(rig.name.c_str(), ImVec2(-1, 30))) {
-                    m_isPlacingRig = true;
-                    m_rigToPlace = rig.path;
-                    m_showAssetBrowser = false; // Nascondi browser per piazzare
-                    // Mantieni il cursore libero disabilitato per guardarsi attorno mentre si piazza (opzionale)
-                }
-            }
+        m_assetBrowser.DrawUI(&m_showAssetBrowser, &m_player, m_context->forgeWorld);
+        
+        std::string toSpawn = m_assetBrowser.GetSelectedAssetToSpawn();
+        if (!toSpawn.empty()) {
+            m_isPlacingRig = true;
+            m_rigToPlace = toSpawn;
+            m_showAssetBrowser = false; // Nascondi browser per piazzare
+            m_assetBrowser.ClearSelectedAsset();
         }
-        ImGui::End();
         
         if (!m_showAssetBrowser && !m_isPlacingRig) {
             m_context->deviceManager->requireFreeCursor = false;
@@ -346,7 +322,7 @@ void PlayState::Render() {
         const glm::quat iRot = glm::slerp(trans.prev_rotation, trans.rotation, alpha);
 
         // Rigenera il vettore front dal quaternione interpolato
-        const glm::vec3 iFront = glm::normalize(iRot * glm::vec3(1.0f, 0.0f, 0.0f));
+        const glm::vec3 iFront = glm::normalize(iRot * glm::vec3(0.0f, 0.0f, -1.0f));
         const glm::vec3 iUp    = glm::normalize(iRot * glm::vec3(0.0f, 1.0f,  0.0f));
 
         // Scrivi nel bus: il RenderManager leggerà queste matrici già interpolate
@@ -360,6 +336,7 @@ void PlayState::Render() {
 
         m_context->activeCameraView.projectionMatrix = glm::perspective(
             glm::radians(cam.fov), aspect, cam.nearPlane, cam.farPlane);
+        m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Y flip per Vulkan
         m_context->activeCameraView.cameraPosition   = iPos;
         m_context->activeCameraView.cameraFront      = iFront;
 
@@ -370,16 +347,7 @@ void PlayState::Render() {
 }
 
 void PlayState::RefreshAvailableRigs() {
-    m_availableRigs.clear();
-    try {
-        if (std::filesystem::exists("assets/rigs")) {
-            for (const auto& entry : std::filesystem::directory_iterator("assets/rigs")) {
-                if (entry.path().extension() == ".fwrig") {
-                    m_availableRigs.push_back({entry.path().stem().string(), entry.path().string()});
-                }
-            }
-        }
-    } catch (...) {}
+    // Deprecated, now handled by m_assetBrowser
 }
 
 void PlayState::SpawnRig(const std::string& rigPath, const glm::vec3& position) {
