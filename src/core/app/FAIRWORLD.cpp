@@ -675,11 +675,13 @@ bool FairWorldEngine::Update(float deltaTime) {
                             worldChanged = true;
                             m_player.inventory.RemoveItem(m_selectedSlot, 1);
                         } else if (activeItem.type == ItemType::Structure) {
-                            m_forgeWorld->LoadStructureAsVoxels(activeItem.stringId, prevBlock.x, prevBlock.y, prevBlock.z);
+                            std::filesystem::path p(activeItem.stringId);
+                            m_forgeWorld->LoadStructureAsVoxels(p.stem().string(), prevBlock.x, prevBlock.y, prevBlock.z);
                             worldChanged = true;
                             m_player.inventory.RemoveItem(m_selectedSlot, 1);
                         } else if (activeItem.type == ItemType::MiniVoxel) {
-                            m_forgeWorld->LoadStructureAsPrefab(activeItem.stringId, fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
+                            std::filesystem::path p(activeItem.stringId);
+                            m_forgeWorld->LoadStructureAsPrefab(p.stem().string(), fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
                             worldChanged = true;
                             m_player.inventory.RemoveItem(m_selectedSlot, 1);
                         }
@@ -769,10 +771,12 @@ bool FairWorldEngine::Update(float deltaTime) {
                                 EventManager::Get().Dispatch(Event_BlockPlaced(prevBlock, (BlockType)activeItem.blockType));
                                 m_player.inventory.RemoveItem(m_selectedSlot, 1);
                             } else if (activeItem.type == ItemType::Structure) {
-                                m_forgeWorld->LoadStructureAsVoxels(activeItem.stringId, prevBlock.x, prevBlock.y, prevBlock.z);
+                                std::filesystem::path p(activeItem.stringId);
+                                m_forgeWorld->LoadStructureAsVoxels(p.stem().string(), prevBlock.x, prevBlock.y, prevBlock.z);
                                 m_player.inventory.RemoveItem(m_selectedSlot, 1);
                             } else if (activeItem.type == ItemType::MiniVoxel) {
-                                m_forgeWorld->LoadStructureAsPrefab(activeItem.stringId, fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
+                                std::filesystem::path p(activeItem.stringId);
+                                m_forgeWorld->LoadStructureAsPrefab(p.stem().string(), fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
                                 m_player.inventory.RemoveItem(m_selectedSlot, 1);
                             }
                         }

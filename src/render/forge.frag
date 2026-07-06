@@ -8,8 +8,11 @@ layout(location = 4) in float fragAO;
 layout(location = 5) in float fragLight;
 
 layout(location = 6) in vec3 fragWorldPos;
+layout(location = 7) in float fragTexIndex;
 
 layout(location = 0) out vec4 outColor;
+
+layout(binding = 1) uniform sampler2DArray texSampler;
 
 layout(push_constant) uniform ForgePushConstantData {
     mat4 mvp;
@@ -39,7 +42,22 @@ float calcGaussianPigment(float t, float mu, float sigma) {
 void main() {
     float roughness = fragRoughMetal.x;
     float metallic = fragRoughMetal.y;
-    vec3 baseColor = fragColor;
+    vec3 baseColor = fragColor.rgb;
+
+    // --- Triplanar Mapping ---
+    if (fragTexIndex >= 0.0) {
+        vec3 blending = abs(fragNormal);
+        blending = normalize(max(blending, 0.00001)); // Prevent division by zero
+        float b = (blending.x + blending.y + blending.z);
+        blending /= vec3(b, b, b);
+
+        vec4 xaxis = texture(texSampler, vec3(fragWorldPos.y, fragWorldPos.z, fragTexIndex));
+        vec4 yaxis = texture(texSampler, vec3(fragWorldPos.x, fragWorldPos.z, fragTexIndex));
+        vec4 zaxis = texture(texSampler, vec3(fragWorldPos.x, fragWorldPos.y, fragTexIndex));
+        
+        vec4 texColor = xaxis * blending.x + yaxis * blending.y + zaxis * blending.z;
+        baseColor *= texColor.rgb; // Modulate base color with texture
+    }
 
     // Rilevamento euristico: Se il verde è dominante, applica il ciclo stagionale
     if (baseColor.g > baseColor.r + 0.15 && baseColor.g > baseColor.b + 0.15) {

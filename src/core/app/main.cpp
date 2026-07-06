@@ -47,7 +47,7 @@ void StopAIServer() {
 
 int main() {
     std::cout << "==========================================\n";
-    std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE V2   \n";
+    std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE   \n";
     std::cout << "==========================================\n\n";
 
     fw::JoltPhysicsSystem::InitializeGlobals();

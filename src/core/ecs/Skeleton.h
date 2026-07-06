@@ -30,6 +30,7 @@ namespace fw {
         std::string meshPath;
         
         glm::mat4 localRestTransform = glm::mat4(1.0f);
+        glm::mat4 globalRestTransform = glm::mat4(1.0f);
         glm::mat4 meshOffset = glm::mat4(1.0f);
         
         // Texture/Material
@@ -42,6 +43,8 @@ namespace fw {
         
         // Per l'animazione
         int GetDofCount() const { return 3; }
+        
+        uint32_t joltBodyID = 0xFFFFFFFF;
     };
 
     class Skeleton {

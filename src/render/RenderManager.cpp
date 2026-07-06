@@ -933,23 +933,23 @@ bool RenderManager::CreateGraphicsPipeline() {
     bindingDesc.stride    = sizeof(Vertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 7> attrDescs{};
+    std::array<VkVertexInputAttributeDescription, 8> attrDescs{};
     // location 0: posizione (vec3)
     attrDescs[0].binding  = 0;
     attrDescs[0].location = 0;
     attrDescs[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
     attrDescs[0].offset   = offsetof(Vertex, pos);
-    // location 1: colore (vec3)
+    // location 1: colore (vec4)
     attrDescs[1].binding  = 0;
     attrDescs[1].location = 1;
-    attrDescs[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
+    attrDescs[1].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
     attrDescs[1].offset   = offsetof(Vertex, color);
-    // location 2: coordinate UV (vec2)
+    // location 2: roughMetal (vec2)
     attrDescs[2].binding  = 0;
     attrDescs[2].location = 2;
     attrDescs[2].format   = VK_FORMAT_R32G32_SFLOAT;
-    attrDescs[2].offset   = offsetof(Vertex, texCoord);
-    // location 3: indice texture nell'array (float)
+    attrDescs[2].offset   = offsetof(Vertex, roughMetal);
+    // location 3: indice texture (float)
     attrDescs[3].binding  = 0;
     attrDescs[3].location = 3;
     attrDescs[3].format   = VK_FORMAT_R32_SFLOAT;
@@ -969,6 +969,11 @@ bool RenderManager::CreateGraphicsPipeline() {
     attrDescs[6].location = 6;
     attrDescs[6].format   = VK_FORMAT_R32_SFLOAT;
     attrDescs[6].offset   = offsetof(Vertex, light);
+    // location 7: Emissive (float)
+    attrDescs[7].binding  = 0;
+    attrDescs[7].location = 7;
+    attrDescs[7].format   = VK_FORMAT_R32_SFLOAT;
+    attrDescs[7].offset   = offsetof(Vertex, emissive);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -1911,19 +1916,19 @@ void RenderManager::LoadMobMesh(const std::string& filepath) {
             float r = (float)item["r"] / 255.0f;
             float g = (float)item["g"] / 255.0f;
             float b = (float)item["b"] / 255.0f;
-            glm::vec3 col(r, g, b);
+            glm::vec4 col4(r, g, b, 1.0f);
 
             uint32_t startIdx = (uint32_t)vertices.size();
 
             // 8 vertici del cubetto
-            vertices.push_back({{vx - s, vy - s, vz + s}, col, {0.0f, 0.0f}, -1.0f}); // 0: front bottom left
-            vertices.push_back({{vx + s, vy - s, vz + s}, col, {1.0f, 0.0f}, -1.0f}); // 1: front bottom right
-            vertices.push_back({{vx + s, vy + s, vz + s}, col, {1.0f, 1.0f}, -1.0f}); // 2: front top right
-            vertices.push_back({{vx - s, vy + s, vz + s}, col, {0.0f, 1.0f}, -1.0f}); // 3: front top left
-            vertices.push_back({{vx - s, vy - s, vz - s}, col, {0.0f, 0.0f}, -1.0f}); // 4: back bottom left
-            vertices.push_back({{vx + s, vy - s, vz - s}, col, {1.0f, 0.0f}, -1.0f}); // 5: back bottom right
-            vertices.push_back({{vx + s, vy + s, vz - s}, col, {1.0f, 1.0f}, -1.0f}); // 6: back top right
-            vertices.push_back({{vx - s, vy + s, vz - s}, col, {0.0f, 1.0f}, -1.0f}); // 7: back top left
+            vertices.push_back({{vx - s, vy - s, vz + s}, col4, {0.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 0: front bottom left
+            vertices.push_back({{vx + s, vy - s, vz + s}, col4, {1.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 1: front bottom right
+            vertices.push_back({{vx + s, vy + s, vz + s}, col4, {1.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 2: front top right
+            vertices.push_back({{vx - s, vy + s, vz + s}, col4, {0.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 3: front top left
+            vertices.push_back({{vx - s, vy - s, vz - s}, col4, {0.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 4: back bottom left
+            vertices.push_back({{vx + s, vy - s, vz - s}, col4, {1.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 5: back bottom right
+            vertices.push_back({{vx + s, vy + s, vz - s}, col4, {1.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 6: back top right
+            vertices.push_back({{vx - s, vy + s, vz - s}, col4, {0.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 7: back top left
 
             // Indici per le 6 facce (12 triangoli)
             uint32_t cubeIndices[] = {
@@ -2657,14 +2662,15 @@ bool RenderManager::CreateForgePipeline() {
     bindingDesc.stride    = sizeof(Vertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 7> attrDescs{};
+    std::array<VkVertexInputAttributeDescription, 8> attrDescs{};
     attrDescs[0].binding  = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
-    attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
-    attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, texCoord);
+    attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
+    attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, roughMetal);
     attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32_SFLOAT;       attrDescs[3].offset = offsetof(Vertex, texIndex);
     attrDescs[4].binding  = 0; attrDescs[4].location = 4; attrDescs[4].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[4].offset = offsetof(Vertex, normal);
     attrDescs[5].binding  = 0; attrDescs[5].location = 5; attrDescs[5].format = VK_FORMAT_R32_SFLOAT;       attrDescs[5].offset = offsetof(Vertex, ao);
     attrDescs[6].binding  = 0; attrDescs[6].location = 6; attrDescs[6].format = VK_FORMAT_R32_SFLOAT;       attrDescs[6].offset = offsetof(Vertex, light);
+    attrDescs[7].binding  = 0; attrDescs[7].location = 7; attrDescs[7].format = VK_FORMAT_R32_SFLOAT;       attrDescs[7].offset = offsetof(Vertex, emissive);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

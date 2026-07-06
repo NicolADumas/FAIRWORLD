@@ -34,13 +34,14 @@ enum class BlockType : uint8_t {
 };
 
 struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
-    float texIndex;
-    glm::vec3 normal;
-    float ao;
-    float light;
+    glm::vec3 pos;        // 12 bytes
+    glm::vec4 color;      // 16 bytes
+    glm::vec2 roughMetal; // 8 bytes (roughness, metallic)
+    float texIndex;       // 4 bytes
+    glm::vec3 normal;     // 12 bytes
+    float ao;             // 4 bytes
+    float light;          // 4 bytes
+    float emissive;       // 4 bytes
 };
 
 enum class PlanetType {

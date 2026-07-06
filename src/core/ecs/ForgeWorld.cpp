@@ -25,16 +25,16 @@ MeshComponent MeshGenerators::MakeCube(float size) {
     MeshComponent m; 
     m.name = "Cube";
     float h = size * 0.5f;
-    fw::Vec3 color = {1.0f, 1.0f, 1.0f};
+    fw::Vec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
     
-    // Vertices (PBR format): {position, color, uv, texIndex, normal, ao, light}
+    // Vertices (PBR format): {position, color, roughMetal, texIndex, normal, ao, light, emissive}
     auto addFace = [&](fw::Vec3 v0, fw::Vec3 v1, fw::Vec3 v2, fw::Vec3 v3, fw::Vec3 n) {
-        m.vertices.push_back({v0, color, {0,0}, 0.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v1, color, {1,0}, 0.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v2, color, {1,1}, 0.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v0, color, {0,0}, 0.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v2, color, {1,1}, 0.0f, n, 1.0f, 1.0f});
-        m.vertices.push_back({v3, color, {0,1}, 0.0f, n, 1.0f, 1.0f});
+        m.vertices.push_back({v0, color, {0.5f, 0.0f}, -1.0f, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v1, color, {0.5f, 0.0f}, -1.0f, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v2, color, {0.5f, 0.0f}, -1.0f, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v0, color, {0.5f, 0.0f}, -1.0f, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v2, color, {0.5f, 0.0f}, -1.0f, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v3, color, {0.5f, 0.0f}, -1.0f, n, 1.0f, 1.0f, 0.0f});
     };
 
     // Front (-Z)
@@ -57,7 +57,7 @@ MeshComponent MeshGenerators::MakeVoxelPreview(int colorIndex, const ForgeMateri
     MeshComponent m;
     m.name = "PreviewSphere";
     
-    fw::Vec3 color = palette.materials[colorIndex].baseColor;
+    fw::Vec4 color = {palette.materials[colorIndex].baseColor.x, palette.materials[colorIndex].baseColor.y, palette.materials[colorIndex].baseColor.z, 1.0f};
     float rough = palette.materials[colorIndex].roughness;
     float metal = palette.materials[colorIndex].metallic;
     float emissive = palette.materials[colorIndex].emissiveStrength;
@@ -65,12 +65,13 @@ MeshComponent MeshGenerators::MakeVoxelPreview(int colorIndex, const ForgeMateri
     auto addFace = [&](const fw::Vec3& p1, const fw::Vec3& p2, const fw::Vec3& p3, const fw::Vec3& p4, const fw::Vec3& norm) {
         float light = 1.0f;
         float ao = 1.0f;
-        m.vertices.push_back({p1, color, {rough, metal}, emissive, norm, ao, light});
-        m.vertices.push_back({p2, color, {rough, metal}, emissive, norm, ao, light});
-        m.vertices.push_back({p3, color, {rough, metal}, emissive, norm, ao, light});
-        m.vertices.push_back({p1, color, {rough, metal}, emissive, norm, ao, light});
-        m.vertices.push_back({p3, color, {rough, metal}, emissive, norm, ao, light});
-        m.vertices.push_back({p4, color, {rough, metal}, emissive, norm, ao, light});
+        float texIndex = -1.0f; // Preview doesn't use textures usually, or we can use the material ID?
+        m.vertices.push_back({p1, color, {rough, metal}, texIndex, norm, ao, light, emissive});
+        m.vertices.push_back({p2, color, {rough, metal}, texIndex, norm, ao, light, emissive});
+        m.vertices.push_back({p3, color, {rough, metal}, texIndex, norm, ao, light, emissive});
+        m.vertices.push_back({p1, color, {rough, metal}, texIndex, norm, ao, light, emissive});
+        m.vertices.push_back({p3, color, {rough, metal}, texIndex, norm, ao, light, emissive});
+        m.vertices.push_back({p4, color, {rough, metal}, texIndex, norm, ao, light, emissive});
     };
 
     float h = 0.505f; // Slightly larger to avoid Z-fighting with grid
@@ -104,12 +105,13 @@ MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
             v.position = {r * std::sin(phi) * std::cos(theta),
                           r * std::cos(phi),
                           r * std::sin(phi) * std::sin(theta)};
-            v.color = {1.0f, 1.0f, 1.0f};
+            v.color = {1.0f, 1.0f, 1.0f, 1.0f};
             v.texIndex = -1.0f;
             v.normal = v.position.norm();
-            v.uv = {(float)si / segs, (float)ri / rings};
+            v.roughMetal = {0.5f, 0.0f}; // Default roughness/metallic
             v.ao = 1.0f;
             v.light = 1.0f;
+            v.emissive = 0.0f;
             tempVerts.push_back(v);
         }
     }
@@ -150,7 +152,7 @@ MeshComponent MeshGenerators::MakeGridBox(int width, int height, int depth, floa
             v.position.x = v.position.x * size.x + pos.x;
             v.position.y = v.position.y * size.y + pos.y;
             v.position.z = v.position.z * size.z + pos.z;
-            v.color = {0.8f, 0.8f, 0.0f}; // Giallo acceso
+            v.color = {0.8f, 0.8f, 0.0f, 1.0f}; // Giallo acceso, alpha 1
             m.vertices.push_back(v);
         }
     };
@@ -615,10 +617,11 @@ void ForgeWorld::Update(float dt) {
                             float py = y;
                             float pz = z;
                             
-                            fw::Vec3 color = paletteCopy.materials[block].baseColor;
+                            fw::Vec4 color = {paletteCopy.materials[block].baseColor.x, paletteCopy.materials[block].baseColor.y, paletteCopy.materials[block].baseColor.z, 1.0f};
                             float rough = paletteCopy.materials[block].roughness;
                             float metal = paletteCopy.materials[block].metallic;
                             float emissive = paletteCopy.materials[block].emissiveStrength;
+                            float texIndex = paletteCopy.materials[block].textureIndex;
 
                             // Top (+Y)
                             if (getBlock(x, y + 1, z) == 0) {
@@ -627,62 +630,62 @@ void ForgeWorld::Update(float dt) {
                                 float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
                                 float ao11 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z+1), getBlock(x+1, y+1, z+1));
                                 float ao01 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z+1), getBlock(x-1, y+1, z+1));
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao10, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao01, light});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,1,0}, ao00, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,1,0}, ao10, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,1,0}, ao11, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,1,0}, ao00, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,1,0}, ao11, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,1,0}, ao01, light, emissive});
                             }
                             // Bottom (-Y)
                             if (getBlock(x, y - 1, z) == 0) {
                                 float light = getLight(x, y - 1, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
                             }
                             // Left (-X)
                             if (getBlock(x - 1, y, z) == 0) {
                                 float light = getLight(x - 1, y, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
                             }
                             // Right (+X)
                             if (getBlock(x + 1, y, z) == 0) {
                                 float light = getLight(x + 1, y, z);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
                             }
                             // Front (+Z)
                             if (getBlock(x, y, z + 1) == 0) {
                                 float light = getLight(x, y, z + 1);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
                             }
                             // Back (-Z)
                             if (getBlock(x, y, z - 1) == 0) {
                                 float light = getLight(x, y, z - 1);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
                             }
                         }
                     }
@@ -1242,70 +1245,67 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
                         float rough = paletteCopy.materials[block].roughness;
                         float metal = paletteCopy.materials[block].metallic;
                         float emissive = paletteCopy.materials[block].emissiveStrength;
+                        float texIndex = paletteCopy.materials[block].textureIndex;
 
                         // Top (+Y)
                         if (getBlock(x, y + 1, z) == 0) {
                             float light = getLight(x, y + 1, z);
-                            float ao00 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z-1), getBlock(x-1, y+1, z-1));
-                            float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
-                            float ao11 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z+1), getBlock(x+1, y+1, z+1));
-                            float ao01 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z+1), getBlock(x-1, y+1, z+1));
-                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao10, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao00, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao11, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,1,0}, ao01, light});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,1,0}, 1.0f, light, emissive});
                         }
                         // Bottom (-Y)
                         if (getBlock(x, y - 1, z) == 0) {
                             float light = getLight(x, y - 1, z);
-                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,-1,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,-1,0}, 1.0f, light, emissive});
                         }
                         // Left (-X)
                         if (getBlock(x - 1, y, z) == 0) {
                             float light = getLight(x - 1, y, z);
-                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {-1,0,0}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {-1,0,0}, 1.0f, light, emissive});
                         }
                         // Right (+X)
                         if (getBlock(x + 1, y, z) == 0) {
                             float light = getLight(x + 1, y, z);
-                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {1,0,0}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {1,0,0}, 1.0f, light, emissive});
                         }
                         // Front (+Z)
                         if (getBlock(x, y, z + 1) == 0) {
                             float light = getLight(x, y, z + 1);
-                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, emissive, {0,0,1}, 1.0f, light});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,1}, 1.0f, light, emissive});
                         }
                         // Back (-Z)
                         if (getBlock(x, y, z - 1) == 0) {
                             float light = getLight(x, y, z - 1);
-                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
-                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, emissive, {0,0,-1}, 1.0f, light});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                            vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
+                            vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, {color.x, color.y, color.z, 1.0f}, {rough, metal}, texIndex, {0,0,-1}, 1.0f, light, emissive});
                         }
                     }
                 }

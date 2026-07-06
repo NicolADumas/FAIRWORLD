@@ -9,12 +9,19 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 
+namespace fw {
+    class JoltPhysicsSystem;
+}
 
+namespace JPH {
+    class Body;
+    class Constraint;
+}
 
 class PhysicsLabState : public State {
 public:
     PhysicsLabState(SharedContext* context);
-    ~PhysicsLabState() override = default;
+    ~PhysicsLabState() override;
 
     bool Init() override;
     void Update(float dt) override;
@@ -62,6 +69,11 @@ private:
     // Funzioni di supporto
     void StartSimulation();
     void StopSimulation();
+    
+    // Fisica Jolt locale al Lab
+    fw::JoltPhysicsSystem* m_joltSystem = nullptr;
+    std::vector<uint32_t> m_joltBodies;      // Track body IDs (uint32_t to avoid full JPH headers)
+    std::vector<void*> m_joltConstraints;   // Track constraints (void* to avoid full JPH headers)
     
     // Metodi UI ImGui
     void DrawTimeline();

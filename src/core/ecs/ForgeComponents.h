@@ -55,9 +55,8 @@ struct ForgeMaterial {
     float transmission       = 0.0f; // Trasparenza PBR (vetro, liquidi)
     float ior                = 1.5f; // Indice di Rifrazione (1.0 aria, 1.33 acqua, 1.5 vetro)
     
-    // Per ora non usiamo le texture, ma le lasciamo per il futuro
-    char albedoMap[64] = {0};
-    char normalMap[64] = {0};
+    // Texture Index array (-1.0f = usa baseColor)
+    float textureIndex = -1.0f;
     
     // --- Fisica (Jolt) ---
     float mass               = 1.0f;  // Massa del materiale in kg (se 0.0f il blocco è statico/cinematico)
@@ -84,13 +83,14 @@ struct ForgeMaterialPalette {
 
 // Mesh element structures (Trivially Copyable dove possibile)
 struct Vertex {
-    Vec3 position;
-    Vec3 color;
-    Vec2 uv;
-    float texIndex;
-    Vec3 normal;
-    float ao;     // Ambient Occlusion value (0.0 to 1.0)
-    float light;  // Light value (0.0 to 1.0)
+    Vec3 position;    // 12
+    Vec4 color;       // 16
+    Vec2 roughMetal;  // 8
+    float texIndex;   // 4
+    Vec3 normal;      // 12
+    float ao;         // 4
+    float light;      // 4
+    float emissive;   // 4
 };
 
 struct Face {

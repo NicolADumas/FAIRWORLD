@@ -14,8 +14,14 @@
 #include "ForgeWorld.h"
 #include "RenderManager.h"
 #include "DeviceManager.h"
+#include "JoltPhysicsSystem.h"
 
 PhysicsLabState::PhysicsLabState(SharedContext* context) : m_context(context) {
+}
+
+PhysicsLabState::~PhysicsLabState() {
+    delete m_joltSystem;
+    m_joltSystem = nullptr;
 }
 
 bool PhysicsLabState::Init() {
@@ -23,6 +29,8 @@ bool PhysicsLabState::Init() {
     m_originalWorld = m_context->forgeWorld;
     m_labWorld = new fw::ForgeWorld();
     m_context->forgeWorld = m_labWorld;
+
+    m_joltSystem = new fw::JoltPhysicsSystem();
 
     // Il Lab è un editor: il cursore deve essere sempre libero e visibile.
     // Lo forziamo qui invece di affidarci al DeviceManager frame-per-frame,
@@ -59,8 +67,56 @@ void PhysicsLabState::ScanTemplates() {
 
 void PhysicsLabState::SaveRig(const std::string& path) {}
 void PhysicsLabState::LoadRig(const std::string& path) {}
-void PhysicsLabState::StartSimulation() { m_simulateMode = true; }
-void PhysicsLabState::StopSimulation() { m_simulateMode = false; }
+void PhysicsLabState::StartSimulation() { 
+    if (!m_joltSystem || m_skeleton.m_joints.empty()) return;
+    m_simulateMode = true; 
+    
+    auto* physSys = m_joltSystem->GetSystem();
+    auto& bodyInterface = physSys->GetBodyInterface();
+    
+    // Create static floor
+    JPH::BoxShapeSettings floorShapeSettings(JPH::Vec3(100.0f, 1.0f, 100.0f));
+    JPH::ShapeSettings::ShapeResult floorShapeResult = floorShapeSettings.Create();
+    JPH::ShapeRefC floorShape = floorShapeResult.Get();
+    JPH::BodyCreationSettings floorSettings(floorShape, JPH::RVec3(0.0, -1.0, 0.0), JPH::Quat::sIdentity(), JPH::EMotionType::Static, fw::Layers::NON_MOVING);
+    JPH::Body* floor = bodyInterface.CreateBody(floorSettings);
+    bodyInterface.AddBody(floor->GetID(), JPH::EActivation::DontActivate);
+    m_joltBodies.push_back(floor->GetID().GetIndexAndSequenceNumber());
+    
+    // Create dynamic bodies for joints
+    for (auto& joint : m_skeleton.m_joints) {
+        JPH::BoxShapeSettings boxSettings(JPH::Vec3(0.5f, 0.5f, 0.5f)); // TODO: use actual bounds
+        JPH::ShapeRefC boxShape = boxSettings.Create().Get();
+        
+        glm::vec3 pos = glm::vec3(joint.globalRestTransform[3]);
+        glm::quat rot = glm::quat_cast(joint.globalRestTransform);
+        
+        JPH::BodyCreationSettings boxCS(boxShape, JPH::RVec3(pos.x, pos.y, pos.z), JPH::Quat(rot.x, rot.y, rot.z, rot.w), JPH::EMotionType::Dynamic, fw::Layers::MOVING);
+        JPH::Body* body = bodyInterface.CreateBody(boxCS);
+        bodyInterface.AddBody(body->GetID(), JPH::EActivation::Activate);
+        
+        joint.joltBodyID = body->GetID().GetIndexAndSequenceNumber();
+        m_joltBodies.push_back(joint.joltBodyID);
+    }
+}
+
+void PhysicsLabState::StopSimulation() { 
+    if (!m_joltSystem) return;
+    m_simulateMode = false; 
+    
+    auto* physSys = m_joltSystem->GetSystem();
+    auto& bodyInterface = physSys->GetBodyInterface();
+    
+    for (uint32_t id : m_joltBodies) {
+        JPH::BodyID bodyID(id);
+        bodyInterface.RemoveBody(bodyID);
+        bodyInterface.DestroyBody(bodyID);
+    }
+    m_joltBodies.clear();
+    
+    // Restore skeleton
+    m_skeleton.UpdateForwardKinematics();
+}
 
 
 void PhysicsLabState::DrawSkeletonHierarchy() {
@@ -347,11 +403,10 @@ void PhysicsLabState::Update(float dt) {
                 float ndcX = (2.0f * mousePos.x) / width - 1.0f;
                 float ndcY = 1.0f - (2.0f * mousePos.y) / height;
                 
-                glm::vec4 rayClip = glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-                // BUG FIX #2: usa m_projEditor (senza Y-flip) per raycast corretto
                 glm::mat4 invProj = glm::inverse(m_projEditor);
                 glm::mat4 invView = glm::inverse(m_context->activeCameraView.viewMatrix);
                 
+                glm::vec4 rayClip = glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
                 glm::vec4 rayEye = invProj * rayClip;
                 rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
                 
@@ -385,7 +440,37 @@ void PhysicsLabState::Update(float dt) {
         }
         
         if (m_skeleton.m_joints.size() > 0) {
-            if (m_previewAnimation && !m_simulateMode) {
+            if (m_isPlaying) {
+                m_animationTime += dt;
+                if (m_animationTime > 1.0f/60.0f) {
+                    m_currentFrame++;
+                    if (m_currentFrame > m_maxFrames) m_currentFrame = 0;
+                    m_animationTime = 0;
+                }
+            }
+        }
+    } else {
+        // Step Jolt physics
+        if (m_joltSystem) {
+            auto* physSys = m_joltSystem->GetSystem();
+            physSys->Update(dt, 1, m_joltSystem->GetTempAllocator(), m_joltSystem->GetJobSystem());
+            
+            auto& bodyInterface = physSys->GetBodyInterface();
+            for (auto& joint : m_skeleton.m_joints) {
+                if (joint.joltBodyID != 0xFFFFFFFF) {
+                    JPH::BodyID bodyID(joint.joltBodyID);
+                    JPH::RVec3 pos = bodyInterface.GetPosition(bodyID);
+                    JPH::Quat rot = bodyInterface.GetRotation(bodyID);
+                    
+                    glm::mat4 transform = glm::mat4_cast(glm::quat(rot.GetW(), rot.GetX(), rot.GetY(), rot.GetZ()));
+                    transform[3] = glm::vec4(pos.GetX(), pos.GetY(), pos.GetZ(), 1.0f);
+                    joint.globalRestTransform = transform;
+                }
+            }
+        }
+    }
+
+    if (m_previewAnimation && !m_simulateMode) {
                 m_animationTime += dt;
                 auto& dofState = m_skeleton.GetDofState();
                 
@@ -471,8 +556,6 @@ void PhysicsLabState::Update(float dt) {
                     }
                 }
             }
-        }
-    }
 
     ImGuiIO& io = ImGui::GetIO();
     bool mouseOverUI = io.WantCaptureMouse;
@@ -649,7 +732,11 @@ void PhysicsLabState::Render() {
         if (!spawnTarget.empty()) {
             if (m_selectedJointIndex >= 0 && m_selectedJointIndex < m_skeleton.m_joints.size()) {
                 fw::JointData& j = m_skeleton.m_joints[m_selectedJointIndex];
-                j.meshPath = spawnTarget; 
+                
+                // Estrai solo il nome (stem) perché LoadStructureAsPrefab aggiunge già directory ed estensione
+                std::filesystem::path p(spawnTarget);
+                j.meshPath = p.stem().string(); 
+                
                 if (j.voxelEntity != 0xFFFFFFFF) {
                     entt::entity e = static_cast<entt::entity>(j.voxelEntity);
                     if (m_labWorld->GetRegistry().valid(e)) m_labWorld->GetRegistry().destroy(e);
