@@ -11,6 +11,8 @@
 #include "FAIRWORLD.h"
 #include "RenderManager.h"
 #include "EventManager.h"
+#include "MapWorldGenerator.h"
+#include "../app/AssetManager.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -201,6 +203,22 @@ ForgeWorld::~ForgeWorld() {
     }
 }
 
+void ForgeWorld::DestroyEntity(entt::entity e) {
+    if (m_registry.valid(e)) {
+        if (auto* mesh = m_registry.try_get<MeshComponent>(e)) {
+            if (mesh->vramAlloc.valid && m_context && m_context->vramAllocator) {
+                m_context->vramAllocator->Free(mesh->vramAlloc);
+            }
+        }
+        m_registry.destroy(e);
+    }
+}
+
+void ForgeWorld::EnqueueDeferredMesh(const std::string& name, glm::vec3 position, fw::MeshComponent mesh, std::shared_ptr<VoxelChunkComponent> chunkData, entt::entity targetEntity, bool newlyGen) {
+    std::lock_guard<std::mutex> lock(m_deferredMutex);
+    m_deferredMeshes.push_back({name, position, std::move(mesh), chunkData, targetEntity, newlyGen});
+}
+
 void ForgeWorld::ClearWorld(bool saveToDisk) {
     if (saveToDisk) {
         std::cout << "[ForgeWorld] Salvataggio automatico e pulizia della memoria (ClearWorld)...\n";
@@ -347,11 +365,27 @@ void ForgeWorld::GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz) {
             
             int height = 20 + (int)(shapedNoise * 80.0);
             
+            // Calcolo parametri ambientali (Temperatura e Umidità) tramite rumore Perlin
+            float tempNoise = (float)m_noiseGen.octaveNoise(worldX * 0.005, 1000.0, worldZ * 0.005, 2, 0.5);
+            float humNoise = (float)m_noiseGen.octaveNoise(worldX * 0.005, 2000.0, worldZ * 0.005, 2, 0.5);
+            
+            float temp = (tempNoise + 1.0f) * 0.5f;
+            float hum = (humNoise + 1.0f) * 0.5f;
+            float relHeight = std::clamp((float)height / 128.0f, 0.0f, 1.0f);
+            
+            const BiomeDef* biome = nullptr;
+            if (m_context && m_context->assetManager) {
+                biome = fw::MapWorldGenerator::EvaluateBiome(temp, hum, relHeight, m_context->assetManager);
+            }
+            
+            uint8_t surfaceBlock = biome ? biome->surfaceBlockId : (uint8_t)BlockType::Grass;
+            uint8_t subsurfaceBlock = biome ? biome->subsurfaceBlockId : (uint8_t)BlockType::Dirt;
+            
             for (int y = 0; y < height; ++y) {
                 if (y == height - 1) {
-                    chunk.blocks[x][y][z] = (uint8_t)BlockType::Grass;
+                    chunk.blocks[x][y][z] = surfaceBlock;
                 } else if (y > height - 4) {
-                    chunk.blocks[x][y][z] = (uint8_t)BlockType::Dirt;
+                    chunk.blocks[x][y][z] = subsurfaceBlock;
                 } else {
                     chunk.blocks[x][y][z] = (uint8_t)BlockType::Stone;
                 }
@@ -459,6 +493,12 @@ entt::entity ForgeWorld::CreatePrimitive(const std::string& name, const Vec3& po
     return entity;
 }
 
+entt::entity ForgeWorld::CreateEmptyEntity(const std::string& name) {
+    auto entity = m_registry.create();
+    m_registry.emplace<MetadataComponent>(entity, name, true, false);
+    return entity;
+}
+
 void ForgeWorld::MarkChunkDirty(entt::entity chunkEntity) {
     if (m_registry.all_of<ChunkDirtyComponent>(chunkEntity)) {
         auto& dirty = m_registry.get<ChunkDirtyComponent>(chunkEntity);
@@ -468,10 +508,6 @@ void ForgeWorld::MarkChunkDirty(entt::entity chunkEntity) {
     }
 }
 
-void ForgeWorld::EnqueueDeferredMesh(const std::string& name, const Vec3& position, MeshComponent&& mesh) {
-    std::lock_guard<std::mutex> lock(m_deferredMutex);
-    m_deferredMeshes.push_back({name, position, std::move(mesh)});
-}
 
 void ForgeWorld::Update(float dt) {
     // 1. Processa la coda dei comandi differiti (es. mesh generate dai Worker Threads)
@@ -481,8 +517,18 @@ void ForgeWorld::Update(float dt) {
             std::cout << "[DEBUG ProcessDeferred] Elaborazione " << m_deferredMeshes.size() << " mesh differiti dalla coda asincrona.\n";
         }
         for (auto& def : m_deferredMeshes) {
-            // Aggiorna l'entità originaria del chunk invece di crearne una nuova
-            if (m_registry.valid(def.targetEntity)) {
+            // Se abbiamo specificato un targetEntity ma non è più valido, significa che l'entità è stata cancellata (es. LOD Merge)
+            if (def.targetEntity != entt::null && !m_registry.valid(def.targetEntity)) {
+                std::cout << "[ForgeWorld ECS] Ignorato mesh differito orfano: " << def.name << "\n";
+                // Rilasciamo la memoria VRAM temporanea se era già stata allocata dal Dma
+                if (def.mesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+                    m_context->vramAllocator->Free(def.mesh.vramAlloc);
+                }
+                continue; // Discard mesh!
+            }
+            
+            // Aggiorna l'entità originaria del chunk o l'entità vuota prenotata
+            if (def.targetEntity != entt::null) {
                 // Sincronizza i dati procedurali generati in background SOLO se sono stati creati da zero
                 if (def.isNewlyGenerated) {
                     auto& chunk = m_registry.get<VoxelChunkComponent>(def.targetEntity);
@@ -536,7 +582,7 @@ void ForgeWorld::Update(float dt) {
                 m_registry.emplace<MeshComponent>(newEntity, std::move(def.mesh));
                 
                 fw::TransformComponent trans;
-                trans.location = def.position;
+                trans.location = {def.position.x, def.position.y, def.position.z};
                 trans.rotation = {0.0f, 0.0f, 0.0f};
                 trans.scale = {1.0f, 1.0f, 1.0f}; // Fissa il bug della scala a zero!
                 m_registry.emplace<TransformComponent>(newEntity, trans);

@@ -21,6 +21,29 @@ struct BlockDef {
 };
 
 // ─────────────────────────────────────────────────────────────────
+//  BiomeDef — definizione di un ecosistema
+// ─────────────────────────────────────────────────────────────────
+struct BiomeDef {
+    std::string id = "biome_default";
+    std::string name = "Nuovo Bioma";
+    
+    // Condizioni ambientali (0.0 a 1.0)
+    float minTemperature = 0.0f;
+    float maxTemperature = 1.0f;
+    float minHumidity = 0.0f;
+    float maxHumidity = 1.0f;
+    float minHeight = 0.0f;
+    float maxHeight = 1.0f;
+    
+    // Blocchi da generare
+    int surfaceBlockId = 1;     // Erba
+    int subsurfaceBlockId = 2;  // Terra
+    
+    // Frazione di rumore Perlin desiderata
+    float perlinFrequency = 0.02f;
+};
+
+// ─────────────────────────────────────────────────────────────────
 //  MobTemplate — struttura gerarchica completa
 // ─────────────────────────────────────────────────────────────────
 
@@ -99,6 +122,7 @@ public:
     bool LoadAll(const std::string& dir);
     void SaveBlocksJson();
     void SaveMobsJson();
+    void SaveBiomesJson();
 
     // Hot-reload: controlla se mobs.json è stato modificato dall'esterno.
     // Ritorna true se c'è stato un reload. Cheap (solo stat del file).
@@ -106,6 +130,7 @@ public:
 
     std::vector<BlockDef>&    GetBlocks() { return m_blocks; }
     std::vector<MobTemplate>& GetMobs()   { return m_mobs;   }
+    std::vector<BiomeDef>&    GetBiomes() { return m_biomes; }
 
     BlockDef*    GetBlock(int id);
     MobTemplate* GetMob(int id);
@@ -122,8 +147,10 @@ private:
     std::string              m_baseDir;
     std::vector<BlockDef>    m_blocks;
     std::vector<MobTemplate> m_mobs;
+    std::vector<BiomeDef>    m_biomes;
     FILETIME                 m_mobsFileTime = {}; // Timestamp ultimo caricamento (hot-reload)
 
     bool LoadBlocksJson();
     bool LoadMobsJson();
+    bool LoadBiomesJson();
 };

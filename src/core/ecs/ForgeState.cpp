@@ -18,6 +18,8 @@
 #include <glm/gtc/quaternion.hpp>
 #include "RenderManager.h"
 #include <iostream>
+#include <fstream>
+#include "json.hpp"
 
 ForgeState::ForgeState(SharedContext* context) : m_context(context) {
     std::cout << "[ForgeState] Costruito.\n";
@@ -99,6 +101,29 @@ bool ForgeState::Init() {
     auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(m_selectedColorIndex, m_context->forgeWorld->GetPalette());
     m_context->forgeWorld->EnqueueDeferredMesh("PreviewSphere", { 8.0f, 0.0f, 8.0f }, std::move(previewMesh));
     
+    // --- CARICAMENTO NOMI BLOCCHI DA JSON ---
+    std::ifstream file("assets/definitions/blocks.json");
+    if (file.is_open()) {
+        try {
+            nlohmann::json j = nlohmann::json::parse(file);
+            if (j.contains("blocks") && j["blocks"].is_array()) {
+                m_activeMaterialsCount = 0;
+                for (const auto& b : j["blocks"]) {
+                    if (b.contains("id") && b.contains("name")) {
+                        int id = b["id"].get<int>();
+                        std::string name = b["name"].get<std::string>();
+                        m_blockNames[id] = name;
+                        if (id > m_activeMaterialsCount) m_activeMaterialsCount = id;
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[ForgeState] Errore caricamento blocks.json: " << e.what() << "\n";
+        }
+    }
+    
+    if (m_activeMaterialsCount == 0) m_activeMaterialsCount = 1; // Fallback
+
     return true;
 }
 
@@ -470,6 +495,9 @@ void ForgeState::Render() {
         if (ImGui::Button("Asset Browser Globale", ImVec2(-1, 30))) {
             m_showAssetBrowser = true;
         }
+        if (ImGui::Button("Biome Designer", ImVec2(-1, 30))) {
+            m_showBiomeDesigner = true;
+        }
         
         ImGui::Spacing();
         ImGui::Separator();
@@ -515,7 +543,8 @@ void ForgeState::Render() {
         ImGui::Spacing();
         ImGui::Separator();
 
-        ImGui::Text("Materiali PBR (Selezionato: %d / %d)", m_selectedColorIndex, m_activeMaterialsCount);
+        std::string blockName = m_blockNames.count(m_selectedColorIndex) ? m_blockNames[m_selectedColorIndex] : "Sconosciuto";
+        ImGui::Text("Blocchi / Materiali PBR (Selezionato: %d - %s)", m_selectedColorIndex, blockName.c_str());
         
         // Pulsanti di navigazione tra i materiali attivi
         if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {

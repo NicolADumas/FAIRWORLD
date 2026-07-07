@@ -1353,6 +1353,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     if (context && context->forgeWorld && m_globalVramBuffer != VK_NULL_HANDLE) {
         // Le mesh del ForgeWorld usano PBR e push constants dedicate
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
         
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -2737,7 +2738,8 @@ bool RenderManager::CreateForgePipeline() {
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-    pipelineLayoutInfo.setLayoutCount = 0; // Niente descriptor sets!
+    pipelineLayoutInfo.setLayoutCount = 1; 
+    pipelineLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
 
     if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_forgePipelineLayout) != VK_SUCCESS) {
         std::cerr << "[VULKAN] Errore creazione Forge Pipeline Layout!\n";
@@ -2785,6 +2787,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     // 1. SETUP GLOBALE (Cambio di stato singolo)
     // ==========================================
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
 
     ForgePushConstantData pcData{};
     VkDeviceSize offsets[] = {0};

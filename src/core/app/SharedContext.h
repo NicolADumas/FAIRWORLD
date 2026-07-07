@@ -14,6 +14,7 @@ class StateManager;
 class FairWorldEngine;
 class DeviceManager;
 class RenderManager;
+class AssetManager;
 
 // Classi che vivono nel namespace fw
 namespace fw {
@@ -60,6 +61,7 @@ struct SharedContext {
     fw::VulkanDmaManager*   dmaManager   = nullptr;
     fw::VramSlabAllocator*  vramAllocator= nullptr;
     fw::ForgeWorld*         forgeWorld   = nullptr;
+    AssetManager*           assetManager = nullptr;
 
     // Sincronizzazione per RenderManager
     RenderViewData          activeCameraView;

@@ -7,6 +7,7 @@
 #include "ForgeState.h"
 #include "FAIRWORLD.h"
 #include "PhysicsLabState.h"
+#include "MapState.h"
 #include <iostream>
 #include "imgui.h"
 
@@ -117,6 +118,19 @@ void HubState::Render() {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
         if (ImGui::Button("CONNESSIONE DISPOSITIVI\n[ Impostazioni Hardware ]", ImVec2(channelWidth, channelHeight))) {
             showDeviceManager = true;
+        }
+        ImGui::PopStyleColor(3);
+
+        // Canale 5: MAP SYSTEM
+        ImGui::SetCursorPos(ImVec2(startX, startY + (channelHeight + padding) * 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.8f, 1.0f)); // Viola
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.5f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        if (ImGui::Button("PLANET MAPPER\n[ Configura Sistema Solare ]", ImVec2(channelWidth, channelHeight))) {
+            std::cout << "[HubState] Transizione al Mapper Planetario.\n";
+            m_context->engine->SetGameMode(GameMode::Map);
+            m_context->engine->ForceGameState(GameState::PLAYING);
+            m_context->stateManager->ChangeState(std::make_unique<MapState>(m_context));
         }
         ImGui::PopStyleColor(3);
 

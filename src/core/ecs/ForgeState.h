@@ -11,6 +11,9 @@ namespace fw {
     class ForgeWorld;
 }
 
+#include <map>
+#include <string>
+
 class ForgeState : public State {
 public:
     explicit ForgeState(SharedContext* context);
@@ -52,7 +55,6 @@ private:
     float m_fpPitch = 0.0f;
     glm::vec3 m_fpPosition = glm::vec3(8.0f, 8.0f, 25.0f);
     bool m_fpCursorLocked = false;
-
     // --- Keyboard Cursor ---
     int m_controlMode = 0; // 0: Auto, 1: Mouse, 2: Keyboard
     bool m_useKeyboardCursor = false;
@@ -61,4 +63,10 @@ private:
     // --- Global UI ---
     fw::GlobalAssetBrowser m_assetBrowser;
     bool m_showAssetBrowser = false;
+    
+    // --- Biome Designer UI ---
+    bool m_showBiomeDesigner = false;
+    int m_selectedBiomeIndex = 0;
+    
+    std::map<int, std::string> m_blockNames;
 };

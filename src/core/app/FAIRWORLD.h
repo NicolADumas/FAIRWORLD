@@ -19,7 +19,7 @@
 #include "DeskarmWebView.h"
 
 
-enum class GameMode { Dev, Play, Hub, PhysicsLab };
+enum class GameMode { Dev, Play, Hub, PhysicsLab, Map };
 
 // ------------------------------------------------------------------
 // GameState: ogni stato è ESCLUSIVO. Mai due stati attivi assieme.
@@ -86,6 +86,7 @@ public:
     World& GetWorld() { return m_world; }
     fw::TimeManager& GetTimeManager() { return *m_timeManager; }
     RenderManager* GetRenderManager() { return m_renderManager.get(); }
+    AssetManager* GetAssetManager() { return &m_assets; }
     GameMode GetGameMode() const { return m_gameMode; }
     void SetGameMode(GameMode mode) { m_gameMode = mode; }
     void ForceGameState(GameState state) { transitionTo(state); }

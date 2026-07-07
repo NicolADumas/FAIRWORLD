@@ -10,6 +10,7 @@
 #include "ForgeState.h"
 #include "PlayState.h"
 #include "PhysicsLabState.h"
+#include "MapState.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
@@ -55,11 +56,12 @@ int main() {
     StartAIServer();
 
     std::cout << "\nSeleziona la modalita' di avvio:\n";
-    std::cout << "1. PlayState (Mondo di Gioco, Esplorazione e Costruzione)\n";
-    std::cout << "2. ForgeState (Editor Strutture e Minivoxel)\n";
-    std::cout << "3. HubState (Hub Principale)\n";
-    std::cout << "4. PhysicsLabState (Test Fisica e Materiali)\n";
-    std::cout << "Scelta [1-4] (predefinito 1): ";
+    std::cout << "1. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)\n";
+    std::cout << "2. FORGE (Editor Strutture e Minivoxel)\n";
+    std::cout << "3. HUB (Hub Principale)\n";
+    std::cout << "4. LAB (Test Fisica e Materiali)\n";
+    std::cout << "5. MAP EDITOR (Planet Mapper)\n";
+    std::cout << "Scelta [1-5] (predefinito 1): ";
     
     int choice = 1;
     std::string input;
@@ -99,6 +101,10 @@ int main() {
         stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
         engine.SetGameMode(GameMode::PhysicsLab);
         std::cout << "[SYSTEM] Avviato PhysicsLabState...\n";
+    } else if (choice == 5) {
+        stateManager.ChangeState(std::make_unique<MapState>(&context));
+        engine.SetGameMode(GameMode::Map);
+        std::cout << "[SYSTEM] Avviato MapState...\n";
     } else {
         stateManager.ChangeState(std::make_unique<PlayState>(&context));
         engine.SetGameMode(GameMode::Play);

@@ -321,6 +321,8 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
     if (ctx && m_windowManager) {
         ctx->window = (WindowHandle)m_windowManager->GetWindowHandle();
         ctx->forgeWorld = m_forgeWorld.get();
+        ctx->assetManager = &m_assets; // BUG FIX: AssetManager was NULL!
+        
         // Inizializza i sistemi col context appena disponibile
         m_forgeWorld->Initialize(ctx);
         m_timeManager->Initialize();

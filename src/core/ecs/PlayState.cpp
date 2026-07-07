@@ -17,6 +17,8 @@
 #include "ForgeWorld.h"
 #include "RenderManager.h"
 #include "AsyncInput.h"
+#include "MapDocument.h"
+#include "MapWorldGenerator.h"
 #include <imgui.h>
 
 using json = nlohmann::json;
@@ -72,32 +74,34 @@ bool PlayState::Init() {
 
     // === CARICAMENTO CONFIGURAZIONE DATA-DRIVEN (JSON) ===
     std::string configPath = m_context->targetGameJsonPath;
-    if (configPath.empty()) {
-        std::cout << "[PlayState] Nessun JSON specificato. Utilizzo fallback predefinito.\n";
-        configPath = "projects/default_game.json"; // Un fallback fittizio per non crashare
-    }
-
-    std::cout << "[PlayState] Avvio parsing configurazione Data-Driven da: " 
-              << configPath << "\n";
-              
-    std::ifstream file(configPath);
-    json data;
-    if (!file.is_open()) {
-        std::cerr << "[StateManager WARNING] Impossibile aprire file JSON: " 
-                  << configPath 
-                  << " -> Procedo con ambiente vuoto.\n";
-        // Costruiamo un JSON di default in memoria per salvare la situazione
-        data = json::parse(R"({"entities": []})");
-    } else {
-        try {
-            data = json::parse(file);
-        } catch (...) {
-            std::cerr << "[StateManager ERROR] Errore di sintassi nel JSON -> Fallback.\n";
-            data = json::parse(R"({"entities": []})");
+    
+    // CONTROLLO CARTUCCIA JSON DA MAP BUILDER
+    if (!configPath.empty() && configPath.find("world_map.json") != std::string::npos) {
+        std::cout << "[PlayState] Cartuccia Mappa rilevata: " << configPath << "\n";
+        
+        fw::MapDocument doc;
+        if (doc.LoadJSON(configPath)) {
+            std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
+            // Genera il mondo effettivo su cui il giocatore interagirà (Indice 0 = pianeta principale per ora)
+            fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
+        } else {
+            std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
+            configPath = "";
         }
+    } 
+    
+    json data;
+    if (configPath.empty() || configPath.find("world_map.json") == std::string::npos) {
+        std::cout << "[PlayState] Nessuna mappa custom o errore. Generazione standard...\n";
+        configPath = "projects/default_game.json"; // Fallback fittizio
+        std::ifstream file(configPath);
+        if (!file.is_open()) {
+            data = json::parse(R"({"entities": []})");
+        } else {
+            try { data = json::parse(file); } catch (...) { data = json::parse(R"({"entities": []})"); }
+        }
+        std::cout << "[PlayState] Creazione entities EnTT dal JSON (o Fallback) in corso...\n";
     }
-
-    std::cout << "[PlayState] Creazione entities EnTT dal JSON (o Fallback) in corso...\n";
     
     int entityCount = 0;
     if (data.contains("entities") && data["entities"].is_array()) {
@@ -158,19 +162,16 @@ bool PlayState::Init() {
     auto& registry = m_context->forgeWorld->GetRegistry();
 
     // Generazione procedurale di un prato circondato da montagne (11x11 chunk)
-    int chunkRadius = 5; // Enorme prato
-    for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
-        for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
-            // Ignoriamo il chunk {0,0} se è già stato creato dal WorkspaceBlock, ma per sicurezza usiamo nomi univoci
-            std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
-            entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
-            auto& chunk = registry.get<fw::VoxelChunkComponent>(chunkEnt);
-            // Non riempiamo più manualmente i blocchi qui.
-            // Il job in background di ForgeWorld chiamerà automaticamente GenerateChunkData
-            // che utilizza FBM noise per generare colline, montagne e alberi!
-            
-            // Forza la generazione della mesh per questo chunk (ora gestito in sicurezza da ForgeWorld)
-            m_context->forgeWorld->MarkChunkDirty(chunkEnt);
+    // Eseguito SOLO SE NON c'è una cartuccia mappa custom caricata.
+    if (configPath.empty() || configPath.find("world_map.json") == std::string::npos) {
+        int chunkRadius = 5; // Enorme prato
+        for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
+            for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
+                std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
+                entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
+                auto& chunk = registry.get<fw::VoxelChunkComponent>(chunkEnt);
+                m_context->forgeWorld->MarkChunkDirty(chunkEnt);
+            }
         }
     }
     

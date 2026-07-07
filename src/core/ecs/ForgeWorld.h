@@ -73,6 +73,9 @@ public:
     
     // Generatore utility convertito in entity
     entt::entity CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type);
+    
+    // Crea un'entità vuota pre-registrata (utile per promesse di caricamento asincrono)
+    entt::entity CreateEmptyEntity(const std::string& name);
 
     // Accesso globale ai blocchi
     BlockType GetBlock(int x, int y, int z) const;
@@ -82,8 +85,11 @@ public:
     // FluidSystem event-driven
     void ProcessFluidUpdate(int x, int y, int z);
 
-    // Accoda la creazione di una mesh da un thread separato (Thread-safe)
-    void EnqueueDeferredMesh(const std::string& name, const Vec3& position, MeshComponent&& mesh);
+    // Aggiunge asincronamente un mesh chunk per il rendering differito
+    void EnqueueDeferredMesh(const std::string& name, glm::vec3 position, fw::MeshComponent mesh, std::shared_ptr<VoxelChunkComponent> chunkData = nullptr, entt::entity targetEntity = entt::null, bool newlyGen = false);
+    
+    // Distrugge in modo sicuro un'entità, liberando la VRAM se contiene una MeshComponent
+    void DestroyEntity(entt::entity e);
 
     // Ritorna il registro EnTT per interrogarlo
     entt::registry& GetRegistry() { return m_registry; }
@@ -157,7 +163,7 @@ private:
     // -- DEFERRED COMMANDS (Thread-Safe) --
     struct DeferredMeshSpawn {
         std::string name;
-        Vec3 position;
+        glm::vec3 position;
         MeshComponent mesh;
         std::shared_ptr<VoxelChunkComponent> chunkData = nullptr;
         entt::entity targetEntity = entt::null;

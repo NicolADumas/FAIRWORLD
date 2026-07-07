@@ -68,8 +68,15 @@ bool AssetManager::LoadAll(const std::string& directory) {
         std::cerr << "[ASSETS] Nessun mobs.json trovato, lista mob vuota.\n";
     }
 
+    // Caricamento Biomi
+    if (!LoadBiomesJson()) {
+        std::cerr << "[ASSETS] Nessun biomes.json trovato, uso biomi di default.\n";
+        BiomeDef def;
+        m_biomes.push_back(def);
+    }
+
     std::cout << "[ASSETS] Caricati " << m_blocks.size() << " blocchi, "
-              << m_mobs.size() << " mob tramite JSON.\n";
+              << m_mobs.size() << " mob e " << m_biomes.size() << " biomi.\n";
     return true;
 }
 
@@ -213,6 +220,76 @@ void AssetManager::SaveBlocksJson() {
         std::cout << "[ASSETS] blocks.json salvato in " << filepath << "\n";
     } else {
         std::cerr << "[ASSETS] Errore nel salvare " << filepath << "\n";
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  LoadBiomesJson
+// ─────────────────────────────────────────────────────────────────
+bool AssetManager::LoadBiomesJson() {
+    std::string path = m_baseDir + "definitions/biomes.json";
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+
+    json j;
+    try {
+        file >> j;
+        file.close();
+
+        m_biomes.clear();
+        for (const auto& item : j["biomes"]) {
+            BiomeDef def;
+            def.id = item.value("id", "biome_default");
+            def.name = item.value("name", "Nuovo Bioma");
+            def.minTemperature = item.value("minTemperature", 0.0f);
+            def.maxTemperature = item.value("maxTemperature", 1.0f);
+            def.minHumidity = item.value("minHumidity", 0.0f);
+            def.maxHumidity = item.value("maxHumidity", 1.0f);
+            def.minHeight = item.value("minHeight", 0.0f);
+            def.maxHeight = item.value("maxHeight", 1.0f);
+            def.surfaceBlockId = item.value("surfaceBlockId", 1);
+            def.subsurfaceBlockId = item.value("subsurfaceBlockId", 2);
+            def.perlinFrequency = item.value("perlinFrequency", 0.02f);
+            m_biomes.push_back(def);
+        }
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] Errore di parsing in biomes.json: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  SaveBiomesJson
+// ─────────────────────────────────────────────────────────────────
+void AssetManager::SaveBiomesJson() {
+    json j;
+    j["biomes"] = json::array();
+
+    for (const auto& b : m_biomes) {
+        json item;
+        item["id"] = b.id;
+        item["name"] = b.name;
+        item["minTemperature"] = b.minTemperature;
+        item["maxTemperature"] = b.maxTemperature;
+        item["minHumidity"] = b.minHumidity;
+        item["maxHumidity"] = b.maxHumidity;
+        item["minHeight"] = b.minHeight;
+        item["maxHeight"] = b.maxHeight;
+        item["surfaceBlockId"] = b.surfaceBlockId;
+        item["subsurfaceBlockId"] = b.subsurfaceBlockId;
+        item["perlinFrequency"] = b.perlinFrequency;
+        j["biomes"].push_back(item);
+    }
+
+    std::string path = m_baseDir + "definitions/biomes.json";
+    std::ofstream file(path);
+    if (file.is_open()) {
+        file << j.dump(4);
+        file.close();
+        std::cout << "[ASSETS] Biomi salvati in: " << path << std::endl;
+    } else {
+        std::cerr << "[ERROR] Impossibile salvare " << path << std::endl;
     }
 }
 
