@@ -384,7 +384,7 @@ bool FairWorldEngine::Update(float deltaTime) {
 
     // Toggle Diario AI con 'J'
     static bool jWasDown = false;
-    bool jDown = (GetAsyncKeyState('J') & 0x8000) != 0;
+    bool jDown = fw::IsActionActive("TOGGLE_DIARY"_hs, m_sharedContext ? m_sharedContext->deviceManager : nullptr);
     if (jDown && !jWasDown && !m_isDiaryOpen) {
         m_isDiaryOpen = true;
         m_diaryFocusRequested = true;
@@ -394,7 +394,7 @@ bool FairWorldEngine::Update(float deltaTime) {
     
     // Apri Browser Web Integrato con 'H'
     static bool hWasDown = false;
-    bool hDown = (GetAsyncKeyState('H') & 0x8000) != 0;
+    bool hDown = fw::IsActionActive("TOGGLE_BROWSER"_hs, m_sharedContext ? m_sharedContext->deviceManager : nullptr);
     if (hDown && !hWasDown) {
         if (m_current == GameState::WEB_BROWSER) {
             transitionTo(GameState::PLAYING);
@@ -442,9 +442,9 @@ bool FairWorldEngine::Update(float deltaTime) {
     // Fisica dell'acqua e Termodinamica ora sono gestite da FluidSystem in ForgeWorld
     // in risposta agli eventi BlockUpdated (non c'è più il polling per frame).
 
-    // Toggle Inventory con 'E' (TAB ora è menu principale)
+    // Toggle Inventory con 'E' (o il tasto mappato a TOGGLE_INVENTORY)
     static bool eWasDown = false;
-    bool eDown = (GetAsyncKeyState('E') & 0x8000) != 0;
+    bool eDown = fw::IsActionActive("TOGGLE_INVENTORY"_hs, m_sharedContext ? m_sharedContext->deviceManager : nullptr);
     if (eDown && !eWasDown && !m_isDiaryOpen && !io.WantCaptureKeyboard) {
         m_isInventoryOpen = !m_isInventoryOpen;
         if (m_isInventoryOpen) {

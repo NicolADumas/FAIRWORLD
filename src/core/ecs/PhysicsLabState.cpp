@@ -15,6 +15,9 @@
 #include "RenderManager.h"
 #include "DeviceManager.h"
 #include "JoltPhysicsSystem.h"
+#include "StateManager.h"
+#include "ForgeState.h"
+#include "HubState.h"
 
 PhysicsLabState::PhysicsLabState(SharedContext* context) : m_context(context) {
 }
@@ -389,7 +392,9 @@ void PhysicsLabState::Update(float dt) {
         }
         // Nel LAB vogliamo SEMPRE il cursore libero, tranne in casi specifici FPS.
         // m_context->deviceManager->requireFreeCursor = false; 
-        m_context->engine->SetGameMode(GameMode::Hub);
+        if (m_context->stateManager) {
+            m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
+        }
         return;
     }
 
@@ -699,7 +704,9 @@ void PhysicsLabState::Render() {
                 }
                 // Lasciamo il cursore libero al passaggio
                 // m_context->deviceManager->requireFreeCursor = false;
-                m_context->engine->SetGameMode(GameMode::Dev);
+                if (m_context->stateManager) {
+                    m_context->stateManager->ChangeState(std::make_unique<ForgeState>(m_context));
+                }
             }
             ImGui::PopStyleColor();
             ImGui::Separator();

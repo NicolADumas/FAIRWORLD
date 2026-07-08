@@ -26,11 +26,39 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, ForgeW
     // Per ora facciamo generazione sincrona per collaudo
     std::cout << "[MapWorldGenerator] Inizio generazione voxel per " << planet.name << "...\n";
     
-    float radius = 50.0f; // Raggio sferico di base
+    int chunkRadius = 6; 
+    for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
+        for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
+            std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
+            entt::entity chunkEnt = targetWorld.CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
+            auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
+            
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
+                    float worldX = cx * 16.0f + x;
+                    float worldZ = cz * 16.0f + z;
+                    
+                    // Semplice generazione procedurale
+                    float noise = (std::sin(worldX * 0.05f) * std::cos(worldZ * 0.05f)) * 10.0f;
+                    int height = 30 + (int)noise;
+                    
+                    for (int y = 0; y < 128; ++y) {
+                        if (y < height - 3) {
+                            chunk.blocks[x][y][z] = 2; // Stone
+                        } else if (y < height) {
+                            chunk.blocks[x][y][z] = 3; // Dirt
+                        } else if (y == height) {
+                            chunk.blocks[x][y][z] = 1; // Grass
+                        } else {
+                            chunk.blocks[x][y][z] = 0; // Air
+                        }
+                    }
+                }
+            }
+            targetWorld.MarkChunkDirty(chunkEnt);
+        }
+    }
     
-    // Simula la generazione dei chunk che compongono il volume del pianeta
-    // Richiede che targetWorld.GetActiveChunks() o simili sia esposto.
-    // Al momento implementiamo un mock di generazione
     std::cout << "[MapWorldGenerator] Generazione completata con successo!\n";
 }
 

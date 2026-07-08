@@ -39,6 +39,13 @@ bool DeviceManager::IsPhysicalKeyPressed(fw::InputID key) {
         case fw::InputID::KEY_S:     return (m_currentKeyboardState['S'] & 0x80) != 0;
         case fw::InputID::KEY_A:     return (m_currentKeyboardState['A'] & 0x80) != 0;
         case fw::InputID::KEY_D:     return (m_currentKeyboardState['D'] & 0x80) != 0;
+        case fw::InputID::KEY_E:     return (m_currentKeyboardState['E'] & 0x80) != 0;
+        case fw::InputID::KEY_Q:     return (m_currentKeyboardState['Q'] & 0x80) != 0;
+        case fw::InputID::KEY_F:     return (m_currentKeyboardState['F'] & 0x80) != 0;
+        case fw::InputID::KEY_C:     return (m_currentKeyboardState['C'] & 0x80) != 0;
+        case fw::InputID::KEY_H:     return (m_currentKeyboardState['H'] & 0x80) != 0;
+        case fw::InputID::KEY_J:     return (m_currentKeyboardState['J'] & 0x80) != 0;
+        case fw::InputID::KEY_I:     return (m_currentKeyboardState['I'] & 0x80) != 0;
 
         // --- TASTIERA: Azioni ---
         case fw::InputID::KEY_SPACE: return (m_currentKeyboardState[VK_SPACE]   & 0x80) != 0;
@@ -93,6 +100,13 @@ bool DeviceManager::IsKeyJustPressed(fw::InputID key) {
         case fw::InputID::KEY_S:     return (m_currentKeyboardState['S'] & 0x80) != 0 && (m_previousKeyboardState['S'] & 0x80) == 0;
         case fw::InputID::KEY_A:     return (m_currentKeyboardState['A'] & 0x80) != 0 && (m_previousKeyboardState['A'] & 0x80) == 0;
         case fw::InputID::KEY_D:     return (m_currentKeyboardState['D'] & 0x80) != 0 && (m_previousKeyboardState['D'] & 0x80) == 0;
+        case fw::InputID::KEY_E:     return (m_currentKeyboardState['E'] & 0x80) != 0 && (m_previousKeyboardState['E'] & 0x80) == 0;
+        case fw::InputID::KEY_Q:     return (m_currentKeyboardState['Q'] & 0x80) != 0 && (m_previousKeyboardState['Q'] & 0x80) == 0;
+        case fw::InputID::KEY_F:     return (m_currentKeyboardState['F'] & 0x80) != 0 && (m_previousKeyboardState['F'] & 0x80) == 0;
+        case fw::InputID::KEY_C:     return (m_currentKeyboardState['C'] & 0x80) != 0 && (m_previousKeyboardState['C'] & 0x80) == 0;
+        case fw::InputID::KEY_H:     return (m_currentKeyboardState['H'] & 0x80) != 0 && (m_previousKeyboardState['H'] & 0x80) == 0;
+        case fw::InputID::KEY_J:     return (m_currentKeyboardState['J'] & 0x80) != 0 && (m_previousKeyboardState['J'] & 0x80) == 0;
+        case fw::InputID::KEY_I:     return (m_currentKeyboardState['I'] & 0x80) != 0 && (m_previousKeyboardState['I'] & 0x80) == 0;
 
         case fw::InputID::KEY_SPACE: return (m_currentKeyboardState[VK_SPACE]   & 0x80) != 0 && (m_previousKeyboardState[VK_SPACE]   & 0x80) == 0;
         case fw::InputID::KEY_ESC:   return (m_currentKeyboardState[VK_ESCAPE]  & 0x80) != 0 && (m_previousKeyboardState[VK_ESCAPE]  & 0x80) == 0;
@@ -126,6 +140,13 @@ bool DeviceManager::IsKeyReleased(fw::InputID key) {
         case fw::InputID::KEY_S:     return (m_currentKeyboardState['S'] & 0x80) == 0 && (m_previousKeyboardState['S'] & 0x80) != 0;
         case fw::InputID::KEY_A:     return (m_currentKeyboardState['A'] & 0x80) == 0 && (m_previousKeyboardState['A'] & 0x80) != 0;
         case fw::InputID::KEY_D:     return (m_currentKeyboardState['D'] & 0x80) == 0 && (m_previousKeyboardState['D'] & 0x80) != 0;
+        case fw::InputID::KEY_E:     return (m_currentKeyboardState['E'] & 0x80) == 0 && (m_previousKeyboardState['E'] & 0x80) != 0;
+        case fw::InputID::KEY_Q:     return (m_currentKeyboardState['Q'] & 0x80) == 0 && (m_previousKeyboardState['Q'] & 0x80) != 0;
+        case fw::InputID::KEY_F:     return (m_currentKeyboardState['F'] & 0x80) == 0 && (m_previousKeyboardState['F'] & 0x80) != 0;
+        case fw::InputID::KEY_C:     return (m_currentKeyboardState['C'] & 0x80) == 0 && (m_previousKeyboardState['C'] & 0x80) != 0;
+        case fw::InputID::KEY_H:     return (m_currentKeyboardState['H'] & 0x80) == 0 && (m_previousKeyboardState['H'] & 0x80) != 0;
+        case fw::InputID::KEY_J:     return (m_currentKeyboardState['J'] & 0x80) == 0 && (m_previousKeyboardState['J'] & 0x80) != 0;
+        case fw::InputID::KEY_I:     return (m_currentKeyboardState['I'] & 0x80) == 0 && (m_previousKeyboardState['I'] & 0x80) != 0;
 
         case fw::InputID::KEY_SPACE: return (m_currentKeyboardState[VK_SPACE]   & 0x80) == 0 && (m_previousKeyboardState[VK_SPACE]   & 0x80) != 0;
         case fw::InputID::KEY_ESC:   return (m_currentKeyboardState[VK_ESCAPE]  & 0x80) == 0 && (m_previousKeyboardState[VK_ESCAPE]  & 0x80) != 0;
@@ -163,12 +184,35 @@ fw::InputID DeviceManager::GetFirstPressedKey(bool checkForGamepad) {
     int start = checkForGamepad ? (int)fw::InputID::PAD_FACE_DOWN : (int)fw::InputID::MOUSE_LEFT;
     int end   = checkForGamepad ? (int)fw::InputID::PAD_SELECT + 1 : (int)fw::InputID::KEY_RIGHT + 1;
 
+    bool tempIgnore = m_ignoreGameInput;
+    m_ignoreGameInput = false;
+
     for (int i = start; i < end; ++i) {
         fw::InputID key = (fw::InputID)i;
-        if (IsPhysicalKeyPressed(key)) {
+        
+        // Evita di mappare il click del mouse se stiamo cliccando un pulsante ImGui (es. "Annulla")
+        if (key == fw::InputID::MOUSE_LEFT && ImGui::IsAnyItemHovered()) {
+            continue; 
+        }
+
+        if (IsKeyJustPressed(key)) {
+            m_ignoreGameInput = tempIgnore;
             return key;
         }
     }
+    
+    // Fallback per Gamepad (IsKeyJustPressed non gestisce ancora lo stato precedente del pad)
+    if (checkForGamepad && m_gamepadInput.isConnected) {
+        for (int i = start; i < end; ++i) {
+            fw::InputID key = (fw::InputID)i;
+            if (IsPhysicalKeyPressed(key)) {
+                m_ignoreGameInput = tempIgnore;
+                return key;
+            }
+        }
+    }
+
+    m_ignoreGameInput = tempIgnore;
     return fw::InputID::NONE;
 }
 
@@ -183,6 +227,13 @@ namespace fw {
             case InputID::KEY_A: return "A";
             case InputID::KEY_S: return "S";
             case InputID::KEY_D: return "D";
+            case InputID::KEY_E: return "E";
+            case InputID::KEY_Q: return "Q";
+            case InputID::KEY_F: return "F";
+            case InputID::KEY_C: return "C";
+            case InputID::KEY_H: return "H";
+            case InputID::KEY_J: return "J";
+            case InputID::KEY_I: return "I";
             case InputID::KEY_SPACE: return "Spazio";
             case InputID::KEY_ESC: return "Esc";
             case InputID::KEY_ENTER: return "Invio";
@@ -281,7 +332,7 @@ void DeviceManager::Update(SharedContext* context) {
     in.lookYaw = 0.0f;
     in.lookPitch = 0.0f;
     in.isRunning = false;
-    in.isJumping = false;
+    // in.isJumping = false; // RIMOSSO: accumuliamo l'evento finché non consumato dal fixed update (PlayerMovementSystem)!
     in.isMining = false;
     in.isPlacing = false;
 
@@ -359,7 +410,7 @@ void DeviceManager::Update(SharedContext* context) {
         POINT cursorPos;
         GetCursorPos(&cursorPos);
         float xoffset = (float)(cursorPos.x - center.x);
-        float yoffset = (float)(center.y    - cursorPos.y); // invertito per convenzione FPS
+        float yoffset = (float)(cursorPos.y - center.y); // ASSE Y NORMALE (Invertito rispetto a prima su richiesta)
 
         SetCursorPos(center.x, center.y);
 
@@ -451,6 +502,19 @@ void DeviceManager::InitDefaultBindings() {
     // PAUSE
     m_actionMap.bindings[entt::hashed_string("PAUSE")].push_back({InputID::KEY_ESC, InputID::NONE});
     m_actionMap.bindings[entt::hashed_string("PAUSE")].push_back({InputID::PAD_START, InputID::NONE});
+
+    // TOGGLE_INVENTORY
+    m_actionMap.bindings[entt::hashed_string("TOGGLE_INVENTORY")].push_back({InputID::KEY_E, InputID::NONE});
+    m_actionMap.bindings[entt::hashed_string("TOGGLE_INVENTORY")].push_back({InputID::PAD_FACE_UP, InputID::NONE});
+
+    // TOGGLE_BROWSER
+    m_actionMap.bindings[entt::hashed_string("TOGGLE_BROWSER")].push_back({InputID::KEY_H, InputID::NONE});
+
+    // TOGGLE_DIARY
+    m_actionMap.bindings[entt::hashed_string("TOGGLE_DIARY")].push_back({InputID::KEY_J, InputID::NONE});
+
+    // TOGGLE_SETTINGS
+    m_actionMap.bindings[entt::hashed_string("TOGGLE_SETTINGS")].push_back({InputID::KEY_I, InputID::NONE});
 }
 
 const char* DeviceManager::InputIDToString(fw::InputID key) {
@@ -463,6 +527,13 @@ const char* DeviceManager::InputIDToString(fw::InputID key) {
         case fw::InputID::KEY_A: return "A";
         case fw::InputID::KEY_S: return "S";
         case fw::InputID::KEY_D: return "D";
+        case fw::InputID::KEY_E: return "E";
+        case fw::InputID::KEY_Q: return "Q";
+        case fw::InputID::KEY_F: return "F";
+        case fw::InputID::KEY_C: return "C";
+        case fw::InputID::KEY_H: return "H";
+        case fw::InputID::KEY_J: return "J";
+        case fw::InputID::KEY_I: return "I";
         case fw::InputID::KEY_SPACE: return "Spazio";
         case fw::InputID::KEY_ESC: return "Esc";
         case fw::InputID::KEY_ENTER: return "Invio";

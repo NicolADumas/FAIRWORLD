@@ -77,3 +77,7 @@ private:
     // Stato precedente per azioni "Just Pressed"
     bool m_jumpWasDown = false;
 };
+
+namespace fw {
+    bool IsActionActive(entt::id_type actionHash, DeviceManager* dm);
+}

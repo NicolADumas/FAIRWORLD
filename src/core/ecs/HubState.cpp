@@ -145,9 +145,9 @@ void HubState::Render() {
             ImGui::SetNextWindowSize(ImVec2(600, 500));
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.15f, 0.95f)); // Sfondo scuro per il popup
             
-            if (ImGui::Begin("Gestore Dispositivi Hardware", &showDeviceManager, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+            if (ImGui::Begin("GESTIONE DISPOSITIVI", &showDeviceManager, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                 
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "--- CONNESSIONE GAMEPAD ---");
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "--- CONNESSIONE AL GAMEPAD ---");
                 ImGui::Text("Connesso: %s", m_context->deviceManager->GetGamepadData().isConnected ? "SI" : "NO");
                 ImGui::Text("Indice: %d", m_context->deviceManager->GetGamepadData().index);
                 ImGui::Separator();
@@ -162,15 +162,16 @@ void HubState::Render() {
                 
                 ImGui::Spacing();
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "--- MAPPATURA COMANDI ---");
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "--- MAPPATURA DEI COMANDI ---");
                 
                 bool isPad = m_context->deviceManager->GetGamepadData().isConnected;
-                ImGui::Text("Modalita' Input: %s", isPad ? "CONTROLLER" : "TASTIERA / MOUSE");
+                ImGui::Text("Modalita' Input: %s", isPad ? "CONTROLLER" : "COMPUTER");
                 ImGui::Spacing();
 
                 std::vector<const char*> mappableActions = {
                     "MOVE_FORWARD", "MOVE_BACKWARD", "MOVE_LEFT", "MOVE_RIGHT",
-                    "JUMP", "DESTROY_BLOCK", "PLACE_BLOCK", "PAUSE"
+                    "JUMP", "DESTROY_BLOCK", "PLACE_BLOCK", "PAUSE", "TOGGLE_INVENTORY",
+                    "TOGGLE_BROWSER", "TOGGLE_DIARY", "TOGGLE_SETTINGS"
                 };
 
                 if (ImGui::BeginTable("Mappings", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
@@ -200,6 +201,7 @@ void HubState::Render() {
                         const char* btnLabel = m_context->deviceManager->InputIDToString(currentKey);
                         if (ImGui::Button(btnLabel, ImVec2(150, 0))) {
                             waitingForGamepad = isPad;
+                            m_context->deviceManager->GetActionMap().isListening = true;
                             ImGui::OpenPopup("Premi un tasto...");
                         }
 
@@ -209,6 +211,18 @@ void HubState::Render() {
                             
                             fw::InputID newKey = m_context->deviceManager->GetFirstPressedKey(waitingForGamepad);
                             if (newKey != fw::InputID::NONE) {
+                                // Conflict resolution: rimuovi 'newKey' da tutte le altre azioni (della stessa periferica)
+                                for (auto& pair : bindings) {
+                                    if (pair.first != hash) {
+                                        auto& otherBindings = pair.second;
+                                        otherBindings.erase(std::remove_if(otherBindings.begin(), otherBindings.end(), 
+                                            [&](const fw::ActionBinding& b) {
+                                                bool bIsPad = ((int)b.primaryKey >= (int)fw::InputID::PAD_FACE_DOWN);
+                                                return bIsPad == isPad && b.primaryKey == newKey;
+                                            }), otherBindings.end());
+                                    }
+                                }
+
                                 if (it != bindings.end()) {
                                     bool found = false;
                                     for (auto& b : it->second) {
@@ -244,7 +258,7 @@ void HubState::Render() {
                 ImGui::Spacing();
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "--- VR / BCI / SERIALE ---");
-                ImGui::Text("Integrazione futura.");
+                ImGui::Text("Integrazione futura...");
             }
             ImGui::End();
             ImGui::PopStyleColor();

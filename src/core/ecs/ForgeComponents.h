@@ -99,8 +99,11 @@ struct Face {
     int matIndex = 0;
 };
 
+enum class MeshType { Standard, Chunk, Prefab, Editor };
+
 struct MeshComponent {
     std::string name;
+    MeshType type = MeshType::Standard;
     std::vector<Vertex> vertices;
     std::vector<Face> faces;
     VramAllocation vramAlloc;

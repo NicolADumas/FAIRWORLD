@@ -26,6 +26,7 @@ namespace fw {
 MeshComponent MeshGenerators::MakeCube(float size) {
     MeshComponent m; 
     m.name = "Cube";
+    m.type = MeshType::Editor;
     float h = size * 0.5f;
     fw::Vec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
     
@@ -58,6 +59,7 @@ MeshComponent MeshGenerators::MakeCube(float size) {
 MeshComponent MeshGenerators::MakeVoxelPreview(int colorIndex, const ForgeMaterialPalette& palette) {
     MeshComponent m;
     m.name = "PreviewSphere";
+    m.type = MeshType::Editor;
     
     fw::Vec4 color = {palette.materials[colorIndex].baseColor.x, palette.materials[colorIndex].baseColor.y, palette.materials[colorIndex].baseColor.z, 1.0f};
     float rough = palette.materials[colorIndex].roughness;
@@ -96,6 +98,7 @@ MeshComponent MeshGenerators::MakeVoxelPreview(int colorIndex, const ForgeMateri
 MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
     MeshComponent m; 
     m.name = "Sphere";
+    m.type = MeshType::Editor;
     const float PI = 3.14159265f;
     
     std::vector<Vertex> tempVerts;
@@ -143,6 +146,7 @@ MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
 MeshComponent MeshGenerators::MakeGridBox(int width, int height, int depth, float thickness) {
     MeshComponent m;
     m.name = "GridBox";
+    m.type = MeshType::Editor;
     
     // Aumentiamo lo spessore per renderla estremamente visibile
     float thick = 0.15f; 
@@ -768,6 +772,7 @@ void ForgeWorld::Update(float dt) {
                 // Accoda l'aggiornamento dei componenti nell'ECS per il frame successivo
                 MeshComponent newMesh;
                 newMesh.name = chunkName + "_Mesh";
+                newMesh.type = MeshType::Chunk;
                 newMesh.vertices = std::move(vertices);
                 newMesh.vramAlloc = vramAlloc;
                 
@@ -1178,8 +1183,8 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
     auto& trans = m_registry.emplace<TransformComponent>(prefabEntity);
     // Sottrai il Pivot in modo che la base della struttura tocchi terra al centro
     trans.location = position - fw::Vec3{(float)header.pivotX, (float)header.pivotY, (float)header.pivotZ};
-    // Scala standard
-    trans.scale = fw::Vec3{1.0f, 1.0f, 1.0f};
+    // Scala per rimpicciolire il volume 16x16x16 in 1 singolo blocco (1/16 = 0.0625)
+    trans.scale = fw::Vec3{0.0625f, 0.0625f, 0.0625f};
     
     // Aggiungiamo un tag per riconoscerla
     auto& meta = m_registry.emplace<MetadataComponent>(prefabEntity);
@@ -1367,6 +1372,7 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
                     
                     MeshComponent newMesh;
                     newMesh.name = chunkName + "_Mesh";
+                    newMesh.type = MeshType::Prefab;
                     newMesh.vertices = std::move(vertices);
                     newMesh.vramAlloc = vramAlloc;
                     

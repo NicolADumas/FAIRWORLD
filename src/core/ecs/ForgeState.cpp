@@ -683,11 +683,11 @@ void ForgeState::Render() {
         ImGui::RadioButton("Struttura PBR (Mondo)", &m_exportPlacementMode, 0);
         ImGui::RadioButton("MiniVoxel (Oggetto)", &m_exportPlacementMode, 1);
 
-        if (ImGui::Button("Salva (JSON)", ImVec2(-1, 30))) {
+        if (ImGui::Button("Salva Voxel Asset", ImVec2(-1, 30))) {
             std::string nameStr(m_structureNameBuffer);
             if (!nameStr.empty()) {
-                std::cout << "[Forge] Salvataggio JSON: " << nameStr << "\n";
-                m_context->forgeWorld->SaveStructureJSON(nameStr, m_exportPlacementMode);
+                std::cout << "[Forge] Salvataggio FWBLOCK: " << nameStr << "\n";
+                m_context->forgeWorld->SaveStructure(nameStr, m_exportPlacementMode, 0, 0, 0); // Add Pivot parameters if needed
                 m_context->devInventory.push_back({nameStr, m_exportPlacementMode});
             }
         }

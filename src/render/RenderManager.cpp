@@ -1386,8 +1386,8 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
 
-            // Renderizziamo solo i Chunk (escludiamo griglia e sfere di preview dell'editor)
-            if (mesh.name.find("Chunk") != std::string::npos) {
+            // Renderizziamo Chunk e Prefab (escludiamo griglia e sfere di preview dell'editor)
+            if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Prefab) {
                 fw::Mat4 fwModel = trans.worldMatrix();
                 glm::mat4 model;
                 for (int col = 0; col < 4; ++col) {
@@ -2274,11 +2274,11 @@ void RenderManager::CreateTextureImage() {
     memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
     vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
-    CreateImage(texWidth, texHeight, layerCount, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_textureImage, m_textureImageAllocation);
+    CreateImage(texWidth, texHeight, layerCount, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_textureImage, m_textureImageAllocation);
 
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layerCount);
+    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layerCount);
     CopyBufferToImage(stagingBuffer, m_textureImage, texWidth, texHeight, layerCount);
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, layerCount);
+    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, layerCount);
 
     vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
 }
@@ -2288,7 +2288,7 @@ void RenderManager::CreateTextureImageView() {
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = m_textureImage;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY; // IMPORTANTE: Array di Texture!
-    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -2459,7 +2459,7 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
     // Dobbiamo transizionare il layout prima di poter copiare di nuovo
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 10);
+    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 10);
 
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
@@ -2478,7 +2478,7 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     EndSingleTimeCommands(commandBuffer);
 
     // Rimettiamo in lettura per lo shader
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 10);
+    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 10);
 
     vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
     std::cout << "[VULKAN] Texture Array Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
@@ -2829,7 +2829,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
 
-            if (mesh.name == "GridBox" || mesh.name == "PreviewSphere" || mesh.name.find("Chunk") != std::string::npos) {
+            if (mesh.type == fw::MeshType::Editor || mesh.type == fw::MeshType::Chunk) {
                 fw::Mat4 fwModel = trans.worldMatrix();
                 glm::mat4 model;
                 for (int col = 0; col < 4; ++col) {
@@ -2866,7 +2866,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
 
-            if (mesh.name != "GridBox" && mesh.name.find("Chunk") == std::string::npos) {
+            if (mesh.name != "GridBox" && mesh.type != fw::MeshType::Chunk) {
                 fw::Mat4 fwModel = trans.worldMatrix();
                 glm::mat4 model;
                 for (int col = 0; col < 4; ++col) {

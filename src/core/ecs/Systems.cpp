@@ -64,8 +64,11 @@ namespace fw {
             rbComp.body.velocity.x = targetVelocity.x;
             rbComp.body.velocity.z = targetVelocity.z;
             
-            if (input.isJumping && rbComp.body.isGrounded) {
-                rbComp.body.velocity.y = player.jumpForce; 
+            if (input.isJumping) {
+                if (rbComp.body.isGrounded) {
+                    rbComp.body.velocity.y = player.jumpForce; 
+                }
+                input.ConsumeJump(); // Consuma sempre l'input dopo averlo processato
             }
             
             // Camera position matches the rigid body position + eye offset
