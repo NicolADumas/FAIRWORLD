@@ -1305,13 +1305,12 @@ void FairWorldEngine::Render() {
             
             // Formattazione Ora
             float t = m_timeManager->GetTimeOfDay();
-            ImGui::SliderFloat("Time Of Day", &t, 0.0f, 1.0f);
+            ImGui::SliderFloat("Time Of Day", &t, 0.0f, 24.0f);
             if (t != m_timeManager->GetTimeOfDay()) {
                 m_timeManager->SetTimeOfDay(t);
             }
-            int totalMinutes = (int)(t * 24.0f * 60.0f);
-            int hours = totalMinutes / 60;
-            int minutes = totalMinutes % 60;
+            int hours = (int)t;
+            int minutes = (int)((t - hours) * 60.0f);
             ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.2f, 1.0f), "ORA: %02d:%02d", hours, minutes);
             
             // Formattazione Fase Lunare
@@ -1378,8 +1377,8 @@ void FairWorldEngine::Render() {
         ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Stagione Attuale: %s", stagione);
         
         float phase = m_timeManager->GetMoonPhase();
-        int h = (int)(tod * 24.0f);
-        int m = (int)((tod * 24.0f - h) * 60.0f);
+        int h = (int)tod;
+        int m = (int)((tod - h) * 60.0f);
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "🕒 Orologio In-Game: %02d:%02d", h, m);
 
         ImGui::End();

@@ -723,6 +723,39 @@ void EditorPanel::DrawEngineTab(RenderManager* renderer) {
             renderer->SetFov(45.0f);
         }
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(Il valore di default e' 45 gradi)");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "Debug: Texture Procedurali Vulkan");
+        ImGui::TextDisabled("Questi sono i valori RGB base che Vulkan mappa prima dell'illuminazione.");
+
+        ImGui::BeginTable("TexDebug", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg);
+        ImGui::TableSetupColumn("Tipo Blocco");
+        ImGui::TableSetupColumn("Anteprima (Scacchiera)");
+        ImGui::TableSetupColumn("Valore RGB Assoluto");
+        ImGui::TableHeadersRow();
+
+        auto drawRow = [](const char* name, int r, int g, int b) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::Text("%s", name);
+            ImGui::TableNextColumn();
+            ImVec4 color1 = ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
+            ImVec4 color2 = ImVec4(std::max(0, r - 30) / 255.0f, std::max(0, g - 30) / 255.0f, std::max(0, b - 30) / 255.0f, 1.0f);
+            ImGui::ColorButton("##1", color1, ImGuiColorEditFlags_NoTooltip, ImVec2(16, 16));
+            ImGui::SameLine();
+            ImGui::ColorButton("##2", color2, ImGuiColorEditFlags_NoTooltip, ImVec2(16, 16));
+            ImGui::TableNextColumn(); ImGui::Text("R: %d  G: %d  B: %d", r, g, b);
+        };
+
+        drawRow("Layer 1 (Erba)", 60, 180, 40);
+        drawRow("Layer 2 (Terra)", 100, 60, 30);
+        drawRow("Layer 3 (Pietra)", 120, 120, 120);
+        drawRow("Layer 7 (Lava)", 255, 100, 0);
+
+        ImGui::EndTable();
+
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Errore: RenderManager non disponibile.");
     }

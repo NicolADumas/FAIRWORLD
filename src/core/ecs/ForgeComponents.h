@@ -109,12 +109,18 @@ struct MeshComponent {
     VramAllocation vramAlloc;
     float colorOverride[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // RGBA, se A > 0.5f il vertex shader ignora il colore del vertice
     
+    mutable AABB cachedBounds;
+    mutable bool boundsCalculated = false;
+    
     AABB bounds() const {
-        AABB bb;
-        for(const auto& v : vertices) {
-            bb.expand(v.position);
+        if (!boundsCalculated) {
+            cachedBounds = AABB();
+            for(const auto& v : vertices) {
+                cachedBounds.expand(v.position);
+            }
+            boundsCalculated = true;
         }
-        return bb;
+        return cachedBounds;
     }
 };
 

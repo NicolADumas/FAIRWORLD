@@ -1282,6 +1282,44 @@ bool RenderManager::CreateSyncObjects() {
     return true;
 }
 
+struct CameraFrustum {
+    glm::vec4 planes[6];
+    
+    void extract(const glm::mat4& vp) {
+        // Left
+        planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]);
+        // Right
+        planes[1] = glm::vec4(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0], vp[3][3] - vp[3][0]);
+        // Bottom
+        planes[2] = glm::vec4(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1], vp[3][3] + vp[3][1]);
+        // Top
+        planes[3] = glm::vec4(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1], vp[3][3] - vp[3][1]);
+        // Near
+        planes[4] = glm::vec4(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2], vp[3][3] + vp[3][2]);
+        // Far
+        planes[5] = glm::vec4(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2], vp[3][3] - vp[3][2]);
+        
+        for (int i=0; i<6; ++i) {
+            float length = glm::length(glm::vec3(planes[i]));
+            planes[i] /= length;
+        }
+    }
+    
+    bool containsAABB(const glm::vec3& min, const glm::vec3& max) const {
+        for (int i=0; i<6; ++i) {
+            glm::vec3 p(
+                planes[i].x > 0 ? max.x : min.x,
+                planes[i].y > 0 ? max.y : min.y,
+                planes[i].z > 0 ? max.z : min.z
+            );
+            if (glm::dot(glm::vec3(planes[i]), p) + planes[i].w < 0.0f) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
 void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
     // --- SKY PASS ---
@@ -1380,6 +1418,9 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
 
+        CameraFrustum frustum;
+        frustum.extract(viewProjMatrix);
+
         for (auto entity : view) {
             const auto& mesh = view.get<fw::MeshComponent>(entity);
             const auto& trans = view.get<fw::TransformComponent>(entity);
@@ -1389,12 +1430,20 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
             // Renderizziamo Chunk e Prefab (escludiamo griglia e sfere di preview dell'editor)
             if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Prefab) {
                 fw::Mat4 fwModel = trans.worldMatrix();
-                glm::mat4 model;
-                for (int col = 0; col < 4; ++col) {
-                    for (int row = 0; row < 4; ++row) {
-                        model[col][row] = fwModel.m[row][col];
-                    }
-                }
+                glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
+
+                fw::AABB bounds = mesh.bounds();
+                glm::vec3 center((bounds.min.x + bounds.max.x)*0.5f, (bounds.min.y + bounds.max.y)*0.5f, (bounds.min.z + bounds.max.z)*0.5f);
+                glm::vec3 extents((bounds.max.x - bounds.min.x)*0.5f, (bounds.max.y - bounds.min.y)*0.5f, (bounds.max.z - bounds.min.z)*0.5f);
+                
+                glm::vec3 worldCenter = glm::vec3(model * glm::vec4(center, 1.0f));
+                glm::vec3 worldExtents(
+                    std::abs(model[0][0]) * extents.x + std::abs(model[1][0]) * extents.y + std::abs(model[2][0]) * extents.z,
+                    std::abs(model[0][1]) * extents.x + std::abs(model[1][1]) * extents.y + std::abs(model[2][1]) * extents.z,
+                    std::abs(model[0][2]) * extents.x + std::abs(model[1][2]) * extents.y + std::abs(model[2][2]) * extents.z
+                );
+                
+                if (!frustum.containsAABB(worldCenter - worldExtents, worldCenter + worldExtents)) continue;
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
@@ -2823,6 +2872,9 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
         auto& registry = forgeWorld->GetRegistry();
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
+        CameraFrustum frustum;
+        frustum.extract(viewProjMatrix);
+
         for (auto entity : view) {
             const auto& mesh = view.get<fw::MeshComponent>(entity);
             const auto& trans = view.get<fw::TransformComponent>(entity);
@@ -2831,15 +2883,25 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
             if (mesh.type == fw::MeshType::Editor || mesh.type == fw::MeshType::Chunk) {
                 fw::Mat4 fwModel = trans.worldMatrix();
-                glm::mat4 model;
-                for (int col = 0; col < 4; ++col) {
-                    for (int row = 0; row < 4; ++row) {
-                        model[col][row] = fwModel.m[row][col];
-                    }
-                }
+                glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
+
+                fw::AABB bounds = mesh.bounds();
+                glm::vec3 center((bounds.min.x + bounds.max.x)*0.5f, (bounds.min.y + bounds.max.y)*0.5f, (bounds.min.z + bounds.max.z)*0.5f);
+                glm::vec3 extents((bounds.max.x - bounds.min.x)*0.5f, (bounds.max.y - bounds.min.y)*0.5f, (bounds.max.z - bounds.min.z)*0.5f);
+                
+                glm::vec3 worldCenter = glm::vec3(model * glm::vec4(center, 1.0f));
+                glm::vec3 worldExtents(
+                    std::abs(model[0][0]) * extents.x + std::abs(model[1][0]) * extents.y + std::abs(model[2][0]) * extents.z,
+                    std::abs(model[0][1]) * extents.x + std::abs(model[1][1]) * extents.y + std::abs(model[2][1]) * extents.z,
+                    std::abs(model[0][2]) * extents.x + std::abs(model[1][2]) * extents.y + std::abs(model[2][2]) * extents.z
+                );
+                
+                if (!frustum.containsAABB(worldCenter - worldExtents, worldCenter + worldExtents)) continue;
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
+                pcData.colorOverride = glm::vec4(0.0f); // FIX: Reset override to prevent state leaking!
+                pcData.seasonProgress = seasonalUboValue;
                 
                 if (mesh.colorOverride[3] > 0.0f) {
                     pcData.useColorOverride = 1;
@@ -2868,12 +2930,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
             if (mesh.name != "GridBox" && mesh.type != fw::MeshType::Chunk) {
                 fw::Mat4 fwModel = trans.worldMatrix();
-                glm::mat4 model;
-                for (int col = 0; col < 4; ++col) {
-                    for (int row = 0; row < 4; ++row) {
-                        model[col][row] = fwModel.m[row][col];
-                    }
-                }
+                glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
 
                 pcData.mvp = viewProjMatrix * model;
