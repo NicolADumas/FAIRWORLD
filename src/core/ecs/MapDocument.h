@@ -4,6 +4,8 @@
 #include <glm/glm.hpp>
 #include "World.h" // Assicurati che PlanetType sia definito qui
 
+#include "DimensionsManager.h" // Aggiunto per ChunkMetadata e ChunkCoord
+
 namespace fw {
 
 enum class MapRegionType : int {
@@ -28,10 +30,23 @@ struct MapRegion {
     float treeDensity = 0.5f;
 };
 
+// Struttura serializzabile per una cella della griglia
+struct ChunkDataExport {
+    ChunkCoord coord;
+    ChunkMetadata meta;
+};
+
 struct PlanetMap {
     PlanetType type;
     std::string name;
     std::vector<MapRegion> regions;
+    
+    // Parametri DimensionsManager per Rigid Grid Map
+    int32_t minX = -6;
+    int32_t maxX = 6;
+    int32_t minZ = -6;
+    int32_t maxZ = 6;
+    std::vector<ChunkDataExport> chunkOverrides; // Solo i chunk custom
 };
 
 struct MapDocument {

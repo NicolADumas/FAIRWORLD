@@ -25,6 +25,7 @@ namespace fw {
     class VramSlabAllocator;
     class DiagnosticsManager;
     class ForgeWorld;
+    class BlockRegistry;
 }
 
 // Struttura dati per il monitoraggio delle onde cerebrali (BCI)
@@ -54,6 +55,7 @@ struct SharedContext {
     DeviceManager*          deviceManager       = nullptr;
     fw::TimeManager*        timeManager         = nullptr;
     fw::DiagnosticsManager* diagnosticsManager  = nullptr;
+    fw::BlockRegistry*      blockRegistry       = nullptr;
 
     // --- INFRASTRUTTURA ASINCRONA E RENDER ---
     fw::JobSystem*          jobSystem    = nullptr;
@@ -65,7 +67,11 @@ struct SharedContext {
 
     // Sincronizzazione per RenderManager
     RenderViewData          activeCameraView;
-    bool                    isForgeMode = false; // TRUE = siamo nell'editor Forge, FALSE = siamo in Game
+    entt::registry*         activeRegistry = nullptr;
+    bool                    isForgeMode = false;
+    bool                    isBlockMakerMode = false;
+    glm::vec3               previewLightDir = glm::vec3(0.5f, -1.0f, 0.5f);
+    int                     debugColorMode = 0; // 0=Normale, 1=Inverti, 2=Swap RB // TRUE = siamo nell'editor Forge, FALSE = siamo in Game
 
     entt::registry          ecsRegistry;
     BciData                 latestBciData;

@@ -11,6 +11,7 @@
 #include "FAIRWORLD.h"
 #include "RenderManager.h"
 #include "EventManager.h"
+#include "BlockRegistry.h"
 #include "MapWorldGenerator.h"
 #include "../app/AssetManager.h"
 #include <iostream>
@@ -56,15 +57,20 @@ MeshComponent MeshGenerators::MakeCube(float size) {
     return m;
 }
 
-MeshComponent MeshGenerators::MakeVoxelPreview(int colorIndex, const ForgeMaterialPalette& palette) {
+MeshComponent MeshGenerators::MakeVoxelPreview(int blockId, SharedContext* ctx) {
     MeshComponent m;
     m.name = "PreviewSphere";
     m.type = MeshType::Editor;
     
-    fw::Vec4 color = {palette.materials[colorIndex].baseColor.x, palette.materials[colorIndex].baseColor.y, palette.materials[colorIndex].baseColor.z, 1.0f};
-    float rough = palette.materials[colorIndex].roughness;
-    float metal = palette.materials[colorIndex].metallic;
-    float emissive = palette.materials[colorIndex].emissiveStrength;
+    fw::BlockDefinition* def = nullptr;
+    if (ctx && ctx->blockRegistry) {
+        def = &ctx->blockRegistry->GetBlockMutable(blockId);
+    }
+
+    fw::Vec4 color = def ? fw::Vec4{def->baseColor.x, def->baseColor.y, def->baseColor.z, 1.0f} : fw::Vec4{1,1,1,1};
+    float rough = def ? def->roughness : 0.5f;
+    float metal = def ? def->metallic : 0.0f;
+    float emissive = def ? def->emissiveStrength : 0.0f;
 
     auto addFace = [&](const fw::Vec3& p1, const fw::Vec3& p2, const fw::Vec3& p3, const fw::Vec3& p4, const fw::Vec3& norm) {
         float light = 1.0f;
@@ -616,10 +622,9 @@ void ForgeWorld::Update(float dt) {
             auto chunkData = std::shared_ptr<VoxelChunkComponent>(new VoxelChunkComponent());
             *chunkData = chunk;
             SharedContext* ctx = m_context;
-            ForgeMaterialPalette paletteCopy = m_palette;
             
             // Sottomette il job
-            m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx, paletteCopy]() {
+            m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx]() {
                 bool newlyGen = false;
                 // 1. CARICAMENTO O GENERAZIONE DATI
                 if (!chunkData->isGenerated) {
@@ -667,11 +672,13 @@ void ForgeWorld::Update(float dt) {
                             float py = y;
                             float pz = z;
                             
-                            fw::Vec4 color = {paletteCopy.materials[block].baseColor.x, paletteCopy.materials[block].baseColor.y, paletteCopy.materials[block].baseColor.z, 1.0f};
-                            float rough = paletteCopy.materials[block].roughness;
-                            float metal = paletteCopy.materials[block].metallic;
-                            float emissive = paletteCopy.materials[block].emissiveStrength;
-                            float texIndex = paletteCopy.materials[block].textureIndex;
+                            fw::BlockDefinition& def = ctx->blockRegistry->GetBlockMutable(block);
+
+                            fw::Vec4 color = {def.baseColor.x, def.baseColor.y, def.baseColor.z, 1.0f};
+                            float rough = def.roughness;
+                            float metal = def.metallic;
+                            float emissive = def.emissiveStrength;
+                            float texIndex = def.textureIndex;
 
                             // Top (+Y)
                             if (getBlock(x, y + 1, z) == 0) {
@@ -1016,14 +1023,16 @@ bool ForgeWorld::SaveStructure(const std::string& name, uint8_t placementMode, i
         header.compressedSize = (uint32_t)(compressedBlocks.size() * sizeof(RLEChunk));
         
         file.write(reinterpret_cast<const char*>(&header), sizeof(FWBlockHeader));
-        file.write(reinterpret_cast<const char*>(m_palette.materials), sizeof(ForgeMaterial) * 256);
+        char dummyPalette[256 * 48] = {0};
+        file.write(dummyPalette, sizeof(dummyPalette));
         file.write(reinterpret_cast<const char*>(compressedBlocks.data()), header.compressedSize);
         // Non salviamo la luce nel file RLE per risparmiare spazio (o se la salvassimo, andrebbe compressa a parte)
         
     } else {
         // Fallback file vuoto
         file.write(reinterpret_cast<const char*>(&header), sizeof(FWBlockHeader));
-        file.write(reinterpret_cast<const char*>(m_palette.materials), sizeof(ForgeMaterial) * 256);
+        char dummyPalette[256 * 48] = {0};
+        file.write(dummyPalette, sizeof(dummyPalette));
     }
     
     file.close();
@@ -1145,9 +1154,9 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
         return entt::null;
     }
     
-    // Leggi Palette Custom per questa entità
-    auto customPalette = std::make_shared<ForgeMaterialPalette>();
-    file.read(reinterpret_cast<char*>(customPalette->materials), sizeof(ForgeMaterial) * 256);
+    // Leggi Palette Custom per questa entità (ora ignorata/dummy per compatibilità retroattiva)
+    char dummyPalette[256 * 48] = {0};
+    file.read(dummyPalette, sizeof(dummyPalette));
     
     // Leggi dati Voxel (Decompressione RLE)
     auto chunkData = std::make_shared<VoxelChunkComponent>();
@@ -1265,10 +1274,8 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
         std::string chunkName = meta.name;
         SharedContext* ctx = m_context;
         
-        // Passiamo la customPalette copiata per valore al job
-        ForgeMaterialPalette paletteCopy = *customPalette;
-        
-        m_context->jobSystem->Execute([this, prefabEntity, chunkName, chunkData, ctx, paletteCopy]() {
+        // Passiamo ctx al job per accedere al BlockRegistry
+        m_context->jobSystem->Execute([this, prefabEntity, chunkName, chunkData, ctx]() {
             std::vector<Vertex> vertices;
             vertices.reserve(16384);
             
@@ -1292,11 +1299,12 @@ entt::entity ForgeWorld::LoadStructureAsPrefab(const std::string& name, const fw
                         if (block == 0) continue;
                         
                         float px = x; float py = y; float pz = z;
-                        fw::Vec3 color = paletteCopy.materials[block].baseColor;
-                        float rough = paletteCopy.materials[block].roughness;
-                        float metal = paletteCopy.materials[block].metallic;
-                        float emissive = paletteCopy.materials[block].emissiveStrength;
-                        float texIndex = paletteCopy.materials[block].textureIndex;
+                        fw::BlockDefinition& def = ctx->blockRegistry->GetBlockMutable(block);
+                        fw::Vec3 color = fw::Vec3{def.baseColor.x, def.baseColor.y, def.baseColor.z};
+                        float rough = def.roughness;
+                        float metal = def.metallic;
+                        float emissive = def.emissiveStrength;
+                        float texIndex = def.textureIndex;
 
                         // Top (+Y)
                         if (getBlock(x, y + 1, z) == 0) {
@@ -1413,8 +1421,8 @@ bool ForgeWorld::LoadStructureAsVoxels(const std::string& name, int startX, int 
         return false;
     }
     
-    ForgeMaterialPalette palette;
-    file.read(reinterpret_cast<char*>(palette.materials), sizeof(ForgeMaterial) * 256);
+    char dummyPalette[256 * 48] = {0};
+    file.read(dummyPalette, sizeof(dummyPalette));
     
     std::vector<RLEChunk> compressedBlocks;
     if (header.compressedSize > 0) {
@@ -1435,7 +1443,7 @@ bool ForgeWorld::LoadStructureAsVoxels(const std::string& name, int startX, int 
                         int z = blockIndex % 16;
                         
                         // Uso del Fallback!
-                        uint8_t fallbackId = palette.materials[rle.blockId].fallbackBlockId;
+                        uint8_t fallbackId = 1;
                         
                         // Sottraiamo il Pivot per centrare
                         int px = startX + x - header.pivotX;

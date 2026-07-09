@@ -7,6 +7,7 @@
 #include "FAIRWORLD.h"
 #include "RenderManager.h"
 #include "ForgeWorld.h"
+#include "BlockRegistry.h"
 #include "JobSystem.h"
 #include "AsyncInput.h"
 #include "VulkanDmaManager.h"
@@ -98,7 +99,7 @@ bool ForgeState::Init() {
     m_context->forgeWorld->EnqueueDeferredMesh("WorkspaceGrid", {0.0f, 0.0f, 0.0f}, std::move(gridMesh));
 
     m_lastPreviewIndex = m_selectedColorIndex;
-    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(m_selectedColorIndex, m_context->forgeWorld->GetPalette());
+    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(m_selectedColorIndex, m_context);
     m_context->forgeWorld->EnqueueDeferredMesh("PreviewSphere", { 8.0f, 0.0f, 8.0f }, std::move(previewMesh));
     
     // --- CARICAMENTO NOMI BLOCCHI DA JSON ---
@@ -448,11 +449,11 @@ void ForgeState::Update(float dt) {
                 trans.location.y = rayTargetPos.y + 0.5f;
                 trans.location.z = rayTargetPos.z + 0.5f;
                 
-                auto& mat = m_context->forgeWorld->GetPalette().materials[m_selectedColorIndex];
-                mesh.colorOverride[0] = mat.baseColor.x;
-                mesh.colorOverride[1] = mat.baseColor.y;
-                mesh.colorOverride[2] = mat.baseColor.z;
-                mesh.colorOverride[3] = 0.6f; // Alpha for transparency
+                auto& def = m_context->blockRegistry->GetBlock(m_selectedColorIndex);
+                mesh.colorOverride[0] = def.baseColor.x;
+                mesh.colorOverride[1] = def.baseColor.y;
+                mesh.colorOverride[2] = def.baseColor.z;
+                mesh.colorOverride[3] = 1.0f; // Alpha
             } else {
                 trans.location.y = -100.0f; // Nascondi
             }
@@ -543,8 +544,15 @@ void ForgeState::Render() {
         ImGui::Spacing();
         ImGui::Separator();
 
-        std::string blockName = m_blockNames.count(m_selectedColorIndex) ? m_blockNames[m_selectedColorIndex] : "Sconosciuto";
-        ImGui::Text("Blocchi / Materiali PBR (Selezionato: %d - %s)", m_selectedColorIndex, blockName.c_str());
+        const auto& blocks = m_context->blockRegistry->GetAllBlocks();
+        int activeBlocksCount = (int)blocks.size();
+        
+        std::string blockName = "Sconosciuto";
+        if (m_selectedColorIndex > 0 && m_selectedColorIndex <= activeBlocksCount) {
+            blockName = blocks[m_selectedColorIndex - 1].displayName;
+        }
+
+        ImGui::Text("Blocco PBR Selezionato: %d - %s", m_selectedColorIndex, blockName.c_str());
         
         // Pulsanti di navigazione tra i materiali attivi
         if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
@@ -554,116 +562,27 @@ void ForgeState::Render() {
         ImGui::Text("ID %d", m_selectedColorIndex);
         ImGui::SameLine();
         if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-            if (m_selectedColorIndex < m_activeMaterialsCount) m_selectedColorIndex++;
+            if (m_selectedColorIndex < activeBlocksCount) m_selectedColorIndex++;
         }
         
-        ImGui::SameLine();
-        if (ImGui::Button("+ Nuovo Materiale")) {
-            if (m_activeMaterialsCount < 255) {
-                m_activeMaterialsCount++;
-                m_selectedColorIndex = m_activeMaterialsCount;
-                
-                // Inizializza il nuovo materiale copiando quello di default
-                if (m_context && m_context->forgeWorld) {
-                    auto& palette = m_context->forgeWorld->GetPalette();
-                    palette.materials[m_activeMaterialsCount] = fw::ForgeMaterial(); // Reset ai default
-                }
-            }
-        }
-        
-        if (m_context && m_context->forgeWorld) {
-            auto& palette = m_context->forgeWorld->GetPalette();
-            auto& mat = palette.materials[m_selectedColorIndex];
+        if (m_selectedColorIndex > 0 && m_selectedColorIndex <= activeBlocksCount) {
+            const auto& def = blocks[m_selectedColorIndex - 1];
             
             // --- ANTEPRIMA DEL BLOCCO SELEZIONATO ---
-            ImGui::Text("Anteprima Materiale (ID: %d)", m_selectedColorIndex);
+            ImGui::Text("Anteprima Materiale (ID: %d)", def.id);
             ImVec2 p = ImGui::GetCursorScreenPos();
             float previewSize = 100.0f;
-            // Calcoliamo un colore approssimato considerando anche la roughness e metallic
-            ImVec4 previewColor = ImVec4(mat.baseColor.x, mat.baseColor.y, mat.baseColor.z, 1.0f);
+            ImVec4 previewColor = ImVec4(def.baseColor.x, def.baseColor.y, def.baseColor.z, 1.0f);
             
-            // Disegniamo un grande "blocco" (quadrato smussato)
             ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + previewSize, p.y + previewSize), ImColor(previewColor), 8.0f);
-            // Bordo
             ImGui::GetWindowDrawList()->AddRect(p, ImVec2(p.x + previewSize, p.y + previewSize), ImColor(255, 255, 255, 100), 8.0f, 0, 2.0f);
             
-            // Aggiungiamo un po' di "brillantezza" se metallic/emissive sono alti
-            if (mat.metallic > 0.5f || mat.emissiveStrength > 0.5f) {
+            if (def.metallic > 0.5f || def.emissiveStrength > 0.5f) {
                 ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(p.x + 10, p.y + 10), ImVec2(p.x + 30, p.y + 30), ImColor(255, 255, 255, 150), 4.0f);
             }
             
             ImGui::Dummy(ImVec2(previewSize, previewSize)); // Spazio occupato dall'anteprima
-            ImGui::Spacing();
-            ImGui::Separator();
-            // ------------------------------------------
-
-            bool paletteChanged = false;
-            
-            // Converti fw::Vec3 a float array per ImGui
-            float col[3] = {mat.baseColor.x, mat.baseColor.y, mat.baseColor.z};
-            if (ImGui::ColorEdit3("Colore Base", col)) {
-                mat.baseColor = {col[0], col[1], col[2]};
-                paletteChanged = true;
-            }
-            if (ImGui::SliderFloat("Roughness", &mat.roughness, 0.0f, 1.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("Metallic", &mat.metallic, 0.0f, 1.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("Emissive", &mat.emissiveStrength, 0.0f, 5.0f)) paletteChanged = true;
-            
-            if (mat.emissiveStrength > 0.01f) {
-                float ecol[3] = {mat.emissiveColor.x, mat.emissiveColor.y, mat.emissiveColor.z};
-                if (ImGui::ColorEdit3("Colore Luce", ecol)) {
-                    mat.emissiveColor = {ecol[0], ecol[1], ecol[2]};
-                    paletteChanged = true;
-                }
-            } else {
-                // Sincronizza colore emissivo col base per comodità
-                mat.emissiveColor = mat.baseColor;
-            }
-            
-            if (paletteChanged) {
-                // Notifica a tutti i chunk di rigenerare la mesh coi nuovi colori
-                auto& reg = m_context->forgeWorld->GetRegistry();
-                auto chunks = reg.view<fw::VoxelChunkComponent>();
-                for (auto e : chunks) {
-                    if (!reg.all_of<fw::ChunkDirtyComponent>(e)) {
-                        reg.emplace<fw::ChunkDirtyComponent>(e);
-                    } else {
-                        reg.get<fw::ChunkDirtyComponent>(e).needsRebuild = true;
-                    }
-                }
-            }
-
-            ImGui::Spacing();
-            ImGui::Text("Parametri Avanzati");
-            if (ImGui::SliderFloat("Normal Intensity", &mat.normalIntensity, 0.0f, 5.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("Alpha Cutoff", &mat.alphaCutoff, 0.0f, 1.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("AO Strength", &mat.aoStrength, 0.0f, 1.0f)) paletteChanged = true;
-            
-            ImGui::Spacing();
-            ImGui::Text("Trasparenza e Vernice");
-            if (ImGui::SliderFloat("Clearcoat", &mat.clearcoat, 0.0f, 1.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("Clearcoat Roughness", &mat.clearcoatRoughness, 0.0f, 1.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("Transmission", &mat.transmission, 0.0f, 1.0f)) paletteChanged = true;
-            if (mat.transmission > 0.0f) {
-                if (ImGui::SliderFloat("IOR (Rifrazione)", &mat.ior, 1.0f, 3.0f)) paletteChanged = true;
-            }
-            
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Text("Proprietà Fisiche (Jolt)");
-            if (ImGui::SliderFloat("Massa (kg)", &mat.mass, 0.0f, 500.0f, "%.1f")) paletteChanged = true;
-            if (ImGui::SliderFloat("Attrito", &mat.friction, 0.0f, 1.0f)) paletteChanged = true;
-            if (ImGui::SliderFloat("Rimbalzo", &mat.restitution, 0.0f, 1.0f)) paletteChanged = true;
-            
-            ImGui::Spacing();
-            
-            // Forza rigenerazione del chunk se richiesto esplicitamente
-            if (ImGui::Button("Applica Modifiche Materiale")) {
-                m_context->forgeWorld->MarkChunkDirty(m_context->forgeWorld->GetRegistry().view<fw::VoxelChunkComponent>().front());
-            }
-        } // Chiude if (m_context && m_context->forgeWorld)
-        
-        ImGui::Spacing();
+        }
         ImGui::Separator();
         ImGui::Text("Controlli Telecamera");
         int cameraModeInt = m_isFirstPerson ? 0 : 1;
@@ -755,7 +674,7 @@ void ForgeState::Render() {
 
 void ForgeState::UpdatePreviewMesh(int colorIndex) {
     if (!m_context || !m_context->forgeWorld) return;
-    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(colorIndex, m_context->forgeWorld->GetPalette());
+    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(colorIndex, m_context);
     previewMesh.colorOverride[3] = 0.6f;
     
     auto& registry = m_context->forgeWorld->GetRegistry();

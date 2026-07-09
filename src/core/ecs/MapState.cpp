@@ -55,9 +55,20 @@ void MapState::Update(float dt) {
         camPos.y = m_orbitTarget.y + m_orbitDistance * sin(pitchRad);
         camPos.z = m_orbitTarget.z + m_orbitDistance * cos(pitchRad) * cos(yawRad);
 
-        // TODO: m_context->renderManager->SetViewMatrix(glm::lookAt(camPos, m_orbitTarget, glm::vec3(0, 1, 0)));
+        // Aggiorna la telecamera del contesto condiviso
+        m_context->activeCameraView.cameraPosition = camPos;
+        m_context->activeCameraView.cameraFront = glm::normalize(m_orbitTarget - camPos);
+        m_context->activeCameraView.viewMatrix = glm::lookAt(camPos, m_orbitTarget, glm::vec3(0, 1, 0));
         
-        // Aggiorna l'albero LOD in base alla telecamera
+        // Passiamo un aspect ratio approssimativo (ideale prendere le dimensioni della finestra)
+        float aspect = 16.0f / 9.0f; 
+        if (m_context->engine) {
+            // Se abbiamo accesso all'engine, usiamo la risoluzione corrente
+            // Ma per ora un default funziona bene
+        }
+        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+        m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Correzione Y per Vulkan
+
         if (m_context && m_context->jobSystem && m_context->assetManager) {
             const fw::PlanetMap* pMap = nullptr;
             if (m_activePlanetIndex >= 0 && m_activePlanetIndex < m_document.planets.size()) {
@@ -369,4 +380,13 @@ void MapState::CompileAndGenerate() {
     
     // 3. Passa alla visuale 3D
     m_isBuilderMode = false; 
+
+    // BUG FIX: Agganciamo il nuovo ForgeWorld al motore di rendering!
+    m_context->activeRegistry = &m_previewWorld->GetRegistry();
+    m_context->isForgeMode = true; // Necessario per usare il renderer Forge (Deferred meshes)
+
+    // Forziamo anche la visuale su un punto di partenza
+    m_orbitDistance = 150.0f;
+    m_orbitPitch = 30.0f;
+    m_orbitYaw = 45.0f;
 }

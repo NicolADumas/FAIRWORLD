@@ -27,6 +27,24 @@ bool MapDocument::SaveJSON(const std::string& path) {
             pj["name"] = planet.name;
             pj["regions"] = json::array();
 
+            // Nuovi campi per DimensionsManager
+            pj["minX"] = planet.minX;
+            pj["maxX"] = planet.maxX;
+            pj["minZ"] = planet.minZ;
+            pj["maxZ"] = planet.maxZ;
+            pj["chunkOverrides"] = json::array();
+
+            for (const auto& overrideChunk : planet.chunkOverrides) {
+                json cj;
+                cj["x"] = overrideChunk.coord.x;
+                cj["z"] = overrideChunk.coord.z;
+                cj["type"] = static_cast<int>(overrideChunk.meta.type);
+                cj["biomeID"] = overrideChunk.meta.biomeID;
+                cj["canSpawnMobs"] = overrideChunk.meta.canSpawnMobs;
+                cj["isDestructible"] = overrideChunk.meta.isDestructible;
+                pj["chunkOverrides"].push_back(cj);
+            }
+
             for (const auto& region : planet.regions) {
                 json rj;
                 rj["center"] = { region.center.x, region.center.y };

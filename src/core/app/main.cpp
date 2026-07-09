@@ -15,6 +15,7 @@
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
 #include "JoltPhysicsSystem.h"
+#include "BlockRegistry.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -115,10 +116,16 @@ int main() {
     DeviceManager deviceManager;
     fw::TimeManager timeManager;
     fw::DiagnosticsManager diagnosticsManager;
+    fw::BlockRegistry blockRegistry;
+    
+    // Inizializza o carica i blocchi da file
+    blockRegistry.Initialize();
+    blockRegistry.LoadFromJson("../assets/blocks.json");
     
     context.deviceManager = &deviceManager;
     context.timeManager = &timeManager;
     context.diagnosticsManager = &diagnosticsManager;
+    context.blockRegistry = &blockRegistry;
 
     // 5. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
     engine.SetSharedContext(&context);

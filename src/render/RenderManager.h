@@ -29,6 +29,7 @@ struct ForgePushConstantData {
     glm::vec4 colorOverride;
     int useColorOverride;
     float seasonProgress;
+    glm::vec4 lightDir; // Aggiunto per BlockMaker
 };
 
 class RenderManager {
@@ -97,8 +98,11 @@ private:
         glm::mat4 model;
         glm::mat4 view;
         glm::mat4 proj;
+        glm::vec4 globalLightDir; // w serve per l'allineamento o possiamo usare isBlockMakerMode
         float seasonProgress;
-        float padding[3]; // Allineamento a 16 byte (std140)
+        int debugColorMode; // 0=Normale, 1=Inverti, 2=Swap RB
+        int isBlockMakerMode;
+        float padding;
     };
 
     // --- COMPONENTI FASE 5 (UBO & Descriptors) ---
@@ -262,7 +266,7 @@ public:
     bool CreateDescriptorSetLayout();
     bool CreateUniformBuffers();
     bool CreateDescriptorPoolAndSets();
-    void UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress);
+    void UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress, struct SharedContext* context);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     // --- VERTEX/INDEX BUFFER ---

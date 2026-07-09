@@ -3,6 +3,7 @@
 #include "MobManager.h"
 #include "Player.h"
 #include "World.h"
+#include "DimensionsManager.h"
 #include <glm/gtx/norm.hpp>
 #include <iostream>
 #include <algorithm>
@@ -111,4 +112,31 @@ void MobManager::UpdateMobs(float deltaTime, glm::vec3 playerPos, Player& player
             std::cout << "[MOB] " << mob.displayName << " e' caduto nel vuoto." << std::endl;
         }
     }
+}
+
+void MobManager::UpdateSpawners(entt::registry& registry, const fw::DimensionsManager& dimManager, float worldPositionX, float worldPositionZ) {
+    constexpr float CHUNK_SIZE = 16.0f;
+    
+    int32_t cx = static_cast<int32_t>(std::floor(worldPositionX / CHUNK_SIZE));
+    int32_t cz = static_cast<int32_t>(std::floor(worldPositionZ / CHUNK_SIZE));
+
+    const fw::ChunkMetadata* meta = dimManager.GetChunkMetadata(cx, cz);
+    
+    if (!meta || !meta->canSpawnMobs) {
+        return; 
+    }
+
+    if (meta->type == fw::ChunkType::BossArena) {
+        this->SpawnBoss(registry, cx, cz);
+    } else {
+        this->SpawnRegularPack(registry, cx, cz, meta->biomeID);
+    }
+}
+
+void MobManager::SpawnBoss(entt::registry& registry, int32_t cx, int32_t cz) {
+    // Placeholder per la logica di spawn del boss
+}
+
+void MobManager::SpawnRegularPack(entt::registry& registry, int32_t cx, int32_t cz, uint16_t biomeID) {
+    // Placeholder per la logica di spawn di mob normali
 }

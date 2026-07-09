@@ -5,6 +5,7 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     float seasonProgress;
+    int debugColorMode;
 } ubo;
 
 layout(location = 0) in vec3 fragColor;
@@ -185,6 +186,17 @@ void main() {
     finalColor = finalColor / (finalColor + vec3(1.0));
     // Gamma correction
     finalColor = pow(finalColor, vec3(1.0/2.2));
+
+    // ==========================================
+    // DEBUG COLOR MODE (Per risolvere inversione)
+    // ==========================================
+    if (ubo.debugColorMode == 1) {
+        // Inversione totale
+        finalColor = vec3(1.0) - finalColor;
+    } else if (ubo.debugColorMode == 2) {
+        // Swap Red/Blue
+        finalColor = finalColor.bgr;
+    }
 
     outColor = vec4(finalColor, 1.0);
 }

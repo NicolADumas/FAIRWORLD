@@ -19,6 +19,7 @@ layout(push_constant) uniform ForgePushConstantData {
     vec4 colorOverride;
     int useColorOverride;
     float seasonProgress;
+    vec4 lightDir;
 } push;
 
 // --- BIOLOGICAL SEASONAL MODEL (GPU-SIDE) ---
@@ -91,8 +92,14 @@ void main() {
         baseColor = mix(baseColor, vec3(0.90, 0.95, 0.98), frostInfiltration * upFactor * 0.8);
     }
     
-    // Luce direzionale base
+    // Luce direzionale dinamica
     vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
+    if (length(push.lightDir.xyz) > 0.1) {
+        // Usa la luce custom orientata verso la scena. 
+        // Inverto per avere la direzione *verso* la sorgente (convenzione classica)
+        lightDir = normalize(-push.lightDir.xyz);
+    }
+    
     float diff = max(dot(fragNormal, lightDir), 0.0);
     
     // Ambient base influenzata da metallic (meno metallic = più ambient diffusa)

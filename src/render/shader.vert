@@ -5,6 +5,7 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     float seasonProgress;
+    int debugColorMode;
 } ubo;
 
 layout(push_constant) uniform Push {

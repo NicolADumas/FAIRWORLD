@@ -126,7 +126,7 @@ void EditorPanel::Draw(AssetManager& assets, World& world, RenderManager* render
 
         ImGuiTabItemFlags flags4 = (forceSelectTab == 4) ? ImGuiTabItemFlags_SetSelected : 0;
         if (ImGui::BeginTabItem("⚙️ Engine", nullptr, flags4)) {
-            DrawEngineTab(renderer);
+            DrawEngineTab(renderer, context);
             ImGui::EndTabItem();
         }
 
@@ -707,10 +707,24 @@ void EditorPanel::DrawMobsTab(AssetManager& assets, MobManager* mobManager, cons
     ImGui::Columns(1);
 }
 
-void EditorPanel::DrawEngineTab(RenderManager* renderer) {
+void EditorPanel::DrawEngineTab(RenderManager* renderer, SharedContext* context) {
     ImGui::TextColored(ImVec4(0.2f, 0.6f, 1.0f, 1.0f), "Impostazioni Grafiche dell'Engine");
     ImGui::Separator();
     ImGui::Spacing();
+
+    // ==========================================
+    // DEBUG COLOR MODE
+    // ==========================================
+    if (context) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Modalità Colore (Debug Inversione)");
+        ImGui::TextDisabled("Seleziona una modalità per tentare di risolvere i colori sfalsati.");
+        ImGui::RadioButton("Normale", &context->debugColorMode, 0); ImGui::SameLine();
+        ImGui::RadioButton("Inversione Esatta (1.0 - C)", &context->debugColorMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Scambia R/B (BGR)", &context->debugColorMode, 2);
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
 
     if (renderer) {
         float fov = renderer->GetFov();

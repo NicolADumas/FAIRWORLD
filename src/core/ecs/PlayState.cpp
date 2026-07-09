@@ -147,17 +147,7 @@ bool PlayState::Init() {
     m_context->forgeWorld->SetSaveDirectory("saves/world");
     m_context->forgeWorld->ClearWorld();
     
-    // Setup Base Palette per Fairworld
-    auto& palette = m_context->forgeWorld->GetPalette();
-    // 1: Grass (Erba)
-    palette.materials[1].baseColor = {0.2f, 0.7f, 0.2f};
-    palette.materials[1].roughness = 0.9f;
-    // 2: Stone (Roccia / Montagna)
-    palette.materials[2].baseColor = {0.4f, 0.4f, 0.4f};
-    palette.materials[2].roughness = 1.0f;
-    // 3: Dirt (Terra)
-    palette.materials[3].baseColor = {0.35f, 0.25f, 0.15f};
-    palette.materials[3].roughness = 1.0f;
+    // Setup Base Palette per Fairworld (rimosso in favore del BlockRegistry json-driven)
 
     auto& registry = m_context->forgeWorld->GetRegistry();
 

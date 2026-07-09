@@ -26,7 +26,7 @@ private:
     void DrawMobsTab(AssetManager& assets, MobManager* mobManager, const RenderViewData& cameraView);
     void DrawPlayerTab(Player& player, MobManager& mobManager);
     void DrawWorldTab(World& world);
-    void DrawEngineTab(RenderManager* renderer);
+    void DrawEngineTab(RenderManager* renderer, SharedContext* context);
 
     void DrawTexturePainterTab(AssetManager& assets, RenderManager* renderer);
     void DrawRadialMenu(World& world, RenderManager* renderer);

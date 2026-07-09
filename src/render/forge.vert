@@ -5,6 +5,7 @@ layout(push_constant) uniform ForgePushConstantData {
     vec4 colorOverride;
     int useColorOverride;
     float seasonProgress;
+    vec4 lightDir;
 } push;
 
 layout(location = 0) in vec3 inPosition;

@@ -18,6 +18,7 @@
 #include "StateManager.h"
 #include "ForgeState.h"
 #include "HubState.h"
+#include "BlockRegistry.h"
 
 PhysicsLabState::PhysicsLabState(SharedContext* context) : m_context(context) {
 }
@@ -160,12 +161,12 @@ void PhysicsLabState::DrawJointProperties(fw::JointData& joint) {
                 
                 entt::entity cube = m_labWorld->CreatePrimitive("JointCube", fw::Vec3(0,0,0), "Chunk_Cube");
                 auto* meshComp = m_labWorld->GetRegistry().try_get<fw::MeshComponent>(cube);
-                if (meshComp) {
-                    const auto& mat = m_labWorld->GetPalette().materials[(uint8_t)bType];
-                    meshComp->colorOverride[0] = mat.baseColor.x;
-                    meshComp->colorOverride[1] = mat.baseColor.y;
-                    meshComp->colorOverride[2] = mat.baseColor.z;
-                    meshComp->colorOverride[3] = 1.0f; 
+                if (meshComp && m_context && m_context->blockRegistry) {
+                    const auto& def = m_context->blockRegistry->GetBlock((uint8_t)bType);
+                    meshComp->colorOverride[0] = def.baseColor.x;
+                    meshComp->colorOverride[1] = def.baseColor.y;
+                    meshComp->colorOverride[2] = def.baseColor.z;
+                    meshComp->colorOverride[3] = 1.0f; // Enable color override (alpha > 0)
                 }
                 joint.voxelEntity = static_cast<uint32_t>(cube);
             }

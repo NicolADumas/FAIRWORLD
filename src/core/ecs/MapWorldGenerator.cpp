@@ -26,9 +26,26 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, ForgeW
     // Per ora facciamo generazione sincrona per collaudo
     std::cout << "[MapWorldGenerator] Inizio generazione voxel per " << planet.name << "...\n";
     
-    int chunkRadius = 6; 
-    for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
-        for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
+    // Crea il DimensionsManager al volo in base ai dati della mappa
+    fw::DimensionsManager dimManager;
+    dimManager.SetBounds(planet.minX, planet.maxX, planet.minZ, planet.maxZ);
+    for (const auto& co : planet.chunkOverrides) {
+        dimManager.SetChunkMetadata(co.coord.x, co.coord.z, co.meta);
+    }
+    
+    for (int cz = dimManager.GetMinZ(); cz <= dimManager.GetMaxZ(); ++cz) {
+        for (int cx = dimManager.GetMinX(); cx <= dimManager.GetMaxX(); ++cx) {
+            
+            const ChunkMetadata* meta = dimManager.GetChunkMetadata(cx, cz);
+            ChunkMetadata defaultMeta;
+            const ChunkMetadata& activeMeta = meta ? *meta : defaultMeta;
+
+            // Salta i chunk etichettati come OuterBoundary se non vogliamo che contengano MicroVoxel 
+            // (potremmo instanziare mesh low-poly per l'orizzonte, ma qui stiamo generando VoxelComponent)
+            if (activeMeta.type == ChunkType::OuterBoundary) {
+                continue;
+            }
+
             std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
             entt::entity chunkEnt = targetWorld.CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
             auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);

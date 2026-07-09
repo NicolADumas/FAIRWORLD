@@ -820,7 +820,7 @@ bool RenderManager::CreateDescriptorPoolAndSets() {
     return true;
 }
 
-void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress) {
+void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress, SharedContext* context) {
     UniformBufferObject ubo{};
     
     // Il triangolo resta fermo al centro (0,0,0)
@@ -834,6 +834,17 @@ void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMat
 
     // Assegnamo il progresso stagionale passato dall'esterno
     ubo.seasonProgress = seasonProgress;
+
+    // Aggiungiamo il Color Mode per debug e i parametri BlockMaker
+    if (context) {
+        ubo.debugColorMode = context->debugColorMode;
+        ubo.isBlockMakerMode = context->isBlockMakerMode ? 1 : 0;
+        ubo.globalLightDir = glm::vec4(context->previewLightDir, 0.0f);
+    } else {
+        ubo.debugColorMode = 0;
+        ubo.isBlockMakerMode = 0;
+        ubo.globalLightDir = glm::vec4(0.5f, -1.0f, 0.5f, 0.0f);
+    }
 
     // Copiamo i dati nella RAM della GPU
     memcpy(m_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1364,7 +1375,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     glm::mat4 uboProjMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspectUniform, 0.1f, 1000.0f);
     if (!context) uboProjMatrix[1][1] *= -1;
 
-    UpdateUniformBuffer(m_currentFrame, viewMatrix, uboProjMatrix, seasonalUboValue);
+    UpdateUniformBuffer(m_currentFrame, viewMatrix, uboProjMatrix, seasonalUboValue, context);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
@@ -2508,26 +2519,30 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
     // Dobbiamo transizionare il layout prima di poter copiare di nuovo
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 10);
+    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 16);
 
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
+    // Se l'immagine sorgente e' piu' grande del limite 16x16 della texture, diciamo a Vulkan come saltare i pixel!
+    region.bufferRowLength = width;
+    region.bufferImageHeight = height;
+    
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = layerIndex; // Aggiorniamo SOLO questo layer!
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = {width, height, 1};
+    
+    // Assicuriamoci di non sfondare le dimensioni allocate (attualmente hardcoded a 16x16 per stile Minecraft retro)
+    region.imageExtent = { std::min(width, 16u), std::min(height, 16u), 1 };
 
     vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, m_textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     EndSingleTimeCommands(commandBuffer);
 
     // Rimettiamo in lettura per lo shader
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 10);
+    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 16);
 
     vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
     std::cout << "[VULKAN] Texture Array Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
@@ -2848,6 +2863,11 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     }
     float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
     pcData.seasonProgress = seasonalUboValue;
+    if (context && context->isBlockMakerMode) {
+        pcData.lightDir = glm::vec4(context->previewLightDir, 0.0f);
+    } else {
+        pcData.lightDir = glm::vec4(0.5f, -1.0f, 0.5f, 0.0f);
+    }
 
     // ==========================================
     // 2. FASE STATICA: La Griglia di Lavoro
@@ -2880,6 +2900,17 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
             const auto& trans = view.get<fw::TransformComponent>(entity);
 
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+
+            if (context->isBlockMakerMode) {
+                // In BlockMakerMode, disegna solo l'entità PreviewBlock. Controlliamo i metadati
+                if (registry.any_of<fw::MetadataComponent>(entity)) {
+                    if (registry.get<fw::MetadataComponent>(entity).name != "PreviewBlock") {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            }
 
             if (mesh.type == fw::MeshType::Editor || mesh.type == fw::MeshType::Chunk) {
                 fw::Mat4 fwModel = trans.worldMatrix();

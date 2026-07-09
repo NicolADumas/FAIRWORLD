@@ -3,6 +3,7 @@
 #include "IAllocator.h"
 #include "ForgeMath.h"
 #include "ForgeComponents.h"
+#include "DimensionsManager.h"
 #include "PerlinNoise.h"
 #include <memory>
 #include <string>
@@ -95,8 +96,7 @@ public:
     entt::registry& GetRegistry() { return m_registry; }
     
     // Accesso alla Palette Materiali della Forge (256 slot)
-    ForgeMaterialPalette& GetPalette() { return m_palette; }
-    const ForgeMaterialPalette& GetPalette() const { return m_palette; }
+
 
     // Forza un chunk ad essere ricostruito asincronamente
     void MarkChunkDirty(entt::entity chunkEntity);
@@ -140,7 +140,6 @@ private:
     entt::registry m_registry;
     SharedContext* m_context = nullptr;
     PerlinNoise m_noiseGen;
-    ForgeMaterialPalette m_palette;
 
     // Mappa hash dei chunk attivi: uint64_t(cx, cz) -> entity
     std::unordered_map<uint64_t, entt::entity> m_activeChunks;
@@ -177,7 +176,7 @@ private:
 class MeshGenerators {
 public:
     static MeshComponent MakeCube(float size = 1.0f);
-    static MeshComponent MakeVoxelPreview(int colorIndex, const ForgeMaterialPalette& palette);
+    static MeshComponent MakeVoxelPreview(int blockId, SharedContext* ctx);
     static MeshComponent MakeSphere(int segs = 16, int rings = 8, float r = 1.0f);
     static MeshComponent MakeGridBox(int width, int height, int depth, float thickness = 0.05f);
 };
