@@ -118,31 +118,15 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, ForgeWorld* worl
                 // DATA-DRIVEN: Calcoliamo l'influenza delle regioni
                 MapRegion activeRegion;
                 activeRegion.seed = 12345;
+                activeRegion.gravityModifier = 1.0f;
                 activeRegion.perlinFrequency = 0.005f; // Base
                 
-                // Proiettiamo la normale su coordinate geografiche [0..1] per cercare la regione
-                float longitude = atan2(normal.z, normal.x); // -PI to PI
-                float latitude = asin(normal.y);             // -PI/2 to PI/2
-                glm::vec2 geoCoord((longitude + glm::pi<float>()) / (2.0f * glm::pi<float>()), (latitude + glm::pi<float>() / 2.0f) / glm::pi<float>());
+                // NOTA: Con la migrazione alle coordinate Chunk (rectMin/rectMax), il calcolo
+                // dell'influenza per la macro-sfera visiva (SphericalLOD) richiede una conversione 
+                // da coordinate geografiche (lat/long) a Chunk. 
+                // Per ora, applichiamo un rumore di base uniforme per il pianeta LOD in lontananza.
                 
-                float maxInfluence = 0.0f;
-                for (const auto& r : safeRegions) {
-                    float dx = geoCoord.x - r.center.x;
-                    float dy = geoCoord.y - r.center.y;
-                    // Wraparound for longitude
-                    if (dx > 0.5f) dx -= 1.0f;
-                    if (dx < -0.5f) dx += 1.0f;
-                    
-                    float distSq = dx*dx + dy*dy;
-                    float rSq = r.radius * r.radius;
-                    if (distSq < rSq) {
-                        float influence = 1.0f - (distSq / rSq);
-                        if (influence > maxInfluence) {
-                            maxInfluence = influence;
-                            activeRegion = r; // Usa i parametri della regione prevalente
-                        }
-                    }
-                }
+                float latitude = asin(normal.y); // Necessario per il bioma
                 
                 // Usa i dati della regione per la generazione procedurale!
                 float noiseVal = MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, activeRegion.perlinFrequency);

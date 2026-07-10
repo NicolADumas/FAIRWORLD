@@ -2902,9 +2902,10 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
 
             if (context->isBlockMakerMode) {
-                // In BlockMakerMode, disegna solo l'entità PreviewBlock. Controlliamo i metadati
+                // In BlockMakerMode, disegna solo l'entità PreviewBlock e l'ambiente BlockMakerEnv. Controlliamo i metadati
                 if (registry.any_of<fw::MetadataComponent>(entity)) {
-                    if (registry.get<fw::MetadataComponent>(entity).name != "PreviewBlock") {
+                    auto& metaName = registry.get<fw::MetadataComponent>(entity).name;
+                    if (metaName != "PreviewBlock" && metaName != "BlockMakerEnv") {
                         continue;
                     }
                 } else {

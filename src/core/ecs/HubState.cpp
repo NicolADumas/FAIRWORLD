@@ -65,88 +65,75 @@ void HubState::Render() {
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
 
-        // --- GRIGLIA CANALI WII (2x2) ---
-        float channelWidth = 300.0f;
-        float channelHeight = 200.0f;
-        float padding = 30.0f;
-        float startX = (viewport->Size.x - (channelWidth * 2 + padding)) / 2.0f;
-        float startY = 150.0f;
+        // --- GRIGLIA CANALI (3 colonne x 2 righe) ---
+        float totalW = viewport->Size.x;
+        float totalH = viewport->Size.y;
+        int cols = 3;
+        int rows = 2;
+        float padding = 20.0f;
+        float channelWidth  = (totalW - padding * (cols + 1)) / cols;
+        float channelHeight = std::min(180.0f, (totalH - 160.0f - padding * (rows + 1)) / rows);
+        float gridStartX = padding;
+        float gridStartY = 140.0f;
 
-        // Canale 1: Esecuzione Progetti (Il "Disco" del Gioco)
-        ImGui::SetCursorPos(ImVec2(startX, startY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.9f, 1.0f, 1.0f)); // Azzurrino
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        if (ImGui::Button("FAIRWORLD\n[ Avvia Progetto JSON ]", ImVec2(channelWidth, channelHeight))) {
-            std::cout << "[HubState] Avvio Cartuccia JSON richiesto.\n";
-            m_context->targetGameJsonPath = "projects/game_config.json";
-            m_context->engine->SetGameMode(GameMode::Play);
-            m_context->engine->ForceGameState(GameState::PLAYING);
-            m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
-        }
-        ImGui::PopStyleColor(3);
+        struct TileInfo {
+            const char* label;
+            ImVec4 color;
+            ImVec4 hoverColor;
+            ImVec4 textColor;
+        };
+        TileInfo tiles[6] = {
+            { "FAIRWORLD\n[ Avvia Progetto JSON ]",         {0.3f,0.55f,0.9f,1.f}, {0.45f,0.7f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
+            { "LA FORGE\n[ Officina 3D ]",                {1.0f,0.55f,0.1f,1.f}, {1.f,0.7f,0.3f,1.f},   {0.1f,0.1f,0.1f,1.f} },
+            { "PHYSICS LAB\n[ Calibrazione Materiali ]",   {0.2f,0.75f,0.3f,1.f}, {0.3f,0.9f,0.4f,1.f},  {0.05f,0.05f,0.05f,1.f} },
+            { "CONNESSIONE DISPOSITIVI\n[ Hardware ]",     {0.7f,0.7f,0.7f,1.f}, {0.85f,0.85f,0.85f,1.f},{0.1f,0.1f,0.1f,1.f} },
+            { "PLANET MAPPER\n[ Configura Sistema Solare ]",{0.55f,0.3f,0.85f,1.f},{0.7f,0.45f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
+            { "BLOCK MAKER\n[ PBR & Lookdev ]",            {0.1f,0.7f,0.75f,1.f}, {0.2f,0.85f,0.9f,1.f}, {0.05f,0.05f,0.05f,1.f} },
+        };
 
-        // Canale 2: LA FORGE (Ambiente 3D)
-        ImGui::SetCursorPos(ImVec2(startX + channelWidth + padding, startY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.6f, 0.2f, 1.0f)); // Arancione
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.7f, 0.4f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        if (ImGui::Button("LA FORGE\n[ Entra in Officina 3D ]", ImVec2(channelWidth, channelHeight))) {
-            std::cout << "[HubState] Transizione alla Forge 3D.\n";
-            m_context->engine->SetGameMode(GameMode::Dev);
-            m_context->engine->ForceGameState(GameState::PLAYING);
-            m_context->stateManager->ChangeState(std::make_unique<ForgeState>(m_context));
+        for (int i = 0; i < 6; i++) {
+            int col = i % cols;
+            int row = i / cols;
+            float px = gridStartX + col * (channelWidth + padding);
+            float py = gridStartY + row * (channelHeight + padding);
+            ImGui::SetCursorPos(ImVec2(px, py));
+            ImGui::PushStyleColor(ImGuiCol_Button,        tiles[i].color);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, tiles[i].hoverColor);
+            ImGui::PushStyleColor(ImGuiCol_Text,          tiles[i].textColor);
+            if (ImGui::Button(tiles[i].label, ImVec2(channelWidth, channelHeight))) {
+                switch(i) {
+                    case 0: // FAIRWORLD Play
+                        m_context->engine->SetGameMode(GameMode::Play);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
+                        break;
+                    case 1: // LA FORGE
+                        m_context->engine->SetGameMode(GameMode::Dev);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<ForgeState>(m_context));
+                        break;
+                    case 2: // PHYSICS LAB
+                        m_context->engine->SetGameMode(GameMode::PhysicsLab);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<PhysicsLabState>(m_context));
+                        break;
+                    case 3: // CONNESSIONE DISPOSITIVI
+                        showDeviceManager = true;
+                        break;
+                    case 4: // PLANET MAPPER
+                        m_context->engine->SetGameMode(GameMode::Map);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<MapState>(m_context));
+                        break;
+                    case 5: // BLOCK MAKER
+                        m_context->engine->SetGameMode(GameMode::BlockMaker);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<BlockMakerState>(m_context));
+                        break;
+                }
+            }
+            ImGui::PopStyleColor(3);
         }
-        ImGui::PopStyleColor(3);
-
-        // Canale 3: PHYSICS LAB (Nuova Aggiunta)
-        ImGui::SetCursorPos(ImVec2(startX, startY + channelHeight + padding));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.8f, 0.4f, 1.0f)); // Verde
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        if (ImGui::Button("PHYSICS LAB\n[ Calibrazione Materiali ]", ImVec2(channelWidth, channelHeight))) {
-            std::cout << "[HubState] Transizione a Physics Lab.\n";
-            m_context->engine->SetGameMode(GameMode::PhysicsLab);
-            m_context->engine->ForceGameState(GameState::PLAYING);
-            m_context->stateManager->ChangeState(std::make_unique<PhysicsLabState>(m_context));
-        }
-        ImGui::PopStyleColor(3);
-
-        // Canale 4: Gestione Dispositivi
-        ImGui::SetCursorPos(ImVec2(startX + channelWidth + padding, startY + channelHeight + padding));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.9f, 0.9f, 1.0f)); // Grigio
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        if (ImGui::Button("CONNESSIONE DISPOSITIVI\n[ Impostazioni Hardware ]", ImVec2(channelWidth, channelHeight))) {
-            showDeviceManager = true;
-        }
-        ImGui::PopStyleColor(3);
-
-        // Canale 5: MAP SYSTEM
-        ImGui::SetCursorPos(ImVec2(startX, startY + (channelHeight + padding) * 2));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.8f, 1.0f)); // Viola
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.5f, 0.9f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-        if (ImGui::Button("PLANET MAPPER\n[ Configura Sistema Solare ]", ImVec2(channelWidth, channelHeight))) {
-            std::cout << "[HubState] Transizione al Mapper Planetario.\n";
-            m_context->engine->SetGameMode(GameMode::Map);
-            m_context->engine->ForceGameState(GameState::PLAYING);
-            m_context->stateManager->ChangeState(std::make_unique<MapState>(m_context));
-        }
-        ImGui::PopStyleColor(3);
-
-        // Canale 6: BLOCK MAKER (Lookdev)
-        ImGui::SetCursorPos(ImVec2(startX + channelWidth + padding, startY + (channelHeight + padding) * 2));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.8f, 0.8f, 1.0f)); // Ciano Scuro
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.4f, 0.9f, 0.9f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        if (ImGui::Button("BLOCK MAKER\n[ PBR & Lookdev ]", ImVec2(channelWidth, channelHeight))) {
-            std::cout << "[HubState] Transizione al Block Maker.\n";
-            m_context->engine->SetGameMode(GameMode::Dev);
-            m_context->engine->ForceGameState(GameState::PLAYING);
-            m_context->stateManager->ChangeState(std::make_unique<BlockMakerState>(m_context));
-        }
-        ImGui::PopStyleColor(3);
 
     }
     ImGui::End();

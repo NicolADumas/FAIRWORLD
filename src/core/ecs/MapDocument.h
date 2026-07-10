@@ -20,14 +20,18 @@ enum class MapRegionType : int {
 };
 
 struct MapRegion {
-    glm::vec2 center;       // Coordinate normalizzate [0..1]
-    float radius;           // Raggio d'influenza
+    glm::ivec2 rectMin = glm::ivec2(-2, -2); // Chunk min
+    glm::ivec2 rectMax = glm::ivec2(2, 2);   // Chunk max
     MapRegionType type;
     std::string label;
     uint32_t seed;
     float gravityModifier = 1.0f;
     float perlinFrequency = 0.03f;
     float treeDensity = 0.5f;
+    
+    // Configurazione Blocchi
+    uint8_t surfaceBlockId = 1;     // Grass
+    uint8_t subsurfaceBlockId = 3;  // Dirt
 };
 
 // Struttura serializzabile per una cella della griglia
@@ -44,6 +48,8 @@ struct PlanetMap {
     // Parametri DimensionsManager per Rigid Grid Map
     int32_t minX = -6;
     int32_t maxX = 6;
+    int32_t minY = 0;
+    int32_t maxY = 128;
     int32_t minZ = -6;
     int32_t maxZ = 6;
     std::vector<ChunkDataExport> chunkOverrides; // Solo i chunk custom

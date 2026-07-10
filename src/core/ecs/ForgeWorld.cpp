@@ -539,12 +539,14 @@ void ForgeWorld::Update(float dt) {
             
             // Aggiorna l'entità originaria del chunk o l'entità vuota prenotata
             if (def.targetEntity != entt::null) {
-                // Sincronizza i dati procedurali generati in background SOLO se sono stati creati da zero
-                if (def.isNewlyGenerated) {
-                    auto& chunk = m_registry.get<VoxelChunkComponent>(def.targetEntity);
-                    memcpy(chunk.blocks, def.chunkData->blocks, sizeof(chunk.blocks));
-                    memcpy(chunk.light, def.chunkData->light, sizeof(chunk.light));
-                    chunk.isGenerated = true; // BUG FIX CRITICO: Evita che il chunk venga rigenerato!
+                // Sincronizza i dati procedurali generati in background SOLO se sono stati creati da zero e possiedono chunkData
+                if (def.isNewlyGenerated && def.chunkData != nullptr) {
+                    if (m_registry.all_of<VoxelChunkComponent>(def.targetEntity)) {
+                        auto& chunk = m_registry.get<VoxelChunkComponent>(def.targetEntity);
+                        memcpy(chunk.blocks, def.chunkData->blocks, sizeof(chunk.blocks));
+                        memcpy(chunk.light, def.chunkData->light, sizeof(chunk.light));
+                        chunk.isGenerated = true; // BUG FIX CRITICO: Evita che il chunk venga rigenerato!
+                    }
                 }
                 
                 m_registry.emplace_or_replace<PBRMaterialComponent>(def.targetEntity);

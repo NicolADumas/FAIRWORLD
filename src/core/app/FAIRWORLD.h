@@ -19,7 +19,7 @@
 #include "DeskarmWebView.h"
 
 
-enum class GameMode { Dev, Play, Hub, PhysicsLab, Map };
+enum class GameMode { Dev, Play, Hub, PhysicsLab, Map, BlockMaker };
 
 // ------------------------------------------------------------------
 // GameState: ogni stato è ESCLUSIVO. Mai due stati attivi assieme.

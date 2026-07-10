@@ -7,6 +7,8 @@
 #include "MapWorldGenerator.h"
 #include "ForgeWorld.h"
 #include "PlayState.h"
+#include "BlockRegistry.h"
+#include "ForgeComponents.h"
 #include <imgui.h>
 #include <iostream>
 #include <algorithm>
@@ -148,13 +150,49 @@ void MapState::DrawBuilderUI() {
     ImGui::Spacing();
     
     auto& currentPlanet = m_document.planets[m_activePlanetIndex];
+    
+    // Configurazione Dimensioni Globali della Mappa
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Map Dimensions (Chunks)");
+    ImGui::DragInt("Min X", &currentPlanet.minX);
+    ImGui::DragInt("Max X", &currentPlanet.maxX);
+    ImGui::DragInt("Min Y (Altezza)", &currentPlanet.minY);
+    ImGui::DragInt("Max Y (Altezza)", &currentPlanet.maxY);
+    ImGui::DragInt("Min Z", &currentPlanet.minZ);
+    ImGui::DragInt("Max Z", &currentPlanet.maxZ);
+    ImGui::Separator();
+    
     ImGui::Text("Regioni in %s: %d", currentPlanet.name.c_str(), (int)currentPlanet.regions.size());
     
-    if (ImGui::Button("Aggiungi Regione", ImVec2(-1, 0))) {
-        fw::MapRegion r = { glm::vec2(0.5f, 0.5f), 0.1f, fw::MapRegionType::Forest, "Nuova Regione", 12345 };
-        currentPlanet.regions.push_back(r);
-        m_selectedRegionIndex = (int)currentPlanet.regions.size() - 1;
+    // Strumenti di Disegno (Brush)
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Strumenti di Disegno (Brush)");
+    ImGui::SliderInt("Dimensione Pennello (Chunk)", &m_brushSize, 1, 50);
+    
+    // Tipi e Blocchi Pennello
+    const char* regionTypes[] = { "Foresta", "Deserto", "Tundra", "Oceano", "Vulcano", "Citta", "Dungeon", "Portale" };
+    ImGui::Combo("Tipo Regione", &m_paintRegionType, regionTypes, IM_ARRAYSIZE(regionTypes));
+    
+    if (m_context->blockRegistry) {
+        auto& blocks = m_context->blockRegistry->GetAllBlocks();
+        std::vector<const char*> blockNames;
+        std::vector<uint8_t> blockIds;
+        for (const auto& def : blocks) {
+            blockNames.push_back(def.displayName.c_str());
+            blockIds.push_back(def.id);
+        }
+        
+        int currentSurfIdx = -1, currentSubIdx = -1;
+        for(size_t i=0; i<blockIds.size(); ++i) {
+            if(blockIds[i] == m_paintSurfaceBlock) currentSurfIdx = (int)i;
+            if(blockIds[i] == m_paintSubsurfaceBlock) currentSubIdx = (int)i;
+        }
+        if (ImGui::Combo("Blocco Superficie", &currentSurfIdx, blockNames.data(), (int)blockNames.size())) {
+            if (currentSurfIdx >= 0) m_paintSurfaceBlock = blockIds[currentSurfIdx];
+        }
+        if (ImGui::Combo("Blocco Sottoterra", &currentSubIdx, blockNames.data(), (int)blockNames.size())) {
+            if (currentSubIdx >= 0) m_paintSubsurfaceBlock = blockIds[currentSubIdx];
+        }
     }
+
     
     ImGui::Separator();
     
@@ -183,8 +221,31 @@ void MapState::DrawBuilderUI() {
         }
         
         // Controlli spaziali
-        ImGui::SliderFloat2("Coordinate", &r.center.x, 0.0f, 1.0f);
-        ImGui::SliderFloat("Raggio", &r.radius, 0.01f, 0.5f);
+        ImGui::DragInt2("Rect Min (X,Z)", &r.rectMin.x);
+        ImGui::DragInt2("Rect Max (X,Z)", &r.rectMax.x);
+        
+        // Controlli blocchi (surface / subsurface)
+        if (m_context->blockRegistry) {
+            auto& blocks = m_context->blockRegistry->GetAllBlocks();
+            std::vector<const char*> blockNames;
+            std::vector<uint8_t> blockIds;
+            for (const auto& def : blocks) {
+                blockNames.push_back(def.displayName.c_str());
+                blockIds.push_back(def.id);
+            }
+            int currentSurfIdx = -1;
+            int currentSubIdx = -1;
+            for(size_t i=0; i<blockIds.size(); ++i) {
+                if(blockIds[i] == r.surfaceBlockId) currentSurfIdx = (int)i;
+                if(blockIds[i] == r.subsurfaceBlockId) currentSubIdx = (int)i;
+            }
+            if (ImGui::Combo("Surface Block", &currentSurfIdx, blockNames.data(), (int)blockNames.size())) {
+                if (currentSurfIdx >= 0) r.surfaceBlockId = blockIds[currentSurfIdx];
+            }
+            if (ImGui::Combo("Subsurface Block", &currentSubIdx, blockNames.data(), (int)blockNames.size())) {
+                if (currentSubIdx >= 0) r.subsurfaceBlockId = blockIds[currentSubIdx];
+            }
+        }
         
         // Controlli ambientali
         ImGui::SliderFloat("Frequenza Perlin", &r.perlinFrequency, 0.005f, 0.2f);
@@ -224,91 +285,225 @@ void MapState::DrawBuilderUI() {
     // ==========================================
     ImGuiWindowFlags canvasFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
     ImGui::BeginChild("Canvas", ImVec2(canvasWidth, 0), true, canvasFlags);
-    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "CANVAS MAPPA PLANISFERO 2D (61.8%)");
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "EDITOR MAPPA");
+    ImGui::SameLine();
+    ImGui::TextDisabled("[Sin: Dipingi] [Des: Cancella] [Rotella: Dim.Pennello] [CTRL+Rotella: Zoom] [CTRL+Sin: Sposta]");
     ImGui::Separator();
     
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
     ImVec2 canvasSize = ImGui::GetContentRegionAvail();
     
-    // 1. Sfondo del canvas (Spazio profondo)
-    drawList->AddRectFilled(canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y), IM_COL32(20, 20, 25, 255));
+    // Usa un InvisibleButton per catturare TUTTI gli input del canvas
+    ImGui::InvisibleButton("CanvasHitArea", canvasSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+    bool canvasHovered = ImGui::IsItemHovered();
+    bool canvasActive = ImGui::IsItemActive();
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 mousePos = ImGui::GetMousePos();
     
-    // 2. Disegno del Planisfero (Semplificato per ora, proietta su [0..1])
+    // Gestione Input
+    if (canvasHovered || canvasActive) {
+        // Pan con CTRL + Tasto Sinistro
+        if (io.KeyCtrl && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            m_canvasPan.x += io.MouseDelta.x;
+            m_canvasPan.y += io.MouseDelta.y;
+        }
+        if (io.MouseWheel != 0.0f) {
+            if (io.KeyCtrl) {
+                // CTRL + Scroll = Zoom centrato sul mouse
+                float zoomFactor = (io.MouseWheel > 0) ? 1.15f : (1.0f / 1.15f);
+                float mxRel = mousePos.x - canvasOrigin.x - m_canvasPan.x;
+                float myRel = mousePos.y - canvasOrigin.y - m_canvasPan.y;
+                m_canvasPan.x -= mxRel * (zoomFactor - 1.0f);
+                m_canvasPan.y -= myRel * (zoomFactor - 1.0f);
+                m_canvasZoom *= zoomFactor;
+                m_canvasZoom = std::clamp(m_canvasZoom, 0.1f, 20.0f);
+            } else {
+                // Scroll senza CTRL = dimensione pennello
+                m_brushSize += (io.MouseWheel > 0) ? 1 : -1;
+                m_brushSize = std::clamp(m_brushSize, 1, 50);
+            }
+        }
+    }
+    
+    // Ripristina il cursore di disegno sopra l'area (sovrascriviamo l'InvisibleButton)
+    drawList->AddRectFilled(canvasOrigin,
+        ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y),
+        IM_COL32(20, 20, 25, 255));
+    
+    // Dimensione base in pixel di un singolo chunk al livello di zoom 1.0
+    const float BASE_CHUNK_SIZE = 20.0f;
+    
+    // Proietta coordinate Chunk -> Screen (con pan e zoom)
+    auto ChunkToScreen = [&](float cx, float cz) -> ImVec2 {
+        // Calcola l'offset dal bordo in base alle coordinate chunk
+        float offsetX = (cx - currentPlanet.minX) * BASE_CHUNK_SIZE * m_canvasZoom;
+        float offsetZ = (cz - currentPlanet.minZ) * BASE_CHUNK_SIZE * m_canvasZoom;
+        
+        return ImVec2(
+            canvasOrigin.x + m_canvasPan.x + offsetX,
+            canvasOrigin.y + m_canvasPan.y + offsetZ
+        );
+    };
+    
+    // Proietta coordinate Screen -> Chunk
+    auto ScreenToChunk = [&](ImVec2 sp) -> glm::ivec2 {
+        float sx = sp.x - canvasOrigin.x - m_canvasPan.x;
+        float sy = sp.y - canvasOrigin.y - m_canvasPan.y;
+        
+        float chunkX = (sx / (BASE_CHUNK_SIZE * m_canvasZoom)) + currentPlanet.minX;
+        float chunkZ = (sy / (BASE_CHUNK_SIZE * m_canvasZoom)) + currentPlanet.minZ;
+        
+        return glm::ivec2(
+            (int)std::floor(chunkX),
+            (int)std::floor(chunkZ)
+        );
+    };
+    
+    // ==========================================
+    // LAYER 1: LA MAPPA (Sfondo e Regioni con bordi chiari)
+    // ==========================================
+    ImVec2 mapMin = ChunkToScreen(currentPlanet.minX, currentPlanet.minZ);
+    ImVec2 mapMax = ChunkToScreen(currentPlanet.maxX + 1.0f, currentPlanet.maxZ + 1.0f);
+    
+    // Disegna lo sfondo base della mappa (colore di fallback, es. oceano o void)
+    drawList->AddRectFilled(mapMin, mapMax, IM_COL32(30, 30, 40, 255));
+    
+    // Forza il clipping alle coordinate della mappa in modo che le regioni non escano dai bordi
+    drawList->PushClipRect(mapMin, mapMax, true);
+
     for (int i = 0; i < (int)currentPlanet.regions.size(); ++i) {
         const auto& r = currentPlanet.regions[i];
+        ImVec2 pMin = ChunkToScreen(r.rectMin.x, r.rectMin.y);
+        ImVec2 pMax = ChunkToScreen(r.rectMax.x, r.rectMax.y);
+        if (pMin.x > pMax.x) std::swap(pMin.x, pMax.x);
+        if (pMin.y > pMax.y) std::swap(pMin.y, pMax.y);
         
-        // Mappa le coordinate [0..1] alla dimensione in pixel del canvas
-        ImVec2 screenPos = ImVec2(
-            canvasPos.x + (r.center.x * canvasSize.x),
-            canvasPos.y + (r.center.y * canvasSize.y)
-        );
-        float screenRadius = r.radius * std::min(canvasSize.x, canvasSize.y);
-        
-        // Colore dinamico se selezionato
-        ImU32 color;
+        ImU32 fillColor;
         if (i == m_selectedRegionIndex) {
-            color = IM_COL32(255, 255, 100, 200);
+            fillColor  = IM_COL32(255, 255, 100, 210);
         } else {
-            // Colore a seconda del tipo
             switch (r.type) {
-                case fw::MapRegionType::Forest:  color = IM_COL32(40, 180, 40, 150); break;
-                case fw::MapRegionType::Desert:  color = IM_COL32(220, 200, 100, 150); break;
-                case fw::MapRegionType::Tundra:  color = IM_COL32(180, 220, 220, 150); break;
-                case fw::MapRegionType::Ocean:   color = IM_COL32(40, 80, 220, 150); break;
-                case fw::MapRegionType::Volcano: color = IM_COL32(220, 40, 40, 150); break;
-                case fw::MapRegionType::City:    color = IM_COL32(150, 150, 150, 150); break;
-                case fw::MapRegionType::Dungeon: color = IM_COL32(120, 60, 160, 150); break;
-                case fw::MapRegionType::Portal:  color = IM_COL32(220, 100, 220, 150); break;
-                default:                         color = IM_COL32(100, 200, 100, 150); break;
+                case fw::MapRegionType::Forest:  fillColor = IM_COL32(40,  180, 40,  255); break;
+                case fw::MapRegionType::Desert:  fillColor = IM_COL32(220, 200, 100, 255); break;
+                case fw::MapRegionType::Tundra:  fillColor = IM_COL32(180, 220, 220, 255); break;
+                case fw::MapRegionType::Ocean:   fillColor = IM_COL32(40,  80,  220, 255); break;
+                case fw::MapRegionType::Volcano: fillColor = IM_COL32(220, 40,  40,  255); break;
+                case fw::MapRegionType::City:    fillColor = IM_COL32(150, 150, 150, 255); break;
+                case fw::MapRegionType::Dungeon: fillColor = IM_COL32(120, 60,  160, 255); break;
+                case fw::MapRegionType::Portal:  fillColor = IM_COL32(220, 100, 220, 255); break;
+                default:                         fillColor = IM_COL32(100, 200, 100, 255); break;
             }
         }
         
-        drawList->AddCircleFilled(screenPos, screenRadius, color);
-        drawList->AddCircle(screenPos, screenRadius, IM_COL32(255, 255, 255, 255), 0, 2.0f); // Bordo
-        drawList->AddText(ImVec2(screenPos.x - 15, screenPos.y - 8), IM_COL32(255, 255, 255, 255), r.label.c_str());
+        drawList->AddRectFilled(pMin, pMax, fillColor);
+        
+        // Bordo regione
+        if (i == m_selectedRegionIndex) {
+            drawList->AddRect(pMin, pMax, IM_COL32(255, 220, 0, 255), 0, 0, 2.0f);
+        }
+        
+        // Etichetta (se c'è spazio)
+        if ((pMax.x - pMin.x) > 20.0f * m_canvasZoom) {
+            drawList->AddText(ImVec2(pMin.x + 3, pMin.y + 3), IM_COL32(255,255,255,255), r.label.c_str());
+        }
+    }
+    drawList->PopClipRect();
+    
+    // Disegna il Bordo Esterno della mappa
+    drawList->AddRect(mapMin, mapMax, IM_COL32(255, 255, 255, 255), 0.0f, 0, 3.0f);
+    
+    // ==========================================
+    // LAYER 2: GRIGLIA 1x1 e SELEZIONE CHUNK
+    // ==========================================
+    // Disegna griglia chunk 1x1 della mappa
+    if (m_canvasZoom > 1.5f) {
+        for (int gx = currentPlanet.minX; gx <= currentPlanet.maxX + 1; gx++) {
+            ImVec2 a = ChunkToScreen(gx, currentPlanet.minZ);
+            ImVec2 b = ChunkToScreen(gx, currentPlanet.maxZ + 1.0f);
+            drawList->AddLine(a, b, IM_COL32(255, 255, 255, 60));
+        }
+        for (int gz = currentPlanet.minZ; gz <= currentPlanet.maxZ + 1; gz++) {
+            ImVec2 a = ChunkToScreen(currentPlanet.minX, gz);
+            ImVec2 b = ChunkToScreen(currentPlanet.maxX + 1.0f, gz);
+            drawList->AddLine(a, b, IM_COL32(255, 255, 255, 60));
+        }
     }
     
-    // Gestione basilare del click sul canvas per selezionare regioni o trascinarle
-    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        ImVec2 mousePos = ImGui::GetMousePos();
-        m_selectedRegionIndex = -1; // Deseleziona di default
+    // Brush Preview e Input (clamped to map)
+    if (canvasHovered) {
+        glm::ivec2 chunkCoord = ScreenToChunk(mousePos);
+        int halfBrush = m_brushSize / 2;
+        int bMinX = chunkCoord.x - halfBrush;
+        int bMinZ = chunkCoord.y - halfBrush;
+        int bMaxX = bMinX + m_brushSize;
+        int bMaxZ = bMinZ + m_brushSize;
         
-        for (int i = 0; i < (int)currentPlanet.regions.size(); ++i) {
-            const auto& r = currentPlanet.regions[i];
-            ImVec2 centerScreen = ImVec2(
-                canvasPos.x + (r.center.x * canvasSize.x),
-                canvasPos.y + (r.center.y * canvasSize.y)
-            );
-            float screenRadius = r.radius * std::min(canvasSize.x, canvasSize.y);
+        // Clamping ai confini della mappa (evita di dipingere fuori dai bordi)
+        bMinX = std::max((int)currentPlanet.minX, bMinX);
+        bMinZ = std::max((int)currentPlanet.minZ, bMinZ);
+        bMaxX = std::min((int)currentPlanet.maxX + 1, bMaxX);
+        bMaxZ = std::min((int)currentPlanet.maxZ + 1, bMaxZ);
+        
+        // Se il cursore è valido, disegna la selezione
+        if (bMinX < bMaxX && bMinZ < bMaxZ) {
+            ImVec2 bScreenMin = ChunkToScreen(bMinX, bMinZ);
+            ImVec2 bScreenMax = ChunkToScreen(bMaxX, bMaxZ);
             
-            // Distanza euclidea
-            float dx = mousePos.x - centerScreen.x;
-            float dy = mousePos.y - centerScreen.y;
-            if ((dx*dx + dy*dy) <= (screenRadius * screenRadius)) {
-                m_selectedRegionIndex = i;
-                break; // Seleziona il primo che tocca
+            // Bordo azzurro brillante per il pennello (il chunk selezionato)
+            drawList->AddRect(bScreenMin, bScreenMax, IM_COL32(50, 255, 255, 255), 0.0f, 0, 3.0f);
+            
+            // Indicatore dimensione
+            char brushLabel[32];
+            snprintf(brushLabel, sizeof(brushLabel), "%dx%d", (bMaxX - bMinX), (bMaxZ - bMinZ));
+            drawList->AddText(ImVec2(mousePos.x + 12, mousePos.y + 4), IM_COL32(50, 255, 255, 255), brushLabel);
+            
+            // Tasto Sinistro (senza CTRL): Dipingi (supporta anche il trascinamento)
+            static glm::ivec2 lastPaintedCoord = glm::ivec2(-9999, -9999);
+            if (!io.KeyCtrl && (ImGui::IsItemClicked(ImGuiMouseButton_Left) || (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)))) {
+                if (lastPaintedCoord != glm::ivec2(bMinX, bMinZ)) {
+                    fw::MapRegion newRegion;
+                    newRegion.label      = "Regione";
+                    newRegion.type       = static_cast<fw::MapRegionType>(m_paintRegionType);
+                    newRegion.rectMin    = glm::ivec2(bMinX, bMinZ);
+                    newRegion.rectMax    = glm::ivec2(bMaxX, bMaxZ);
+                    newRegion.surfaceBlockId    = (uint8_t)m_paintSurfaceBlock;
+                    newRegion.subsurfaceBlockId = (uint8_t)m_paintSubsurfaceBlock;
+                    newRegion.seed       = 12345;
+                    newRegion.gravityModifier  = 1.0f;
+                    newRegion.perlinFrequency  = 0.03f;
+                    newRegion.treeDensity      = 0.5f;
+                    currentPlanet.regions.push_back(newRegion);
+                    m_selectedRegionIndex = (int)currentPlanet.regions.size() - 1;
+                    lastPaintedCoord = glm::ivec2(bMinX, bMinZ);
+                }
+            }
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                lastPaintedCoord = glm::ivec2(-9999, -9999);
+            }
+            
+            // Tasto Destro: Cancella la regione sotto il cursore
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                for (int i = (int)currentPlanet.regions.size() - 1; i >= 0; --i) {
+                    const auto& r = currentPlanet.regions[i];
+                    if (chunkCoord.x >= r.rectMin.x && chunkCoord.x < r.rectMax.x &&
+                        chunkCoord.y >= r.rectMin.y && chunkCoord.y < r.rectMax.y) {
+                        currentPlanet.regions.erase(currentPlanet.regions.begin() + i);
+                        if (m_selectedRegionIndex == i) m_selectedRegionIndex = -1;
+                        else if (m_selectedRegionIndex > i) m_selectedRegionIndex--;
+                        break;
+                    }
+                }
             }
         }
-    }
-    
-    // Supporto per il trascinamento della regione selezionata
-    if (m_selectedRegionIndex >= 0 && m_selectedRegionIndex < (int)currentPlanet.regions.size() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        ImVec2 mouseDelta = ImGui::GetIO().MouseDelta;
-        auto& r = currentPlanet.regions[m_selectedRegionIndex];
-        
-        r.center.x += mouseDelta.x / canvasSize.x;
-        r.center.y += mouseDelta.y / canvasSize.y;
-        
-        // Clampa tra 0 e 1
-        r.center.x = std::clamp(r.center.x, 0.0f, 1.0f);
-        r.center.y = std::clamp(r.center.y, 0.0f, 1.0f);
     }
     
     ImGui::EndChild();
     ImGui::End();
     ImGui::PopStyleVar(2);
 }
+    
+
 
 void MapState::DrawRuntimeUI() {
     if (m_document.planets.empty() || m_activePlanetIndex < 0 || m_activePlanetIndex >= m_document.planets.size()) return;
@@ -337,8 +532,8 @@ void MapState::DrawRuntimeUI() {
         // 1. Salva la "Cartuccia"
         m_document.SaveJSON("saves/map/world_map.json");
         
-        // 2. Inserisci la cartuccia nel contesto globale (mock)
-        // m_context->targetGameJsonPath = "saves/map/world_map.json"; // Richiede modifica a SharedContext
+        // 2. Inserisci la cartuccia nel contesto globale
+        m_context->targetGameJsonPath = "saves/map/world_map.json"; 
         
         // 3. Lancia il gioco
         m_context->engine->SetGameMode(GameMode::Play);
@@ -351,42 +546,73 @@ void MapState::DrawRuntimeUI() {
 }
 
 void MapState::CompileAndGenerate() {
-    std::cout << "[MapState] Inizio compilazione e generazione asincrona...\n";
+    std::cout << "[MapState] Inizio compilazione e generazione voxel per mappa piatta...\n";
     
     // 1. Alloca il mondo di collaudo e resettalo se esisteva gia'
     m_previewWorld = std::make_unique<fw::ForgeWorld>();
     m_previewWorld->Initialize(m_context);
     
-    // 2. Setup Spherical LOD Base (Cube-Sphere faces)
-    float radius = 50.0f;
-    m_lodSystem.SetPlanetRadius(radius);
+    // Pulisci il vecchio LOD sferico (non serve per la mappa voxel piatta)
+    m_lodSystem.SetPlanetRadius(0.0f);
     m_planetRootNodes.clear();
     
-    int baseLod = 5;
-    glm::vec3 c(0.0f);
+    // BUG FIX: Agganciamo il nuovo ForgeWorld al motore di rendering ORA, prima di generare!
+    m_context->activeRegistry = &m_previewWorld->GetRegistry();
+    m_context->isForgeMode = true; 
     
-    // Face +Z
-    m_planetRootNodes.emplace_back(glm::vec3(0,0,radius), radius, baseLod, glm::vec3(-radius, -radius, radius), glm::vec3(radius, -radius, radius), glm::vec3(-radius, radius, radius), glm::vec3(radius, radius, radius));
-    // Face -Z
-    m_planetRootNodes.emplace_back(glm::vec3(0,0,-radius), radius, baseLod, glm::vec3(radius, -radius, -radius), glm::vec3(-radius, -radius, -radius), glm::vec3(radius, radius, -radius), glm::vec3(-radius, radius, -radius));
-    // Face +X
-    m_planetRootNodes.emplace_back(glm::vec3(radius,0,0), radius, baseLod, glm::vec3(radius, -radius, radius), glm::vec3(radius, -radius, -radius), glm::vec3(radius, radius, radius), glm::vec3(radius, radius, -radius));
-    // Face -X
-    m_planetRootNodes.emplace_back(glm::vec3(-radius,0,0), radius, baseLod, glm::vec3(-radius, -radius, -radius), glm::vec3(-radius, -radius, radius), glm::vec3(-radius, radius, -radius), glm::vec3(-radius, radius, radius));
-    // Face +Y
-    m_planetRootNodes.emplace_back(glm::vec3(0,radius,0), radius, baseLod, glm::vec3(-radius, radius, radius), glm::vec3(radius, radius, radius), glm::vec3(-radius, radius, -radius), glm::vec3(radius, radius, -radius));
-    // Face -Y
-    m_planetRootNodes.emplace_back(glm::vec3(0,-radius,0), radius, baseLod, glm::vec3(-radius, -radius, -radius), glm::vec3(radius, -radius, -radius), glm::vec3(-radius, -radius, radius), glm::vec3(radius, -radius, radius));
+    // 2. Compila i dati 2D in Voxel 3D (Fase di Voxelizzazione)
+    const auto& currentPlanet = m_document.planets[m_activePlanetIndex];
+    for (int cx = currentPlanet.minX; cx <= currentPlanet.maxX; ++cx) {
+        for (int cz = currentPlanet.minZ; cz <= currentPlanet.maxZ; ++cz) {
+            std::string chunkName = "Chunk_" + std::to_string(cx) + "_" + std::to_string(cz);
+            
+            // Crea l'entita' nel previewWorld
+            entt::entity chunkEntity = m_previewWorld->CreateChunkEntity(chunkName, fw::Vec3{cx * 16.0f, 0.0f, cz * 16.0f});
+            auto& chunk = m_previewWorld->GetRegistry().get<fw::VoxelChunkComponent>(chunkEntity);
+            
+            // Identifica quale regione copre questo specifico chunk 1x1
+            const fw::MapRegion* activeRegion = nullptr;
+            for (int i = (int)currentPlanet.regions.size() - 1; i >= 0; --i) {
+                const auto& r = currentPlanet.regions[i];
+                if (cx >= r.rectMin.x && cx < r.rectMax.x && cz >= r.rectMin.y && cz < r.rectMax.y) {
+                    activeRegion = &r;
+                    break;
+                }
+            }
+            
+            uint8_t surfaceBlock = activeRegion ? activeRegion->surfaceBlockId : 1; // 1 = Grass
+            uint8_t subsurfaceBlock = activeRegion ? activeRegion->subsurfaceBlockId : 3; // 3 = Dirt
+            
+            // Riempi i voxel proceduralmente
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
+                    int height = 20; // Piattaforma base
+                    
+                    for (int y = 0; y < height; ++y) {
+                        if (y == height - 1) chunk.blocks[x][y][z] = surfaceBlock;
+                        else if (y > height - 4) chunk.blocks[x][y][z] = subsurfaceBlock;
+                        else chunk.blocks[x][y][z] = 2; // 2 = Stone
+                        chunk.light[x][y][z] = 255;
+                    }
+                    for (int y = height; y < 128; ++y) {
+                        chunk.blocks[x][y][z] = 0; // Aria
+                        chunk.light[x][y][z] = 255;
+                    }
+                }
+            }
+            
+            // Blocca il chunk in modo che ForgeWorld non sovrascriva con il suo noise generico
+            chunk.isGenerated = true;
+        }
+    }
     
     // 3. Passa alla visuale 3D
     m_isBuilderMode = false; 
 
-    // BUG FIX: Agganciamo il nuovo ForgeWorld al motore di rendering!
-    m_context->activeRegistry = &m_previewWorld->GetRegistry();
-    m_context->isForgeMode = true; // Necessario per usare il renderer Forge (Deferred meshes)
-
-    // Forziamo anche la visuale su un punto di partenza
-    m_orbitDistance = 150.0f;
-    m_orbitPitch = 30.0f;
+    // Posiziona la telecamera al centro della mappa, un po' in alto
+    float midX = ((currentPlanet.maxX + currentPlanet.minX) / 2.0f) * 16.0f;
+    float midZ = ((currentPlanet.maxZ + currentPlanet.minZ) / 2.0f) * 16.0f;
+    m_orbitDistance = std::max((currentPlanet.maxX - currentPlanet.minX) * 10.0f, 150.0f);
+    m_orbitPitch = 45.0f;
     m_orbitYaw = 45.0f;
 }

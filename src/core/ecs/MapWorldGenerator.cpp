@@ -55,23 +55,41 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, ForgeW
                     float worldX = cx * 16.0f + x;
                     float worldZ = cz * 16.0f + z;
                     
+                    // 1. Trova la regione dominante per questo chunk
+                    uint8_t surfBlock = 1; // Grass fallback
+                    uint8_t subBlock = 3;  // Dirt fallback
+                    
+                    for (int i = (int)planet.regions.size() - 1; i >= 0; --i) {
+                        const auto& r = planet.regions[i];
+                        if (cx >= r.rectMin.x && cx <= r.rectMax.x && 
+                            cz >= r.rectMin.y && cz <= r.rectMax.y) {
+                            surfBlock = r.surfaceBlockId;
+                            subBlock = r.subsurfaceBlockId;
+                            break; // Prende l'ultima regione inserita (top z-index)
+                        }
+                    }
+                    
                     // Semplice generazione procedurale
                     float noise = (std::sin(worldX * 0.05f) * std::cos(worldZ * 0.05f)) * 10.0f;
                     int height = 30 + (int)noise;
                     
-                    for (int y = 0; y < 128; ++y) {
+                    int maxAllowedY = std::min(planet.maxY, 128);
+                    for (int y = planet.minY; y < maxAllowedY; ++y) {
+                        if (y < 0) continue; // safety
+                        
                         if (y < height - 3) {
-                            chunk.blocks[x][y][z] = 2; // Stone
+                            chunk.blocks[x][y][z] = 2; // Stone (Core)
                         } else if (y < height) {
-                            chunk.blocks[x][y][z] = 3; // Dirt
+                            chunk.blocks[x][y][z] = subBlock;
                         } else if (y == height) {
-                            chunk.blocks[x][y][z] = 1; // Grass
+                            chunk.blocks[x][y][z] = surfBlock;
                         } else {
                             chunk.blocks[x][y][z] = 0; // Air
                         }
                     }
                 }
             }
+            chunk.isGenerated = true; // Impedisce a ForgeWorld di sovrascrivere la mappa con noise procedurale!
             targetWorld.MarkChunkDirty(chunkEnt);
         }
     }

@@ -60,6 +60,21 @@ bool BlockMakerState::Init() {
     // Set the specific state flag for RenderManager to know we're in Void Room mode
     m_context->isBlockMakerMode = true;
 
+    // Spawn preview environment (floor plane)
+    auto floorMesh = fw::MeshGenerators::MakeCube(10.0f);
+    for (auto& v : floorMesh.vertices) {
+        v.color = {0.15f, 0.15f, 0.15f, 1.0f}; // Dark gray grid/floor
+        v.roughMetal = {0.9f, 0.0f}; // Rough, non-metallic
+    }
+    
+    entt::entity envEntity = m_context->forgeWorld->GetRegistry().create();
+    fw::TransformComponent envTrans;
+    envTrans.location = fw::Vec3{0.0f, -0.55f, 0.0f}; // Top face at Y = -0.5f
+    envTrans.scale = fw::Vec3{1.0f, 0.01f, 1.0f}; // Flatten to a plane
+    m_context->forgeWorld->GetRegistry().emplace<fw::TransformComponent>(envEntity, envTrans);
+    m_context->forgeWorld->GetRegistry().emplace<fw::MetadataComponent>(envEntity, "BlockMakerEnv");
+    m_context->forgeWorld->EnqueueDeferredMesh("BlockMakerEnv", glm::vec3(0.0f, -0.55f, 0.0f), std::move(floorMesh), nullptr, envEntity);
+
     // Spawn preview entity in registry
     UpdatePreviewMesh();
 

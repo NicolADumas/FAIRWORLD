@@ -25,11 +25,12 @@ struct QueueFamilyIndices {
 };
 
 struct ForgePushConstantData {
-    glm::mat4 mvp;
-    glm::vec4 colorOverride;
-    int useColorOverride;
-    float seasonProgress;
-    glm::vec4 lightDir; // Aggiunto per BlockMaker
+    glm::mat4 mvp;             // 0-63
+    glm::vec4 colorOverride;   // 64-79
+    int useColorOverride;      // 80-83
+    float seasonProgress;      // 84-87
+    float pad1, pad2;          // 88-95 (Explicit padding to align next vec4 to 16 bytes)
+    glm::vec4 lightDir;        // 96-111
 };
 
 class RenderManager {
