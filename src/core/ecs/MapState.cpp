@@ -9,6 +9,8 @@
 #include "PlayState.h"
 #include "BlockRegistry.h"
 #include "ForgeComponents.h"
+#include "SimulationManager.h"
+#include "SimDataLayer.h"
 #include <imgui.h>
 #include <iostream>
 #include <algorithm>
@@ -163,103 +165,42 @@ void MapState::DrawBuilderUI() {
     
     ImGui::Text("Regioni in %s: %d", currentPlanet.name.c_str(), (int)currentPlanet.regions.size());
     
-    // Strumenti di Disegno (Brush)
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Strumenti di Disegno (Brush)");
-    ImGui::SliderInt("Dimensione Pennello (Chunk)", &m_brushSize, 1, 50);
-    
-    // Tipi e Blocchi Pennello
-    const char* regionTypes[] = { "Foresta", "Deserto", "Tundra", "Oceano", "Vulcano", "Citta", "Dungeon", "Portale" };
-    ImGui::Combo("Tipo Regione", &m_paintRegionType, regionTypes, IM_ARRAYSIZE(regionTypes));
-    
-    if (m_context->blockRegistry) {
-        auto& blocks = m_context->blockRegistry->GetAllBlocks();
-        std::vector<const char*> blockNames;
-        std::vector<uint8_t> blockIds;
-        for (const auto& def : blocks) {
-            blockNames.push_back(def.displayName.c_str());
-            blockIds.push_back(def.id);
-        }
-        
-        int currentSurfIdx = -1, currentSubIdx = -1;
-        for(size_t i=0; i<blockIds.size(); ++i) {
-            if(blockIds[i] == m_paintSurfaceBlock) currentSurfIdx = (int)i;
-            if(blockIds[i] == m_paintSubsurfaceBlock) currentSubIdx = (int)i;
-        }
-        if (ImGui::Combo("Blocco Superficie", &currentSurfIdx, blockNames.data(), (int)blockNames.size())) {
-            if (currentSurfIdx >= 0) m_paintSurfaceBlock = blockIds[currentSurfIdx];
-        }
-        if (ImGui::Combo("Blocco Sottoterra", &currentSubIdx, blockNames.data(), (int)blockNames.size())) {
-            if (currentSubIdx >= 0) m_paintSubsurfaceBlock = blockIds[currentSubIdx];
-        }
-    }
-
-    
+    // Strumenti di Disegno (Brush SimCity)
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "STRUMENTI SIMCITY");
     ImGui::Separator();
     
-    // Inspector della Regione Selezionata
-    if (m_selectedRegionIndex >= 0 && m_selectedRegionIndex < (int)currentPlanet.regions.size()) {
-        auto& r = currentPlanet.regions[m_selectedRegionIndex];
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Configura: %s", r.label.c_str());
-        
-        char nameBuf[64];
-        #ifdef _WIN32
-            strcpy_s(nameBuf, r.label.c_str());
-        #else
-            strncpy(nameBuf, r.label.c_str(), sizeof(nameBuf));
-            nameBuf[sizeof(nameBuf) - 1] = '\0';
-        #endif
-        
-        if (ImGui::InputText("Nome", nameBuf, sizeof(nameBuf))) {
-            r.label = nameBuf;
-        }
-        
-        // Tipo regione
-        const char* regionTypes[] = { "Foresta", "Deserto", "Tundra", "Oceano", "Vulcano", "Citta", "Dungeon", "Portale" };
-        int typeInt = static_cast<int>(r.type);
-        if (ImGui::Combo("Tipo", &typeInt, regionTypes, IM_ARRAYSIZE(regionTypes))) {
-            r.type = static_cast<fw::MapRegionType>(typeInt);
-        }
-        
-        // Controlli spaziali
-        ImGui::DragInt2("Rect Min (X,Z)", &r.rectMin.x);
-        ImGui::DragInt2("Rect Max (X,Z)", &r.rectMax.x);
-        
-        // Controlli blocchi (surface / subsurface)
-        if (m_context->blockRegistry) {
-            auto& blocks = m_context->blockRegistry->GetAllBlocks();
-            std::vector<const char*> blockNames;
-            std::vector<uint8_t> blockIds;
-            for (const auto& def : blocks) {
-                blockNames.push_back(def.displayName.c_str());
-                blockIds.push_back(def.id);
+    std::vector<const char*> zoneNames;
+    std::vector<uint8_t> zoneIds;
+    int currentListIndex = 0;
+
+    if (m_context->simManager) {
+        auto& zones = m_context->simManager->GetZoneRegistry().GetAllZones();
+        for (const auto& z : zones) {
+            if (z.id == 0 && z.name != "Nessuna (Cancella)") continue;
+            if (z.id > 0 && z.name == "Nessuna") continue; // Ignora le zone non inizializzate
+            
+            if (m_selectedZoneType == z.id) {
+                currentListIndex = (int)zoneNames.size();
             }
-            int currentSurfIdx = -1;
-            int currentSubIdx = -1;
-            for(size_t i=0; i<blockIds.size(); ++i) {
-                if(blockIds[i] == r.surfaceBlockId) currentSurfIdx = (int)i;
-                if(blockIds[i] == r.subsurfaceBlockId) currentSubIdx = (int)i;
-            }
-            if (ImGui::Combo("Surface Block", &currentSurfIdx, blockNames.data(), (int)blockNames.size())) {
-                if (currentSurfIdx >= 0) r.surfaceBlockId = blockIds[currentSurfIdx];
-            }
-            if (ImGui::Combo("Subsurface Block", &currentSubIdx, blockNames.data(), (int)blockNames.size())) {
-                if (currentSubIdx >= 0) r.subsurfaceBlockId = blockIds[currentSubIdx];
-            }
+            
+            zoneNames.push_back(z.name.c_str());
+            zoneIds.push_back(z.id);
         }
-        
-        // Controlli ambientali
-        ImGui::SliderFloat("Frequenza Perlin", &r.perlinFrequency, 0.005f, 0.2f);
-        ImGui::SliderFloat("Densita' Alberi", &r.treeDensity, 0.0f, 1.0f);
-        ImGui::SliderFloat("Modificatore Gravita'", &r.gravityModifier, 0.1f, 5.0f);
-        
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-        if (ImGui::Button("Rimuovi Regione", ImVec2(-1, 0))) {
-            currentPlanet.regions.erase(currentPlanet.regions.begin() + m_selectedRegionIndex);
-            m_selectedRegionIndex = -1;
-        }
-        ImGui::PopStyleColor();
+    } else {
+        zoneNames.push_back("Nessuna (Manager offline)");
+        zoneIds.push_back(0);
     }
+    
+    if (ImGui::ListBox("Tipo Zona", &currentListIndex, zoneNames.data(), (int)zoneNames.size())) {
+        if (currentListIndex >= 0 && currentListIndex < zoneIds.size()) {
+            m_selectedZoneType = zoneIds[currentListIndex];
+        }
+    }
+    
+    const char* densityNames[] = { "Bassa", "Media", "Alta" };
+    ImGui::Combo("Densita'", &m_selectedDensity, densityNames, IM_ARRAYSIZE(densityNames));
+    
+    ImGui::SliderInt("Dimensione Pennello (Tile)", &m_brushSize, 1, 10);
     
     // Bottom Buttons
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 150.0f); // Spingi in basso
@@ -459,39 +400,27 @@ void MapState::DrawBuilderUI() {
             drawList->AddText(ImVec2(mousePos.x + 12, mousePos.y + 4), IM_COL32(50, 255, 255, 255), brushLabel);
             
             // Tasto Sinistro (senza CTRL): Dipingi (supporta anche il trascinamento)
-            static glm::ivec2 lastPaintedCoord = glm::ivec2(-9999, -9999);
             if (!io.KeyCtrl && (ImGui::IsItemClicked(ImGuiMouseButton_Left) || (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)))) {
-                if (lastPaintedCoord != glm::ivec2(bMinX, bMinZ)) {
-                    fw::MapRegion newRegion;
-                    newRegion.label      = "Regione";
-                    newRegion.type       = static_cast<fw::MapRegionType>(m_paintRegionType);
-                    newRegion.rectMin    = glm::ivec2(bMinX, bMinZ);
-                    newRegion.rectMax    = glm::ivec2(bMaxX, bMaxZ);
-                    newRegion.surfaceBlockId    = (uint8_t)m_paintSurfaceBlock;
-                    newRegion.subsurfaceBlockId = (uint8_t)m_paintSubsurfaceBlock;
-                    newRegion.seed       = 12345;
-                    newRegion.gravityModifier  = 1.0f;
-                    newRegion.perlinFrequency  = 0.03f;
-                    newRegion.treeDensity      = 0.5f;
-                    currentPlanet.regions.push_back(newRegion);
-                    m_selectedRegionIndex = (int)currentPlanet.regions.size() - 1;
-                    lastPaintedCoord = glm::ivec2(bMinX, bMinZ);
+                if (m_context->simManager) {
+                    for (int z = bMinZ; z < bMaxZ; ++z) {
+                        for (int x = bMinX; x < bMaxX; ++x) {
+                            fw::Tile& tile = m_context->simManager->GetGlobalTile(x, z);
+                            tile.zone_type = static_cast<uint16_t>(m_selectedZoneType);
+                            tile.density = static_cast<uint16_t>(m_selectedDensity);
+                        }
+                    }
                 }
             }
-            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                lastPaintedCoord = glm::ivec2(-9999, -9999);
-            }
             
-            // Tasto Destro: Cancella la regione sotto il cursore
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                for (int i = (int)currentPlanet.regions.size() - 1; i >= 0; --i) {
-                    const auto& r = currentPlanet.regions[i];
-                    if (chunkCoord.x >= r.rectMin.x && chunkCoord.x < r.rectMax.x &&
-                        chunkCoord.y >= r.rectMin.y && chunkCoord.y < r.rectMax.y) {
-                        currentPlanet.regions.erase(currentPlanet.regions.begin() + i);
-                        if (m_selectedRegionIndex == i) m_selectedRegionIndex = -1;
-                        else if (m_selectedRegionIndex > i) m_selectedRegionIndex--;
-                        break;
+            // Tasto Destro: Cancella (Imposta zone_type a 0)
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right) || (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Right))) {
+                if (m_context->simManager) {
+                    for (int z = bMinZ; z < bMaxZ; ++z) {
+                        for (int x = bMinX; x < bMaxX; ++x) {
+                            fw::Tile& tile = m_context->simManager->GetGlobalTile(x, z);
+                            tile.zone_type = 0; // 0 = Nessuna zona
+                            tile.density = 0;
+                        }
                     }
                 }
             }

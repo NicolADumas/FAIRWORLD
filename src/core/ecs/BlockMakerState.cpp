@@ -10,11 +10,55 @@
 #include "AsyncInput.h"
 #include "Systems.h"
 #include "BlockRegistry.h"
+#include <shellapi.h>  // ShellExecuteA - apre cartelle/file con l'OS
+#include "MaterialRegistry.h"
 #include "VulkanDmaManager.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <iostream>
 #include "imgui.h"
+#include <windows.h>
+#include <commdlg.h>
+#include <filesystem>
+#include <thread>
+#include <chrono>
+
+namespace {
+    std::string BrowseForImage() {
+        OPENFILENAMEA ofn;
+        CHAR szFile[260] = { 0 };
+        ZeroMemory(&ofn, sizeof(OPENFILENAMEA));
+        ofn.lStructSize = sizeof(OPENFILENAMEA);
+        ofn.hwndOwner = NULL;
+        ofn.lpstrFile = szFile;
+        ofn.nMaxFile = sizeof(szFile);
+        ofn.lpstrFilter = "Immagini\0*.png;*.jpg;*.jpeg;*.tga\0Tutti i file\0*.*\0";
+        ofn.nFilterIndex = 1;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+        if (GetOpenFileNameA(&ofn) == TRUE) {
+            return std::string(ofn.lpstrFile);
+        }
+        return "";
+    }
+
+    std::string CopyTextureToAssets(const std::string& srcPath, uint8_t blockId, const std::string& typeSuffix) {
+        if (srcPath.empty()) return "";
+        try {
+            std::filesystem::create_directories("assets/textures");
+            std::string ext = std::filesystem::path(srcPath).extension().string();
+            std::string destName = "block_" + std::to_string(blockId) + "_" + typeSuffix + ext;
+            std::string destPath = "assets/textures/" + destName;
+            
+            // Sovrascrivi se esiste
+            std::filesystem::copy_file(srcPath, destPath, std::filesystem::copy_options::overwrite_existing);
+            return destPath;
+        } catch (const std::exception& e) {
+            std::cerr << "[BlockMaker] Errore copia file: " << e.what() << "\n";
+            return srcPath; // Fallback al path originale se la copia fallisce
+        }
+    }
+}
 
 BlockMakerState::BlockMakerState(SharedContext* context) : m_context(context) {
     std::cout << "[BlockMakerState] Creato.\n";
@@ -131,6 +175,10 @@ void BlockMakerState::Update(float dt) {
     for (auto& sys : m_systems) {
         sys->Update(m_registry, m_context, dt);
     }
+
+    if (m_saveMessageTimer > 0.0f) {
+        m_saveMessageTimer -= dt;
+    }
 }
 
 void BlockMakerState::HandlePhysicsSimulation(float dt) {
@@ -185,15 +233,16 @@ void BlockMakerState::UpdatePreviewMesh() {
     auto previewMesh = fw::MeshGenerators::MakeCube(1.0f);
     previewMesh.colorOverride[3] = 1.0f; // Enable color override? Wait, the shader uses colorOverride only if useColorOverride is set. Let's just set the vertex colors directly.
     
-    fw::BlockDefinition& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+    fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+    fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
     
-    // Inietta i dati fisici (PBR) nei vertici della mesh in base al BlockRegistry
+    // Inietta i dati fisici (PBR) nei vertici della mesh in base al MaterialRegistry
     for (auto& v : previewMesh.vertices) {
-        v.texIndex = (float)m_selectedBlockId;
-        v.color = {def.baseColor.x, def.baseColor.y, def.baseColor.z, 1.0f};
-        v.roughMetal = {def.roughness, def.metallic};
-        v.emissive = def.emissiveStrength;
-        v.ao = def.aoStrength;
+        v.materialID = (uint32_t)m_selectedBlockId;
+        v.color = {mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z, 1.0f};
+        v.roughMetal = {mat.roughnessFallback, mat.metallicFallback};
+        v.emissive = mat.emissiveStrength;
+        v.ao = 1.0f; // Default AO
     }
 
     auto& m_registry = m_context->forgeWorld->GetRegistry();
@@ -236,7 +285,7 @@ void BlockMakerState::DrawUI() {
         }
 
         // Recupera il blocco selezionato e aggiorna i campi di input temporanei se l'ID cambia (todo: serve caching)
-        fw::BlockDefinition& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+        fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
         
         // --- TABS ---
         if (ImGui::BeginTabBar("BlockTabs")) {
@@ -259,49 +308,84 @@ void BlockMakerState::DrawUI() {
                 ImGui::Separator();
                 ImGui::Checkbox("Is Solid", &def.isSolid);
                 ImGui::Checkbox("Is Transparent", &def.isTransparent);
-                ImGui::SliderInt("Light Emission", &def.lightEmissionLevel, 0, 15);
+                ImGui::SliderFloat("Light Emission", &def.lightEmissionLevel, 0.0f, 15.0f);
                 
                 ImGui::EndTabItem();
             }
             
             // TAB: PBR MATERIAL
-            if (ImGui::BeginTabItem("Material")) {
+            // TAB: PBR MATERIAL (GRAFICA E TEXTURE PACK)
+            if (ImGui::BeginTabItem("Graphics (Texture Pack)")) {
                 ImGui::Spacing();
+                
+                fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
                 
                 bool isDirty = false;
-                float color[3] = { def.baseColor.x, def.baseColor.y, def.baseColor.z };
+                
+                // Fallback Colors (utili prima dell'implementazione TexturePacker)
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Fallback / Solid Colors");
+                float color[3] = { mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z };
                 if (ImGui::ColorEdit3("Base Color", color)) {
-                    def.baseColor = {color[0], color[1], color[2]};
+                    mat.baseColorFallback = {color[0], color[1], color[2]};
                     isDirty = true;
                 }
                 
-                if (ImGui::SliderFloat("Metallic", &def.metallic, 0.0f, 1.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Roughness", &def.roughness, 0.0f, 1.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Clearcoat", &def.clearcoat, 0.0f, 1.0f)) isDirty = true;
+                if (ImGui::SliderFloat("Metallic", &mat.metallicFallback, 0.0f, 1.0f)) isDirty = true;
+                if (ImGui::SliderFloat("Roughness", &mat.roughnessFallback, 0.0f, 1.0f)) isDirty = true;
+                if (ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 10.0f)) isDirty = true;
                 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Emission");
-                if (ImGui::SliderFloat("Emissive Strength", &def.emissiveStrength, 0.0f, 10.0f)) isDirty = true;
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PBR Texture Maps");
+
+                if (ImGui::Button("Apri Cartella Texture OS", ImVec2(-1, 30))) {
+                    std::filesystem::create_directories("assets/textures");
+                    ShellExecuteA(NULL, "open", "assets\\textures", NULL, NULL, SW_SHOWDEFAULT);
+                }
+                ImGui::Spacing();
                 
-                float emColor[3] = { def.emissiveColor.x, def.emissiveColor.y, def.emissiveColor.z };
-                if (ImGui::ColorEdit3("Emissive Color", emColor)) {
-                    def.emissiveColor = {emColor[0], emColor[1], emColor[2]};
-                    isDirty = true;
+                auto drawTextureField = [&](const char* label, std::string& pathRef, const std::string& typeSuffix) {
+                    char buf[256];
+                    strncpy(buf, pathRef.c_str(), sizeof(buf));
+                    
+                    ImGui::PushID(label);
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+                    if (ImGui::InputText("##path", buf, sizeof(buf))) {
+                        pathRef = buf;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Sfoglia...", ImVec2(80, 0))) {
+                        std::string picked = BrowseForImage();
+                        if (!picked.empty()) {
+                            m_isCopying = true;
+                            m_copyProgress = 0.0f;
+                            
+                            // Copia il file e salva automaticamente
+                            pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
+                            m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                            
+                            m_copyProgress = 1.0f;
+                            m_saveMessageTimer = 3.0f;
+                        }
+                    }
+                    ImGui::PopID();
+                    ImGui::Text("%s", label);
+                };
+
+                drawTextureField("Albedo Map", mat.albedoPath, "albedo");
+                drawTextureField("Normal Map", mat.normalPath, "normal");
+                drawTextureField("ORM Map (Occlusion, Roughness, Metallic)", mat.ormPath, "orm");
+                
+                // Barra di progresso simulata / Feedback visivo
+                if (m_isCopying) {
+                    ImGui::Spacing();
+                    ImGui::ProgressBar(m_copyProgress, ImVec2(-1, 0), "Copia Texture in corso...");
+                    if (m_copyProgress >= 1.0f) {
+                        m_isCopying = false;
+                    }
                 }
                 
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Parametri Avanzati");
-                if (ImGui::SliderFloat("Normal Intensity", &def.normalIntensity, 0.0f, 5.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Alpha Cutoff", &def.alphaCutoff, 0.0f, 1.0f)) isDirty = true;
-                if (ImGui::SliderFloat("AO Strength", &def.aoStrength, 0.0f, 1.0f)) isDirty = true;
-                
-                ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Trasparenza e Vernice");
-                if (ImGui::SliderFloat("Clearcoat Roughness", &def.clearcoatRoughness, 0.0f, 1.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Transmission", &def.transmission, 0.0f, 1.0f)) isDirty = true;
-                if (def.transmission > 0.0f) {
-                    if (ImGui::SliderFloat("IOR (Rifrazione)", &def.ior, 1.0f, 3.0f)) isDirty = true;
+                if (m_saveMessageTimer > 0.0f) {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Texture caricata e Materiale salvato automaticamente!");
                 }
                 
                 if (isDirty) {
@@ -318,6 +402,11 @@ void BlockMakerState::DrawUI() {
                 ImGui::SliderFloat("Massa (kg)", &def.mass, 0.0f, 500.0f, "%.1f");
                 ImGui::SliderFloat("Attrito", &def.friction, 0.0f, 1.0f);
                 ImGui::SliderFloat("Rimbalzo", &def.bounciness, 0.0f, 1.0f);
+                
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Termodinamica");
+                ImGui::SliderFloat("Resistenza Termica", &def.thermal_resistance, 0.1f, 100.0f, "%.1f");
+                ImGui::SliderFloat("Capacita' Termica", &def.thermal_capacity, 0.1f, 100.0f, "%.1f");
                 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.8f, 0.4f, 1.0f, 1.0f), "Simulation");
@@ -344,8 +433,10 @@ void BlockMakerState::DrawUI() {
         
         ImGui::Separator();
         
-        if (ImGui::Button("SAVE REGISTRY TO JSON", ImVec2(-1, 30))) {
-            m_context->blockRegistry->SaveToJson("../assets/blocks.json");
+        if (ImGui::Button("SAVE TO DISK (JSON)", ImVec2(-1, 30))) {
+            m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+            m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+            std::cout << "[BlockMaker] Dati salvati in assets/definitions/\n";
         }
 
         ImGui::Separator();

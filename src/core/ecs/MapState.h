@@ -36,11 +36,15 @@ private:
     glm::vec2 m_canvasPan = glm::vec2(0.0f);
     float m_canvasZoom = 1.0f;
 
-    // Paint Canvas State
+    // Paint Canvas State (Legacy & New SimCity Tools)
     int m_brushSize = 1; // 1x1 chunk, 2x2 chunk...
     int m_paintSurfaceBlock = 1;
     int m_paintSubsurfaceBlock = 3;
     int m_paintRegionType = 0;
+    
+    // SimCity Tools
+    int m_selectedZoneType = 1;  // Default: Residenziale (1)
+    int m_selectedDensity = 0;   // Default: Bassa densità (0)
 
     // --- MONDO DI PREVIEW (Fase 2) ---
     std::unique_ptr<fw::ForgeWorld> m_previewWorld;

@@ -558,7 +558,7 @@ constexpr glm::vec3 World::BlockColor(BlockType t) {
     }
 }
 
-void World::AddFace(int x, int y, int z, int face, const glm::vec3& color, float texIndex, std::vector<Vertex>& outVerts, std::vector<uint32_t>& outIndices, bool lowerY) {
+void World::AddFace(int x, int y, int z, int face, const glm::vec3& color, uint32_t materialID, std::vector<Vertex>& outVerts, std::vector<uint32_t>& outIndices, bool lowerY) {
     uint32_t baseIndex = (uint32_t)outVerts.size();
     glm::vec3 origin((float)x, (float)y, (float)z);
     const glm::vec2 UVS[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
@@ -569,7 +569,7 @@ void World::AddFace(int x, int y, int z, int face, const glm::vec3& color, float
         if (lowerY && pos.y == origin.y + 1) {
             pos.y -= 0.15f;
         }
-        outVerts.push_back({ pos, glm::vec4(color, 1.0f), UVS[i], texIndex, normal, 1.0f, 1.0f, 0.0f });
+        outVerts.push_back({ pos, glm::vec4(color, 1.0f), glm::vec2(0.5f, 0.0f), materialID, normal, 1.0f, 1.0f, 0.0f });
     }
 
     outIndices.push_back(baseIndex + 0);

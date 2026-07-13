@@ -8,9 +8,9 @@ layout(binding = 0) uniform UniformBufferObject {
     int debugColorMode;
 } ubo;
 
-layout(location = 0) in vec3 fragColor;
+layout(location = 0) in vec4 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
-layout(location = 2) in float fragTexIndex;
+layout(location = 2) in flat uint fragTexIndex;
 layout(location = 3) in vec3 fragNormal;
 layout(location = 4) in vec3 fragWorldPos;
 layout(location = 5) in float fragAO;
@@ -46,13 +46,13 @@ float calcGaussianPigment(float t, float mu, float sigma) {
 
 void main() {
     vec4 texColor = vec4(1.0);
-    if (fragTexIndex >= 0.0) {
-        texColor = texture(texSampler, vec3(fragTexCoord, fragTexIndex));
+    if (fragTexIndex > 0u) {
+        texColor = texture(texSampler, vec3(fragTexCoord, float(fragTexIndex)));
     }
     
-    vec3 baseColor = fragColor * texColor.rgb;
+    vec3 baseColor = fragColor.rgb * texColor.rgb;
     
-    int type = int(fragTexIndex + 0.5);
+    int type = int(fragTexIndex);
 
     // --- BIOLOGICAL SEASONAL VEGETATION COLORING ---
     if (type == 1 || type == 8) { // Grass, Leaves

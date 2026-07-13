@@ -16,6 +16,7 @@
 #include "TimeManager.h"
 #include "JoltPhysicsSystem.h"
 #include "BlockRegistry.h"
+#include "MaterialRegistry.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -112,20 +113,24 @@ int main() {
         std::cout << "[SYSTEM] Avviato PlayState...\n";
     }
 
-    // Configurazione DeviceManager, TimeManager e DiagnosticsManager
     DeviceManager deviceManager;
     fw::TimeManager timeManager;
     fw::DiagnosticsManager diagnosticsManager;
     fw::BlockRegistry blockRegistry;
+    fw::MaterialRegistry materialRegistry;
     
     // Inizializza o carica i blocchi da file
     blockRegistry.Initialize();
-    blockRegistry.LoadFromJson("../assets/blocks.json");
+    blockRegistry.LoadFromJson("assets/definitions/blocks.json");
+    
+    materialRegistry.Initialize();
+    materialRegistry.LoadFromJson("assets/definitions/materials.json");
     
     context.deviceManager = &deviceManager;
     context.timeManager = &timeManager;
     context.diagnosticsManager = &diagnosticsManager;
     context.blockRegistry = &blockRegistry;
+    context.materialRegistry = &materialRegistry;
 
     // 5. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
     engine.SetSharedContext(&context);

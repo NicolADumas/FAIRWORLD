@@ -64,7 +64,7 @@ target_include_directories(FairworldCore PRIVATE
 )
 
 # Linkiamo Vulkan, Jolt e librerie OS al Core
-target_link_libraries(FairworldCore PRIVATE Vulkan::Vulkan Jolt)
+target_link_libraries(FairworldCore PRIVATE Vulkan::Vulkan Jolt Shell32)
 target_link_libraries(FairworldCore PRIVATE ${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll.lib)
 target_link_libraries(FairworldCore PRIVATE ${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/lib/openxr_loader.lib)
 
@@ -94,6 +94,12 @@ add_custom_command(TARGET FairworldCore POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/src/render/forge_frag.spv"
         $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/definitions"
+        "$<TARGET_FILE_DIR:FairworldCore>/assets/definitions"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/textures"
+        "$<TARGET_FILE_DIR:FairworldCore>/assets/textures"
 )
 
 # Ottimizzazioni specifiche per il compilatore (MSVC vs GCC/Clang)

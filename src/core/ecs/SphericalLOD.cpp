@@ -177,7 +177,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, ForgeWorld* worl
                     vtx.normal = {normals[idx].x, normals[idx].y, normals[idx].z};
                     vtx.color = {colors[idx].r, colors[idx].g, colors[idx].b, colors[idx].a};
                     vtx.roughMetal = {0.8f, 0.0f};
-                    vtx.texIndex = 0;
+                    vtx.materialID = 0;
                     vtx.ao = 1.0f;
                     vtx.light = 1.0f;
                     vtx.emissive = 0.0f;

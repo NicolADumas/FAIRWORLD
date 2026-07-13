@@ -9,9 +9,22 @@
 #include <fstream>
 #include <string>
 #include "World.h"  // Per la struct Vertex
+#include "TexturePacker.h"
 
 class XrManager;
 struct BlockDef;
+
+struct VulkanTextureArray {
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    int layerCount = 0;
+    
+    // Per pulizia post-esecuzione
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+};
 
 // Struttura di supporto per le code della GPU
 struct QueueFamilyIndices {
@@ -25,12 +38,14 @@ struct QueueFamilyIndices {
 };
 
 struct ForgePushConstantData {
-    glm::mat4 mvp;             // 0-63
-    glm::vec4 colorOverride;   // 64-79
-    int useColorOverride;      // 80-83
-    float seasonProgress;      // 84-87
-    float pad1, pad2;          // 88-95 (Explicit padding to align next vec4 to 16 bytes)
-    glm::vec4 lightDir;        // 96-111
+    glm::mat4 mvp;
+    glm::vec4 colorOverride;
+    int useColorOverride;
+    float seasonProgress;
+    uint32_t grid_width;        // NEW
+    uint32_t debug_lens_active; // NEW
+    glm::vec4 lightDir;
+    glm::vec4 cameraPos;
 };
 
 class RenderManager {
@@ -129,10 +144,24 @@ private:
     VkPipelineLayout m_forgePipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_forgePipeline{ VK_NULL_HANDLE };
 
-    // --- TEXTURE ARRAY (In-Game Pixel Editor) ---
-    VkImage m_textureImage{ VK_NULL_HANDLE };
-    VmaAllocation m_textureImageAllocation{ VK_NULL_HANDLE };
-    VkImageView m_textureImageView{ VK_NULL_HANDLE };
+    // --- FORGE DESCRIPTOR SETS ---
+    VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };
+    VkDescriptorPool m_forgeDescriptorPool{ VK_NULL_HANDLE };
+    std::vector<VkDescriptorSet> m_forgeDescriptorSets;
+
+    // --- PBR TEXTURE ARRAYS ---
+    VkImage m_albedoImage{ VK_NULL_HANDLE };
+    VmaAllocation m_albedoImageAllocation{ VK_NULL_HANDLE };
+    VkImageView m_albedoImageView{ VK_NULL_HANDLE };
+
+    VkImage m_normalImage{ VK_NULL_HANDLE };
+    VmaAllocation m_normalImageAllocation{ VK_NULL_HANDLE };
+    VkImageView m_normalImageView{ VK_NULL_HANDLE };
+
+    VkImage m_ormImage{ VK_NULL_HANDLE };
+    VmaAllocation m_ormImageAllocation{ VK_NULL_HANDLE };
+    VkImageView m_ormImageView{ VK_NULL_HANDLE };
+
     VkSampler m_textureSampler{ VK_NULL_HANDLE };
 
     // --- DEPTH BUFFER (risolve il problema delle facce trasparenti) ---
@@ -144,14 +173,23 @@ private:
     VkFormat FindDepthFormat();
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-    void CreateTextureImage();
-    void CreateTextureImageView();
-    void CreateTextureSampler();
     VkCommandBuffer BeginSingleTimeCommands();
     void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount);
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
     void CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage vmaUsage, VkImage& image, VmaAllocation& imageAllocation);
+    
+    // --- FASE 9: CREAZIONE TEXTURE ARRAY DA MEGA-BUFFER CPU ---
+    VulkanTextureArray CreateTextureArray(
+        VkDevice device, 
+        VmaAllocator allocator, 
+        VkCommandBuffer cmdBuffer, 
+        const std::vector<uint8_t>& pixelData, 
+        uint32_t width, 
+        uint32_t height, 
+        uint32_t layerCount, 
+        VkFormat format
+    );
     
     float m_fov = 45.0f;
 
@@ -255,18 +293,20 @@ public:
 
     // --- NUOVI METODI (FASE 3 - ULTIMA PARTE) ---
     bool CreateRenderPass();
+    bool CreateDescriptorSetLayout();
+    bool CreateGraphicsPipeline();
+    bool CreateForgePipeline();
     bool CreateFramebuffers();
     bool CreateCommandPoolAndBuffer();
+    
+    void CreatePBRTextures(const fw::PackedTextureData& pbrData);
+    bool CreateUniformBuffers();
+    bool CreateDescriptorPoolAndSets();
     bool CreateSyncObjects();
 
     // --- NUOVI METODI (FASE 4) ---
     static std::vector<char> ReadFile(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
-    bool CreateGraphicsPipeline();
-    bool CreateForgePipeline();
-    bool CreateDescriptorSetLayout();
-    bool CreateUniformBuffers();
-    bool CreateDescriptorPoolAndSets();
     void UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress, struct SharedContext* context);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
@@ -297,5 +337,5 @@ private:
 public:
     // Metodo da chiamare nel Game Loop
     void RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, struct SharedContext* context = nullptr, class AssetManager* assets = nullptr, class MobManager* mobManager = nullptr, class Player* player = nullptr);
-    void RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, struct SharedContext* context);
+    void RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, glm::vec3 cameraPos, struct SharedContext* context);
 };

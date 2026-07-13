@@ -13,6 +13,8 @@
 #include "EventManager.h"
 #include "PlayState.h"
 #include "HubState.h"
+#include "TexturePacker.h"
+#include "MaterialRegistry.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -230,11 +232,14 @@ bool FairWorldEngine::Init() {
     }
 
     // Carica asset definitions (blocchi e mob da JSON)
-    m_assets.LoadAll("../assets/");
-    m_renderManager->LoadBlockTextures("../assets/", m_assets.GetBlocks());
+    m_assets.LoadAll("assets/");
+    
+    // Il caricamento delle texture PBR è stato spostato in SetSharedContext()
+    // perché MaterialRegistry viene iniettato dopo Init()
+    
     m_renderManager->LoadAllMobMeshes(m_assets);
     // Pre-carica il preset 1 per il blocco custom (Layer 4) se presente su disco
-    m_renderManager->LoadTextureFromFile("../assets/textures/custom1.png", 4);
+    m_renderManager->LoadTextureFromFile("assets/textures/custom1.png", 4);
 
     // Posiziona la telecamera sopra il pavimento al centro del mondo
                 
@@ -326,6 +331,14 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
         // Inizializza i sistemi col context appena disponibile
         m_forgeWorld->Initialize(ctx);
         m_timeManager->Initialize();
+
+        // CARICAMENTO TEXTURE PBR (TexturePacker + RenderManager)
+        fw::TexturePacker packer(512);
+        if (ctx->materialRegistry) {
+            auto pbrData = packer.PackMaterials(ctx->materialRegistry->GetAllMaterials());
+            m_renderManager->CreatePBRTextures(pbrData);
+            std::cout << "[FAIRWORLD] Texture PBR caricate e impacchettate con successo in Vulkan." << std::endl;
+        }
     }
 }
 
@@ -363,21 +376,6 @@ void FairWorldEngine::Run() {
 
 bool FairWorldEngine::Update(float deltaTime) {
     ImGuiIO& io = ImGui::GetIO();
-
-    // Aggiornamento Chunks - VECCHIO MONDO DISABILITATO
-    /*
-    auto dirtyChunks = m_world.BuildDirtyChunks();
-    for (auto& coord : dirtyChunks) {
-        auto* chunk = m_world.GetChunk(coord.x, coord.z);
-        if (chunk) {
-            if (chunk->isMeshEmpty) {
-                m_renderManager->DestroyChunkBuffer(coord);
-            } else {
-                m_renderManager->UploadChunkMesh(coord, chunk->vertices, chunk->indices);
-            }
-        }
-    }
-    */
 
     // Integrazione Polling DESKARM disattivata come richiesto.
     // L'apertura della WebView2 è ora gestita solo dalla macchina a stati (tasto 'H').

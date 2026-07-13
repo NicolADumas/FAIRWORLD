@@ -37,7 +37,7 @@ struct Vertex {
     glm::vec3 pos;        // 12 bytes
     glm::vec4 color;      // 16 bytes
     glm::vec2 roughMetal; // 8 bytes (roughness, metallic)
-    float texIndex;       // 4 bytes
+    uint32_t materialID;  // 4 bytes
     glm::vec3 normal;     // 12 bytes
     float ao;             // 4 bytes
     float light;          // 4 bytes
@@ -172,6 +172,6 @@ private:
     void PlaceTree(int x, int y, int z);
     void CarveRiver(class PerlinNoise& pn, Chunk* chunk);
 
-    void AddFace(int x, int y, int z, int face, const glm::vec3& color, float texIndex, std::vector<Vertex>& outVerts, std::vector<uint32_t>& outIndices, bool lowerY = false);
+    void AddFace(int x, int y, int z, int face, const glm::vec3& color, uint32_t materialID, std::vector<Vertex>& outVerts, std::vector<uint32_t>& outIndices, bool lowerY = false);
     static constexpr glm::vec3 BlockColor(BlockType t);
 };

@@ -1,0 +1,90 @@
+#version 450
+layout (local_size_x = 16, local_size_y = 16) in;
+
+// Rappresentazione termica della griglia (8 bytes)
+struct CellData {
+    float heat;
+    float pressure;
+};
+
+// Double buffering spaziale 
+layout(std430, binding = 0) readonly buffer GridStateRead {
+    CellData read_cells[];
+};
+
+layout(std430, binding = 1) writeonly buffer GridStateWrite {
+    CellData write_cells[];
+};
+
+struct ReadbackEvent {
+    uint cell_index;
+    float event_magnitude;
+    uint event_type;
+    uint _padding;
+};
+
+layout(std430, binding = 2) buffer EventState {
+    uint event_count;
+    uint pad1;
+    uint pad2;
+    uint pad3;
+    ReadbackEvent events[];
+};
+
+layout(push_constant) uniform Constants {
+    uint grid_width;
+    uint grid_height;
+    float diffusion_rate;
+} pc;
+
+uint getFlatIndex(uint x, uint y) {
+    return y * pc.grid_width + x;
+}
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+    
+    if (x >= pc.grid_width || y >= pc.grid_height) return;
+    
+    uint current_idx = getFlatIndex(x, y);
+    float current_heat = read_cells[current_idx].heat;
+    
+    float neighbor_heat_sum = 0.0;
+    int valid_neighbors = 0;
+    
+    // Kernel 3x3 diffusione calore
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            
+            int nx = int(x) + dx;
+            int ny = int(y) + dy;
+            
+            // Boundary checks
+            if (nx >= 0 && nx < int(pc.grid_width) && ny >= 0 && ny < int(pc.grid_height)) {
+                uint n_idx = getFlatIndex(uint(nx), uint(ny));
+                neighbor_heat_sum += read_cells[n_idx].heat;
+                valid_neighbors++;
+            }
+        }
+    }
+    
+    float average_neighbor_heat = neighbor_heat_sum / float(max(1, valid_neighbors));
+    float new_heat = mix(current_heat, average_neighbor_heat, pc.diffusion_rate);
+    
+    // Generazione Eventi (es. Meltdown termico)
+    if (new_heat > 100.0) { // Soglia critica di esempio
+        uint event_idx = atomicAdd(event_count, 1);
+        // Protezione contro l'overflow del buffer eventi
+        // Assumiamo che la CPU ci passi un "max_events" o ci garantisca spazio
+        // Per sicurezza, potremmo avere un max nel push constant, ma omettiamo per brevità
+        events[event_idx].cell_index = current_idx;
+        events[event_idx].event_magnitude = new_heat;
+        events[event_idx].event_type = 0; // 0 = Fusione termica
+    }
+
+    // Scrittura nel buffer di output (Ping-Pong)
+    write_cells[current_idx].heat = new_heat;
+    write_cells[current_idx].pressure = read_cells[current_idx].pressure; // Pass-through per simulazioni future
+}

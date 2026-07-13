@@ -2,7 +2,6 @@
 #include "RenderManager.h"
 #include "FAIRWORLD.h"
 #include "AssetManager.h"
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "XrManager.h"
 #include <map>
@@ -159,22 +158,17 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // FASE 3.3: Creazione della Swapchain
     if (!CreateSwapchain(hwnd)) return false;
     if (!CreateImageViews()) return false;
-
     // FASE 3.4, 4 e 5: Creazione del Render Loop, Pipeline e UBO
     if (!CreateRenderPass()) return false;
     
-    // IMPORTANTE: Creiamo il Command Pool PRIMA delle texture, perché CreateTextureImage 
-    // ha bisogno di eseguire comandi (BeginSingleTimeCommands)
     if (!CreateCommandPoolAndBuffer()) return false;
-    
-    // FASE 6: Texture (Il Texture Painter / Pixel Editor)
-    CreateTextureImage();
-    CreateTextureImageView();
-    CreateTextureSampler();
+
+    // Le texture (Albedo, Normal, ORM) verranno create esternamente tramite CreatePBRTextures.
+    // L'inizializzazione del Layout dei Descriptor viene fatta qui, ma l'allocazione
+    // dei set (CreateDescriptorPoolAndSets) verra' fatta alla fine di CreatePBRTextures.
 
     if (!CreateDescriptorSetLayout()) return false;
     if (!CreateUniformBuffers()) return false;
-    if (!CreateDescriptorPoolAndSets()) return false;
 
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateForgePipeline()) return false;
@@ -698,11 +692,12 @@ bool RenderManager::CreateFramebuffers() {
 // FASE 5: DESCRIPTOR SETS & UNIFORM BUFFERS
 // ---------------------------------------------------------
 bool RenderManager::CreateDescriptorSetLayout() {
+    // 1. LEGACY DESCRIPTOR SET LAYOUT (Per shader.vert e shader.frag)
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT; // Accessibile da Vertex e Fragment Shader
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
@@ -718,6 +713,34 @@ bool RenderManager::CreateDescriptorSetLayout() {
     layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) return false;
+
+    // 2. FORGE DESCRIPTOR SET LAYOUT (Per forge_vert.spv e forge_frag.spv)
+    VkDescriptorSetLayoutBinding albedoLayoutBinding{};
+    albedoLayoutBinding.binding = 0;
+    albedoLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    albedoLayoutBinding.descriptorCount = 1;
+    albedoLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding normalLayoutBinding{};
+    normalLayoutBinding.binding = 1;
+    normalLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    normalLayoutBinding.descriptorCount = 1;
+    normalLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding ormLayoutBinding{};
+    ormLayoutBinding.binding = 2;
+    ormLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    ormLayoutBinding.descriptorCount = 1;
+    ormLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 3> forgeBindings = { albedoLayoutBinding, normalLayoutBinding, ormLayoutBinding };
+    VkDescriptorSetLayoutCreateInfo forgeLayoutInfo{};
+    forgeLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    forgeLayoutInfo.bindingCount = static_cast<uint32_t>(forgeBindings.size());
+    forgeLayoutInfo.pBindings = forgeBindings.data();
+
+    if (vkCreateDescriptorSetLayout(m_device, &forgeLayoutInfo, nullptr, &m_forgeDescriptorSetLayout) != VK_SUCCESS) return false;
+
     return true;
 }
 
@@ -763,6 +786,7 @@ bool RenderManager::CreateUniformBuffers() {
 }
 
 bool RenderManager::CreateDescriptorPoolAndSets() {
+    // Questo è il legacy descriptor pool e set! Serve UBO e 1 Sampler (dummy)
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
@@ -775,7 +799,7 @@ bool RenderManager::CreateDescriptorPoolAndSets() {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
-    vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_descriptorPool);
+    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) return false;
 
     std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_descriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
@@ -785,7 +809,7 @@ bool RenderManager::CreateDescriptorPoolAndSets() {
     allocInfo.pSetLayouts = layouts.data();
 
     m_descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    vkAllocateDescriptorSets(m_device, &allocInfo, m_descriptorSets.data());
+    if (vkAllocateDescriptorSets(m_device, &allocInfo, m_descriptorSets.data()) != VK_SUCCESS) return false;
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};
@@ -793,29 +817,12 @@ bool RenderManager::CreateDescriptorPoolAndSets() {
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = m_textureImageView;
-        imageInfo.sampler = m_textureSampler;
-
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = m_descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = m_descriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        // Usiamo il sampler e una imageView dummy o niente se non usati. 
+        // Per evitare crash usiamo m_albedoImageView se disponibile, altrimenti puo fallire il legacy.
+        // Assumiamo che m_albedoImageView sia creato. Ma CreateDescriptorPoolAndSets 
+        // viene richiamato PRIMA di CreatePBRTextures.
+        // Cosi non funziona. Spostiamo CreateDescriptorPoolAndSets IN Init?
+        // Se non abbiamo l'image view, il vecchio rendering crasherà se lo attiviamo.
     }
     return true;
 }
@@ -960,11 +967,11 @@ bool RenderManager::CreateGraphicsPipeline() {
     attrDescs[2].location = 2;
     attrDescs[2].format   = VK_FORMAT_R32G32_SFLOAT;
     attrDescs[2].offset   = offsetof(Vertex, roughMetal);
-    // location 3: indice texture (float)
+    // location 3: indice texture / materialID (uint)
     attrDescs[3].binding  = 0;
     attrDescs[3].location = 3;
-    attrDescs[3].format   = VK_FORMAT_R32_SFLOAT;
-    attrDescs[3].offset   = offsetof(Vertex, texIndex);
+    attrDescs[3].format   = VK_FORMAT_R32_UINT;
+    attrDescs[3].offset   = offsetof(Vertex, materialID);
     // location 4: normale (vec3)
     attrDescs[4].binding  = 0;
     attrDescs[4].location = 4;
@@ -1402,7 +1409,10 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     if (context && context->forgeWorld && m_globalVramBuffer != VK_NULL_HANDLE) {
         // Le mesh del ForgeWorld usano PBR e push constants dedicate
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+        
+        if (!m_forgeDescriptorSets.empty() && m_forgeDescriptorSets[m_currentFrame] != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_forgeDescriptorSets[m_currentFrame], 0, nullptr);
+        }
         
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -1610,8 +1620,9 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
         glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
-        
-        RenderForge(m_commandBuffers[m_currentFrame], viewProjMatrix, context);
+        glm::mat4 invView = glm::inverse(viewMatrix);
+        glm::vec3 cameraPos = glm::vec3(invView[3]);
+        RenderForge(m_commandBuffers[m_currentFrame], viewProjMatrix, cameraPos, context);
     } else {
         RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
     }
@@ -1982,14 +1993,14 @@ void RenderManager::LoadMobMesh(const std::string& filepath) {
             uint32_t startIdx = (uint32_t)vertices.size();
 
             // 8 vertici del cubetto
-            vertices.push_back({{vx - s, vy - s, vz + s}, col4, {0.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 0: front bottom left
-            vertices.push_back({{vx + s, vy - s, vz + s}, col4, {1.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 1: front bottom right
-            vertices.push_back({{vx + s, vy + s, vz + s}, col4, {1.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 2: front top right
-            vertices.push_back({{vx - s, vy + s, vz + s}, col4, {0.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 3: front top left
-            vertices.push_back({{vx - s, vy - s, vz - s}, col4, {0.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 4: back bottom left
-            vertices.push_back({{vx + s, vy - s, vz - s}, col4, {1.0f, 0.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 5: back bottom right
-            vertices.push_back({{vx + s, vy + s, vz - s}, col4, {1.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 6: back top right
-            vertices.push_back({{vx - s, vy + s, vz - s}, col4, {0.0f, 1.0f}, -1.0f, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 7: back top left
+            vertices.push_back({{vx - s, vy - s, vz + s}, col4, {0.0f, 0.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 0: front bottom left
+            vertices.push_back({{vx + s, vy - s, vz + s}, col4, {1.0f, 0.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 1: front bottom right
+            vertices.push_back({{vx + s, vy + s, vz + s}, col4, {1.0f, 1.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 2: front top right
+            vertices.push_back({{vx - s, vy + s, vz + s}, col4, {0.0f, 1.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 3: front top left
+            vertices.push_back({{vx - s, vy - s, vz - s}, col4, {0.0f, 0.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 4: back bottom left
+            vertices.push_back({{vx + s, vy - s, vz - s}, col4, {1.0f, 0.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 5: back bottom right
+            vertices.push_back({{vx + s, vy + s, vz - s}, col4, {1.0f, 1.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 6: back top right
+            vertices.push_back({{vx - s, vy + s, vz - s}, col4, {0.0f, 1.0f}, 0, {0,0,0}, 1.0f, 1.0f, 0.0f}); // 7: back top left
 
             // Indici per le 6 facce (12 triangoli)
             uint32_t cubeIndices[] = {
@@ -2062,15 +2073,14 @@ void RenderManager::Shutdown() {
             vkDestroySampler(m_device, m_textureSampler, nullptr);
             m_textureSampler = VK_NULL_HANDLE;
         }
-        if (m_textureImageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(m_device, m_textureImageView, nullptr);
-            m_textureImageView = VK_NULL_HANDLE;
-        }
-        if (m_textureImage != VK_NULL_HANDLE) {
-            vmaDestroyImage(m_vmaAllocator, m_textureImage, m_textureImageAllocation);
-            m_textureImage = VK_NULL_HANDLE;
-            m_textureImageAllocation = VK_NULL_HANDLE;
-        }
+        if (m_albedoImageView != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_albedoImageView, nullptr); m_albedoImageView = VK_NULL_HANDLE; }
+        if (m_normalImageView != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_normalImageView, nullptr); m_normalImageView = VK_NULL_HANDLE; }
+        if (m_ormImageView    != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_ormImageView,    nullptr); m_ormImageView    = VK_NULL_HANDLE; }
+        if (m_albedoImage != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_albedoImage, m_albedoImageAllocation); m_albedoImage = VK_NULL_HANDLE; }
+        if (m_normalImage != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_normalImage, m_normalImageAllocation); m_normalImage = VK_NULL_HANDLE; }
+        if (m_ormImage    != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_ormImage,    m_ormImageAllocation);    m_ormImage    = VK_NULL_HANDLE; }
+        if (m_forgeDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(m_device, m_forgeDescriptorPool, nullptr); m_forgeDescriptorPool = VK_NULL_HANDLE; }
+        if (m_forgeDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(m_device, m_forgeDescriptorSetLayout, nullptr); m_forgeDescriptorSetLayout = VK_NULL_HANDLE; }
 
         // Depth buffer cleanup
         if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
@@ -2296,75 +2306,53 @@ void RenderManager::InitImGui(void* hwnd) {
 // ---------------------------------------------------------
 // TEXTURE ARRAY (16x16 Pixel Editor)
 // ---------------------------------------------------------
-void RenderManager::CreateTextureImage() {
-    uint32_t texWidth = 16, texHeight = 16;
-    uint32_t layerCount = 16; // Supporta fino a 16 BlockType (0-15)
-    VkDeviceSize imageSize = texWidth * texHeight * 4 * layerCount;
+void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
+    if (data.layerCount == 0 || data.albedoData.empty()) return;
 
-    // Crea un buffer temporaneo (staging buffer) inizializzato con colori procedurali per identificare i blocchi
-    std::vector<uint8_t> pixels(imageSize, 255);
-    for (uint32_t layer = 0; layer < layerCount; layer++) {
-        uint8_t r = (layer * 45) % 255;
-        uint8_t g = (layer * 85) % 255;
-        uint8_t b = (layer * 125) % 255;
-        
-        // Colori specifici (hardcoded per test)
-        if (layer == 1) { r = 60; g = 180; b = 40; } // Grass
-        else if (layer == 2) { r = 100; g = 60; b = 30; } // Dirt
-        else if (layer == 3) { r = 120; g = 120; b = 120; } // Stone
-        else if (layer == 7) { r = 255; g = 100; b = 0; } // Lava
-        
-        for (uint32_t i = 0; i < texWidth * texHeight; i++) {
-            uint32_t index = (layer * texWidth * texHeight + i) * 4;
-            // Motivo a scacchiera per simulare una texture
-            bool checker = ((i % texWidth) / 4 + (i / texWidth) / 4) % 2 == 0;
-            pixels[index + 0] = checker ? r : std::max(0, r - 30);
-            pixels[index + 1] = checker ? g : std::max(0, g - 30);
-            pixels[index + 2] = checker ? b : std::max(0, b - 30);
-            pixels[index + 3] = 255; // Alpha
+    VkDeviceSize imageSize = data.width * data.height * 4 * data.layerCount;
+
+    auto createTextureArray = [&](const std::vector<uint8_t>& pixels, VkImage& image, VmaAllocation& alloc, VkImageView& view) {
+        VkBuffer stagingBuffer;
+        VmaAllocation stagingBufferMemory;
+        CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+
+        void* mappedData;
+        vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &mappedData);
+        memcpy(mappedData, pixels.data(), static_cast<size_t>(imageSize));
+        vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
+
+        CreateImage(data.width, data.height, data.layerCount, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, 
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, image, alloc);
+
+        TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, data.layerCount);
+        CopyBufferToImage(stagingBuffer, image, data.width, data.height, data.layerCount);
+        TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, data.layerCount);
+
+        vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = data.layerCount;
+
+        if (vkCreateImageView(m_device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] Impossibile creare texture image view!" << std::endl;
         }
-    }
+    };
 
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingBufferMemory;
-    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    createTextureArray(data.albedoData, m_albedoImage, m_albedoImageAllocation, m_albedoImageView);
+    createTextureArray(data.normalData, m_normalImage, m_normalImageAllocation, m_normalImageView);
+    createTextureArray(data.ormData, m_ormImage, m_ormImageAllocation, m_ormImageView);
 
-    void* data;
-    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
-    memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
-    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
-
-    CreateImage(texWidth, texHeight, layerCount, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, m_textureImage, m_textureImageAllocation);
-
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layerCount);
-    CopyBufferToImage(stagingBuffer, m_textureImage, texWidth, texHeight, layerCount);
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, layerCount);
-
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
-}
-
-void RenderManager::CreateTextureImageView() {
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = m_textureImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY; // IMPORTANTE: Array di Texture!
-    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 16; // Deve corrispondere al numero di layer
-
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_textureImageView) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare texture image view!" << std::endl;
-        return;
-    }
-}
-
-void RenderManager::CreateTextureSampler() {
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_NEAREST; // Pixel Art (no sfocatura!)
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
     samplerInfo.minFilter = VK_FILTER_NEAREST;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -2378,7 +2366,111 @@ void RenderManager::CreateTextureSampler() {
 
     if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare texture sampler!" << std::endl;
+    }
+    
+    // --- CREA/AGGIORNA FORGE DESCRIPTOR SETS ---
+    if (m_forgeDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(m_device, m_forgeDescriptorPool, nullptr);
+        m_forgeDescriptorPool = VK_NULL_HANDLE;
+    }
+    
+    std::array<VkDescriptorPoolSize, 1> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_forgeDescriptorPool) != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] CreateForgeDescriptorPool fallito!" << std::endl;
         return;
+    }
+
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_forgeDescriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_forgeDescriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    m_forgeDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(m_device, &allocInfo, m_forgeDescriptorSets.data()) != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] vkAllocateDescriptorSets per forge fallito!" << std::endl;
+        return;
+    }
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorImageInfo albedoInfo{};
+        albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        albedoInfo.imageView = m_albedoImageView;
+        albedoInfo.sampler = m_textureSampler;
+
+        VkDescriptorImageInfo normalInfo{};
+        normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        normalInfo.imageView = m_normalImageView;
+        normalInfo.sampler = m_textureSampler;
+
+        VkDescriptorImageInfo ormInfo{};
+        ormInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        ormInfo.imageView = m_ormImageView;
+        ormInfo.sampler = m_textureSampler;
+
+        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = m_forgeDescriptorSets[i];
+        descriptorWrites[0].dstBinding = 0; // albedo
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pImageInfo = &albedoInfo;
+
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = m_forgeDescriptorSets[i];
+        descriptorWrites[1].dstBinding = 1; // normal
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &normalInfo;
+
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = m_forgeDescriptorSets[i];
+        descriptorWrites[2].dstBinding = 2; // orm
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pImageInfo = &ormInfo;
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+
+        // --- Aggiorna anche i vecchi descriptor set (m_descriptorSets) ---
+        // Altrimenti il binding fallirà e manderà in crash le vecchie pipeline (es. per mob e player)
+        VkDescriptorBufferInfo uboInfo{};
+        uboInfo.buffer = m_uniformBuffers[i];
+        uboInfo.offset = 0;
+        uboInfo.range = sizeof(UniformBufferObject);
+
+        std::array<VkWriteDescriptorSet, 2> legacyWrites{};
+
+        legacyWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        legacyWrites[0].dstSet = m_descriptorSets[i];
+        legacyWrites[0].dstBinding = 0;
+        legacyWrites[0].dstArrayElement = 0;
+        legacyWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        legacyWrites[0].descriptorCount = 1;
+        legacyWrites[0].pBufferInfo = &uboInfo;
+
+        legacyWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        legacyWrites[1].dstSet = m_descriptorSets[i];
+        legacyWrites[1].dstBinding = 1;
+        legacyWrites[1].dstArrayElement = 0;
+        legacyWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        legacyWrites[1].descriptorCount = 1;
+        legacyWrites[1].pImageInfo = &albedoInfo; // Usiamo l'albedo come texture legacy
+
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(legacyWrites.size()), legacyWrites.data(), 0, nullptr);
     }
 }
 
@@ -2507,6 +2599,7 @@ void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w
 }
 
 void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height) {
+    if (m_albedoImage == VK_NULL_HANDLE) return; // Texture PBR non ancora caricate
     VkDeviceSize imageSize = width * height * 4;
 
     VkBuffer stagingBuffer;
@@ -2518,34 +2611,30 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     memcpy(data, pixelData, static_cast<size_t>(imageSize));
     vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
-    // Dobbiamo transizionare il layout prima di poter copiare di nuovo
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 16);
+    // Aggiorna il layer nell'albedo array
+    TransitionImageLayout(m_albedoImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 16);
 
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
-    // Se l'immagine sorgente e' piu' grande del limite 16x16 della texture, diciamo a Vulkan come saltare i pixel!
     region.bufferRowLength = width;
     region.bufferImageHeight = height;
     
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = layerIndex; // Aggiorniamo SOLO questo layer!
+    region.imageSubresource.baseArrayLayer = layerIndex;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    
-    // Assicuriamoci di non sfondare le dimensioni allocate (attualmente hardcoded a 16x16 per stile Minecraft retro)
     region.imageExtent = { std::min(width, 16u), std::min(height, 16u), 1 };
 
-    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, m_textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, m_albedoImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     EndSingleTimeCommands(commandBuffer);
 
-    // Rimettiamo in lettura per lo shader
-    TransitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 16);
+    TransitionImageLayout(m_albedoImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 16);
 
     vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
-    std::cout << "[VULKAN] Texture Array Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
+    std::cout << "[VULKAN] Albedo Array Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
 }
 
 void RenderManager::LoadBlockTextures(const std::string& baseDir, const std::vector<BlockDef>& blocks) {
@@ -2731,7 +2820,7 @@ bool RenderManager::CreateForgePipeline() {
     attrDescs[0].binding  = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
     attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
     attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, roughMetal);
-    attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32_SFLOAT;       attrDescs[3].offset = offsetof(Vertex, texIndex);
+    attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32_UINT;         attrDescs[3].offset = offsetof(Vertex, materialID);
     attrDescs[4].binding  = 0; attrDescs[4].location = 4; attrDescs[4].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[4].offset = offsetof(Vertex, normal);
     attrDescs[5].binding  = 0; attrDescs[5].location = 5; attrDescs[5].format = VK_FORMAT_R32_SFLOAT;       attrDescs[5].offset = offsetof(Vertex, ao);
     attrDescs[6].binding  = 0; attrDescs[6].location = 6; attrDescs[6].format = VK_FORMAT_R32_SFLOAT;       attrDescs[6].offset = offsetof(Vertex, light);
@@ -2843,7 +2932,7 @@ bool RenderManager::CreateForgePipeline() {
     return true;
 }
 
-void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, SharedContext* context) {
+void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, glm::vec3 cameraPos, SharedContext* context) {
     if (!context || !context->forgeWorld) return;
     auto* forgeWorld = context->forgeWorld;
 
@@ -2851,7 +2940,10 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     // 1. SETUP GLOBALE (Cambio di stato singolo)
     // ==========================================
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+    
+    if (!m_forgeDescriptorSets.empty() && m_forgeDescriptorSets[m_currentFrame] != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_forgeDescriptorSets[m_currentFrame], 0, nullptr);
+    }
 
     ForgePushConstantData pcData{};
     VkDeviceSize offsets[] = {0};
@@ -2863,6 +2955,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     }
     float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
     pcData.seasonProgress = seasonalUboValue;
+    pcData.cameraPos = glm::vec4(cameraPos, 1.0f);
     if (context && context->isBlockMakerMode) {
         pcData.lightDir = glm::vec4(context->previewLightDir, 0.0f);
     } else {
@@ -2978,4 +3071,143 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
             }
         }
     }
+}
+
+VulkanTextureArray RenderManager::CreateTextureArray(
+    VkDevice device, 
+    VmaAllocator allocator, 
+    VkCommandBuffer cmdBuffer, 
+    const std::vector<uint8_t>& pixelData, 
+    uint32_t width, 
+    uint32_t height, 
+    uint32_t layerCount, 
+    VkFormat format
+) {
+    VulkanTextureArray result;
+    result.format = format;
+    result.layerCount = layerCount;
+
+    VkDeviceSize imageSize = width * height * 4 * layerCount;
+    if (imageSize == 0 || pixelData.empty()) {
+        std::cerr << "[VulkanTextureManager] Error: Pixel data is empty or layerCount is 0.\n";
+        return result;
+    }
+
+    // 1. Create Staging Buffer
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+
+    VkBufferCreateInfo stagingBufferInfo = {};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size = imageSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    stagingBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo stagingAllocInfo = {};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocationInfo stagingAllocResultInfo;
+    if (vmaCreateBuffer(allocator, &stagingBufferInfo, &stagingAllocInfo, &stagingBuffer, &stagingAllocation, &stagingAllocResultInfo) != VK_SUCCESS) {
+        std::cerr << "[VulkanTextureManager] Error: Failed to create staging buffer.\n";
+        return result;
+    }
+
+    memcpy(stagingAllocResultInfo.pMappedData, pixelData.data(), (size_t)imageSize);
+
+    // 2. Create VkImage (2D Array)
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = layerCount; // CRITICAL: Set arrayLayers
+    imageInfo.format = format;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo imageAllocInfo = {};
+    imageAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    if (vmaCreateImage(allocator, &imageInfo, &imageAllocInfo, &result.image, &result.allocation, nullptr) != VK_SUCCESS) {
+        std::cerr << "[VulkanTextureManager] Error: Failed to create Vulkan image.\n";
+        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+        return result;
+    }
+
+    // 3. Transition Image Layout (UNDEFINED -> TRANSFER_DST_OPTIMAL)
+    VkImageMemoryBarrier barrier1 = {};
+    barrier1.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier1.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier1.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier1.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier1.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier1.image = result.image;
+    barrier1.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier1.subresourceRange.baseMipLevel = 0;
+    barrier1.subresourceRange.levelCount = 1;
+    barrier1.subresourceRange.baseArrayLayer = 0;
+    barrier1.subresourceRange.layerCount = layerCount; // CRITICAL: Transition all layers
+    barrier1.srcAccessMask = 0;
+    barrier1.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier1);
+
+    // 4. Copy Buffer To Image
+    VkBufferImageCopy region = {};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = layerCount; // CRITICAL: Copy to all layers
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(cmdBuffer, stagingBuffer, result.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    // 5. Transition Image Layout (TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL)
+    VkImageMemoryBarrier barrier2 = {};
+    barrier2.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier2.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier2.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier2.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier2.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier2.image = result.image;
+    barrier2.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier2.subresourceRange.baseMipLevel = 0;
+    barrier2.subresourceRange.levelCount = 1;
+    barrier2.subresourceRange.baseArrayLayer = 0;
+    barrier2.subresourceRange.layerCount = layerCount; // CRITICAL: Transition all layers
+    barrier2.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier2.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier2);
+
+    // 6. Create VkImageView (VK_IMAGE_VIEW_TYPE_2D_ARRAY)
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = result.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY; // CRITICAL: 2D Array
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = layerCount; // CRITICAL: View all layers
+
+    if (vkCreateImageView(device, &viewInfo, nullptr, &result.view) != VK_SUCCESS) {
+        std::cerr << "[VulkanTextureManager] Error: Failed to create Vulkan image view.\n";
+    }
+
+    result.stagingBuffer = stagingBuffer;
+    result.stagingAllocation = stagingAllocation;
+
+    return result;
 }

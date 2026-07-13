@@ -42,7 +42,7 @@ struct Vertex {
     Vec3 position;    // 12
     Vec4 color;       // 16
     Vec2 roughMetal;  // 8
-    float texIndex;   // 4
+    uint32_t materialID; // 4
     Vec3 normal;      // 12
     float ao;         // 4
     float light;      // 4

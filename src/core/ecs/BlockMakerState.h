@@ -48,6 +48,11 @@ private:
     float m_simVelY = 0.0f;
     float m_simGravity = -15.0f; // gravity factor
 
+    // --- PBR Texture Loading UI ---
+    bool m_isCopying = false;
+    float m_copyProgress = 0.0f;
+    float m_saveMessageTimer = 0.0f;
+
     void UpdatePreviewMesh();
     void HandlePhysicsSimulation(float dt);
 };

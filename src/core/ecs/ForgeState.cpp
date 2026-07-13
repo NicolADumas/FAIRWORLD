@@ -8,6 +8,7 @@
 #include "RenderManager.h"
 #include "ForgeWorld.h"
 #include "BlockRegistry.h"
+#include "MaterialRegistry.h"
 #include "JobSystem.h"
 #include "AsyncInput.h"
 #include "VulkanDmaManager.h"
@@ -449,10 +450,10 @@ void ForgeState::Update(float dt) {
                 trans.location.y = rayTargetPos.y + 0.5f;
                 trans.location.z = rayTargetPos.z + 0.5f;
                 
-                auto& def = m_context->blockRegistry->GetBlock(m_selectedColorIndex);
-                mesh.colorOverride[0] = def.baseColor.x;
-                mesh.colorOverride[1] = def.baseColor.y;
-                mesh.colorOverride[2] = def.baseColor.z;
+                auto& mat = m_context->materialRegistry->GetMaterial(m_selectedColorIndex);
+                mesh.colorOverride[0] = mat.baseColorFallback.x;
+                mesh.colorOverride[1] = mat.baseColorFallback.y;
+                mesh.colorOverride[2] = mat.baseColorFallback.z;
                 mesh.colorOverride[3] = 1.0f; // Alpha
             } else {
                 trans.location.y = -100.0f; // Nascondi
@@ -572,12 +573,13 @@ void ForgeState::Render() {
             ImGui::Text("Anteprima Materiale (ID: %d)", def.id);
             ImVec2 p = ImGui::GetCursorScreenPos();
             float previewSize = 100.0f;
-            ImVec4 previewColor = ImVec4(def.baseColor.x, def.baseColor.y, def.baseColor.z, 1.0f);
+            auto& mat = m_context->materialRegistry->GetMaterial(def.id);
+            ImVec4 previewColor = ImVec4(mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z, 1.0f);
             
             ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + previewSize, p.y + previewSize), ImColor(previewColor), 8.0f);
             ImGui::GetWindowDrawList()->AddRect(p, ImVec2(p.x + previewSize, p.y + previewSize), ImColor(255, 255, 255, 100), 8.0f, 0, 2.0f);
             
-            if (def.metallic > 0.5f || def.emissiveStrength > 0.5f) {
+            if (mat.metallicFallback > 0.5f || mat.emissiveStrength > 0.5f) {
                 ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(p.x + 10, p.y + 10), ImVec2(p.x + 30, p.y + 30), ImColor(255, 255, 255, 150), 4.0f);
             }
             
