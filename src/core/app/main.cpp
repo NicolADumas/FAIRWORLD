@@ -11,6 +11,7 @@
 #include "PlayState.h"
 #include "PhysicsLabState.h"
 #include "MapState.h"
+#include "BlockMakerState.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
@@ -58,12 +59,13 @@ int main() {
     StartAIServer();
 
     std::cout << "\nSeleziona la modalita' di avvio:\n";
-    std::cout << "1. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)\n";
-    std::cout << "2. FORGE (Editor Strutture e Minivoxel)\n";
-    std::cout << "3. HUB (Hub Principale)\n";
-    std::cout << "4. LAB (Test Fisica e Materiali)\n";
+    std::cout << "1. HUB (Hub Principale)\n";
+    std::cout << "2. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)\n";
+    std::cout << "3. FORGE (Editor Strutture e Minivoxel)\n";
+    std::cout << "4. BLOCK MAKER (Editor Blocchi e Materiali PBR)\n";
     std::cout << "5. MAP EDITOR (Planet Mapper)\n";
-    std::cout << "Scelta [1-5] (predefinito 1): ";
+    std::cout << "6. LAB (Test Fisica e Materiali)\n";
+    std::cout << "Scelta [1-6] (predefinito 1): ";
     
     int choice = 1;
     std::string input;
@@ -92,25 +94,30 @@ int main() {
 
     // 3. Bootstrap: Avvia lo stato selezionato
     if (choice == 2) {
+        stateManager.ChangeState(std::make_unique<PlayState>(&context));
+        engine.SetGameMode(GameMode::Play);
+        std::cout << "[SYSTEM] Avviato PlayState...\n";
+    } else if (choice == 3) {
         stateManager.ChangeState(std::make_unique<ForgeState>(&context));
         engine.SetGameMode(GameMode::Dev);
         std::cout << "[SYSTEM] Avviato ForgeState...\n";
-    } else if (choice == 3) {
-        stateManager.ChangeState(std::make_unique<HubState>(&context));
-        engine.SetGameMode(GameMode::Hub);
-        std::cout << "[SYSTEM] Avviato HubState...\n";
     } else if (choice == 4) {
-        stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
-        engine.SetGameMode(GameMode::PhysicsLab);
-        std::cout << "[SYSTEM] Avviato PhysicsLabState...\n";
+        stateManager.ChangeState(std::make_unique<BlockMakerState>(&context));
+        engine.SetGameMode(GameMode::Dev); // Usa Dev come per Forge
+        std::cout << "[SYSTEM] Avviato BlockMakerState...\n";
     } else if (choice == 5) {
         stateManager.ChangeState(std::make_unique<MapState>(&context));
         engine.SetGameMode(GameMode::Map);
         std::cout << "[SYSTEM] Avviato MapState...\n";
+    } else if (choice == 6) {
+        stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
+        engine.SetGameMode(GameMode::PhysicsLab);
+        std::cout << "[SYSTEM] Avviato PhysicsLabState...\n";
     } else {
-        stateManager.ChangeState(std::make_unique<PlayState>(&context));
-        engine.SetGameMode(GameMode::Play);
-        std::cout << "[SYSTEM] Avviato PlayState...\n";
+        // Fallback default: HUB (Scelta 1 o non valida)
+        stateManager.ChangeState(std::make_unique<HubState>(&context));
+        engine.SetGameMode(GameMode::Hub);
+        std::cout << "[SYSTEM] Avviato HubState...\n";
     }
 
     DeviceManager deviceManager;

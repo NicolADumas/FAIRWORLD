@@ -1,1 +1,104 @@
-﻿{"materials":[]}
+{
+    "materials": [
+        {
+            "target_block_id": 1,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.3, 0.8, 0.2],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 0.9,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 2,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.4, 0.25, 0.1],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 1.0,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 3,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.5, 0.5, 0.5],
+            "metallicFallback": 0.2,
+            "roughnessFallback": 0.6,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 4,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.55, 0.35, 0.15],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 0.85,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 5,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.85, 0.8, 0.6],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 0.95,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 6,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.1, 0.4, 0.9],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 0.05,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 7,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [1.0, 0.3, 0.0],
+            "metallicFallback": 0.1,
+            "roughnessFallback": 0.2,
+            "emissiveStrength": 5.0
+        },
+        {
+            "target_block_id": 8,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.1, 0.5, 0.1],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 0.8,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 9,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [0.15, 0.15, 0.2],
+            "metallicFallback": 0.9,
+            "roughnessFallback": 0.4,
+            "emissiveStrength": 0.0
+        },
+        {
+            "target_block_id": 10,
+            "albedoPath": "",
+            "normalPath": "",
+            "ormPath": "",
+            "baseColorFallback": [1.0, 0.95, 0.8],
+            "metallicFallback": 0.0,
+            "roughnessFallback": 0.5,
+            "emissiveStrength": 10.0
+        }
+    ]
+}

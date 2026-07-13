@@ -259,7 +259,7 @@ void BlockMakerState::UpdatePreviewMesh() {
 
 void BlockMakerState::DrawUI() {
     ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400.0f, 600.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(800.0f, 600.0f), ImGuiCond_FirstUseEver);
     
     if (ImGui::Begin("Block Maker (Data-Driven)")) {
         if (ImGui::Button("< TORNA ALL'HUB")) {
@@ -277,12 +277,37 @@ void BlockMakerState::DrawUI() {
             return;
         }
         
-        ImGui::Text("Editing Block ID: %d", m_selectedBlockId);
-        int blockIdInt = (int)m_selectedBlockId;
-        if (ImGui::SliderInt("Block ID", &blockIdInt, 0, 255)) {
-            m_selectedBlockId = (uint8_t)blockIdInt;
-            UpdatePreviewMesh();
+        // --- LAYOUT A DUE COLONNE ---
+        ImGui::Columns(2, "BlockMakerColumns");
+        ImGui::SetColumnWidth(0, 250.0f); // Larghezza colonna sinistra
+
+        // COLONNA SINISTRA: Lista Blocchi
+        ImGui::Text("Elenco Blocchi");
+        ImGui::Separator();
+        ImGui::BeginChild("BlockList", ImVec2(0, 0), true);
+        for (int i = 1; i <= 255; i++) {
+            fw::SimBlockDef& blockDef = m_context->blockRegistry->GetBlockMutable(i);
+            std::string label = std::to_string(i) + ": " + (blockDef.displayName.empty() ? (blockDef.stringId.empty() ? "Vuoto" : blockDef.stringId) : blockDef.displayName);
+            
+            // Colore sbiadito per i blocchi vuoti
+            if (blockDef.stringId.empty()) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+            
+            if (ImGui::Selectable(label.c_str(), m_selectedBlockId == i)) {
+                if (m_selectedBlockId != i) {
+                    m_selectedBlockId = i;
+                    UpdatePreviewMesh();
+                }
+            }
+            
+            if (blockDef.stringId.empty()) ImGui::PopStyleColor();
         }
+        ImGui::EndChild();
+
+        ImGui::NextColumn();
+
+        // COLONNA DESTRA: Proprietà del Blocco Selezionato
+        ImGui::Text("Editing Block ID: %d", m_selectedBlockId);
+        ImGui::Separator();
 
         // Recupera il blocco selezionato e aggiorna i campi di input temporanei se l'ID cambia (todo: serve caching)
         fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
@@ -390,6 +415,9 @@ void BlockMakerState::DrawUI() {
                 
                 if (isDirty) {
                     UpdatePreviewMesh();
+                    if (m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdateMaterialFallback(m_selectedBlockId, mat.baseColorFallback, mat.roughnessFallback, mat.metallicFallback);
+                    }
                 }
                 
                 ImGui::EndTabItem();
@@ -451,5 +479,6 @@ void BlockMakerState::DrawUI() {
             }
         }
     }
+    ImGui::Columns(1);
     ImGui::End();
 }

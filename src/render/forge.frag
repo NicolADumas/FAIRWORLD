@@ -11,9 +11,14 @@ layout(set = 0, binding = 0) uniform sampler2DArray albedoArray;
 layout(set = 0, binding = 1) uniform sampler2DArray normalArray;
 layout(set = 0, binding = 2) uniform sampler2DArray ormArray;
 
+struct CellData {
+    float heat;
+    float pressure;
+};
+
 // Binding Termodinamica (Set 1)
 layout(std430, set = 1, binding = 0) readonly buffer GridStateRead {
-    struct { float heat; float pressure; } read_cells[];
+    CellData read_cells[];
 };
 
 // Push Constants

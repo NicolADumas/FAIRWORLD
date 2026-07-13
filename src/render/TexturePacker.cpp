@@ -34,7 +34,9 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
     std::vector<uint8_t> fallbackOrm = { 255, 128, 0, 255 };      // AO=255, Rough=128, Metal=0
 
     for (const auto& mat : materials) {
-        std::cout << "[TexturePacker] Imballaggio ID " << (int)mat.target_block_id << "\n";
+        if (!mat.albedoPath.empty() || !mat.normalPath.empty() || !mat.ormPath.empty()) {
+            std::cout << "[TexturePacker] Imballaggio avvenuto per materiale [" << (int)mat.target_block_id << "]\n";
+        }
         
         // Calcolo Albedo Fallback dinamico dal materiale
         uint8_t r = static_cast<uint8_t>(mat.baseColorFallback.x * 255.0f);
@@ -45,6 +47,26 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
         LoadAndAppendTexture(mat.albedoPath, result.albedoData, fallbackAlbedo);
         LoadAndAppendTexture(mat.normalPath, result.normalData, fallbackNormal);
         LoadAndAppendTexture(mat.ormPath, result.ormData, fallbackOrm);
+    }
+    
+    // Pad array to 256 layers to avoid out-of-bounds reads during memcpy in RenderManager
+    size_t requiredSize = result.totalBytesPerArray;
+    if (result.albedoData.size() < requiredSize) {
+        // Fallback for remaining layers
+        std::vector<uint8_t> defaultAlbedo = { 255, 0, 255, 255 }; // Magenta for missing
+        while (result.albedoData.size() < requiredSize) {
+            LoadAndAppendTexture("", result.albedoData, defaultAlbedo);
+        }
+    }
+    if (result.normalData.size() < requiredSize) {
+        while (result.normalData.size() < requiredSize) {
+            LoadAndAppendTexture("", result.normalData, fallbackNormal);
+        }
+    }
+    if (result.ormData.size() < requiredSize) {
+        while (result.ormData.size() < requiredSize) {
+            LoadAndAppendTexture("", result.ormData, fallbackOrm);
+        }
     }
     
     std::cout << "==========================================\n";

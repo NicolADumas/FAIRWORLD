@@ -196,16 +196,8 @@ FairWorldEngine::~FairWorldEngine() {
 
 bool FairWorldEngine::Init() {
     std::cout << "==========================================\n";
-    std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE V2   \n";
+    std::cout << "    FAIRWORLD ENGINE - INIZIALIZZAZIONE   \n";
     std::cout << "==========================================\n\n";
-
-    // Mostra il menu testuale sulla console
-    std::cout << "Seleziona la modalita' di avvio:\n";
-    std::cout << "1. PlayState (Mondo di Gioco, Esplorazione e Costruzione)\n";
-    std::cout << "2. ForgeState (Editor Strutture e Minivoxel)\n";
-    std::cout << "3. HubState (Hub Principale)\n";
-    std::cout << "4. PhysicsLabState (Test Fisica e Materiali)\n";
-    std::cout << "Scelta [1-4] (predefinito 1): ";
 
     std::cout << "[SYSTEM] Inizializzazione Finestra Principale..." << std::endl;
     if (!m_windowManager->Init(1280, 720, "FAIRWORLD")) {

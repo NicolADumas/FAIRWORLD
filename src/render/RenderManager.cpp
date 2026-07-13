@@ -163,12 +163,13 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     
     if (!CreateCommandPoolAndBuffer()) return false;
 
-    // Le texture (Albedo, Normal, ORM) verranno create esternamente tramite CreatePBRTextures.
-    // L'inizializzazione del Layout dei Descriptor viene fatta qui, ma l'allocazione
-    // dei set (CreateDescriptorPoolAndSets) verra' fatta alla fine di CreatePBRTextures.
+    // L'inizializzazione del Layout dei Descriptor viene fatta qui.
+    // L'allocazione dei set viene fatta in CreateDescriptorPoolAndSets (senza aggiornarli con le texture).
+    // Le texture (Albedo, ecc.) verranno caricate esternamente in CreatePBRTextures, dove aggiorneremo i set.
 
     if (!CreateDescriptorSetLayout()) return false;
     if (!CreateUniformBuffers()) return false;
+    if (!CreateDescriptorPoolAndSets()) return false;
 
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateForgePipeline()) return false;
@@ -2314,10 +2315,18 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
     auto createTextureArray = [&](const std::vector<uint8_t>& pixels, VkImage& image, VmaAllocation& alloc, VkImageView& view) {
         VkBuffer stagingBuffer;
         VmaAllocation stagingBufferMemory;
-        CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+        
+        // Usiamo CPU_ONLY per evitare di esaurire la memoria BAR (CPU_TO_GPU) allocando 256MB
+        if (!CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingBufferMemory)) {
+            std::cerr << "[VULKAN ERROR] CreateBuffer (Staging) fallito per " << imageSize / 1024 / 1024 << " MB!" << std::endl;
+            return;
+        }
 
-        void* mappedData;
-        vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &mappedData);
+        void* mappedData = nullptr;
+        if (vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &mappedData) != VK_SUCCESS || mappedData == nullptr) {
+            std::cerr << "[VULKAN ERROR] Impossibile mappare lo staging buffer!" << std::endl;
+            return;
+        }
         memcpy(mappedData, pixels.data(), static_cast<size_t>(imageSize));
         vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
@@ -2472,6 +2481,91 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
 
         vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(legacyWrites.size()), legacyWrites.data(), 0, nullptr);
     }
+}
+
+void RenderManager::UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIndex, uint32_t width, uint32_t height, const glm::vec4& color) {
+    if (image == VK_NULL_HANDLE) return;
+
+    VkDeviceSize imageSize = width * height * 4;
+    std::vector<uint8_t> pixels(imageSize);
+    uint8_t r = static_cast<uint8_t>(glm::clamp(color.r * 255.0f, 0.0f, 255.0f));
+    uint8_t g = static_cast<uint8_t>(glm::clamp(color.g * 255.0f, 0.0f, 255.0f));
+    uint8_t b = static_cast<uint8_t>(glm::clamp(color.b * 255.0f, 0.0f, 255.0f));
+    uint8_t a = static_cast<uint8_t>(glm::clamp(color.a * 255.0f, 0.0f, 255.0f));
+    
+    for (size_t i = 0; i < imageSize; i += 4) {
+        pixels[i] = r;
+        pixels[i+1] = g;
+        pixels[i+2] = b;
+        pixels[i+3] = a;
+    }
+
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAllocation);
+
+    void* data;
+    vmaMapMemory(m_vmaAllocator, stagingAllocation, &data);
+    memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
+    vmaUnmapMemory(m_vmaAllocator, stagingAllocation);
+
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+    // Transizione a TRANSFER_DST
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = layerIndex;
+    barrier.subresourceRange.layerCount = 1;
+
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Copia
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = layerIndex;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    // Transizione indietro a SHADER_READ_ONLY
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    EndSingleTimeCommands(commandBuffer);
+
+    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingAllocation);
+}
+
+void RenderManager::UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic) {
+    if (m_albedoImage == VK_NULL_HANDLE || m_ormImage == VK_NULL_HANDLE) return;
+
+    // Aggiorna l'Albedo se non ci sono texture vere, altrimenti lascia la mappa originale intatta?
+    // Nel Block Maker vogliamo forzare il colore fallback per feedback visivo, se l'utente sposta lo slider!
+    UpdateTextureLayerSolidColor(m_albedoImage, layerIndex, 512, 512, glm::vec4(baseColor, 1.0f));
+
+    // Aggiorna ORM map (Ambient Occlusion = 1.0, Roughness, Metallic)
+    UpdateTextureLayerSolidColor(m_ormImage, layerIndex, 512, 512, glm::vec4(1.0f, roughness, metallic, 1.0f));
 }
 
 void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage vmaUsage, VkImage& image, VmaAllocation& imageAllocation) {

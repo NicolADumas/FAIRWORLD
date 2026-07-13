@@ -59,6 +59,8 @@ public:
     void Shutdown();
 
     void InitImGui(void* hwnd);
+    void UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIndex, uint32_t width, uint32_t height, const glm::vec4& color);
+    void UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic);
 
     VkInstance GetVulkanInstance() const { return m_instance; }
     VkPhysicalDevice GetPhysicalDevice() const { return m_physicalDevice; }
