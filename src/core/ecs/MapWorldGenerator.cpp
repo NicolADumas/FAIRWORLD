@@ -3,6 +3,7 @@
 #include "ForgeWorld.h"
 #include "../app/AssetManager.h"
 #include <iostream>
+#include "BiomeComponents.h"
 
 // Mock per PerlinNoise se non esiste ancora un header isolato
 namespace fw {
@@ -49,48 +50,32 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, ForgeW
             std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
             entt::entity chunkEnt = targetWorld.CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
             auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
+            // 1. Trova la regione dominante per questo chunk
+            uint8_t surfBlock = 1; // Grass fallback
+            uint8_t subBlock = 3;  // Dirt fallback
+            fw::MapRegionType regionType = fw::MapRegionType::Forest;
             
-            for (int x = 0; x < 16; ++x) {
-                for (int z = 0; z < 16; ++z) {
-                    float worldX = cx * 16.0f + x;
-                    float worldZ = cz * 16.0f + z;
-                    
-                    // 1. Trova la regione dominante per questo chunk
-                    uint8_t surfBlock = 1; // Grass fallback
-                    uint8_t subBlock = 3;  // Dirt fallback
-                    
-                    for (int i = (int)planet.regions.size() - 1; i >= 0; --i) {
-                        const auto& r = planet.regions[i];
-                        if (cx >= r.rectMin.x && cx <= r.rectMax.x && 
-                            cz >= r.rectMin.y && cz <= r.rectMax.y) {
-                            surfBlock = r.surfaceBlockId;
-                            subBlock = r.subsurfaceBlockId;
-                            break; // Prende l'ultima regione inserita (top z-index)
-                        }
-                    }
-                    
-                    // Semplice generazione procedurale
-                    float noise = (std::sin(worldX * 0.05f) * std::cos(worldZ * 0.05f)) * 10.0f;
-                    int height = 30 + (int)noise;
-                    
-                    int maxAllowedY = std::min(planet.maxY, 128);
-                    for (int y = planet.minY; y < maxAllowedY; ++y) {
-                        if (y < 0) continue; // safety
-                        
-                        if (y < height - 3) {
-                            chunk.blocks[x][y][z] = 2; // Stone (Core)
-                        } else if (y < height) {
-                            chunk.blocks[x][y][z] = subBlock;
-                        } else if (y == height) {
-                            chunk.blocks[x][y][z] = surfBlock;
-                        } else {
-                            chunk.blocks[x][y][z] = 0; // Air
-                        }
-                    }
+            for (int i = (int)planet.regions.size() - 1; i >= 0; --i) {
+                const auto& r = planet.regions[i];
+                if (cx >= r.rectMin.x && cx <= r.rectMax.x && 
+                    cz >= r.rectMin.y && cz <= r.rectMax.y) {
+                    surfBlock = r.surfaceBlockId;
+                    subBlock = r.subsurfaceBlockId;
+                    regionType = r.type;
+                    break; // Prende l'ultima regione inserita (top z-index)
                 }
             }
-            chunk.isGenerated = true; // Impedisce a ForgeWorld di sovrascrivere la mappa con noise procedurale!
-            targetWorld.MarkChunkDirty(chunkEnt);
+
+            // Inizializza i componenti ECS per la pipeline asincrona
+            fw::BiomeDataComponent biomeData;
+            biomeData.type = regionType;
+            biomeData.surfaceBlockId = surfBlock;
+            biomeData.subsurfaceBlockId = subBlock;
+            
+            targetWorld.GetRegistry().emplace<fw::BiomeDataComponent>(chunkEnt, biomeData);
+            targetWorld.GetRegistry().emplace<fw::TerrainGenTag>(chunkEnt);
+            
+            // NON markiamo come dirty ne' generato qui. Ci penseranno i sistemi ECS.
         }
     }
     

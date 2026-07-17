@@ -188,11 +188,13 @@ bool PlayState::Init() {
     registry.get<fw::PortalComponent>(portalB).targetPortal = portalA;
 
     // --- REGISTRAZIONE SISTEMI ECS ---
-    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // MUST BE FIRST!
-    m_systems.push_back(std::make_unique<fw::CameraSystem>());
-    m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>());
-    m_systems.push_back(std::make_unique<fw::PhysicsSystem>());
-
+    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // SALVA LO STATO PRECEDENTE
+    m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>()); // MODIFICA LO STATO (Fisica Input)
+    m_systems.push_back(std::make_unique<fw::CameraSystem>()); // AGGIORNA TELECAMERA
+    m_systems.push_back(std::make_unique<fw::PhysicsSystem>()); // AGGIORNA FISICA
+    
+    // Generiamo l'anteprima in VRAM per la sfera di Brush (se serve)
+    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(1, m_context);
     std::cout << "[PlayState] Generazione procedurale prato e montagne completata. Avvio ciclo di gioco...\n";
     return true;
 }

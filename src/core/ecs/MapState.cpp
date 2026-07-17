@@ -11,6 +11,8 @@
 #include "ForgeComponents.h"
 #include "SimulationManager.h"
 #include "SimDataLayer.h"
+#include "DeviceManager.h"
+#include "JobSystem.h"
 #include <imgui.h>
 #include <iostream>
 #include <algorithm>
@@ -20,6 +22,11 @@ MapState::MapState(SharedContext* context) : m_context(context) {
 }
 
 MapState::~MapState() {
+    std::cout << "[MapState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
+    if (m_context && m_context->jobSystem) {
+        m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano, evitando uso-dopo-rilascio
+        m_context->jobSystem->Initialize(); // Riaccende i thread per gli altri stati
+    }
     std::cout << "[MapState] Distrutto. Memoria isolata rilasciata.\n";
 }
 
@@ -37,6 +44,10 @@ bool MapState::Init() {
 }
 
 void MapState::Update(float dt) {
+    if (m_context && m_context->deviceManager) {
+        m_context->deviceManager->requireFreeCursor = true; // Impedisce al mouse di bloccarsi al centro
+    }
+
     if (!m_isBuilderMode) {
         // Logica Telecamera Orbitale per l'anteprima 3D
         ImGuiIO& io = ImGui::GetIO();
@@ -165,42 +176,27 @@ void MapState::DrawBuilderUI() {
     
     ImGui::Text("Regioni in %s: %d", currentPlanet.name.c_str(), (int)currentPlanet.regions.size());
     
-    // Strumenti di Disegno (Brush SimCity)
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "STRUMENTI SIMCITY");
+    // Strumenti di Disegno (Pennello Biomi)
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "STRUMENTI BIOMI");
     ImGui::Separator();
     
-    std::vector<const char*> zoneNames;
-    std::vector<uint8_t> zoneIds;
-    int currentListIndex = 0;
+    const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+    ImGui::Combo("Tipo Bioma", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
+    
+    ImGui::SliderInt("Dim. Pennello (Chunk)", &m_brushSize, 1, 10);
 
-    if (m_context->simManager) {
-        auto& zones = m_context->simManager->GetZoneRegistry().GetAllZones();
-        for (const auto& z : zones) {
-            if (z.id == 0 && z.name != "Nessuna (Cancella)") continue;
-            if (z.id > 0 && z.name == "Nessuna") continue; // Ignora le zone non inizializzate
-            
-            if (m_selectedZoneType == z.id) {
-                currentListIndex = (int)zoneNames.size();
-            }
-            
-            zoneNames.push_back(z.name.c_str());
-            zoneIds.push_back(z.id);
-        }
-    } else {
-        zoneNames.push_back("Nessuna (Manager offline)");
-        zoneIds.push_back(0);
+    ImGui::Spacing();
+    if (ImGui::Button("RIEMPI TUTTO CON OCEANO", ImVec2(-1, 30))) {
+        currentPlanet.regions.clear();
+        fw::MapRegion oceanRegion;
+        oceanRegion.rectMin = glm::ivec2(currentPlanet.minX, currentPlanet.minZ);
+        oceanRegion.rectMax = glm::ivec2(currentPlanet.maxX, currentPlanet.maxZ);
+        oceanRegion.type = fw::MapRegionType::Ocean;
+        oceanRegion.label = "Oceano Globale";
+        oceanRegion.surfaceBlockId = 4; // Assuming 4 is Water or Sand
+        oceanRegion.subsurfaceBlockId = 2; // Stone
+        currentPlanet.regions.push_back(oceanRegion);
     }
-    
-    if (ImGui::ListBox("Tipo Zona", &currentListIndex, zoneNames.data(), (int)zoneNames.size())) {
-        if (currentListIndex >= 0 && currentListIndex < zoneIds.size()) {
-            m_selectedZoneType = zoneIds[currentListIndex];
-        }
-    }
-    
-    const char* densityNames[] = { "Bassa", "Media", "Alta" };
-    ImGui::Combo("Densita'", &m_selectedDensity, densityNames, IM_ARRAYSIZE(densityNames));
-    
-    ImGui::SliderInt("Dimensione Pennello (Tile)", &m_brushSize, 1, 10);
     
     // Bottom Buttons
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 150.0f); // Spingi in basso
@@ -401,27 +397,31 @@ void MapState::DrawBuilderUI() {
             
             // Tasto Sinistro (senza CTRL): Dipingi (supporta anche il trascinamento)
             if (!io.KeyCtrl && (ImGui::IsItemClicked(ImGuiMouseButton_Left) || (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)))) {
-                if (m_context->simManager) {
-                    for (int z = bMinZ; z < bMaxZ; ++z) {
-                        for (int x = bMinX; x < bMaxX; ++x) {
-                            fw::Tile& tile = m_context->simManager->GetGlobalTile(x, z);
-                            tile.zone_type = static_cast<uint16_t>(m_selectedZoneType);
-                            tile.density = static_cast<uint16_t>(m_selectedDensity);
-                        }
-                    }
+                // Aggiungi una nuova regione quando dipingiamo (con rate limiting o su click per evitare troppe regioni)
+                static float paintTimer = 0.0f;
+                paintTimer += io.DeltaTime;
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || paintTimer > 0.1f) {
+                    fw::MapRegion newRegion;
+                    newRegion.rectMin = glm::ivec2(bMinX, bMinZ);
+                    newRegion.rectMax = glm::ivec2(bMaxX - 1, bMaxZ - 1);
+                    newRegion.type = static_cast<fw::MapRegionType>(m_paintRegionType);
+                    
+                    if (newRegion.type == fw::MapRegionType::Forest) { newRegion.label = "Foresta"; newRegion.surfaceBlockId = 1; newRegion.subsurfaceBlockId = 3; }
+                    else if (newRegion.type == fw::MapRegionType::Desert) { newRegion.label = "Deserto"; newRegion.surfaceBlockId = 6; newRegion.subsurfaceBlockId = 6; } // Sabbia (es. 6)
+                    else if (newRegion.type == fw::MapRegionType::Ocean) { newRegion.label = "Oceano"; newRegion.surfaceBlockId = 4; newRegion.subsurfaceBlockId = 2; } // Acqua (4)
+                    else if (newRegion.type == fw::MapRegionType::Volcano) { newRegion.label = "Vulcano"; newRegion.surfaceBlockId = 2; newRegion.subsurfaceBlockId = 2; } // Pietra
+                    else if (newRegion.type == fw::MapRegionType::Tundra) { newRegion.label = "Tundra"; newRegion.surfaceBlockId = 5; newRegion.subsurfaceBlockId = 3; } // Neve (5)
+                    else { newRegion.label = "Regione"; newRegion.surfaceBlockId = 1; }
+                    
+                    currentPlanet.regions.push_back(newRegion);
+                    paintTimer = 0.0f;
                 }
             }
             
-            // Tasto Destro: Cancella (Imposta zone_type a 0)
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right) || (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Right))) {
-                if (m_context->simManager) {
-                    for (int z = bMinZ; z < bMaxZ; ++z) {
-                        for (int x = bMinX; x < bMaxX; ++x) {
-                            fw::Tile& tile = m_context->simManager->GetGlobalTile(x, z);
-                            tile.zone_type = 0; // 0 = Nessuna zona
-                            tile.density = 0;
-                        }
-                    }
+            // Tasto Destro: Cancella l'ultima regione o svuota
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                if (!currentPlanet.regions.empty()) {
+                    currentPlanet.regions.pop_back();
                 }
             }
         }
@@ -487,56 +487,17 @@ void MapState::CompileAndGenerate() {
     
     // BUG FIX: Agganciamo il nuovo ForgeWorld al motore di rendering ORA, prima di generare!
     m_context->activeRegistry = &m_previewWorld->GetRegistry();
-    m_context->isForgeMode = true; 
+    m_context->forgeWorld = m_previewWorld.get(); // FONDAMENTALE PER RENDERFAIRWORLD
+    m_context->isForgeMode = false; // Vogliamo la grafica bella di Fairworld!
     
-    // 2. Compila i dati 2D in Voxel 3D (Fase di Voxelizzazione)
-    const auto& currentPlanet = m_document.planets[m_activePlanetIndex];
-    for (int cx = currentPlanet.minX; cx <= currentPlanet.maxX; ++cx) {
-        for (int cz = currentPlanet.minZ; cz <= currentPlanet.maxZ; ++cz) {
-            std::string chunkName = "Chunk_" + std::to_string(cx) + "_" + std::to_string(cz);
-            
-            // Crea l'entita' nel previewWorld
-            entt::entity chunkEntity = m_previewWorld->CreateChunkEntity(chunkName, fw::Vec3{cx * 16.0f, 0.0f, cz * 16.0f});
-            auto& chunk = m_previewWorld->GetRegistry().get<fw::VoxelChunkComponent>(chunkEntity);
-            
-            // Identifica quale regione copre questo specifico chunk 1x1
-            const fw::MapRegion* activeRegion = nullptr;
-            for (int i = (int)currentPlanet.regions.size() - 1; i >= 0; --i) {
-                const auto& r = currentPlanet.regions[i];
-                if (cx >= r.rectMin.x && cx < r.rectMax.x && cz >= r.rectMin.y && cz < r.rectMax.y) {
-                    activeRegion = &r;
-                    break;
-                }
-            }
-            
-            uint8_t surfaceBlock = activeRegion ? activeRegion->surfaceBlockId : 1; // 1 = Grass
-            uint8_t subsurfaceBlock = activeRegion ? activeRegion->subsurfaceBlockId : 3; // 3 = Dirt
-            
-            // Riempi i voxel proceduralmente
-            for (int x = 0; x < 16; ++x) {
-                for (int z = 0; z < 16; ++z) {
-                    int height = 20; // Piattaforma base
-                    
-                    for (int y = 0; y < height; ++y) {
-                        if (y == height - 1) chunk.blocks[x][y][z] = surfaceBlock;
-                        else if (y > height - 4) chunk.blocks[x][y][z] = subsurfaceBlock;
-                        else chunk.blocks[x][y][z] = 2; // 2 = Stone
-                        chunk.light[x][y][z] = 255;
-                    }
-                    for (int y = height; y < 128; ++y) {
-                        chunk.blocks[x][y][z] = 0; // Aria
-                        chunk.light[x][y][z] = 255;
-                    }
-                }
-            }
-            
-            // Blocca il chunk in modo che ForgeWorld non sovrascriva con il suo noise generico
-            chunk.isGenerated = true;
-        }
-    }
+    // 2. Compila i dati 2D in Voxel 3D usando il MapWorldGenerator
+    fw::MapWorldGenerator::Generate(m_document, m_activePlanetIndex, *m_previewWorld, m_context->jobSystem);
+
     
     // 3. Passa alla visuale 3D
     m_isBuilderMode = false; 
+
+    const auto& currentPlanet = m_document.planets[m_activePlanetIndex];
 
     // Posiziona la telecamera al centro della mappa, un po' in alto
     float midX = ((currentPlanet.maxX + currentPlanet.minX) / 2.0f) * 16.0f;

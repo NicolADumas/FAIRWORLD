@@ -11,6 +11,7 @@
 #include "MobManager.h"
 #include "SharedContext.h"
 #include "TimeManager.h"
+#include "StateManager.h"
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
 #include <algorithm>
@@ -1340,7 +1341,7 @@ struct CameraFrustum {
 };
 
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
-void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
+void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player, fw::ForgeWorld* overrideWorld) {
     // --- SKY PASS ---
     if (m_skyPipeline != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline);
@@ -1406,15 +1407,15 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         }
     }
 
-    // --- DISEGNO CHUNK FORGEWORLD (Nuovo mondo procedurale in PlayState) ---
-    if (context && context->forgeWorld && m_globalVramBuffer != VK_NULL_HANDLE) {
-        // Le mesh del ForgeWorld usano PBR e push constants dedicate
+    // --- FAIRWORLD INSTANCED MESHER ---
+    if (m_forgePipeline != VK_NULL_HANDLE && context && (context->forgeWorld || overrideWorld)) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
         
         if (!m_forgeDescriptorSets.empty() && m_forgeDescriptorSets[m_currentFrame] != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_forgeDescriptorSets[m_currentFrame], 0, nullptr);
         }
-        
+
+        // Viewport e Scissor dinamici
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
@@ -1425,14 +1426,15 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         vkCmdSetViewport(cmd, 0, 1, &viewport);
 
         VkRect2D scissor{};
-        scissor.offset = {0, 0};
+        scissor.offset = { 0, 0 };
         scissor.extent = m_swapchainExtent;
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
         ForgePushConstantData pcData{};
         VkDeviceSize offsets[] = { 0 };
 
-        auto& registry = context->forgeWorld->GetRegistry();
+        fw::ForgeWorld* activeWorld = overrideWorld ? overrideWorld : context->forgeWorld;
+        auto& registry = activeWorld->GetRegistry();
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
         // ATTENZIONE: In RenderFairworld viewMatrix è SOLO la View matrix!
@@ -1625,7 +1627,11 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         glm::vec3 cameraPos = glm::vec3(invView[3]);
         RenderForge(m_commandBuffers[m_currentFrame], viewProjMatrix, cameraPos, context);
     } else {
-        RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+        if (context && context->stateManager && context->stateManager->GetCurrentState()) {
+            if (context->engine->GetGameMode() == GameMode::Play || context->engine->GetGameMode() == GameMode::PhysicsLab || context->engine->GetGameMode() == GameMode::Map || context->engine->GetGameMode() == GameMode::Dev) {
+                RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+            }
+        }
     }
 
     ImDrawData* draw_data = ImGui::GetDrawData();
@@ -2692,9 +2698,10 @@ void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w
     EndSingleTimeCommands(commandBuffer);
 }
 
-void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height) {
-    if (m_albedoImage == VK_NULL_HANDLE) return; // Texture PBR non ancora caricate
+void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height, PBRTextureType type) {
+    if (m_albedoImage == VK_NULL_HANDLE || m_normalImage == VK_NULL_HANDLE || m_ormImage == VK_NULL_HANDLE) return; // Texture PBR non ancora caricate
     VkDeviceSize imageSize = width * height * 4;
+
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingBufferMemory;
@@ -2705,8 +2712,15 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     memcpy(data, pixelData, static_cast<size_t>(imageSize));
     vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
 
-    // Aggiorna il layer nell'albedo array
-    TransitionImageLayout(m_albedoImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 16);
+    VkImage targetImage = VK_NULL_HANDLE;
+    if (type == PBRTextureType::ALBEDO) targetImage = m_albedoImage;
+    else if (type == PBRTextureType::NORMAL) targetImage = m_normalImage;
+    else if (type == PBRTextureType::ORM) targetImage = m_ormImage;
+
+    if (targetImage == VK_NULL_HANDLE) return;
+
+    // Aggiorna il layer nell'array
+    TransitionImageLayout(targetImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 256);
 
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
@@ -2720,15 +2734,16 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     region.imageSubresource.baseArrayLayer = layerIndex;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = { std::min(width, 16u), std::min(height, 16u), 1 };
-
-    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, m_albedoImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    region.imageExtent = {width, height, 1};
+    
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, targetImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     EndSingleTimeCommands(commandBuffer);
 
-    TransitionImageLayout(m_albedoImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 16);
+    // Transizione indietro a SHADER_READ_ONLY
+    TransitionImageLayout(targetImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 256);
 
     vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
-    std::cout << "[VULKAN] Albedo Array Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
+    std::cout << "[VULKAN] Texture Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
 }
 
 void RenderManager::LoadBlockTextures(const std::string& baseDir, const std::vector<BlockDef>& blocks) {
@@ -2747,7 +2762,7 @@ void RenderManager::LoadBlockTextures(const std::string& baseDir, const std::vec
         unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &channels, 4);
         if (data) {
             std::cout << "[VULKAN] Caricamento texture '" << fullPath << "' per il Layer " << block.id << " (" << block.name << ")" << std::endl;
-            UpdateTextureLayer((uint32_t)block.id, data, (uint32_t)width, (uint32_t)height);
+            UpdateTextureLayer((uint32_t)block.id, data, (uint32_t)width, (uint32_t)height, PBRTextureType::ALBEDO);
             stbi_image_free(data);
         } else {
             std::cout << "[VULKAN] Info: Impossibile caricare la texture '" << fullPath << "' per " << block.name << ". Rimarrà bianca." << std::endl;
@@ -2755,13 +2770,13 @@ void RenderManager::LoadBlockTextures(const std::string& baseDir, const std::vec
     }
 }
 
-bool RenderManager::LoadTextureFromFile(const std::string& filePath, uint32_t layerIndex) {
+bool RenderManager::LoadPBRTextureFromFile(const std::string& filePath, uint32_t layerIndex, PBRTextureType type) {
     int width, height, channels;
     unsigned char* data = stbi_load(filePath.c_str(), &width, &height, &channels, 4);
     if (data) {
-        UpdateTextureLayer(layerIndex, data, (uint32_t)width, (uint32_t)height);
+        UpdateTextureLayer(layerIndex, data, (uint32_t)width, (uint32_t)height, type);
         stbi_image_free(data);
-        std::cout << "[VULKAN] Texture caricata da file '" << filePath << "' sul Layer " << layerIndex << std::endl;
+        std::cout << "[VULKAN] PBR Texture caricata da file '" << filePath << "' sul Layer " << layerIndex << std::endl;
         return true;
     }
     return false;

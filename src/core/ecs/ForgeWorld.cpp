@@ -21,6 +21,7 @@
 #include "Systems.h"
 #include <cmath>
 #include <vector>
+#include "BiomeSystems.h"
 
 namespace fw {
 
@@ -609,6 +610,10 @@ void ForgeWorld::Update(float dt) {
     // ECS Systems: Iterazione iper-veloce O(1) cache-friendly
     // [NOTA FORGE]: Chunk Streaming infinito e Portali rimossi. 
     // La Forge opera su un'area di lavoro statica o guidata dagli strumenti, non dallo spostamento del giocatore.
+    
+    // --- PIPELINE GENERAZIONE BIOMI ASINCRONA ---
+    fw::BiomeTerrainSystem::Update(m_registry, 15); // Max 15 chunk al frame
+    fw::BiomeDecoratorSystem::Update(m_registry, 15);
 
     // 3. Chunk System: Rileva i chunk "Dirty" e innesca la rigenerazione in background
     if (m_context && m_context->jobSystem) {

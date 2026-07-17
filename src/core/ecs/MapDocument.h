@@ -46,12 +46,12 @@ struct PlanetMap {
     std::vector<MapRegion> regions;
     
     // Parametri DimensionsManager per Rigid Grid Map
-    int32_t minX = -6;
-    int32_t maxX = 6;
+    int32_t minX = -16;
+    int32_t maxX = 16;
     int32_t minY = 0;
     int32_t maxY = 128;
-    int32_t minZ = -6;
-    int32_t maxZ = 6;
+    int32_t minZ = -16;
+    int32_t maxZ = 16;
     std::vector<ChunkDataExport> chunkOverrides; // Solo i chunk custom
 };
 

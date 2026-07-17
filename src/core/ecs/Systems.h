@@ -21,4 +21,5 @@ namespace fw {
     public:
         void Update(entt::registry& registry, SharedContext* context, float dt) override;
     };
+
 }

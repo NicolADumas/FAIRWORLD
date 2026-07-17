@@ -34,8 +34,8 @@ void HubState::Update(float dt) {
     if (m_context->engine->GetCurrentState() == GameState::PLAYING) {
         std::cout << "[HubState] L'utente ha premuto 'Gioca' nell'interfaccia. Innesco transizione...\n";
         
-        // 1. Iniettiamo la cartuccia Data-Driven
-        m_context->targetGameJsonPath = "projects/game_config.json";
+        // 1. Carichiamo direttamente la mappa del Map Editor
+        m_context->targetGameJsonPath = "saves/map/world_map.json";
         
         // 2. Chiamiamo il ChangeState (che userà unique_ptr direttamente)
         m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));

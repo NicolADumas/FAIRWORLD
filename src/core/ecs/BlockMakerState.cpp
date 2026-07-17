@@ -10,6 +10,7 @@
 #include "AsyncInput.h"
 #include "Systems.h"
 #include "BlockRegistry.h"
+#include "DeviceManager.h"
 #include <shellapi.h>  // ShellExecuteA - apre cartelle/file con l'OS
 #include "MaterialRegistry.h"
 #include "VulkanDmaManager.h"
@@ -128,9 +129,13 @@ bool BlockMakerState::Init() {
 void BlockMakerState::Update(float dt) {
     if (!m_context) return;
 
-    m_context->isForgeMode = true; // Use forge rendering pipeline
+    m_context->isForgeMode = false; // Usa RenderFairworld invece di RenderForge
     m_context->isBlockMakerMode = true; // Isolate rendering to Void Room
     m_context->previewLightDir = m_previewLightDir;
+    
+    if (m_context->deviceManager) {
+        m_context->deviceManager->requireFreeCursor = true; // Impedisce che il cursore scompaia cliccando sullo schermo
+    }
 
     // Handle Input for Orbital Camera via ImGui
     ImGuiIO& io = ImGui::GetIO();
@@ -174,6 +179,10 @@ void BlockMakerState::Update(float dt) {
     // Run local systems
     for (auto& sys : m_systems) {
         sys->Update(m_registry, m_context, dt);
+    }
+
+    if (m_context->forgeWorld) {
+        m_context->forgeWorld->Update(dt);
     }
 
     if (m_saveMessageTimer > 0.0f) {
@@ -231,6 +240,7 @@ void BlockMakerState::UpdatePreviewMesh() {
     if (!m_context || !m_context->forgeWorld || !m_context->blockRegistry) return;
     
     auto previewMesh = fw::MeshGenerators::MakeCube(1.0f);
+    previewMesh.type = fw::MeshType::Chunk; // RenderFairworld disegna solo Chunk o Prefab
     previewMesh.colorOverride[3] = 1.0f; // Enable color override? Wait, the shader uses colorOverride only if useColorOverride is set. Let's just set the vertex colors directly.
     
     fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
@@ -368,7 +378,7 @@ void BlockMakerState::DrawUI() {
                 }
                 ImGui::Spacing();
                 
-                auto drawTextureField = [&](const char* label, std::string& pathRef, const std::string& typeSuffix) {
+                auto drawTextureField = [&](const char* label, std::string& pathRef, const std::string& typeSuffix, RenderManager::PBRTextureType pbrType) {
                     char buf[256];
                     strncpy(buf, pathRef.c_str(), sizeof(buf));
                     
@@ -388,6 +398,11 @@ void BlockMakerState::DrawUI() {
                             pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
                             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                             
+                            // Aggiorna istantaneamente la GPU con la nuova texture!
+                            if (m_context->engine && m_context->engine->GetRenderManager()) {
+                                m_context->engine->GetRenderManager()->LoadPBRTextureFromFile(pathRef, m_selectedBlockId, pbrType);
+                            }
+                            
                             m_copyProgress = 1.0f;
                             m_saveMessageTimer = 3.0f;
                         }
@@ -396,9 +411,9 @@ void BlockMakerState::DrawUI() {
                     ImGui::Text("%s", label);
                 };
 
-                drawTextureField("Albedo Map", mat.albedoPath, "albedo");
-                drawTextureField("Normal Map", mat.normalPath, "normal");
-                drawTextureField("ORM Map (Occlusion, Roughness, Metallic)", mat.ormPath, "orm");
+                drawTextureField("Albedo Map", mat.albedoPath, "albedo", RenderManager::PBRTextureType::ALBEDO);
+                drawTextureField("Normal Map", mat.normalPath, "normal", RenderManager::PBRTextureType::NORMAL);
+                drawTextureField("ORM Map (Occlusion, Roughness, Metallic)", mat.ormPath, "orm", RenderManager::PBRTextureType::ORM);
                 
                 // Barra di progresso simulata / Feedback visivo
                 if (m_isCopying) {

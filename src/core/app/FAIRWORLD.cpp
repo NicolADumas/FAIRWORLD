@@ -231,7 +231,7 @@ bool FairWorldEngine::Init() {
     
     m_renderManager->LoadAllMobMeshes(m_assets);
     // Pre-carica il preset 1 per il blocco custom (Layer 4) se presente su disco
-    m_renderManager->LoadTextureFromFile("assets/textures/custom1.png", 4);
+    m_renderManager->LoadPBRTextureFromFile("assets/textures/custom1.png", 4, RenderManager::PBRTextureType::ALBEDO);
 
     // Posiziona la telecamera sopra il pavimento al centro del mondo
                 
@@ -1244,7 +1244,7 @@ void FairWorldEngine::Render() {
                     
                     if (ImGui::Button(btnLabel, ImVec2(52, 40))) {
                         activePreset = i;
-                        m_renderManager->LoadTextureFromFile(path, 4);
+                        m_renderManager->LoadPBRTextureFromFile(path, 4, RenderManager::PBRTextureType::ALBEDO);
                     }
                     ImGui::PopStyleColor(2);
                     

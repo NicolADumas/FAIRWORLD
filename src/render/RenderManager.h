@@ -14,6 +14,10 @@
 class XrManager;
 struct BlockDef;
 
+namespace fw {
+    class ForgeWorld;
+}
+
 struct VulkanTextureArray {
     VkImage image = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -206,9 +210,15 @@ public:
     uint32_t GetWindowHeight() const { return m_swapchainExtent.height; }
 
     // Chiamata dall'Editor per aggiornare la texture in real-time
-    void UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height);
+    enum class PBRTextureType {
+        ALBEDO,
+        NORMAL,
+        ORM
+    };
+
+    void UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height, PBRTextureType type);
     void LoadBlockTextures(const std::string& baseDir, const std::vector<BlockDef>& blocks);
-    bool LoadTextureFromFile(const std::string& filePath, uint32_t layerIndex);
+    bool LoadPBRTextureFromFile(const std::string& filePath, uint32_t layerIndex, PBRTextureType type);
 
     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
     struct VulkanChunkBuffer {
@@ -334,7 +344,7 @@ public:
     void InvalidateForgeCache();
 
 private:
-    void RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, struct SharedContext* context, class AssetManager* assets, class MobManager* mobManager, class Player* player);
+    void RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player, fw::ForgeWorld* overrideWorld = nullptr);
 
 public:
     // Metodo da chiamare nel Game Loop

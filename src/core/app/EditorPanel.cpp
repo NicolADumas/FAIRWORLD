@@ -227,7 +227,7 @@ void EditorPanel::DrawTexturePainterTab(AssetManager& assets, RenderManager* ren
         assets.SaveTexturePNG(filename, 16, 16, rgba);
         // 2. Aggiorna il Texture Array sulla GPU in tempo reale!
         if (renderer) {
-            renderer->UpdateTextureLayer((uint32_t)targetLayer, rgba, 16, 16);
+            renderer->UpdateTextureLayer((uint32_t)targetLayer, rgba, 16, 16, RenderManager::PBRTextureType::ALBEDO);
         }
     }
     ImGui::EndChild();
