@@ -41,13 +41,27 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, ForgeW
             std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
             entt::entity chunkEnt = targetWorld.CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
             auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
-            // 1. Nessuna assegnazione rigida di blocchi qui.
-            // BiomeSystems deciderà il bioma blocco per blocco basandosi su Temperatura e Umidità.
+            // Cerca se il chunk appartiene a una regione disegnata
+            const MapRegion* activeRegion = nullptr;
+            for (auto it = planet.regions.rbegin(); it != planet.regions.rend(); ++it) {
+                if (cx >= it->rectMin.x && cx <= it->rectMax.x && cz >= it->rectMin.y && cz <= it->rectMax.y) {
+                    activeRegion = &(*it);
+                    break;
+                }
+            }
+
             fw::BiomeDataComponent biomeData;
-            // Lasciamo i valori di default, verranno sovrascritti o ignorati.
-            biomeData.type = fw::MapRegionType::Forest; 
-            biomeData.surfaceBlockId = 1;
-            biomeData.subsurfaceBlockId = 3;
+            if (activeRegion) {
+                biomeData.type = activeRegion->type;
+                biomeData.surfaceBlockId = activeRegion->surfaceBlockId;
+                biomeData.subsurfaceBlockId = activeRegion->subsurfaceBlockId;
+                biomeData.isCustomMapped = true;
+            } else {
+                biomeData.type = fw::MapRegionType::Forest; 
+                biomeData.surfaceBlockId = 1;
+                biomeData.subsurfaceBlockId = 3;
+                biomeData.isCustomMapped = false;
+            }
             
             targetWorld.GetRegistry().emplace<fw::BiomeDataComponent>(chunkEnt, biomeData);
             targetWorld.GetRegistry().emplace<fw::TerrainGenTag>(chunkEnt);

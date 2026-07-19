@@ -19,6 +19,7 @@
 #include "AsyncInput.h"
 #include "MapDocument.h"
 #include "MapWorldGenerator.h"
+#include "JobSystem.h"
 #include <imgui.h>
 
 using json = nlohmann::json;
@@ -28,6 +29,16 @@ PlayState::PlayState(SharedContext* context) : m_context(context) {
 }
 
 PlayState::~PlayState() {
+    std::cout << "[PlayState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
+    if (m_context && m_context->jobSystem) {
+        m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano
+        m_context->jobSystem->Initialize(); // Riaccende i thread
+    }
+    
+    if (m_context && m_context->forgeWorld) {
+        m_context->forgeWorld->ClearWorld(true); // Salva in saves/world e svuota
+    }
+    
     std::cout << "[PlayState] Distrutto.\n";
 }
 
@@ -75,19 +86,10 @@ bool PlayState::Init() {
     // === CARICAMENTO CONFIGURAZIONE DATA-DRIVEN (JSON) ===
     std::string configPath = m_context->targetGameJsonPath;
     
-    // CONTROLLO CARTUCCIA JSON DA MAP BUILDER
+    // CONTROLLO CARTUCCIA JSON DA MAP BUILDER ritardato dopo ClearWorld
+    bool hasCustomMap = false;
     if (!configPath.empty() && configPath.find("world_map.json") != std::string::npos) {
-        std::cout << "[PlayState] Cartuccia Mappa rilevata: " << configPath << "\n";
-        
-        fw::MapDocument doc;
-        if (doc.LoadJSON(configPath)) {
-            std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
-            // Genera il mondo effettivo su cui il giocatore interagirà (Indice 0 = pianeta principale per ora)
-            fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
-        } else {
-            std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
-            configPath = "";
-        }
+        hasCustomMap = true;
     } 
     
     json data;
@@ -151,9 +153,21 @@ bool PlayState::Init() {
 
     auto& registry = m_context->forgeWorld->GetRegistry();
 
+    if (hasCustomMap) {
+        std::cout << "[PlayState] Cartuccia Mappa rilevata: " << configPath << "\n";
+        fw::MapDocument doc;
+        if (doc.LoadJSON(configPath)) {
+            std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
+            fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
+        } else {
+            std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
+            hasCustomMap = false;
+        }
+    }
+
     // Generazione procedurale di un prato circondato da montagne (11x11 chunk)
     // Eseguito SOLO SE NON c'è una cartuccia mappa custom caricata.
-    if (configPath.empty() || configPath.find("world_map.json") == std::string::npos) {
+    if (!hasCustomMap) {
         int chunkRadius = 5; // Enorme prato
         for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
             for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {

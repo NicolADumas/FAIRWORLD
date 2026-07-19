@@ -242,11 +242,15 @@ void ForgeWorld::ClearWorld(bool saveToDisk) {
     
     // 2. Rimuovi le entità dalla RAM per fare spazio al nuovo stato
     for (auto& pair : m_activeChunks) {
-        if (m_registry.valid(pair.second)) {
-            m_registry.destroy(pair.second);
-        }
+        DestroyEntity(pair.second); // Usa DestroyEntity per liberare anche la VRAM
     }
     m_activeChunks.clear();
+    
+    // 3. Svuota anche la coda dei mesh asincroni per evitare che vecchi chunk appaiano dopo
+    {
+        std::lock_guard<std::mutex> lock(m_deferredMutex);
+        m_deferredMeshes.clear();
+    }
 }
 
 

@@ -46,34 +46,42 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame)
                 int height = (int)baseHeight;
 
                 // Determinazione del Bioma (Whittaker diagram semplificato)
-                fw::MapRegionType colBiome = fw::MapRegionType::Forest;
-                uint8_t surfaceBlock = 1; // Grass
-                uint8_t subsurfaceBlock = 2; // Dirt
+                fw::MapRegionType colBiome = biome.type;
+                uint8_t surfaceBlock = biome.surfaceBlockId;
+                uint8_t subsurfaceBlock = biome.subsurfaceBlockId;
 
-                if (baseHeight <= 16.0f) {
-                    // Sotto o al livello del mare: Oceano / Spiaggia
-                    colBiome = fw::MapRegionType::Ocean;
-                    surfaceBlock = 8; // Sand (assumiamo 8 = Sand, se non c'è userà fallback)
-                    subsurfaceBlock = 3; // Stone o Sand
-                } else {
-                    if (tempVal > 0.6f) {
-                        if (humVal < 0.4f) {
-                            colBiome = fw::MapRegionType::Desert;
-                            surfaceBlock = 8; // Sand
-                            subsurfaceBlock = 8;
+                if (!biome.isCustomMapped) {
+                    if (baseHeight <= 16.0f) {
+                        // Sotto o al livello del mare: Oceano / Spiaggia
+                        colBiome = fw::MapRegionType::Ocean;
+                        surfaceBlock = 8; // Sand (assumiamo 8 = Sand, se non c'è userà fallback)
+                        subsurfaceBlock = 3; // Stone o Sand
+                    } else {
+                        if (tempVal > 0.6f) {
+                            if (humVal < 0.4f) {
+                                colBiome = fw::MapRegionType::Desert;
+                                surfaceBlock = 8; // Sand
+                                subsurfaceBlock = 8;
+                            } else {
+                                colBiome = fw::MapRegionType::Forest; // Jungle (ma usiamo Forest per ora)
+                                surfaceBlock = 1;
+                                subsurfaceBlock = 2;
+                            }
+                        } else if (tempVal < 0.35f) {
+                            colBiome = fw::MapRegionType::Tundra;
+                            surfaceBlock = 9; // Snow (assumiamo 9 = Snow)
+                            subsurfaceBlock = 3; // Stone o frozen dirt
                         } else {
-                            colBiome = fw::MapRegionType::Forest; // Jungle (ma usiamo Forest per ora)
+                            colBiome = fw::MapRegionType::Forest;
                             surfaceBlock = 1;
                             subsurfaceBlock = 2;
                         }
-                    } else if (tempVal < 0.35f) {
-                        colBiome = fw::MapRegionType::Tundra;
-                        surfaceBlock = 9; // Snow (assumiamo 9 = Snow)
-                        subsurfaceBlock = 3; // Stone o frozen dirt
-                    } else {
-                        colBiome = fw::MapRegionType::Forest;
-                        surfaceBlock = 1;
-                        subsurfaceBlock = 2;
+                    }
+                } else {
+                    // Se la regione e' specificamente dipinta come Oceano, forza l'altezza ad essere sotto il livello del mare
+                    if (colBiome == fw::MapRegionType::Ocean) {
+                        baseHeight = 10.0f + (terrainVal * 5.0f); // Abbassa il fondale oceanico
+                        height = (int)baseHeight;
                     }
                 }
                 

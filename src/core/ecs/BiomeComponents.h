@@ -12,6 +12,7 @@ struct BiomeDataComponent {
     uint8_t subsurfaceBlockId = 3;
     float temperature = 0.5f;
     float humidity = 0.5f;
+    bool isCustomMapped = false;
 };
 
 // Tag Component: Indica che il chunk ha bisogno di generare il terreno base (roccia, terra, acqua)
