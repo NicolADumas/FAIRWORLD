@@ -446,7 +446,15 @@ void MapState::DrawRuntimeUI() {
     ImGui::Separator();
     
     if (ImGui::Button("TORNA AL BUILDER 2D", ImVec2(-1, 30))) {
-        m_previewWorld.reset(); // Distrugge l'universo di prova per liberare RAM/VRAM
+        // IMPORTANTE: prima di distruggere il mondo, azzera i puntatori nel context
+        // per evitare dangling pointer crash al prossimo frame di rendering
+        m_context->forgeWorld = nullptr;
+        m_context->activeRegistry = nullptr;
+        m_context->isForgeMode = false;
+        if (m_context->engine) {
+            m_context->engine->SetGameMode(GameMode::Hub); // Evita RenderFairworld col mondo distrutto
+        }
+        m_previewWorld.reset(); // Ora possiamo distruggere il mondo in sicurezza
         m_isBuilderMode = true;
     }
     
@@ -477,6 +485,12 @@ void MapState::DrawRuntimeUI() {
 void MapState::CompileAndGenerate() {
     std::cout << "[MapState] Inizio compilazione e generazione voxel per mappa piatta...\n";
     
+    // 0. Se esiste già un mondo precedente, prima pulisci i puntatori nel context
+    if (m_previewWorld) {
+        m_context->forgeWorld = nullptr;
+        m_context->activeRegistry = nullptr;
+    }
+
     // 1. Alloca il mondo di collaudo e resettalo se esisteva gia'
     m_previewWorld = std::make_unique<fw::ForgeWorld>();
     m_previewWorld->Initialize(m_context);
@@ -485,24 +499,32 @@ void MapState::CompileAndGenerate() {
     m_lodSystem.SetPlanetRadius(0.0f);
     m_planetRootNodes.clear();
     
-    // BUG FIX: Agganciamo il nuovo ForgeWorld al motore di rendering ORA, prima di generare!
+    // Agganciamo il nuovo ForgeWorld al motore di rendering ORA, prima di generare!
     m_context->activeRegistry = &m_previewWorld->GetRegistry();
     m_context->forgeWorld = m_previewWorld.get(); // FONDAMENTALE PER RENDERFAIRWORLD
-    m_context->isForgeMode = false; // Vogliamo la grafica bella di Fairworld!
+    m_context->isForgeMode = false;
+    
+    // Imposta il GameMode a Map cosi' RenderFairworld viene chiamato correttamente
+    if (m_context->engine) {
+        m_context->engine->SetGameMode(GameMode::Map);
+    }
     
     // 2. Compila i dati 2D in Voxel 3D usando il MapWorldGenerator
     fw::MapWorldGenerator::Generate(m_document, m_activePlanetIndex, *m_previewWorld, m_context->jobSystem);
 
-    
     // 3. Passa alla visuale 3D
     m_isBuilderMode = false; 
 
     const auto& currentPlanet = m_document.planets[m_activePlanetIndex];
 
-    // Posiziona la telecamera al centro della mappa, un po' in alto
-    float midX = ((currentPlanet.maxX + currentPlanet.minX) / 2.0f) * 16.0f;
-    float midZ = ((currentPlanet.maxZ + currentPlanet.minZ) / 2.0f) * 16.0f;
-    m_orbitDistance = std::max((currentPlanet.maxX - currentPlanet.minX) * 10.0f, 150.0f);
+    // Posiziona la telecamera al centro della mappa generata
+    float midX = ((float)(currentPlanet.maxX + currentPlanet.minX) * 0.5f) * 16.0f;
+    float midZ = ((float)(currentPlanet.maxZ + currentPlanet.minZ) * 0.5f) * 16.0f;
+    float midY = ((float)(currentPlanet.maxY + currentPlanet.minY) * 0.5f);
+    m_orbitTarget = glm::vec3(midX, midY, midZ); // FONDAMENTALE: punta la camera al centro!
+    m_orbitDistance = std::max((float)(currentPlanet.maxX - currentPlanet.minX) * 12.0f, 200.0f);
     m_orbitPitch = 45.0f;
     m_orbitYaw = 45.0f;
+
+    std::cout << "[MapState] Anteprima generata! Camera al centro: (" << midX << ", " << midY << ", " << midZ << ")\n";
 }

@@ -180,7 +180,7 @@ bool PlayState::Init() {
     auto& transB = registry.emplace<fw::TransformComponent>(portalB);
     transB.location = fw::Vec3{30.0f, 52.0f, 30.0f};
     transB.scale = fw::Vec3{2.0f, 3.0f, 1.0f};
-    transB.rotation = fw::Vec3{0.0f, 180.0f, 0.0f};
+    transB.rotation = fw::Quat::angleAxis(glm::radians(180.0f), {0.0f, 1.0f, 0.0f});
     registry.emplace<fw::VolumeComponent>(portalB, 3.0f);
     
     // Colleghiamoli tra loro!

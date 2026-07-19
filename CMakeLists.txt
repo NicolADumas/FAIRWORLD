@@ -121,4 +121,4 @@ target_include_directories(Module_Sculpting PRIVATE src/core src/core/ecs src/co
 target_include_directories(Module_GeometryNodes PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
 
 # Trigger CMake re-generation (Systems.cpp aggiunto)
- 
+# Trigger CMake re-generation for VulkanMemory.cpp

@@ -29,6 +29,17 @@ ForgeState::ForgeState(SharedContext* context) : m_context(context) {
 
 ForgeState::~ForgeState() {
     std::cout << "[ForgeState] Distrutto.\n";
+    // Ripristina il ForgeWorld precedente nel context e rilascia il mondo privato
+    if (m_context) {
+        // Salva il workspace Forge prima di uscire
+        if (m_ownedForgeWorld) {
+            m_ownedForgeWorld->SetSaveDirectory("saves/forge");
+            m_ownedForgeWorld->ClearWorld(true); // Salva le sculture correnti
+        }
+        m_context->forgeWorld = m_previousForgeWorld; // Ripristina il mondo precedente
+        m_context->isForgeMode = false;
+    }
+    m_ownedForgeWorld.reset(); // Libera il ForgeWorld privato
 }
 
 bool ForgeState::Init() {
@@ -44,7 +55,6 @@ bool ForgeState::Init() {
     }
     
     if (!m_context->vramAllocator) {
-        // Alloca un "VRAM monolite" logico da 512MB per i Chunk
         m_context->vramAllocator = new fw::VramSlabAllocator(512 * 1024 * 1024);
     }
     
@@ -66,9 +76,7 @@ bool ForgeState::Init() {
     }
     
     std::cout << "[ForgeState] Inizializzazione ECS per Arcball-Cam...\n";
-    // Togliamo il GameMode::Dev per sbloccare il mouse
     m_context->engine->SetGameMode(GameMode::Play);
-    // Ma chiediamo a DeviceManager un cursore libero
     m_context->deviceManager->requireFreeCursor = true;
     
     auto cameraEntity = m_registry.create();
@@ -79,19 +87,19 @@ bool ForgeState::Init() {
     cam.yaw   = -90.0f;
     cam.pitch =   0.0f;
     
-    // In Forge usiamo solo la Camera, niente PlayerMovementSystem
-    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // MUST BE FIRST per salvare il prev_state
+    m_systems.push_back(std::make_unique<fw::CameraSyncSystem>());
     m_systems.push_back(std::make_unique<fw::CameraSystem>());
 
-    std::cout << "[ForgeState] (ForgeWorld è ora globale e persistente in SharedContext)\n";
-    
-    // Assicuriamoci che il mondo sia pulito da altri stati (es. PlayState)
-    if (m_context && m_context->forgeWorld) {
-        // La Forge usa la sua directory separata — le sculture non sovrascrivono mai il mondo di gioco!
-        m_context->forgeWorld->SetSaveDirectory("saves/forge");
-        m_context->forgeWorld->ClearWorld(true); // Salva le sculture precedenti prima di pulire
-        m_context->forgeWorld->CreateChunkEntity("WorkspaceBlock", {0.0f, 0.0f, 0.0f});
-    }
+    // --- BUG FIX #3: ForgeWorld ISOLATO ---
+    // Salva il ForgeWorld precedente (PlayState/MapState) e crea uno NUOVO e PULITO
+    m_previousForgeWorld = m_context->forgeWorld;
+    m_ownedForgeWorld = std::make_unique<fw::ForgeWorld>();
+    m_ownedForgeWorld->Initialize(m_context);
+    m_ownedForgeWorld->SetSaveDirectory("saves/forge");
+    // Prima carica eventuali sculture salvate (senza creare chunk sporchi)
+    // poi punta il context al nuovo mondo vergine
+    m_context->forgeWorld = m_ownedForgeWorld.get();
+    std::cout << "[ForgeState] ForgeWorld privato e isolato creato. Nessuna contaminazione da stati precedenti.\n";
 
     m_assetBrowser.Initialize();
 

@@ -16,10 +16,10 @@ struct CellData {
     float pressure;
 };
 
-// Binding Termodinamica (Set 1)
-layout(std430, set = 1, binding = 0) readonly buffer GridStateRead {
-    CellData read_cells[];
-};
+// // Binding Termodinamica (Set 1)
+// layout(std430, set = 1, binding = 0) readonly buffer GridStateRead {
+//     CellData read_cells[];
+// };
 
 // Push Constants
 layout(push_constant) uniform PushConstants {
@@ -155,6 +155,9 @@ void main() {
 
     // --- LENTE TERMICA DI DEBUG ---
     if (push.debug_lens_active == 1) {
+        // [DISATTIVATO] Richiede il binding Set 1 del ThermodynamicsPipeline che al momento
+        // non è agganciato al RenderForge nel C++, causando crash di validazione Vulkan.
+        /*
         uint gridX = uint(inWorldPos.x);
         uint gridZ = uint(inWorldPos.z);
         if (gridX < push.grid_width && gridZ < push.grid_width) {
@@ -165,6 +168,7 @@ void main() {
             float blendFactor = clamp(localHeat / 100.0, 0.0, 1.0);
             finalColor = mix(finalColor, heatColor, blendFactor * 0.7);
         }
+        */
     }
 
     outColor = vec4(finalColor, push.useColorOverride == 1 ? push.colorOverride.a : 1.0);

@@ -1900,6 +1900,9 @@ void FairWorldEngine::renderTab_Engine() {
 }
 
 void FairWorldEngine::Shutdown() {
+    if (m_hasShutdown) return;
+    m_hasShutdown = true;
+
     if (m_forgeWorld) {
         m_forgeWorld->SaveAllChunks();
     }

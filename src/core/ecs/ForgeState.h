@@ -10,6 +10,7 @@ struct SharedContext;
 namespace fw {
     class ForgeWorld;
 }
+#include "ForgeWorld.h"
 
 #include <map>
 #include <string>
@@ -31,6 +32,11 @@ private:
     SharedContext* m_context;
     entt::registry m_registry;
     std::vector<std::unique_ptr<System>> m_systems;
+
+    // ForgeWorld privato e ISOLATO: evita contaminazione da PlayState/MapState
+    std::unique_ptr<fw::ForgeWorld> m_ownedForgeWorld;
+    // Puntatore salvato al ForgeWorld precedente, ripristinato al distruttore
+    fw::ForgeWorld* m_previousForgeWorld{ nullptr };
 
     // --- Orbital Camera ---
     float m_orbitDistance = 24.0f;

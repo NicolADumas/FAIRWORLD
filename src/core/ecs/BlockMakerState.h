@@ -32,6 +32,10 @@ private:
     glm::vec3 m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     float m_cameraFov = 60.0f;
 
+    // --- Block Rotation ---
+    float m_blockRotationY = 0.0f;
+    bool m_autoRotateBlock = true;
+
     // --- Preview Block ---
     entt::entity m_previewBlockEntity = entt::null;
     glm::vec3 m_previewLightDir = glm::normalize(glm::vec3(0.5f, -1.0f, 0.5f));

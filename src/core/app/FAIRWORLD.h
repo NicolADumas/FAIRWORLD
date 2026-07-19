@@ -120,6 +120,7 @@ private:
     const char* tabLabel(GameState s) const;
 
     bool m_isRunning;
+    bool m_hasShutdown = false;
     bool m_isVrMode;
     World  m_world; // Deprecated
     std::unique_ptr<fw::ForgeWorld> m_forgeWorld;

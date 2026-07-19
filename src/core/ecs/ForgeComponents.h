@@ -12,14 +12,12 @@ namespace fw {
 
 struct TransformComponent {
     Vec3 location = {0.0f, 0.0f, 0.0f};
-    Vec3 rotation = {0.0f, 0.0f, 0.0f}; // Euler XYZ radians
+    Quat rotation = {0.0f, 0.0f, 0.0f, 1.0f}; // Quaternion
     Vec3 scale    = {1.0f, 1.0f, 1.0f};
 
     Mat4 worldMatrix() const {
         return Mat4::translate(location)
-             * Mat4::rotateZ(rotation.z)
-             * Mat4::rotateY(rotation.y)
-             * Mat4::rotateX(rotation.x)
+             * Mat4::fromQuat(rotation)
              * Mat4::scale(scale);
     }
 };

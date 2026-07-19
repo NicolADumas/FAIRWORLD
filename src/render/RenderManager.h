@@ -8,8 +8,12 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <mutex>
+#include "vulkan/VulkanCore.h"
+#include "vulkan/VulkanMemory.h"
 #include "World.h"  // Per la struct Vertex
 #include "TexturePacker.h"
+#include "apps/BlockMakerRenderer.h"
 
 class XrManager;
 struct BlockDef;
@@ -30,16 +34,7 @@ struct VulkanTextureArray {
     VmaAllocation stagingAllocation = VK_NULL_HANDLE;
 };
 
-// Struttura di supporto per le code della GPU
-struct QueueFamilyIndices {
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-    std::optional<uint32_t> transferFamily;
 
-    bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
-    }
-};
 
 struct ForgePushConstantData {
     glm::mat4 mvp;
@@ -66,53 +61,59 @@ public:
     void UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIndex, uint32_t width, uint32_t height, const glm::vec4& color);
     void UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic);
 
-    VkInstance GetVulkanInstance() const { return m_instance; }
-    VkPhysicalDevice GetPhysicalDevice() const { return m_physicalDevice; }
-    VkDevice GetDevice() const { return m_device; }
-    VkQueue GetTransferQueue() const { return m_transferQueue; }
+    VkInstance GetVulkanInstance() const { return m_core ? m_core->GetInstance() : VK_NULL_HANDLE; }
+    VkPhysicalDevice GetPhysicalDevice() const { return m_core ? m_core->GetPhysicalDevice() : VK_NULL_HANDLE; }
+    VkDevice GetDevice() const { return m_core ? m_core->GetDevice() : VK_NULL_HANDLE; }
+    VkQueue GetTransferQueue() const { return m_core ? m_core->GetTransferQueue() : VK_NULL_HANDLE; }
     VkCommandPool GetTransferCommandPool() const { return m_transferCommandPool; }
-    VkBuffer GetStagingRingBuffer() const { return m_stagingRingBuffer; }
+    VkBuffer GetStagingRingBuffer() const { return m_memory ? m_memory->GetStagingRingBuffer() : VK_NULL_HANDLE; }
     VkDeviceMemory GetStagingDeviceMemory() const;
-    void* GetMappedStagingData() const { return m_mappedStagingData; }
+    void* GetMappedStagingData() const { return m_memory ? m_memory->GetMappedStagingData() : nullptr; }
     uint64_t GetStagingBufferSize() const { return STAGING_BUFFER_SIZE; }
-    VkBuffer GetGlobalVramBuffer() const { return m_globalVramBuffer; }
-    std::mutex* GetQueueMutex() { return &m_queueMutex; }
+    VkBuffer GetGlobalVramBuffer() const { return m_memory ? m_memory->GetGlobalVramBuffer() : VK_NULL_HANDLE; }
+    std::mutex* GetQueueMutex() { return m_core ? m_core->GetQueueMutex() : nullptr; }
 
     // Notifica che la finestra è stata ridimensionata: ricrea la Swapchain
-    void NotifyResize() { RecreateSwapchain(); }
+    // Ignorato se l'init non è ancora completato
+    void NotifyResize() { if (m_isFullyInitialized) RecreateSwapchain(); }
 
 private:
+    std::unique_ptr<fw::VulkanCore> m_core;
+    std::unique_ptr<fw::VulkanMemory> m_memory;
+
+    
     bool m_isVRMode;
+    bool m_isFullyInitialized{ false }; // Protegge RecreateSwapchain durante l'init
     void* m_hwnd{ nullptr };
-    VkInstance m_instance{ VK_NULL_HANDLE };
-    VkPhysicalDevice m_physicalDevice{ VK_NULL_HANDLE };
+    
+    
 
     // --- NUOVI COMPONENTI FASE 3 ---
-    VkDevice m_device{ VK_NULL_HANDLE };
-    std::mutex m_queueMutex;
-    VkQueue m_graphicsQueue{ VK_NULL_HANDLE };
-    VkQueue m_presentQueue{ VK_NULL_HANDLE };
-    VkQueue m_transferQueue{ VK_NULL_HANDLE }; // Coda asincrona per i Voxel
+    
+    
+    
+    
+     // Coda asincrona per i Voxel
     
     // --- VMA ---
-    VmaAllocator m_vmaAllocator{ VK_NULL_HANDLE };
     
-    VkSurfaceKHR m_surface{ VK_NULL_HANDLE };
-    VkSwapchainKHR m_swapchain{ VK_NULL_HANDLE };
     
-    std::vector<VkImage> m_swapchainImages;
-    VkFormat m_swapchainImageFormat;
-    VkExtent2D m_swapchainExtent;
-    std::vector<VkImageView> m_swapchainImageViews;
+    
+    
+    
+    
+    
+    
+    
 
     // --- NUOVI COMPONENTI (FASE 3 - ULTIMA PARTE) ---
     VkRenderPass m_renderPass{ VK_NULL_HANDLE };
     std::vector<VkFramebuffer> m_framebuffers;
     
-    VkDescriptorPool m_imguiDescriptorPool{ VK_NULL_HANDLE };
+    
 
     // --- NUOVI COMPONENTI (FASE 4) ---
-    const int MAX_FRAMES_IN_FLIGHT = 2;
+
     uint32_t m_currentFrame = 0;
 
     // Struttura che rispecchia esattamente quella nello shader
@@ -129,12 +130,12 @@ private:
 
     // --- COMPONENTI FASE 5 (UBO & Descriptors) ---
     VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
-    VkDescriptorPool m_descriptorPool{ VK_NULL_HANDLE };
-    std::vector<VkDescriptorSet> m_descriptorSets;
+    
+    
 
-    std::vector<VkBuffer> m_uniformBuffers;
-    std::vector<VmaAllocation> m_uniformBuffersAllocation;
-    std::vector<void*> m_uniformBuffersMapped; // Puntatori per scrivere direttamente nella RAM
+    
+    
+     // Puntatori per scrivere direttamente nella RAM
 
     VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_graphicsPipeline{ VK_NULL_HANDLE };
@@ -150,10 +151,13 @@ private:
     VkPipelineLayout m_forgePipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_forgePipeline{ VK_NULL_HANDLE };
 
+    // --- RENDERERS ---
+    std::unique_ptr<fw::BlockMakerRenderer> m_blockMakerRenderer;
+
     // --- FORGE DESCRIPTOR SETS ---
     VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };
-    VkDescriptorPool m_forgeDescriptorPool{ VK_NULL_HANDLE };
-    std::vector<VkDescriptorSet> m_forgeDescriptorSets;
+    
+    
 
     // --- PBR TEXTURE ARRAYS ---
     VkImage m_albedoImage{ VK_NULL_HANDLE };
@@ -206,8 +210,8 @@ private:
 public:
     float GetFov() const { return m_fov; }
     void SetFov(float fov) { m_fov = fov; }
-    uint32_t GetWindowWidth() const { return m_swapchainExtent.width; }
-    uint32_t GetWindowHeight() const { return m_swapchainExtent.height; }
+    uint32_t GetWindowWidth() const { return m_core ? m_core->GetSwapchainExtent().width : 0; }
+    uint32_t GetWindowHeight() const { return m_core ? m_core->GetSwapchainExtent().height : 0; }
 
     // Chiamata dall'Editor per aggiornare la texture in real-time
     enum class PBRTextureType {
@@ -252,20 +256,20 @@ public:
 
     VkCommandPool m_commandPool{ VK_NULL_HANDLE };
     // --- Variabili per il VMA Staging Ring Buffer ---
-    VkBuffer m_stagingRingBuffer{ VK_NULL_HANDLE };
-    VmaAllocation m_stagingAllocation{ VK_NULL_HANDLE };
-    void* m_mappedStagingData = nullptr; // Puntatore fisso alla RAM
+    
+    
+     // Puntatore fisso alla RAM
     const uint64_t STAGING_BUFFER_SIZE = 32 * 1024 * 1024; // 32 MB
     uint64_t m_currentOffset = 0; // Il cursore 'Head'
     VkCommandBuffer m_transferCommandBuffer{ VK_NULL_HANDLE };
     VkCommandPool m_transferCommandPool{ VK_NULL_HANDLE };
     
     // --- VmaPool dedicato per Chunk ---
-    VmaPool m_chunkVmaPool{ VK_NULL_HANDLE };
+    
 
     // --- GLOBAL VRAM BUFFER (Slab Allocator) ---
-    VkBuffer m_globalVramBuffer{ VK_NULL_HANDLE };
-    VmaAllocation m_globalVramAllocation{ VK_NULL_HANDLE };
+    
+    
 
     inline uint64_t AlignMemory(uint64_t offset, uint64_t alignment = 256) {
         return (offset + alignment - 1) & ~(alignment - 1);
@@ -279,29 +283,27 @@ public:
     std::vector<VkFence> m_inFlightFences;
 
     // Gestione Validation Layers (Attivi solo in configurazione Debug)
-#ifdef NDEBUG
-    const bool enableValidationLayers = false;
-#else
-    const bool enableValidationLayers = true;
-#endif
 
-    const std::vector<const char*> validationLayers = {
-        "VK_LAYER_KHRONOS_validation"
-    };
+    
 
-    bool CheckValidationLayerSupport();
-    std::vector<const char*> GetRequiredExtensions(XrManager* xrManager);
+    
 
-    bool CreateVulkanInstance(XrManager* xrManager);
-    bool PickPhysicalDevice(XrManager* xrManager);
-    int RateDeviceSuitability(VkPhysicalDevice device);
+
+    ;
+
+    
+    
+
+    
+    
+    
 
     // --- METODI FASE 3 ---
-    bool CreateSurface(void* hwnd, void* hinstance);
-    QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
-    bool CreateLogicalDevice();
-    bool CreateSwapchain(void* hwnd);
-    bool CreateImageViews();
+    
+    
+    
+    
+    
 
     // --- NUOVI METODI (FASE 3 - ULTIMA PARTE) ---
     bool CreateRenderPass();
@@ -312,15 +314,15 @@ public:
     bool CreateCommandPoolAndBuffer();
     
     void CreatePBRTextures(const fw::PackedTextureData& pbrData);
-    bool CreateUniformBuffers();
-    bool CreateDescriptorPoolAndSets();
+    
+    
     bool CreateSyncObjects();
 
     // --- NUOVI METODI (FASE 4) ---
     static std::vector<char> ReadFile(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
     void UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress, struct SharedContext* context);
-    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    
 
     // --- VERTEX/INDEX BUFFER ---
     bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
@@ -344,6 +346,7 @@ public:
     void InvalidateForgeCache();
 
 private:
+    
     void RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player, fw::ForgeWorld* overrideWorld = nullptr);
 
 public:

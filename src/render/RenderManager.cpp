@@ -25,15 +25,12 @@
 
 
 
-RenderManager::RenderManager() : m_isVRMode(false) {}
+RenderManager::RenderManager() : m_isVRMode(false) {
+    m_blockMakerRenderer = std::make_unique<fw::BlockMakerRenderer>();
+}
 
 VkDeviceMemory RenderManager::GetStagingDeviceMemory() const {
-    if (m_vmaAllocator != VK_NULL_HANDLE && m_stagingAllocation != VK_NULL_HANDLE) {
-        VmaAllocationInfo allocInfo;
-        vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &allocInfo);
-        return allocInfo.deviceMemory;
-    }
-    return VK_NULL_HANDLE;
+    return m_memory ? m_memory->GetStagingDeviceMemory() : VK_NULL_HANDLE;
 }
 
 RenderManager::~RenderManager() {
@@ -44,36 +41,19 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     m_isVRMode = isVRMode;
     m_hwnd = hwnd;
 
-    if (!CreateVulkanInstance(xrManager)) return false;
-
-    // FASE 3.2: Creiamo la Surface prima di scegliere la GPU definitiva e il Device
-    // perché dobbiamo assicurarci che la GPU sappia disegnare su QUESTA specifica finestra
-    if (!CreateSurface(hwnd, hinstance)) return false;
-
-    if (!PickPhysicalDevice(xrManager)) return false;
-
-    // FASE 3.1: Creazione del Logical Device
-    if (!CreateLogicalDevice()) return false;
-
-    // Inizializza VMA (Vulkan Memory Allocator)
-    VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.physicalDevice = m_physicalDevice;
-    allocatorInfo.device = m_device;
-    allocatorInfo.instance = m_instance;
-    allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_1;
-    if (vmaCreateAllocator(&allocatorInfo, &m_vmaAllocator) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile inizializzare VmaAllocator!" << std::endl;
-        return false;
-    }
+    m_core = std::make_unique<fw::VulkanCore>();
+    if (!m_core->Initialize(isVRMode, xrManager, hwnd, hinstance)) return false;
+    m_memory = std::make_unique<fw::VulkanMemory>(m_core.get());
+    if (!m_memory->Initialize()) return false;
 
     // --- 1. CREATE TRANSFER COMMAND POOL E COMMAND BUFFER ---
-    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    fw::QueueFamilyIndices indices = m_core->FindQueueFamilies(m_core->GetPhysicalDevice());
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = indices.transferFamily.value();
     
-    if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_transferCommandPool) != VK_SUCCESS) {
+    if (vkCreateCommandPool(m_core->GetDevice(), &poolInfo, nullptr, &m_transferCommandPool) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] failed to create transfer command pool!" << std::endl;
         return false;
     }
@@ -83,7 +63,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     cmdAllocInfo.commandPool = m_transferCommandPool;
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
-    if (vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &m_transferCommandBuffer) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(m_core->GetDevice(), &cmdAllocInfo, &m_transferCommandBuffer) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] failed to allocate transfer command buffer!" << std::endl;
         return false;
     }
@@ -92,73 +72,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     vkBeginCommandBuffer(m_transferCommandBuffer, &beginInfo);
 
-    // --- 2. CREATE CHUNK VMA POOL ---
-    VkBufferCreateInfo dummyBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    dummyBufInfo.size = 1024;
-    dummyBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    VmaAllocationCreateInfo dummyAllocInfo = {};
-    dummyAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    uint32_t memTypeIndex = 0;
-    vmaFindMemoryTypeIndexForBufferInfo(m_vmaAllocator, &dummyBufInfo, &dummyAllocInfo, &memTypeIndex);
-
-    VmaPoolCreateInfo vmaPoolInfo = {};
-    vmaPoolInfo.memoryTypeIndex = memTypeIndex;
-    if (vmaCreatePool(m_vmaAllocator, &vmaPoolInfo, &m_chunkVmaPool) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] failed to create VMA Pool for chunks!" << std::endl;
-        return false;
-    }
-
-    // --- 3. CREATE RING BUFFER (STAGING PERSISTENTE) ---
-    VkBufferCreateInfo stagingBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    stagingBufInfo.size = STAGING_BUFFER_SIZE;
-    stagingBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    
-    VmaAllocationCreateInfo stagingAllocInfo = {};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    
-    if (vmaCreateBuffer(m_vmaAllocator, &stagingBufInfo, &stagingAllocInfo, &m_stagingRingBuffer, &m_stagingAllocation, nullptr) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare lo Staging Ring Buffer!\n";
-        return false;
-    }
-    
-    VmaAllocationInfo vmaRingInfo;
-    vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
-    m_mappedStagingData = vmaRingInfo.pMappedData;
-    // --- 4. CREATE GLOBAL VRAM BUFFER (512 MB per i chunk) ---
-    VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    vramBufInfo.size = 512 * 1024 * 1024; // 512 MB
-    vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    
-    std::vector<uint32_t> uniqueQueueFamilies;
-    if (indices.graphicsFamily.has_value()) {
-        uniqueQueueFamilies.push_back(indices.graphicsFamily.value());
-    }
-    if (indices.transferFamily.has_value() && indices.transferFamily.value() != indices.graphicsFamily.value()) {
-        uniqueQueueFamilies.push_back(indices.transferFamily.value());
-    }
-
-    if (uniqueQueueFamilies.size() > 1) {
-        vramBufInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        vramBufInfo.queueFamilyIndexCount = static_cast<uint32_t>(uniqueQueueFamilies.size());
-        vramBufInfo.pQueueFamilyIndices = uniqueQueueFamilies.data();
-    } else {
-        vramBufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
-    
-    VmaAllocationCreateInfo vramAllocInfo = {};
-    vramAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    
-    if (vmaCreateBuffer(m_vmaAllocator, &vramBufInfo, &vramAllocInfo, &m_globalVramBuffer, &m_globalVramAllocation, nullptr) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare il Global VRAM Buffer da 512MB!\n";
-        return false;
-    }
-
-    std::cout << "[VMA] VmaAllocator e Global VRAM Buffer (512MB) inizializzati con successo." << std::endl;
-
-    // FASE 3.3: Creazione della Swapchain
-    if (!CreateSwapchain(hwnd)) return false;
-    if (!CreateImageViews()) return false;
+    // FASE 3.3: Creazione della Swapchain (Gia' gestita da VulkanCore)
     // FASE 3.4, 4 e 5: Creazione del Render Loop, Pipeline e UBO
     if (!CreateRenderPass()) return false;
     
@@ -169,8 +83,8 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // Le texture (Albedo, ecc.) verranno caricate esternamente in CreatePBRTextures, dove aggiorneremo i set.
 
     if (!CreateDescriptorSetLayout()) return false;
-    if (!CreateUniformBuffers()) return false;
-    if (!CreateDescriptorPoolAndSets()) return false;
+    if (!m_memory->CreateUniformBuffers(sizeof(UniformBufferObject))) return false;
+    if (!m_memory->CreateDescriptorPoolAndSets(m_descriptorSetLayout, m_forgeDescriptorSetLayout, sizeof(UniformBufferObject))) return false;
 
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateForgePipeline()) return false;
@@ -187,341 +101,30 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // Inizializza ImGui dopo che Vulkan è pronto
     InitImGui(hwnd);
     
+    m_isFullyInitialized = true; // Da questo momento, RecreateSwapchain è sicuro
     std::cout << "[VULKAN] Motore Grafico pronto. Pronti a renderizzare!" << std::endl;
 
     return true;
 }
 
-bool RenderManager::CheckValidationLayerSupport() {
-    uint32_t layerCount;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-    std::vector<VkLayerProperties> availableLayers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-    for (const char* layerName : validationLayers) {
-        bool layerFound = false;
-        for (const auto& layerProperties : availableLayers) {
-            if (strcmp(layerName, layerProperties.layerName) == 0) {
-                layerFound = true;
-                break;
-            }
-        }
-        if (!layerFound) return false;
-    }
-    return true;
-}
 
-std::vector<const char*> RenderManager::GetRequiredExtensions(XrManager* xrManager) {
-    std::vector<const char*> extensions;
-
-    // Se siamo in VR, OpenXR DEVE fornirci le sue estensioni obbligatorie
-    if (m_isVRMode && xrManager) {
-        // TODO: Chiamare il metodo di XrManager che incapsula xrGetVulkanInstanceExtensionsKHR
-    } else {
-        // Modalita Desktop: aggiungiamo le estensioni standard per disegnare su Windows
-        extensions.push_back("VK_KHR_surface");
-        extensions.push_back("VK_KHR_win32_surface");
-    }
-
-    // Estensione per i messaggi di debug dei Validation Layers
-    if (enableValidationLayers) {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
-    return extensions;
-}
-
-bool RenderManager::CreateVulkanInstance(XrManager* xrManager) {
-    if (enableValidationLayers && !CheckValidationLayerSupport()) {
-        std::cerr << "[VULKAN ERROR] Validation layers richiesti, ma non disponibili!" << std::endl;
-        return false;
-    }
-
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "FAIRWORLD Engine";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "FAIRWORLD";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2; // Usiamo Vulkan 1.2 per i Timeline Semaphore!
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-
-    auto extensions = GetRequiredExtensions(xrManager);
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
-
-    if (enableValidationLayers) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-    } else {
-        createInfo.enabledLayerCount = 0;
-    }
-
-    VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance);
-    if (result != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] vkCreateInstance fallito con codice di errore: " << result << std::endl;
-        if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
-            std::cerr << "[VULKAN ERROR] -> Il tuo driver grafico non supporta Vulkan 1.2 (richiesto per Timeline Semaphores). Aggiorna i driver o cambia GPU!" << std::endl;
-        } else if (result == VK_ERROR_EXTENSION_NOT_PRESENT) {
-            std::cerr << "[VULKAN ERROR] -> Un'estensione richiesta non e' supportata!" << std::endl;
-        } else if (result == VK_ERROR_LAYER_NOT_PRESENT) {
-            std::cerr << "[VULKAN ERROR] -> Un validation layer richiesto non e' presente!" << std::endl;
-        }
-        return false;
-    }
-
-    std::cout << "[VULKAN] Istanza creata con successo (Validation Layers: " 
-              << (enableValidationLayers ? "ATTIVI" : "DISATTIVI") << ")." << std::endl;
-    return true;
-}
 
 // ---------------------------------------------------------
 // STEP 1: CREAZIONE DELLA SURFACE (Il ponte con Windows)
 // ---------------------------------------------------------
-bool RenderManager::CreateSurface(void* hwnd, void* hinstance) {
-    VkWin32SurfaceCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    createInfo.hwnd = (HWND)hwnd;
-    createInfo.hinstance = (HINSTANCE)hinstance;
 
-    if (vkCreateWin32SurfaceKHR(m_instance, &createInfo, nullptr, &m_surface) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare la Window Surface!" << std::endl;
-        return false;
-    }
-    std::cout << "[VULKAN] Surface Win32 creata con successo." << std::endl;
-    return true;
-}
 
-QueueFamilyIndices RenderManager::FindQueueFamilies(VkPhysicalDevice device) {
-    QueueFamilyIndices indices;
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
-    int i = 0;
-    for (const auto& queueFamily : queueFamilies) {
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            indices.graphicsFamily = i;
-        }
-
-        // Cerca una coda dedicata esclusivamente ai trasferimenti (ottimale per DMA asincrono sui Voxel)
-        if ((queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-            indices.transferFamily = i;
-        }
-
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
-        if (presentSupport) {
-            indices.presentFamily = i;
-        }
-        if (indices.isComplete()) break;
-        i++;
-    }
-
-    // Fallback: se la GPU non ha una coda dedicata (es. vecchie GPU o Intel HD), usiamo la grafica
-    if (!indices.transferFamily.has_value() && indices.graphicsFamily.has_value()) {
-        indices.transferFamily = indices.graphicsFamily.value();
-    }
-    
-    return indices;
-}
-
-bool RenderManager::PickPhysicalDevice(XrManager* xrManager) {
-    if (m_isVRMode && xrManager) {
-        // In VR, non scegliamo la GPU.
-    } 
-    
-    if (m_physicalDevice == VK_NULL_HANDLE) {
-        uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
-
-        if (deviceCount == 0) {
-            std::cerr << "[VULKAN ERROR] Impossibile trovare una GPU con supporto Vulkan!" << std::endl;
-            return false;
-        }
-
-        std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
-
-        std::multimap<int, VkPhysicalDevice> candidates;
-
-        for (const auto& device : devices) {
-            int score = RateDeviceSuitability(device);
-            // Non scegliamo GPU che non supportano la surface che abbiamo creato
-            if (FindQueueFamilies(device).isComplete()) {
-                candidates.insert(std::make_pair(score, device));
-            }
-        }
-
-        if (!candidates.empty() && candidates.rbegin()->first > 0) {
-            m_physicalDevice = candidates.rbegin()->second;
-        } else {
-            return false;
-        }
-    }
-
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
-    std::cout << "[VULKAN] GPU Selezionata: " << deviceProperties.deviceName << std::endl;
-
-    return true;
-}
-
-int RenderManager::RateDeviceSuitability(VkPhysicalDevice device) {
-    VkPhysicalDeviceProperties deviceProperties;
-    VkPhysicalDeviceFeatures deviceFeatures;
-    vkGetPhysicalDeviceProperties(device, &deviceProperties);
-    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-
-    int score = 0;
-    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-        score += 1000;
-    }
-    score += deviceProperties.limits.maxImageDimension2D;
-    return score;
-}
 
 // ---------------------------------------------------------
 // STEP 2: CREAZIONE DEL LOGICAL DEVICE
 // ---------------------------------------------------------
-bool RenderManager::CreateLogicalDevice() {
-    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
-
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value(), indices.transferFamily.value() };
-
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies) {
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
-        queueCreateInfos.push_back(queueCreateInfo);
-    }
-
-    VkPhysicalDeviceFeatures deviceFeatures{}; // Nessuna feature extra per ora
-
-    // Aggiungiamo i Timeline Semaphores a pNext
-    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
-    timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
-
-    VkDeviceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pNext = &timelineSemaphoreFeatures;
-    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.pEnabledFeatures = &deviceFeatures;
-
-    // Abilitiamo l'estensione Swapchain necessaria per mostrare immagini a schermo e i Timeline Semaphores
-    const std::vector<const char*> deviceExtensions = { 
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
-    };
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-
-    // Device Layers sono deprecati da Vulkan 1.0: enabledLayerCount DEVE essere 0
-    createInfo.enabledLayerCount = 0;
-
-    if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare il Logical Device!" << std::endl;
-        return false;
-    }
-
-    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-    vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
-    vkGetDeviceQueue(m_device, indices.transferFamily.value(), 0, &m_transferQueue);
-    
-    std::cout << "[VULKAN] Logical Device e Code (Graphics, Present, Transfer) configurate." << std::endl;
-    return true;
-}
 
 // ---------------------------------------------------------
 // STEP 3: CREAZIONE DELLA SWAPCHAIN (La Pellicola)
 // ---------------------------------------------------------
-bool RenderManager::CreateSwapchain(void* hwnd) {
-    RECT rect;
-    GetClientRect((HWND)hwnd, &rect);
-    VkExtent2D extent = { static_cast<uint32_t>(rect.right - rect.left), static_cast<uint32_t>(rect.bottom - rect.top) };
-    
-    if (extent.width == 0 || extent.height == 0) {
-        extent = { 800, 600 }; 
-    }
 
-    VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = m_surface;
-    createInfo.minImageCount = 2; // Double Buffering
-    createInfo.imageFormat = VK_FORMAT_B8G8R8A8_SRGB; // Formato standard dei pixel
-    createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    createInfo.imageExtent = extent;
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
-    uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
-
-    if (indices.graphicsFamily != indices.presentFamily) {
-        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        createInfo.queueFamilyIndexCount = 2;
-        createInfo.pQueueFamilyIndices = queueFamilyIndices;
-    } else {
-        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
-
-    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // V-Sync attivo
-    createInfo.clipped = VK_TRUE;
-
-    if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare la Swapchain!" << std::endl;
-        return false;
-    }
-
-    uint32_t imageCount;
-    vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
-    m_swapchainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data());
-
-    m_swapchainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;
-    m_swapchainExtent = extent;
-
-    std::cout << "[VULKAN] Swapchain creata (" << imageCount << " immagini)." << std::endl;
-    return true;
-}
-
-bool RenderManager::CreateImageViews() {
-    m_swapchainImageViews.resize(m_swapchainImages.size());
-
-    for (size_t i = 0; i < m_swapchainImages.size(); i++) {
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = m_swapchainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = m_swapchainImageFormat;
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(m_device, &createInfo, nullptr, &m_swapchainImageViews[i]) != VK_SUCCESS) {
-            return false;
-        }
-    }
-    return true;
-}
 
 void RenderManager::RenderStereo(XrManager* xrManager) {
     // TODO: Implementare il render pass stereo per OpenXR
@@ -536,7 +139,7 @@ VkFormat RenderManager::FindSupportedFormat(const std::vector<VkFormat>& candida
                                              VkFormatFeatureFlags features) {
     for (VkFormat format : candidates) {
         VkFormatProperties props;
-        vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &props);
+        vkGetPhysicalDeviceFormatProperties(m_core->GetPhysicalDevice(), format, &props);
         if (tiling == VK_IMAGE_TILING_LINEAR  && (props.linearTilingFeatures  & features) == features) return format;
         if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) return format;
     }
@@ -557,7 +160,7 @@ bool RenderManager::CreateDepthResources() {
     if (depthFormat == VK_FORMAT_UNDEFINED) return false;
 
     // Crea l'immagine depth (stessa dimensione della swapchain)
-    CreateImage(m_swapchainExtent.width, m_swapchainExtent.height, 1,
+    CreateImage(m_core->GetSwapchainExtent().width, m_core->GetSwapchainExtent().height, 1,
                 depthFormat, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY,
@@ -580,7 +183,7 @@ bool RenderManager::CreateDepthResources() {
         viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
     }
 
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_depthImageView) != VK_SUCCESS) {
+    if (vkCreateImageView(m_core->GetDevice(), &viewInfo, nullptr, &m_depthImageView) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare la Depth Image View!" << std::endl;
         return false;
     }
@@ -594,7 +197,7 @@ bool RenderManager::CreateDepthResources() {
 bool RenderManager::CreateRenderPass() {
     // --- Attachment colore ---
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = m_swapchainImageFormat;
+    colorAttachment.format         = m_core->GetSwapchainImageFormat();
     colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
@@ -650,7 +253,7 @@ bool RenderManager::CreateRenderPass() {
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies   = &dependency;
 
-    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
+    if (vkCreateRenderPass(m_core->GetDevice(), &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] vkCreateRenderPass fallito!" << std::endl;
         return false;
     }
@@ -662,12 +265,15 @@ bool RenderManager::CreateRenderPass() {
 // STEP 2: FRAMEBUFFERS (Collegano Swapchain e RenderPass)
 // ---------------------------------------------------------
 bool RenderManager::CreateFramebuffers() {
-    std::cout << "[DEBUG] CreateFramebuffers chiamato! m_renderPass = " << m_renderPass << std::endl;
-    m_framebuffers.resize(m_swapchainImageViews.size());
-    for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
+    char debugMsg[256];
+    sprintf_s(debugMsg, "[DEBUG] CreateFramebuffers chiamato! m_renderPass = %p\n", (void*)m_renderPass);
+    OutputDebugStringA(debugMsg);
+
+    m_framebuffers.resize(m_core->GetSwapchainImageViews().size());
+    for (size_t i = 0; i < m_core->GetSwapchainImageViews().size(); i++) {
         // Ogni framebuffer ha: color attachment + depth attachment
         std::array<VkImageView, 2> attachments = {
-            m_swapchainImageViews[i],
+            m_core->GetSwapchainImageViews()[i],
             m_depthImageView          // FIX: depth buffer!
         };
 
@@ -677,15 +283,16 @@ bool RenderManager::CreateFramebuffers() {
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
         
         if (m_renderPass == VK_NULL_HANDLE) {
+            OutputDebugStringA("[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n");
             std::cerr << "[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n";
             return false;
         }
         framebufferInfo.pAttachments    = attachments.data();
-        framebufferInfo.width           = m_swapchainExtent.width;
-        framebufferInfo.height          = m_swapchainExtent.height;
+        framebufferInfo.width           = m_core->GetSwapchainExtent().width;
+        framebufferInfo.height          = m_core->GetSwapchainExtent().height;
         framebufferInfo.layers          = 1;
 
-        if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) return false;
+        if (vkCreateFramebuffer(m_core->GetDevice(), &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) return false;
     }
     return true;
 }
@@ -714,7 +321,7 @@ bool RenderManager::CreateDescriptorSetLayout() {
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) return false;
+    if (vkCreateDescriptorSetLayout(m_core->GetDevice(), &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) return false;
 
     // 2. FORGE DESCRIPTOR SET LAYOUT (Per forge_vert.spv e forge_frag.spv)
     VkDescriptorSetLayoutBinding albedoLayoutBinding{};
@@ -741,93 +348,13 @@ bool RenderManager::CreateDescriptorSetLayout() {
     forgeLayoutInfo.bindingCount = static_cast<uint32_t>(forgeBindings.size());
     forgeLayoutInfo.pBindings = forgeBindings.data();
 
-    if (vkCreateDescriptorSetLayout(m_device, &forgeLayoutInfo, nullptr, &m_forgeDescriptorSetLayout) != VK_SUCCESS) return false;
+    if (vkCreateDescriptorSetLayout(m_core->GetDevice(), &forgeLayoutInfo, nullptr, &m_forgeDescriptorSetLayout) != VK_SUCCESS) return false;
 
     return true;
 }
 
-uint32_t RenderManager::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    std::cerr << "[VULKAN ERROR] Impossibile trovare un tipo di memoria adatto!" << std::endl;
-    return 0;
-}
 
-bool RenderManager::CreateUniformBuffers() {
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-    m_uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    m_uniformBuffersAllocation.resize(MAX_FRAMES_IN_FLIGHT);
-    m_uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = bufferSize;
-        bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        
-        VmaAllocationCreateInfo allocInfo = {};
-        allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        
-        if (vmaCreateBuffer(m_vmaAllocator, &bufferInfo, &allocInfo, &m_uniformBuffers[i], &m_uniformBuffersAllocation[i], nullptr) != VK_SUCCESS) {
-            return false;
-        }
-
-        VmaAllocationInfo vmaAllocInfo;
-        vmaGetAllocationInfo(m_vmaAllocator, m_uniformBuffersAllocation[i], &vmaAllocInfo);
-        m_uniformBuffersMapped[i] = vmaAllocInfo.pMappedData;
-    }
-    return true;
-}
-
-bool RenderManager::CreateDescriptorPoolAndSets() {
-    // Questo è il legacy descriptor pool e set! Serve UBO e 1 Sampler (dummy)
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
-    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) return false;
-
-    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_descriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    allocInfo.pSetLayouts = layouts.data();
-
-    m_descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    if (vkAllocateDescriptorSets(m_device, &allocInfo, m_descriptorSets.data()) != VK_SUCCESS) return false;
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_uniformBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
-
-        // Usiamo il sampler e una imageView dummy o niente se non usati. 
-        // Per evitare crash usiamo m_albedoImageView se disponibile, altrimenti puo fallire il legacy.
-        // Assumiamo che m_albedoImageView sia creato. Ma CreateDescriptorPoolAndSets 
-        // viene richiamato PRIMA di CreatePBRTextures.
-        // Cosi non funziona. Spostiamo CreateDescriptorPoolAndSets IN Init?
-        // Se non abbiamo l'image view, il vecchio rendering crasherà se lo attiviamo.
-    }
-    return true;
-}
 
 void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMatrix, glm::mat4 projMatrix, float seasonProgress, SharedContext* context) {
     UniformBufferObject ubo{};
@@ -856,7 +383,7 @@ void RenderManager::UpdateUniformBuffer(uint32_t currentImage, glm::mat4 viewMat
     }
 
     // Copiamo i dati nella RAM della GPU
-    memcpy(m_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    memcpy(m_memory->GetUniformBuffersMapped()[currentImage], &ubo, sizeof(ubo));
 }
 
 // ---------------------------------------------------------
@@ -912,7 +439,7 @@ VkShaderModule RenderManager::CreateShaderModule(const std::vector<char>& code) 
     createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
     VkShaderModule shaderModule;
-    if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+    if (vkCreateShaderModule(m_core->GetDevice(), &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare il modulo shader!" << std::endl;
         return VK_NULL_HANDLE;
     }
@@ -928,8 +455,8 @@ bool RenderManager::CreateGraphicsPipeline() {
 
     if (vertShaderModule == VK_NULL_HANDLE || fragShaderModule == VK_NULL_HANDLE) {
         std::cerr << "[VULKAN ERROR] Moduli shader principali mancanti!" << std::endl;
-        if (vertShaderModule) vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
-        if (fragShaderModule) vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+        if (vertShaderModule) vkDestroyShaderModule(m_core->GetDevice(), vertShaderModule, nullptr);
+        if (fragShaderModule) vkDestroyShaderModule(m_core->GetDevice(), fragShaderModule, nullptr);
         return false;
     }
 
@@ -1012,14 +539,14 @@ bool RenderManager::CreateGraphicsPipeline() {
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float)m_swapchainExtent.width;
-    viewport.height = (float)m_swapchainExtent.height;
+    viewport.width = (float)m_core->GetSwapchainExtent().width;
+    viewport.height = (float)m_core->GetSwapchainExtent().height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor{};
     scissor.offset = { 0, 0 };
-    scissor.extent = m_swapchainExtent;
+    scissor.extent = m_core->GetSwapchainExtent();
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -1084,7 +611,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) return false;
+    if (vkCreatePipelineLayout(m_core->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) return false;
 
     // Costruzione finale della Pipeline
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -1102,7 +629,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     pipelineInfo.renderPass          = m_renderPass;
     pipelineInfo.subpass             = 0;
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) != VK_SUCCESS) return false;
+    if (vkCreateGraphicsPipelines(m_core->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) != VK_SUCCESS) return false;
 
     // --- PIPELINE DEL PORTALE (Scrive 1 nello stencil, colore disabilitato) ---
     VkPipelineDepthStencilStateCreateInfo portalStencil{};
@@ -1133,7 +660,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     pipelineInfo.pDepthStencilState = &portalStencil;
     pipelineInfo.pColorBlendState   = &noColorBlending;
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_portalPipeline) != VK_SUCCESS) return false;
+    if (vkCreateGraphicsPipelines(m_core->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_portalPipeline) != VK_SUCCESS) return false;
 
     // --- PIPELINE DELL'ALTRO MONDO (Disegna SOLO dove stencil == 1) ---
     VkPipelineDepthStencilStateCreateInfo otherWorldStencil{};
@@ -1154,11 +681,11 @@ bool RenderManager::CreateGraphicsPipeline() {
     pipelineInfo.pDepthStencilState = &otherWorldStencil;
     pipelineInfo.pColorBlendState   = &colorBlending; // Rimetti i colori normali
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_otherWorldPipeline) != VK_SUCCESS) return false;
+    if (vkCreateGraphicsPipelines(m_core->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_otherWorldPipeline) != VK_SUCCESS) return false;
 
     // Pulizia dei moduli shader locali (sono già compilati nella pipeline!)
-    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), vertShaderModule, nullptr);
 
     // =========================================================================
     // SKY PIPELINE (Nessun Vertex Buffer, usa gl_VertexIndex nel vertex shader)
@@ -1171,8 +698,8 @@ bool RenderManager::CreateGraphicsPipeline() {
 
     if (skyVertModule == VK_NULL_HANDLE || skyFragModule == VK_NULL_HANDLE) {
         std::cerr << "[VULKAN ERROR] Moduli shader per il cielo mancanti!" << std::endl;
-        if (skyVertModule) vkDestroyShaderModule(m_device, skyVertModule, nullptr);
-        if (skyFragModule) vkDestroyShaderModule(m_device, skyFragModule, nullptr);
+        if (skyVertModule) vkDestroyShaderModule(m_core->GetDevice(), skyVertModule, nullptr);
+        if (skyFragModule) vkDestroyShaderModule(m_core->GetDevice(), skyFragModule, nullptr);
         return false;
     }
 
@@ -1214,7 +741,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     skyPipelineLayoutInfo.pushConstantRangeCount = 1;
     skyPipelineLayoutInfo.pPushConstantRanges = &skyPushConstant;
 
-    if (vkCreatePipelineLayout(m_device, &skyPipelineLayoutInfo, nullptr, &m_skyPipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(m_core->GetDevice(), &skyPipelineLayoutInfo, nullptr, &m_skyPipelineLayout) != VK_SUCCESS) {
         return false;
     }
 
@@ -1234,12 +761,12 @@ bool RenderManager::CreateGraphicsPipeline() {
     skyPipelineInfo.renderPass = m_renderPass;
     skyPipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &skyPipelineInfo, nullptr, &m_skyPipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_core->GetDevice(), VK_NULL_HANDLE, 1, &skyPipelineInfo, nullptr, &m_skyPipeline) != VK_SUCCESS) {
         return false;
     }
 
-    vkDestroyShaderModule(m_device, skyFragModule, nullptr);
-    vkDestroyShaderModule(m_device, skyVertModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), skyFragModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), skyVertModule, nullptr);
 
     return true;
 }
@@ -1248,14 +775,14 @@ bool RenderManager::CreateGraphicsPipeline() {
 // STEP 3: COMMAND POOL & BUFFER (La memoria per le istruzioni)
 // ---------------------------------------------------------
 bool RenderManager::CreateCommandPoolAndBuffer() {
-    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    fw::QueueFamilyIndices indices = m_core->FindQueueFamilies(m_core->GetPhysicalDevice());
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = indices.graphicsFamily.value();
 
-    if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS) return false;
+    if (vkCreateCommandPool(m_core->GetDevice(), &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS) return false;
 
     m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
     VkCommandBufferAllocateInfo allocInfo{};
@@ -1264,7 +791,7 @@ bool RenderManager::CreateCommandPoolAndBuffer() {
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = (uint32_t)m_commandBuffers.size();
 
-    if (vkAllocateCommandBuffers(m_device, &allocInfo, m_commandBuffers.data()) != VK_SUCCESS) return false;
+    if (vkAllocateCommandBuffers(m_core->GetDevice(), &allocInfo, m_commandBuffers.data()) != VK_SUCCESS) return false;
     return true;
 }
 
@@ -1272,7 +799,7 @@ bool RenderManager::CreateCommandPoolAndBuffer() {
 // STEP 4: SINCRONIZZAZIONE E RENDER LOOP (Il semaforo)
 // ---------------------------------------------------------
 bool RenderManager::CreateSyncObjects() {
-    uint32_t swapchainImageCount = (uint32_t)m_swapchainImages.size();
+    uint32_t swapchainImageCount = (uint32_t)m_core->GetSwapchainImages().size();
 
     // imageAvailable: 1 per FRAME IN VOLO (protetto dal fence, consumato da vkQueueSubmit)
     m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1289,13 +816,13 @@ bool RenderManager::CreateSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlightFences[i]) != VK_SUCCESS) {
+        if (vkCreateSemaphore(m_core->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(m_core->GetDevice(), &fenceInfo, nullptr, &m_inFlightFences[i]) != VK_SUCCESS) {
             return false;
         }
     }
     for (size_t i = 0; i < swapchainImageCount; i++) {
-        if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
+        if (vkCreateSemaphore(m_core->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
             return false;
         }
     }
@@ -1358,7 +885,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         glm::mat4 skyView = viewMatrix;
         skyView[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
         
-        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 1000.0f);
+        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(45.0f), m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height, 0.1f, 1000.0f);
         skyPC.invView = glm::inverse(skyView);
         skyPC.invProj = glm::inverse(projMatrix);
         skyPC.timeOfDay = context && context->engine ? context->engine->GetTimeManager().GetTimeOfDay() : 0.5f;
@@ -1380,14 +907,14 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     // Applica distorsione per rallentare estate/inverno (modello biologico)
     float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
 
-    float aspectUniform = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+    float aspectUniform = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
     glm::mat4 uboProjMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspectUniform, 0.1f, 1000.0f);
     if (!context) uboProjMatrix[1][1] *= -1;
 
     UpdateUniformBuffer(m_currentFrame, viewMatrix, uboProjMatrix, seasonalUboValue, context);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_memory->GetDescriptorSets()[m_currentFrame], 0, nullptr);
 
     // Disegna tutti i chunk legacy (se presenti)
     for (const auto& pair : m_chunkBuffers) {
@@ -1411,23 +938,23 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     if (m_forgePipeline != VK_NULL_HANDLE && context && (context->forgeWorld || overrideWorld)) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
         
-        if (!m_forgeDescriptorSets.empty() && m_forgeDescriptorSets[m_currentFrame] != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_forgeDescriptorSets[m_currentFrame], 0, nullptr);
+        if (!m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
         }
 
         // Viewport e Scissor dinamici
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = (float)m_swapchainExtent.width;
-        viewport.height = (float)m_swapchainExtent.height;
+        viewport.width = (float)m_core->GetSwapchainExtent().width;
+        viewport.height = (float)m_core->GetSwapchainExtent().height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(cmd, 0, 1, &viewport);
 
         VkRect2D scissor{};
         scissor.offset = { 0, 0 };
-        scissor.extent = m_swapchainExtent;
+        scissor.extent = m_core->GetSwapchainExtent();
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
         ForgePushConstantData pcData{};
@@ -1438,7 +965,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
         // ATTENZIONE: In RenderFairworld viewMatrix è SOLO la View matrix!
-        float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+        float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
         glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
 
@@ -1476,7 +1003,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
                 offsets[0] = mesh.vramAlloc.offset;
-                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                VkBuffer vertexBuffers[] = { m_memory->GetGlobalVramBuffer() };
                 vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
                 
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
@@ -1485,7 +1012,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         
         // RIPRISTINA LA PIPELINE ORIGINALE PER GLI ALTRI ELEMENTI DI FAIRWORLD
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_memory->GetDescriptorSets()[m_currentFrame], 0, nullptr);
     }
         if (m_ghostVertexBuffer != VK_NULL_HANDLE && m_ghostIndexBuffer != VK_NULL_HANDLE && m_ghostIndexCount > 0) {
             VkBuffer ghostBuffers[] = { m_ghostVertexBuffer };
@@ -1577,12 +1104,12 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 }
 
 void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
-    if (m_device == VK_NULL_HANDLE) return;
-    vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
+    if (m_core->GetDevice() == VK_NULL_HANDLE) return;
+    vkWaitForFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
     // imageAvailable[currentFrame]: protetto dal fence sopra => e' sicuro risegnalarlo
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX,
+    VkResult result = vkAcquireNextImageKHR(m_core->GetDevice(), m_core->GetSwapchain(), UINT64_MAX,
         m_imageAvailableSemaphores[m_currentFrame],
         VK_NULL_HANDLE, &imageIndex);
 
@@ -1594,7 +1121,7 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         return;
     }
 
-    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
+    vkResetFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame]);
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 
     // REGISTRAZIONE DEI COMANDI
@@ -1607,7 +1134,7 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     renderPassInfo.renderPass = m_renderPass;
     renderPassInfo.framebuffer = m_framebuffers[imageIndex];
     renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = m_swapchainExtent;
+    renderPassInfo.renderArea.extent = m_core->GetSwapchainExtent();
 
     // Svuota sia il colore che il depth ogni frame
     std::array<VkClearValue, 2> clearValues{};
@@ -1620,7 +1147,7 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
 
     bool isForge = (context && context->isForgeMode);
     if (isForge) {
-        float aspect = (float)m_swapchainExtent.width / (float)m_swapchainExtent.height;
+        float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
         glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
         glm::mat4 invView = glm::inverse(viewMatrix);
@@ -1628,7 +1155,21 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         RenderForge(m_commandBuffers[m_currentFrame], viewProjMatrix, cameraPos, context);
     } else {
         if (context && context->stateManager && context->stateManager->GetCurrentState()) {
-            if (context->engine->GetGameMode() == GameMode::Play || context->engine->GetGameMode() == GameMode::PhysicsLab || context->engine->GetGameMode() == GameMode::Map || context->engine->GetGameMode() == GameMode::Dev) {
+            GameMode mode = context->engine->GetGameMode();
+            if (mode == GameMode::BlockMaker) {
+                if (m_blockMakerRenderer) {
+                    float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
+                    glm::mat4 projMatrix = context->activeCameraView.projectionMatrix;
+                    if (projMatrix == glm::mat4(0.0f)) {
+                        projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
+                    }
+                    // Aggiorna extent e frame corrente prima del draw
+                    m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_blockMakerRenderer->SetCurrentFrame(m_currentFrame);
+                    m_blockMakerRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+            }
+            else if (mode == GameMode::Play || mode == GameMode::PhysicsLab || mode == GameMode::Map || mode == GameMode::Dev) {
                 RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
             }
         }
@@ -1660,8 +1201,8 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     {
-        std::lock_guard<std::mutex> lock(m_queueMutex);
-        if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS) {
+        std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+        if (vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS) {
             std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer!" << std::endl;
         }
     }
@@ -1673,15 +1214,15 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
 
-    VkSwapchainKHR swapchains[] = { m_swapchain };
+    VkSwapchainKHR swapchains[] = { m_core->GetSwapchain() };
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;
 
     VkResult resultPresent;
     {
-        std::lock_guard<std::mutex> lock(m_queueMutex);
-        resultPresent = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+        std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+        resultPresent = vkQueuePresentKHR(m_core->GetPresentQueue(), &presentInfo);
     }
     if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || resultPresent == VK_ERROR_SURFACE_LOST_KHR) {
         RecreateSwapchain();
@@ -1697,26 +1238,6 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
 
 // ---------------------------------------------------------
 // VERTEX / INDEX BUFFER HELPERS
-// ---------------------------------------------------------
-bool RenderManager::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                                 VmaMemoryUsage vmaUsage,
-                                 VkBuffer& buffer, VmaAllocation& bufferAllocation, VmaAllocationCreateFlags flags) {
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size  = size;
-    bufferInfo.usage = usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo = {};
-    allocInfo.usage = vmaUsage;
-    allocInfo.flags = flags;
-
-    if (vmaCreateBuffer(m_vmaAllocator, &bufferInfo, &allocInfo, &buffer, &bufferAllocation, nullptr) != VK_SUCCESS) {
-        return false;
-    }
-    return true;
-}
-
 void RenderManager::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
     // Alloca un command buffer temporaneo per la copia
     VkCommandBufferAllocateInfo allocInfo{};
@@ -1726,7 +1247,7 @@ void RenderManager::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer cmdBuf;
-    vkAllocateCommandBuffers(m_device, &allocInfo, &cmdBuf);
+    vkAllocateCommandBuffers(m_core->GetDevice(), &allocInfo, &cmdBuf);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1742,10 +1263,10 @@ void RenderManager::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers    = &cmdBuf;
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_graphicsQueue);
+    vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_core->GetGraphicsQueue());
 
-    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuf);
+    vkFreeCommandBuffers(m_core->GetDevice(), m_commandPool, 1, &cmdBuf);
 }
 
 void RenderManager::DestroyChunkBuffer(ChunkCoord coord) {
@@ -1755,24 +1276,24 @@ void RenderManager::DestroyChunkBuffer(ChunkCoord coord) {
         // and recorded in the current transfer batch (if Update() ran multiple times this frame).
         FlushTransferBatch();
 
-        vkDeviceWaitIdle(m_device);
-        if (it->second.vertexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_vmaAllocator, it->second.vertexBuffer, it->second.vertexBufferAllocation); }
-        if (it->second.indexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_vmaAllocator, it->second.indexBuffer, it->second.indexBufferAllocation); }
+        vkDeviceWaitIdle(m_core->GetDevice());
+        if (it->second.vertexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_memory->GetAllocator(), it->second.vertexBuffer, it->second.vertexBufferAllocation); }
+        if (it->second.indexBuffer != VK_NULL_HANDLE) { vmaDestroyBuffer(m_memory->GetAllocator(), it->second.indexBuffer, it->second.indexBufferAllocation); }
         m_chunkBuffers.erase(it);
     }
 }
 
 void RenderManager::InvalidateForgeCache() {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
-    vkDeviceWaitIdle(m_device);
+    std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+    vkDeviceWaitIdle(m_core->GetDevice());
     
     // Clear legacy chunk buffers
     for (auto& pair : m_chunkBuffers) {
         if (pair.second.vertexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
+            vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
         }
         if (pair.second.indexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, pair.second.indexBuffer, pair.second.indexBufferAllocation);
+            vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.indexBuffer, pair.second.indexBufferAllocation);
         }
     }
     m_chunkBuffers.clear();
@@ -1809,7 +1330,7 @@ void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>&
     }
 
     // 3. Copia fulminea in RAM (nel puntatore mappato da VMA)
-    uint8_t* dstMapped = static_cast<uint8_t*>(m_mappedStagingData);
+    uint8_t* dstMapped = static_cast<uint8_t*>(m_memory->GetMappedStagingData());
     memcpy(dstMapped + vertexOffset, vertices.data(), (size_t)vertexSize);
     memcpy(dstMapped + indexOffset, indices.data(), (size_t)indexSize);
 
@@ -1821,8 +1342,8 @@ void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>&
     vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VmaAllocationCreateInfo vbAllocInfo = {};
     vbAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    vbAllocInfo.pool = m_chunkVmaPool; // Use the chunk pool!
-    VkResult vbResult = vmaCreateBuffer(m_vmaAllocator, &vbInfo, &vbAllocInfo, &chunkBuf.vertexBuffer, &chunkBuf.vertexBufferAllocation, nullptr);
+    vbAllocInfo.pool = m_memory->GetChunkVmaPool(); // Use the chunk pool!
+    VkResult vbResult = vmaCreateBuffer(m_memory->GetAllocator(), &vbInfo, &vbAllocInfo, &chunkBuf.vertexBuffer, &chunkBuf.vertexBufferAllocation, nullptr);
     if (vbResult != VK_SUCCESS || chunkBuf.vertexBuffer == VK_NULL_HANDLE) {
         std::cerr << "[UploadChunkMesh] vmaCreateBuffer for vertex buffer FAILED: " << vbResult << std::endl;
         return;
@@ -1834,24 +1355,24 @@ void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>&
     ibInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VmaAllocationCreateInfo ibAllocInfo = {};
     ibAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    ibAllocInfo.pool = m_chunkVmaPool;
-    VkResult ibResult = vmaCreateBuffer(m_vmaAllocator, &ibInfo, &ibAllocInfo, &chunkBuf.indexBuffer, &chunkBuf.indexBufferAllocation, nullptr);
+    ibAllocInfo.pool = m_memory->GetChunkVmaPool();
+    VkResult ibResult = vmaCreateBuffer(m_memory->GetAllocator(), &ibInfo, &ibAllocInfo, &chunkBuf.indexBuffer, &chunkBuf.indexBufferAllocation, nullptr);
     if (ibResult != VK_SUCCESS || chunkBuf.indexBuffer == VK_NULL_HANDLE) {
         std::cerr << "[UploadChunkMesh] vmaCreateBuffer for index buffer FAILED: " << ibResult << std::endl;
         // Cleanup vertex buffer created before
         if (chunkBuf.vertexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, chunkBuf.vertexBuffer, chunkBuf.vertexBufferAllocation);
+            vmaDestroyBuffer(m_memory->GetAllocator(), chunkBuf.vertexBuffer, chunkBuf.vertexBufferAllocation);
         }
         return;
     }
 
     // 5. Registra i comandi di copia nel Transfer Command Buffer
     // Verifica che gli handle siano validi prima di usarli
-    if (m_transferCommandBuffer == VK_NULL_HANDLE || m_stagingRingBuffer == VK_NULL_HANDLE) {
+    if (m_transferCommandBuffer == VK_NULL_HANDLE || m_memory->GetStagingRingBuffer() == VK_NULL_HANDLE) {
         std::cerr << "[UploadChunkMesh] TransferCommandBuffer or StagingRingBuffer is INVALID!" << std::endl;
         // Cleanup both buffers
-        vmaDestroyBuffer(m_vmaAllocator, chunkBuf.vertexBuffer, chunkBuf.vertexBufferAllocation);
-        vmaDestroyBuffer(m_vmaAllocator, chunkBuf.indexBuffer, chunkBuf.indexBufferAllocation);
+        vmaDestroyBuffer(m_memory->GetAllocator(), chunkBuf.vertexBuffer, chunkBuf.vertexBufferAllocation);
+        vmaDestroyBuffer(m_memory->GetAllocator(), chunkBuf.indexBuffer, chunkBuf.indexBufferAllocation);
         return;
     }
 
@@ -1859,13 +1380,13 @@ void RenderManager::UploadChunkMesh(ChunkCoord coord, const std::vector<Vertex>&
     vertexCopyRegion.srcOffset = vertexOffset;
     vertexCopyRegion.dstOffset = 0;
     vertexCopyRegion.size = vertexSize;
-    vkCmdCopyBuffer(m_transferCommandBuffer, m_stagingRingBuffer, chunkBuf.vertexBuffer, 1, &vertexCopyRegion);
+    vkCmdCopyBuffer(m_transferCommandBuffer, m_memory->GetStagingRingBuffer(), chunkBuf.vertexBuffer, 1, &vertexCopyRegion);
 
     VkBufferCopy indexCopyRegion = {};
     indexCopyRegion.srcOffset = indexOffset;
     indexCopyRegion.dstOffset = 0;
     indexCopyRegion.size = indexSize;
-    vkCmdCopyBuffer(m_transferCommandBuffer, m_stagingRingBuffer, chunkBuf.indexBuffer, 1, &indexCopyRegion);
+    vkCmdCopyBuffer(m_transferCommandBuffer, m_memory->GetStagingRingBuffer(), chunkBuf.indexBuffer, 1, &indexCopyRegion);
 
     m_chunkBuffers[coord] = chunkBuf;
 }
@@ -1881,10 +1402,10 @@ void RenderManager::FlushTransferBatch() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &m_transferCommandBuffer;
 
-    vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueSubmit(m_core->GetTransferQueue(), 1, &submitInfo, VK_NULL_HANDLE);
 
     // Iterazione 1: WaitIdle (Sincronizzazione dura a fine batch)
-    vkQueueWaitIdle(m_transferQueue);
+    vkQueueWaitIdle(m_core->GetTransferQueue());
 
     // Resetta l'offset (Tail raggiunge Head) e il command buffer per il prossimo batch
     m_currentOffset = 0;
@@ -1905,44 +1426,44 @@ void RenderManager::UploadGhostMesh(const std::vector<Vertex>& vertices, const s
     VkDeviceSize iSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuf; VmaAllocation stagingMem;
-    if (!CreateBuffer(vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    if (!m_memory->CreateBuffer(vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VMA_MEMORY_USAGE_CPU_TO_GPU,
                       stagingBuf, stagingMem)) return;
 
     void* data;
-    vmaMapMemory(m_vmaAllocator, stagingMem, &data);
+    vmaMapMemory(m_memory->GetAllocator(), stagingMem, &data);
     memcpy(data, vertices.data(), (size_t)vSize);
-    vmaUnmapMemory(m_vmaAllocator, stagingMem);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingMem);
 
     if (m_ghostVertexBuffer != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(m_device);
-        vmaDestroyBuffer(m_vmaAllocator, m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
-        vmaDestroyBuffer(m_vmaAllocator, m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
+        vkDeviceWaitIdle(m_core->GetDevice());
+        vmaDestroyBuffer(m_memory->GetAllocator(), m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
+        vmaDestroyBuffer(m_memory->GetAllocator(), m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
     }
 
-    if (!CreateBuffer(vSize,
+    if (!m_memory->CreateBuffer(vSize,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                       VMA_MEMORY_USAGE_GPU_ONLY,
                       m_ghostVertexBuffer, m_ghostVertexBufferAllocation)) return;
 
     CopyBuffer(stagingBuf, m_ghostVertexBuffer, vSize);
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuf, stagingMem);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuf, stagingMem);
 
-    if (!CreateBuffer(iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    if (!m_memory->CreateBuffer(iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VMA_MEMORY_USAGE_CPU_TO_GPU,
                       stagingBuf, stagingMem)) return;
 
-    vmaMapMemory(m_vmaAllocator, stagingMem, &data);
+    vmaMapMemory(m_memory->GetAllocator(), stagingMem, &data);
     memcpy(data, indices.data(), (size_t)iSize);
-    vmaUnmapMemory(m_vmaAllocator, stagingMem);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingMem);
 
-    if (!CreateBuffer(iSize,
+    if (!m_memory->CreateBuffer(iSize,
                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                       VMA_MEMORY_USAGE_GPU_ONLY,
                       m_ghostIndexBuffer, m_ghostIndexBufferAllocation)) return;
 
     CopyBuffer(stagingBuf, m_ghostIndexBuffer, iSize);
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuf, stagingMem);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuf, stagingMem);
 
     m_ghostIndexCount = (uint32_t)indices.size();
 }
@@ -2036,28 +1557,28 @@ void RenderManager::LoadMobMesh(const std::string& filepath) {
     VoxelMesh newMesh;
 
     // Crea i buffer Vulkan
-    CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.vertexBuffer, newMesh.vertexBufferAllocation);
-    CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer, newMesh.indexBufferAllocation);
+    m_memory->CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.vertexBuffer, newMesh.vertexBufferAllocation);
+    m_memory->CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer, newMesh.indexBufferAllocation);
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingBufferMemory;
 
     // Upload Vertices
-    CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    m_memory->CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
     void* data;
-    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
+    vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &data);
     memcpy(data, vertices.data(), (size_t)(sizeof(vertices[0]) * vertices.size()));
-    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
     CopyBuffer(stagingBuffer, newMesh.vertexBuffer, sizeof(vertices[0]) * vertices.size());
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
 
     // Upload Indices
-    CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
-    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
+    m_memory->CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &data);
     memcpy(data, indices.data(), (size_t)(sizeof(indices[0]) * indices.size()));
-    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
     CopyBuffer(stagingBuffer, newMesh.indexBuffer, sizeof(indices[0]) * indices.size());
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
 
     newMesh.indexCount = (uint32_t)indices.size();
     
@@ -2066,135 +1587,106 @@ void RenderManager::LoadMobMesh(const std::string& filepath) {
 }
 
 void RenderManager::Shutdown() {
-    if (m_device != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(m_device);
+    m_isFullyInitialized = false; // Blocca RecreateSwapchain durante lo shutdown
+    if (m_core->GetDevice() != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_core->GetDevice());
 
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
-        if (m_imguiDescriptorPool != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
+        if (m_memory->GetImguiDescriptorPool() != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetImguiDescriptorPool(), nullptr);
         }
 
         if (m_textureSampler != VK_NULL_HANDLE) {
-            vkDestroySampler(m_device, m_textureSampler, nullptr);
+            vkDestroySampler(m_core->GetDevice(), m_textureSampler, nullptr);
             m_textureSampler = VK_NULL_HANDLE;
         }
-        if (m_albedoImageView != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_albedoImageView, nullptr); m_albedoImageView = VK_NULL_HANDLE; }
-        if (m_normalImageView != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_normalImageView, nullptr); m_normalImageView = VK_NULL_HANDLE; }
-        if (m_ormImageView    != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_ormImageView,    nullptr); m_ormImageView    = VK_NULL_HANDLE; }
-        if (m_albedoImage != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_albedoImage, m_albedoImageAllocation); m_albedoImage = VK_NULL_HANDLE; }
-        if (m_normalImage != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_normalImage, m_normalImageAllocation); m_normalImage = VK_NULL_HANDLE; }
-        if (m_ormImage    != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_ormImage,    m_ormImageAllocation);    m_ormImage    = VK_NULL_HANDLE; }
-        if (m_forgeDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(m_device, m_forgeDescriptorPool, nullptr); m_forgeDescriptorPool = VK_NULL_HANDLE; }
-        if (m_forgeDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(m_device, m_forgeDescriptorSetLayout, nullptr); m_forgeDescriptorSetLayout = VK_NULL_HANDLE; }
+        if (m_albedoImageView != VK_NULL_HANDLE) { vkDestroyImageView(m_core->GetDevice(), m_albedoImageView, nullptr); m_albedoImageView = VK_NULL_HANDLE; }
+        if (m_normalImageView != VK_NULL_HANDLE) { vkDestroyImageView(m_core->GetDevice(), m_normalImageView, nullptr); m_normalImageView = VK_NULL_HANDLE; }
+        if (m_ormImageView    != VK_NULL_HANDLE) { vkDestroyImageView(m_core->GetDevice(), m_ormImageView,    nullptr); m_ormImageView    = VK_NULL_HANDLE; }
+        if (m_albedoImage != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_albedoImage, m_albedoImageAllocation); m_albedoImage = VK_NULL_HANDLE; }
+        if (m_normalImage != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_normalImage, m_normalImageAllocation); m_normalImage = VK_NULL_HANDLE; }
+        if (m_ormImage    != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_ormImage,    m_ormImageAllocation);    m_ormImage    = VK_NULL_HANDLE; }
+        if (m_memory->GetForgeDescriptorPool() != VK_NULL_HANDLE) { vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetForgeDescriptorPool(), nullptr); m_memory->GetForgeDescriptorPool() = VK_NULL_HANDLE; }
+        if (m_forgeDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(m_core->GetDevice(), m_forgeDescriptorSetLayout, nullptr); m_forgeDescriptorSetLayout = VK_NULL_HANDLE; }
 
         // Depth buffer cleanup
-        if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_device, m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
-        if (m_depthImage       != VK_NULL_HANDLE) { vmaDestroyImage(m_vmaAllocator, m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
+        if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_core->GetDevice(), m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
+        if (m_depthImage       != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
 
-    if (m_graphicsPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-    if (m_portalPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_portalPipeline, nullptr);
-    if (m_otherWorldPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_otherWorldPipeline, nullptr);
-    if (m_skyPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_skyPipeline, nullptr);
+    if (m_graphicsPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_graphicsPipeline, nullptr);
+    if (m_portalPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_portalPipeline, nullptr);
+    if (m_otherWorldPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_otherWorldPipeline, nullptr);
+    if (m_skyPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_skyPipeline, nullptr);
     if (m_pipelineLayout != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(m_core->GetDevice(), m_pipelineLayout, nullptr);
             m_pipelineLayout = VK_NULL_HANDLE;
         }
     if (m_skyPipelineLayout != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(m_device, m_skyPipelineLayout, nullptr);
+            vkDestroyPipelineLayout(m_core->GetDevice(), m_skyPipelineLayout, nullptr);
             m_skyPipelineLayout = VK_NULL_HANDLE;
         }
 
         if (m_forgePipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, m_forgePipeline, nullptr);
+            vkDestroyPipeline(m_core->GetDevice(), m_forgePipeline, nullptr);
             m_forgePipeline = VK_NULL_HANDLE;
         }
         if (m_forgePipelineLayout != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(m_device, m_forgePipelineLayout, nullptr);
+            vkDestroyPipelineLayout(m_core->GetDevice(), m_forgePipelineLayout, nullptr);
             m_forgePipelineLayout = VK_NULL_HANDLE;
         }
 
-        for (size_t i = 0; i < m_imageAvailableSemaphores.size(); i++) {
-            vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
-        }
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
-            vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
-            
-            vmaDestroyBuffer(m_vmaAllocator, m_uniformBuffers[i], m_uniformBuffersAllocation[i]);
+            vkDestroySemaphore(m_core->GetDevice(), m_imageAvailableSemaphores[i], nullptr);
+            vkDestroySemaphore(m_core->GetDevice(), m_renderFinishedSemaphores[i], nullptr);
+            vkDestroyFence(m_core->GetDevice(), m_inFlightFences[i], nullptr);
         }
 
-        if (m_descriptorPool != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
-            m_descriptorPool = VK_NULL_HANDLE;
+        if (m_memory->GetDescriptorPool() != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetDescriptorPool(), nullptr);
+            m_memory->GetDescriptorPool() = VK_NULL_HANDLE;
         }
 
         if (m_descriptorSetLayout != VK_NULL_HANDLE) {
-            vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+            vkDestroyDescriptorSetLayout(m_core->GetDevice(), m_descriptorSetLayout, nullptr);
             m_descriptorSetLayout = VK_NULL_HANDLE;
         }
         if (m_commandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+            vkDestroyCommandPool(m_core->GetDevice(), m_commandPool, nullptr);
             m_commandPool = VK_NULL_HANDLE;
         }
         for (auto framebuffer : m_framebuffers) {
-            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+            vkDestroyFramebuffer(m_core->GetDevice(), framebuffer, nullptr);
         }
         if (m_renderPass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+            vkDestroyRenderPass(m_core->GetDevice(), m_renderPass, nullptr);
             m_renderPass = VK_NULL_HANDLE;
         }
-        for (auto imageView : m_swapchainImageViews) {
-            vkDestroyImageView(m_device, imageView, nullptr);
+        for (auto imageView : m_core->GetSwapchainImageViews()) {
+            vkDestroyImageView(m_core->GetDevice(), imageView, nullptr);
         }
         for (auto& pair : m_chunkBuffers) {
-            if (pair.second.vertexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_vmaAllocator, pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
-            if (pair.second.indexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_vmaAllocator, pair.second.indexBuffer, pair.second.indexBufferAllocation);
+            if (pair.second.vertexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
+            if (pair.second.indexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.indexBuffer, pair.second.indexBufferAllocation);
         }
         m_chunkBuffers.clear();
         if (m_ghostVertexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
+            vmaDestroyBuffer(m_memory->GetAllocator(), m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
         }
         if (m_ghostIndexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
+            vmaDestroyBuffer(m_memory->GetAllocator(), m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
         }
-        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+        vkDestroySwapchainKHR(m_core->GetDevice(), m_core->GetSwapchain(), nullptr);
         
-        if (m_stagingRingBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, m_stagingRingBuffer, m_stagingAllocation);
-            m_stagingRingBuffer = VK_NULL_HANDLE;
-        }
-        
-        if (m_globalVramBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_vmaAllocator, m_globalVramBuffer, m_globalVramAllocation);
-            m_globalVramBuffer = VK_NULL_HANDLE;
-        }
-        if (m_chunkVmaPool != VK_NULL_HANDLE) {
-            vmaDestroyPool(m_vmaAllocator, m_chunkVmaPool);
-            m_chunkVmaPool = VK_NULL_HANDLE;
-        }
         if (m_transferCommandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(m_device, m_transferCommandPool, nullptr);
+            vkDestroyCommandPool(m_core->GetDevice(), m_transferCommandPool, nullptr);
             m_transferCommandPool = VK_NULL_HANDLE;
         }
-        if (m_vmaAllocator != VK_NULL_HANDLE) {
-            vmaDestroyAllocator(m_vmaAllocator);
-            m_vmaAllocator = VK_NULL_HANDLE;
-            std::cout << "[VMA] VmaAllocator distrutto." << std::endl;
-        }
 
-        vkDestroyDevice(m_device, nullptr);
-        m_device = VK_NULL_HANDLE;
-    }
-    if (m_surface != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-        m_surface = VK_NULL_HANDLE;
-    }
-    if (m_instance != VK_NULL_HANDLE) {
-        vkDestroyInstance(m_instance, nullptr);
-        m_instance = VK_NULL_HANDLE;
-        std::cout << "[VULKAN] Istanza distrutta." << std::endl;
+        m_memory.reset();
+
+        m_core.reset();
     }
 }
 
@@ -2219,7 +1711,7 @@ void RenderManager::InitImGui(void* hwnd) {
     pool_info.maxSets = 1000 * IM_ARRAYSIZE(pool_sizes);
     pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
-    vkCreateDescriptorPool(m_device, &pool_info, nullptr, &m_imguiDescriptorPool);
+    vkCreateDescriptorPool(m_core->GetDevice(), &pool_info, nullptr, &m_memory->GetImguiDescriptorPool());
 
     // 2. Init ImGui contest
     IMGUI_CHECKVERSION();
@@ -2291,17 +1783,17 @@ void RenderManager::InitImGui(void* hwnd) {
     // 3. Init backend
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = m_instance;
-    init_info.PhysicalDevice = m_physicalDevice;
-    init_info.Device = m_device;
-    QueueFamilyIndices indices = FindQueueFamilies(m_physicalDevice);
+    init_info.Instance = m_core->GetInstance();
+    init_info.PhysicalDevice = m_core->GetPhysicalDevice();
+    init_info.Device = m_core->GetDevice();
+    fw::QueueFamilyIndices indices = m_core->FindQueueFamilies(m_core->GetPhysicalDevice());
     init_info.QueueFamily = indices.graphicsFamily.value();
-    init_info.Queue = m_graphicsQueue;
+    init_info.Queue = m_core->GetGraphicsQueue();
     init_info.PipelineCache = VK_NULL_HANDLE;
-    init_info.DescriptorPool = m_imguiDescriptorPool;
+    init_info.DescriptorPool = m_memory->GetImguiDescriptorPool();
     init_info.PipelineInfoMain.Subpass = 0;
     init_info.MinImageCount = 2;
-    init_info.ImageCount = (uint32_t)m_swapchainImages.size();
+    init_info.ImageCount = (uint32_t)m_core->GetSwapchainImages().size();
     init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.Allocator = nullptr;
     init_info.CheckVkResultFn = nullptr;
@@ -2323,18 +1815,18 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         VmaAllocation stagingBufferMemory;
         
         // Usiamo CPU_ONLY per evitare di esaurire la memoria BAR (CPU_TO_GPU) allocando 256MB
-        if (!CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingBufferMemory)) {
+        if (!m_memory->CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingBufferMemory)) {
             std::cerr << "[VULKAN ERROR] CreateBuffer (Staging) fallito per " << imageSize / 1024 / 1024 << " MB!" << std::endl;
             return;
         }
 
         void* mappedData = nullptr;
-        if (vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &mappedData) != VK_SUCCESS || mappedData == nullptr) {
+        if (vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &mappedData) != VK_SUCCESS || mappedData == nullptr) {
             std::cerr << "[VULKAN ERROR] Impossibile mappare lo staging buffer!" << std::endl;
             return;
         }
         memcpy(mappedData, pixels.data(), static_cast<size_t>(imageSize));
-        vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
+        vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
 
         CreateImage(data.width, data.height, data.layerCount, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, 
                     VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, image, alloc);
@@ -2343,7 +1835,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         CopyBufferToImage(stagingBuffer, image, data.width, data.height, data.layerCount);
         TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, data.layerCount);
 
-        vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
+        vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
 
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -2356,7 +1848,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = data.layerCount;
 
-        if (vkCreateImageView(m_device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+        if (vkCreateImageView(m_core->GetDevice(), &viewInfo, nullptr, &view) != VK_SUCCESS) {
             std::cerr << "[VULKAN ERROR] Impossibile creare texture image view!" << std::endl;
         }
     };
@@ -2379,14 +1871,14 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
-    if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
+    if (vkCreateSampler(m_core->GetDevice(), &samplerInfo, nullptr, &m_textureSampler) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare texture sampler!" << std::endl;
     }
     
     // --- CREA/AGGIORNA FORGE DESCRIPTOR SETS ---
-    if (m_forgeDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(m_device, m_forgeDescriptorPool, nullptr);
-        m_forgeDescriptorPool = VK_NULL_HANDLE;
+    if (m_memory->GetForgeDescriptorPool() != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetForgeDescriptorPool(), nullptr);
+        m_memory->GetForgeDescriptorPool() = VK_NULL_HANDLE;
     }
     
     std::array<VkDescriptorPoolSize, 1> poolSizes{};
@@ -2399,7 +1891,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
-    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_forgeDescriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(m_core->GetDevice(), &poolInfo, nullptr, &m_memory->GetForgeDescriptorPool()) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] CreateForgeDescriptorPool fallito!" << std::endl;
         return;
     }
@@ -2407,12 +1899,12 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
     std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_forgeDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_forgeDescriptorPool;
+    allocInfo.descriptorPool = m_memory->GetForgeDescriptorPool();
     allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     allocInfo.pSetLayouts = layouts.data();
 
-    m_forgeDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    if (vkAllocateDescriptorSets(m_device, &allocInfo, m_forgeDescriptorSets.data()) != VK_SUCCESS) {
+    m_memory->GetForgeDescriptorSets().resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(m_core->GetDevice(), &allocInfo, m_memory->GetForgeDescriptorSets().data()) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] vkAllocateDescriptorSets per forge fallito!" << std::endl;
         return;
     }
@@ -2436,7 +1928,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = m_forgeDescriptorSets[i];
+        descriptorWrites[0].dstSet = m_memory->GetForgeDescriptorSets()[i];
         descriptorWrites[0].dstBinding = 0; // albedo
         descriptorWrites[0].dstArrayElement = 0;
         descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -2444,7 +1936,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         descriptorWrites[0].pImageInfo = &albedoInfo;
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = m_forgeDescriptorSets[i];
+        descriptorWrites[1].dstSet = m_memory->GetForgeDescriptorSets()[i];
         descriptorWrites[1].dstBinding = 1; // normal
         descriptorWrites[1].dstArrayElement = 0;
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -2452,25 +1944,25 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         descriptorWrites[1].pImageInfo = &normalInfo;
 
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = m_forgeDescriptorSets[i];
+        descriptorWrites[2].dstSet = m_memory->GetForgeDescriptorSets()[i];
         descriptorWrites[2].dstBinding = 2; // orm
         descriptorWrites[2].dstArrayElement = 0;
         descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pImageInfo = &ormInfo;
-        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(m_core->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
-        // --- Aggiorna anche i vecchi descriptor set (m_descriptorSets) ---
+        // --- Aggiorna anche i vecchi descriptor set (m_memory->GetDescriptorSets()) ---
         // Altrimenti il binding fallirà e manderà in crash le vecchie pipeline (es. per mob e player)
         VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = m_uniformBuffers[i];
+        uboInfo.buffer = m_memory->GetUniformBuffers()[i];
         uboInfo.offset = 0;
         uboInfo.range = sizeof(UniformBufferObject);
 
         std::array<VkWriteDescriptorSet, 2> legacyWrites{};
 
         legacyWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        legacyWrites[0].dstSet = m_descriptorSets[i];
+        legacyWrites[0].dstSet = m_memory->GetDescriptorSets()[i];
         legacyWrites[0].dstBinding = 0;
         legacyWrites[0].dstArrayElement = 0;
         legacyWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -2478,14 +1970,14 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         legacyWrites[0].pBufferInfo = &uboInfo;
 
         legacyWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        legacyWrites[1].dstSet = m_descriptorSets[i];
+        legacyWrites[1].dstSet = m_memory->GetDescriptorSets()[i];
         legacyWrites[1].dstBinding = 1;
         legacyWrites[1].dstArrayElement = 0;
         legacyWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         legacyWrites[1].descriptorCount = 1;
         legacyWrites[1].pImageInfo = &albedoInfo; // Usiamo l'albedo come texture legacy
 
-        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(legacyWrites.size()), legacyWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(m_core->GetDevice(), static_cast<uint32_t>(legacyWrites.size()), legacyWrites.data(), 0, nullptr);
     }
 }
 
@@ -2508,12 +2000,12 @@ void RenderManager::UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIn
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingAllocation;
-    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAllocation);
+    m_memory->CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAllocation);
 
     void* data;
-    vmaMapMemory(m_vmaAllocator, stagingAllocation, &data);
+    vmaMapMemory(m_memory->GetAllocator(), stagingAllocation, &data);
     memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
-    vmaUnmapMemory(m_vmaAllocator, stagingAllocation);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingAllocation);
 
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
@@ -2560,7 +2052,7 @@ void RenderManager::UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIn
 
     EndSingleTimeCommands(commandBuffer);
 
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingAllocation);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingAllocation);
 }
 
 void RenderManager::UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic) {
@@ -2593,7 +2085,7 @@ void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerC
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = vmaUsage;
 
-    if (vmaCreateImage(m_vmaAllocator, &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
+    if (vmaCreateImage(m_memory->GetAllocator(), &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile allocare memory image con VMA!" << std::endl;
     }
 }
@@ -2606,7 +2098,7 @@ VkCommandBuffer RenderManager::BeginSingleTimeCommands() {
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+    vkAllocateCommandBuffers(m_core->GetDevice(), &allocInfo, &commandBuffer);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -2624,10 +2116,10 @@ void RenderManager::EndSingleTimeCommands(VkCommandBuffer commandBuffer) {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_graphicsQueue);
+    vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_core->GetGraphicsQueue());
 
-    vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+    vkFreeCommandBuffers(m_core->GetDevice(), m_commandPool, 1, &commandBuffer);
 }
 
 void RenderManager::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount) {
@@ -2705,12 +2197,12 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingBufferMemory;
-    CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    m_memory->CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
 
     void* data;
-    vmaMapMemory(m_vmaAllocator, stagingBufferMemory, &data);
+    vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &data);
     memcpy(data, pixelData, static_cast<size_t>(imageSize));
-    vmaUnmapMemory(m_vmaAllocator, stagingBufferMemory);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
 
     VkImage targetImage = VK_NULL_HANDLE;
     if (type == PBRTextureType::ALBEDO) targetImage = m_albedoImage;
@@ -2742,7 +2234,7 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     // Transizione indietro a SHADER_READ_ONLY
     TransitionImageLayout(targetImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 256);
 
-    vmaDestroyBuffer(m_vmaAllocator, stagingBuffer, stagingBufferMemory);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
     std::cout << "[VULKAN] Texture Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;
 }
 
@@ -2784,30 +2276,20 @@ bool RenderManager::LoadPBRTextureFromFile(const std::string& filePath, uint32_t
 
 void RenderManager::CleanupSwapchain() {
     for (auto framebuffer : m_framebuffers) {
-        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+        vkDestroyFramebuffer(m_core->GetDevice(), framebuffer, nullptr);
     }
     m_framebuffers.clear();
 
     if (m_depthImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(m_device, m_depthImageView, nullptr);
+        vkDestroyImageView(m_core->GetDevice(), m_depthImageView, nullptr);
         m_depthImageView = VK_NULL_HANDLE;
     }
     if (m_depthImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(m_vmaAllocator, m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
-
-    for (auto imageView : m_swapchainImageViews) {
-        vkDestroyImageView(m_device, imageView, nullptr);
-    }
-    m_swapchainImageViews.clear();
-
-    if (m_swapchain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-        m_swapchain = VK_NULL_HANDLE;
-    }
+        vmaDestroyImage(m_memory->GetAllocator(), m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
 }
 
 void RenderManager::RecreateSwapchain() {
-    if (m_device == VK_NULL_HANDLE || m_hwnd == nullptr || m_renderPass == VK_NULL_HANDLE) return;
+    if (m_core->GetDevice() == VK_NULL_HANDLE || m_hwnd == nullptr || m_renderPass == VK_NULL_HANDLE) return;
 
     RECT rect;
     GetClientRect((HWND)m_hwnd, &rect);
@@ -2820,49 +2302,49 @@ void RenderManager::RecreateSwapchain() {
         Sleep(10);
     }
 
-    vkDeviceWaitIdle(m_device);
+    vkDeviceWaitIdle(m_core->GetDevice());
 
     CleanupSwapchain();
 
-    CreateSwapchain(m_hwnd);
-    CreateImageViews();
+    m_core->RecreateSwapchain(m_hwnd);
+    
     CreateDepthResources();
     CreateFramebuffers();
 
     if (m_graphicsPipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+        vkDestroyPipeline(m_core->GetDevice(), m_graphicsPipeline, nullptr);
         m_graphicsPipeline = VK_NULL_HANDLE;
     }
     if (m_portalPipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_portalPipeline, nullptr);
+        vkDestroyPipeline(m_core->GetDevice(), m_portalPipeline, nullptr);
         m_portalPipeline = VK_NULL_HANDLE;
     }
     if (m_otherWorldPipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_otherWorldPipeline, nullptr);
+        vkDestroyPipeline(m_core->GetDevice(), m_otherWorldPipeline, nullptr);
         m_otherWorldPipeline = VK_NULL_HANDLE;
     }
     if (m_skyPipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_skyPipeline, nullptr);
+        vkDestroyPipeline(m_core->GetDevice(), m_skyPipeline, nullptr);
         m_skyPipeline = VK_NULL_HANDLE;
     }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+        vkDestroyPipelineLayout(m_core->GetDevice(), m_pipelineLayout, nullptr);
         m_pipelineLayout = VK_NULL_HANDLE;
     }
     if (m_skyPipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(m_device, m_skyPipelineLayout, nullptr);
+        vkDestroyPipelineLayout(m_core->GetDevice(), m_skyPipelineLayout, nullptr);
         m_skyPipelineLayout = VK_NULL_HANDLE;
     }
     if (m_forgePipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(m_device, m_forgePipeline, nullptr);
+        vkDestroyPipeline(m_core->GetDevice(), m_forgePipeline, nullptr);
         m_forgePipeline = VK_NULL_HANDLE;
     }
     if (m_forgePipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(m_device, m_forgePipelineLayout, nullptr);
+        vkDestroyPipelineLayout(m_core->GetDevice(), m_forgePipelineLayout, nullptr);
         m_forgePipelineLayout = VK_NULL_HANDLE;
     }
     CreateGraphicsPipeline();
-    CreateForgePipeline();
+    CreateForgePipeline(); // Aggiorna anche il BlockMakerRenderer con extent aggiornato
 
     std::cout << "[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (" << width << "x" << height << ")" << std::endl;
 }
@@ -2871,18 +2353,18 @@ void RenderManager::RecreateSwapchain() {
 // FASE 5: DEFRAMMENTAZIONE A CALDO (FAST)
 // ---------------------------------------------------------
 void RenderManager::DefragmentVRAM() {
-    if (!m_vmaAllocator || !m_chunkVmaPool) return;
+    if (!m_memory->GetAllocator() || !m_memory->GetChunkVmaPool()) return;
 
     VmaDefragmentationInfo defragInfo = {};
-    defragInfo.pool = m_chunkVmaPool;
+    defragInfo.pool = m_memory->GetChunkVmaPool();
     defragInfo.flags = VMA_DEFRAGMENTATION_FLAG_ALGORITHM_FAST_BIT;
     
     VmaDefragmentationContext defragCtx = VK_NULL_HANDLE;
-    VkResult res = vmaBeginDefragmentation(m_vmaAllocator, &defragInfo, &defragCtx);
+    VkResult res = vmaBeginDefragmentation(m_memory->GetAllocator(), &defragInfo, &defragCtx);
     
     if (res == VK_SUCCESS) {
         VmaDefragmentationPassMoveInfo pass = {};
-        res = vmaBeginDefragmentationPass(m_vmaAllocator, defragCtx, &pass);
+        res = vmaBeginDefragmentationPass(m_memory->GetAllocator(), defragCtx, &pass);
         if (res == VK_SUCCESS) {
             // Approccio "Fast" invisibile:
             // VMA unira' logicamente lo spazio libero frammentato nei suoi metadati.
@@ -2891,9 +2373,9 @@ void RenderManager::DefragmentVRAM() {
             for (uint32_t i = 0; i < pass.moveCount; i++) {
                 pass.pMoves[i].operation = VMA_DEFRAGMENTATION_MOVE_OPERATION_IGNORE;
             }
-            vmaEndDefragmentationPass(m_vmaAllocator, defragCtx, &pass);
+            vmaEndDefragmentationPass(m_memory->GetAllocator(), defragCtx, &pass);
         }
-        vmaEndDefragmentation(m_vmaAllocator, defragCtx, nullptr);
+        vmaEndDefragmentation(m_memory->GetAllocator(), defragCtx, nullptr);
         std::cout << "[VMA] DefragmentVRAM() Fast-Pass completato." << std::endl;
     }
 }
@@ -3001,9 +2483,9 @@ bool RenderManager::CreateForgePipeline() {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
     pipelineLayoutInfo.setLayoutCount = 1; 
-    pipelineLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &m_forgeDescriptorSetLayout;
 
-    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_forgePipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(m_core->GetDevice(), &pipelineLayoutInfo, nullptr, &m_forgePipelineLayout) != VK_SUCCESS) {
         std::cerr << "[VULKAN] Errore creazione Forge Pipeline Layout!\n";
         return false;
     }
@@ -3030,13 +2512,21 @@ bool RenderManager::CreateForgePipeline() {
     pipelineInfo.renderPass = m_renderPass;
     pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_forgePipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_core->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_forgePipeline) != VK_SUCCESS) {
         std::cerr << "[VULKAN] Errore creazione Forge Graphics Pipeline!\n";
         return false;
     }
 
-    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), vertShaderModule, nullptr);
+
+    // Inizializza temporaneamente l'Ape Artigiana (BlockMakerRenderer) con la pipeline Forge
+    if (m_blockMakerRenderer) {
+        m_blockMakerRenderer->SetPipeline(m_forgePipeline, m_forgePipelineLayout);
+        m_blockMakerRenderer->SetGlobalBuffer(m_memory->GetGlobalVramBuffer());
+        m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+        m_blockMakerRenderer->SetDescriptorSets(&m_memory->GetForgeDescriptorSets());
+    }
 
     return true;
 }
@@ -3050,8 +2540,8 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     // ==========================================
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
     
-    if (!m_forgeDescriptorSets.empty() && m_forgeDescriptorSets[m_currentFrame] != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_forgeDescriptorSets[m_currentFrame], 0, nullptr);
+    if (!m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
     }
 
     ForgePushConstantData pcData{};
@@ -3079,18 +2569,18 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float)m_swapchainExtent.width;
-    viewport.height = (float)m_swapchainExtent.height;
+    viewport.width = (float)m_core->GetSwapchainExtent().width;
+    viewport.height = (float)m_core->GetSwapchainExtent().height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = m_swapchainExtent;
+    scissor.extent = m_core->GetSwapchainExtent();
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    if (m_globalVramBuffer != VK_NULL_HANDLE) {
+    if (m_memory->GetGlobalVramBuffer() != VK_NULL_HANDLE) {
         auto& registry = forgeWorld->GetRegistry();
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
@@ -3145,7 +2635,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
                 offsets[0] = mesh.vramAlloc.offset;
-                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                VkBuffer vertexBuffers[] = { m_memory->GetGlobalVramBuffer() };
                 vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
                 
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
@@ -3173,7 +2663,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
                 offsets[0] = mesh.vramAlloc.offset;
-                VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+                VkBuffer vertexBuffers[] = { m_memory->GetGlobalVramBuffer() };
                 vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
                 
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);

@@ -331,7 +331,7 @@ entt::entity ForgeWorld::CreateChunkEntity(const std::string& name, const Vec3& 
     m_registry.emplace<MetadataComponent>(entity, name, true, false);
     fw::TransformComponent trans;
     trans.location = position;
-    trans.rotation = {0.0f, 0.0f, 0.0f};
+    trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
     trans.scale = {1.0f, 1.0f, 1.0f};
     m_registry.emplace<TransformComponent>(entity, trans);
     m_registry.emplace<VoxelChunkComponent>(entity, (int)position.x / 16, (int)position.z / 16);
@@ -490,7 +490,7 @@ entt::entity ForgeWorld::CreatePrimitive(const std::string& name, const Vec3& po
     
     fw::TransformComponent trans;
     trans.location = position;
-    trans.rotation = {0.0f, 0.0f, 0.0f};
+    trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
     trans.scale = {1.0f, 1.0f, 1.0f};
     m_registry.emplace<TransformComponent>(entity, trans);
     
@@ -597,7 +597,7 @@ void ForgeWorld::Update(float dt) {
                 
                 fw::TransformComponent trans;
                 trans.location = {def.position.x, def.position.y, def.position.z};
-                trans.rotation = {0.0f, 0.0f, 0.0f};
+                trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
                 trans.scale = {1.0f, 1.0f, 1.0f}; // Fissa il bug della scala a zero!
                 m_registry.emplace<TransformComponent>(newEntity, trans);
                 

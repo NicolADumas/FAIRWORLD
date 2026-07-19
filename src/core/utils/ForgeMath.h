@@ -38,6 +38,16 @@ struct Vec4 {
     float x = 0.0f, y = 0.0f, z = 0.0f, w = 1.0f; 
 };
 
+struct Quat {
+    float x = 0.0f, y = 0.0f, z = 0.0f, w = 1.0f;
+
+    static Quat angleAxis(float angleRadians, Vec3 axis) {
+        float halfAngle = angleRadians * 0.5f;
+        float s = std::sin(halfAngle);
+        return {axis.x * s, axis.y * s, axis.z * s, std::cos(halfAngle)};
+    }
+};
+
 struct Mat4 {
     float m[4][4] = {};
     
@@ -84,6 +94,28 @@ struct Mat4 {
         return r;
     }
     
+    // Converte da Quaternione a Matrice 4x4
+    static Mat4 fromQuat(const Quat& q) {
+        Mat4 r = identity();
+        float x2 = q.x + q.x, y2 = q.y + q.y, z2 = q.z + q.z;
+        float xx = q.x * x2, xy = q.x * y2, xz = q.x * z2;
+        float yy = q.y * y2, yz = q.y * z2, zz = q.z * z2;
+        float wx = q.w * x2, wy = q.w * y2, wz = q.w * z2;
+
+        r.m[0][0] = 1.0f - (yy + zz);
+        r.m[0][1] = xy - wz;
+        r.m[0][2] = xz + wy;
+
+        r.m[1][0] = xy + wz;
+        r.m[1][1] = 1.0f - (xx + zz);
+        r.m[1][2] = yz - wx;
+
+        r.m[2][0] = xz - wy;
+        r.m[2][1] = yz + wx;
+        r.m[2][2] = 1.0f - (xx + yy);
+        return r;
+    }
+
     Mat4 operator*(const Mat4& b) const {
         Mat4 r;
         for(int i = 0; i < 4; i++) {

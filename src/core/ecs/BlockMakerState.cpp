@@ -66,6 +66,11 @@ BlockMakerState::BlockMakerState(SharedContext* context) : m_context(context) {
 }
 
 BlockMakerState::~BlockMakerState() {
+    std::cout << "[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
+    if (m_context && m_context->jobSystem) {
+        m_context->jobSystem->Shutdown();
+        m_context->jobSystem->Initialize();
+    }
     std::cout << "[BlockMakerState] Distrutto.\n";
 }
 
@@ -229,6 +234,13 @@ void BlockMakerState::HandlePhysicsSimulation(float dt) {
     if (m_previewBlockEntity != entt::null && m_registry.valid(m_previewBlockEntity)) {
         auto& transform = m_registry.get<fw::TransformComponent>(m_previewBlockEntity);
         transform.location = fw::Vec3{0.0f, m_simPosY, 0.0f};
+        
+        // Rotazione automatica per mostrare tutte le facce del blocco
+        if (m_autoRotateBlock) {
+            m_blockRotationY += 45.0f * dt; // 45 gradi al secondo
+            if (m_blockRotationY >= 360.0f) m_blockRotationY -= 360.0f;
+        }
+        transform.rotation = fw::Quat::angleAxis(glm::radians(m_blockRotationY), {0.0f, 1.0f, 0.0f});
     }
 }
 
@@ -467,6 +479,21 @@ void BlockMakerState::DrawUI() {
                         m_simPosY = 0.0f;
                     }
                 }
+                
+                ImGui::Separator();
+                
+                ImGui::Text("Preview Options");
+                ImGui::Checkbox("Simulate Physics (Bouncing)", &m_simulatePhysics);
+                ImGui::Checkbox("Auto-Rotate Block", &m_autoRotateBlock);
+                if (!m_autoRotateBlock) {
+                    ImGui::SliderFloat("Manual Rotation", &m_blockRotationY, 0.0f, 360.0f);
+                }
+                
+                if (ImGui::Button("Save Physics Parameters", ImVec2(-1, 40))) {
+            m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+            m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+            std::cout << "[BlockMaker] Dati salvati in assets/definitions/\n";
+        }
                 
                 ImGui::EndTabItem();
             }
