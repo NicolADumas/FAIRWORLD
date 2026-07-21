@@ -297,7 +297,7 @@ void ForgeWorld::Initialize(SharedContext* context) {
     }
     
     if (!m_context->vramAllocator) {
-        m_context->vramAllocator = new fw::VramSlabAllocator(512 * 1024 * 1024);
+        m_context->vramAllocator = new fw::VramSlabAllocator(2048U * 1024 * 1024);
     }
     
     // VulkanDmaManager richiede RenderManager dal FairWorldEngine
@@ -558,6 +558,15 @@ void ForgeWorld::Update(float dt) {
                 m_registry.emplace_or_replace<PBRMaterialComponent>(def.targetEntity);
                 std::cout << "[DEBUG ProcessDeferred] Aggiornando entity, mesh vertices=" << def.mesh.vertices.size() << "\n";
                 if (!def.mesh.vertices.empty()) {
+                    // Allocazione VRAM e DMA se la mesh non ha già VRAM allocata (es. Mesh sincrone da BlockMaker)
+                    if (!def.mesh.vramAlloc.valid && m_context->vramAllocator && m_context->dmaManager) {
+                        uint32_t meshSizeBytes = (uint32_t)(def.mesh.vertices.size() * sizeof(fw::Vertex));
+                        def.mesh.vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
+                        if (def.mesh.vramAlloc.valid) {
+                            m_context->dmaManager->UploadMeshAsync(def.mesh.vertices.data(), meshSizeBytes, def.mesh.vramAlloc);
+                        }
+                    }
+
                     if (m_registry.all_of<MeshComponent>(def.targetEntity)) {
                         auto& oldMesh = m_registry.get<MeshComponent>(def.targetEntity);
                         if (oldMesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
@@ -623,7 +632,13 @@ void ForgeWorld::Update(float dt) {
     if (m_context && m_context->jobSystem) {
         auto dirtyChunks = m_registry.view<VoxelChunkComponent, ChunkDirtyComponent>();
         std::vector<entt::entity> toRemove;
+        
+        int jobsDispatchedThisFrame = 0;
+        int maxJobsPerFrame = 15; // Evita di bloccare il frame inviando 900 task tutti in una volta
+
         for (auto entity : dirtyChunks) {
+            if (jobsDispatchedThisFrame >= maxJobsPerFrame) break;
+
             auto& dirty = dirtyChunks.get<ChunkDirtyComponent>(entity);
             if (dirty.pendingJob) continue;
             
@@ -805,6 +820,8 @@ void ForgeWorld::Update(float dt) {
                     newlyGen
                 });
             });
+            
+            jobsDispatchedThisFrame++;
             
             // Niente più rimozione di ChunkDirtyComponent qui! Viene rimosso dal Main Thread dopo che il DeferredCommand è elaborato.
         }

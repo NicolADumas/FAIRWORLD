@@ -6,6 +6,7 @@
 #include <vector>
 #include "Systems.h"
 
+namespace fw { class ForgeWorld; }
 struct SharedContext;
 
 class BlockMakerState : public State {
@@ -59,4 +60,6 @@ private:
 
     void UpdatePreviewMesh();
     void HandlePhysicsSimulation(float dt);
+
+    std::unique_ptr<fw::ForgeWorld> m_previewWorld;
 };

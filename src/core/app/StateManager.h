@@ -2,9 +2,13 @@
 #include <memory>
 #include <iostream>
 #include "State.h"
+#include "SharedContext.h"
+#include "CacheManager.h"
 
 class StateManager {
 public:
+    void SetSharedContext(SharedContext* context) { m_context = context; }
+
     void ChangeState(std::unique_ptr<State> newState) {
         // Mette in coda il cambio di stato
         m_pendingState = std::move(newState);
@@ -15,6 +19,12 @@ public:
             // Memory Isolation: Distrugge esplicitamente lo stato corrente PRIMA di inizializzare il nuovo
             m_currentState.reset();
             
+            // Invalidation automatica delle cache CPU & GPU durante la transizione
+            if (m_context && m_context->cacheManager) {
+                m_context->cacheManager->FlushGpuRenderCaches(m_context);
+                m_context->cacheManager->FlushCpuTransientCaches(m_context);
+            }
+
             // Applica il nuovo stato
             m_currentState = std::move(m_pendingState);
             
@@ -48,6 +58,7 @@ public:
     }
 
 private:
+    SharedContext* m_context = nullptr;
     std::unique_ptr<State> m_currentState = nullptr;
     std::unique_ptr<State> m_pendingState = nullptr;
 };

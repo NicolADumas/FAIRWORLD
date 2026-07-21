@@ -67,15 +67,24 @@ BlockMakerState::BlockMakerState(SharedContext* context) : m_context(context) {
 
 BlockMakerState::~BlockMakerState() {
     std::cout << "[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
-    if (m_context && m_context->jobSystem) {
-        m_context->jobSystem->Shutdown();
-        m_context->jobSystem->Initialize();
+    if (m_context) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+            m_context->forgeWorld = nullptr;
+        }
+        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
+            m_context->activeRegistry = nullptr;
+        }
+        if (m_context->jobSystem) {
+            m_context->jobSystem->Shutdown();
+            m_context->jobSystem->Initialize();
+        }
     }
     std::cout << "[BlockMakerState] Distrutto.\n";
 }
 
 entt::registry* BlockMakerState::GetRegistry() {
-    return &m_context->forgeWorld->GetRegistry();
+    if (m_previewWorld) return &m_previewWorld->GetRegistry();
+    return nullptr;
 }
 
 bool BlockMakerState::Init() {
@@ -102,9 +111,17 @@ bool BlockMakerState::Init() {
         }
     }
 
-    if (!m_context->forgeWorld) {
-        m_context->forgeWorld = new fw::ForgeWorld();
-        m_context->forgeWorld->Initialize(m_context);
+    // Inizializziamo l'istanza isolata di ForgeWorld per il Block Maker
+    m_previewWorld = std::make_unique<fw::ForgeWorld>();
+    m_previewWorld->Initialize(m_context);
+
+    m_context->forgeWorld = m_previewWorld.get();
+    m_context->activeRegistry = &m_previewWorld->GetRegistry();
+
+    // Pulisce la cache delle mesh GPU e CPU tramite il CacheManager centralizzato
+    if (m_context && m_context->cacheManager) {
+        m_context->cacheManager->FlushGpuRenderCaches(m_context);
+        m_context->cacheManager->FlushCpuTransientCaches(m_context);
     }
 
     // Set the specific state flag for RenderManager to know we're in Void Room mode
@@ -117,13 +134,13 @@ bool BlockMakerState::Init() {
         v.roughMetal = {0.9f, 0.0f}; // Rough, non-metallic
     }
     
-    entt::entity envEntity = m_context->forgeWorld->GetRegistry().create();
+    entt::entity envEntity = m_previewWorld->GetRegistry().create();
     fw::TransformComponent envTrans;
     envTrans.location = fw::Vec3{0.0f, -0.55f, 0.0f}; // Top face at Y = -0.5f
     envTrans.scale = fw::Vec3{1.0f, 0.01f, 1.0f}; // Flatten to a plane
-    m_context->forgeWorld->GetRegistry().emplace<fw::TransformComponent>(envEntity, envTrans);
-    m_context->forgeWorld->GetRegistry().emplace<fw::MetadataComponent>(envEntity, "BlockMakerEnv");
-    m_context->forgeWorld->EnqueueDeferredMesh("BlockMakerEnv", glm::vec3(0.0f, -0.55f, 0.0f), std::move(floorMesh), nullptr, envEntity);
+    m_previewWorld->GetRegistry().emplace<fw::TransformComponent>(envEntity, envTrans);
+    m_previewWorld->GetRegistry().emplace<fw::MetadataComponent>(envEntity, "BlockMakerEnv");
+    m_previewWorld->EnqueueDeferredMesh("BlockMakerEnv", glm::vec3(0.0f, -0.55f, 0.0f), std::move(floorMesh), nullptr, envEntity);
 
     // Spawn preview entity in registry
     UpdatePreviewMesh();
@@ -176,8 +193,9 @@ void BlockMakerState::Update(float dt) {
     m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(m_cameraFov), aspect, 0.1f, 1000.0f);
     m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Vulkan Y-flip
     
-    m_context->activeRegistry = &m_context->forgeWorld->GetRegistry();
-    auto& m_registry = m_context->forgeWorld->GetRegistry();
+    m_context->forgeWorld = m_previewWorld.get();
+    m_context->activeRegistry = &m_previewWorld->GetRegistry();
+    auto& m_registry = m_previewWorld->GetRegistry();
     
     HandlePhysicsSimulation(dt);
     
@@ -186,8 +204,8 @@ void BlockMakerState::Update(float dt) {
         sys->Update(m_registry, m_context, dt);
     }
 
-    if (m_context->forgeWorld) {
-        m_context->forgeWorld->Update(dt);
+    if (m_previewWorld) {
+        m_previewWorld->Update(dt);
     }
 
     if (m_saveMessageTimer > 0.0f) {
@@ -228,7 +246,7 @@ void BlockMakerState::HandlePhysicsSimulation(float dt) {
             }
         }
     }
-    auto& m_registry = m_context->forgeWorld->GetRegistry();
+    auto& m_registry = m_previewWorld->GetRegistry();
     
     // Aggiorna la Transform dell'entità preview
     if (m_previewBlockEntity != entt::null && m_registry.valid(m_previewBlockEntity)) {
@@ -249,7 +267,7 @@ void BlockMakerState::Render() {
 }
 
 void BlockMakerState::UpdatePreviewMesh() {
-    if (!m_context || !m_context->forgeWorld || !m_context->blockRegistry) return;
+    if (!m_context || !m_previewWorld || !m_context->blockRegistry) return;
     
     auto previewMesh = fw::MeshGenerators::MakeCube(1.0f);
     previewMesh.type = fw::MeshType::Chunk; // RenderFairworld disegna solo Chunk o Prefab
@@ -267,7 +285,7 @@ void BlockMakerState::UpdatePreviewMesh() {
         v.ao = 1.0f; // Default AO
     }
 
-    auto& m_registry = m_context->forgeWorld->GetRegistry();
+    auto& m_registry = m_previewWorld->GetRegistry();
     if (m_previewBlockEntity == entt::null || !m_registry.valid(m_previewBlockEntity)) {
         m_previewBlockEntity = m_registry.create();
         fw::TransformComponent trans;
@@ -276,7 +294,7 @@ void BlockMakerState::UpdatePreviewMesh() {
         m_registry.emplace<fw::MetadataComponent>(m_previewBlockEntity, "PreviewBlock");
     }
 
-    m_context->forgeWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f, 0.0f, 0.0f), std::move(previewMesh), nullptr, m_previewBlockEntity);
+    m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f, 0.0f, 0.0f), std::move(previewMesh), nullptr, m_previewBlockEntity);
 }
 
 void BlockMakerState::DrawUI() {
@@ -285,7 +303,12 @@ void BlockMakerState::DrawUI() {
     
     if (ImGui::Begin("Block Maker (Data-Driven)")) {
         if (ImGui::Button("< TORNA ALL'HUB")) {
+            if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+                m_context->forgeWorld = nullptr;
+            }
+            m_context->activeRegistry = nullptr;
             m_context->isBlockMakerMode = false;
+            m_context->engine->SetGameMode(GameMode::Hub);
             m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
             ImGui::End();
             return;
@@ -410,9 +433,9 @@ void BlockMakerState::DrawUI() {
                             pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
                             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                             
-                            // Aggiorna istantaneamente la GPU con la nuova texture!
-                            if (m_context->engine && m_context->engine->GetRenderManager()) {
-                                m_context->engine->GetRenderManager()->LoadPBRTextureFromFile(pathRef, m_selectedBlockId, pbrType);
+                            // Sincronizza la cache GPU del materiale tramite il CacheManager!
+                            if (m_context && m_context->cacheManager) {
+                                m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                             }
                             
                             m_copyProgress = 1.0f;

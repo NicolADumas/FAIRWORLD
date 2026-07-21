@@ -18,6 +18,7 @@
 #include "JoltPhysicsSystem.h"
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
+#include "CacheManager.h"
 
 HANDLE hServerProcess = NULL;
 
@@ -89,6 +90,7 @@ int main() {
     // 2. Istanzia Context e StateManager
     SharedContext context;
     StateManager stateManager;
+    stateManager.SetSharedContext(&context);
     context.stateManager = &stateManager;
     context.engine = &engine; // SharedContext come osservatore non-owning
 
@@ -133,11 +135,15 @@ int main() {
     materialRegistry.Initialize();
     materialRegistry.LoadFromJson("assets/definitions/materials.json");
     
+    fw::CacheManager cacheManager;
+    cacheManager.Initialize(&context);
+    
     context.deviceManager = &deviceManager;
     context.timeManager = &timeManager;
     context.diagnosticsManager = &diagnosticsManager;
     context.blockRegistry = &blockRegistry;
     context.materialRegistry = &materialRegistry;
+    context.cacheManager = &cacheManager;
 
     // 5. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
     engine.SetSharedContext(&context);

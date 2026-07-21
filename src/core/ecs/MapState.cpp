@@ -13,6 +13,7 @@
 #include "SimDataLayer.h"
 #include "DeviceManager.h"
 #include "JobSystem.h"
+#include "RenderManager.h"
 #include <imgui.h>
 #include <iostream>
 #include <algorithm>
@@ -23,9 +24,17 @@ MapState::MapState(SharedContext* context) : m_context(context) {
 
 MapState::~MapState() {
     std::cout << "[MapState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
-    if (m_context && m_context->jobSystem) {
-        m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano, evitando uso-dopo-rilascio
-        m_context->jobSystem->Initialize(); // Riaccende i thread per gli altri stati
+    if (m_context) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+            m_context->forgeWorld = nullptr;
+        }
+        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
+            m_context->activeRegistry = nullptr;
+        }
+        if (m_context->jobSystem) {
+            m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano, evitando uso-dopo-rilascio
+            m_context->jobSystem->Initialize(); // Riaccende i thread per gli altri stati
+        }
     }
     std::cout << "[MapState] Distrutto. Memoria isolata rilasciata.\n";
 }
@@ -201,13 +210,24 @@ void MapState::DrawBuilderUI() {
     // Bottom Buttons
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 150.0f); // Spingi in basso
     ImGui::Separator();
+    static float saveNotificationTimer = 0.0f;
+    if (saveNotificationTimer > 0.0f) {
+        saveNotificationTimer -= ImGui::GetIO().DeltaTime;
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "[OK] PROGETTO MAPPA SALVATO!");
+    }
     if (ImGui::Button("SALVA PROGETTO", ImVec2(-1, 40))) {
-        m_document.SaveJSON("saves/map/world_map.json");
+        if (m_document.SaveJSON("saves/map/world_map.json")) {
+            saveNotificationTimer = 3.0f;
+        }
     }
     if (ImGui::Button("COMPILA E GENERA VOXEL (FASE 2)", ImVec2(-1, 40))) {
         CompileAndGenerate();
     }
     if (ImGui::Button("TORNA ALL'HUB", ImVec2(-1, 30))) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+            m_context->forgeWorld = nullptr;
+        }
+        m_context->activeRegistry = nullptr;
         m_context->engine->SetGameMode(GameMode::Hub);
         m_context->engine->ForceGameState(GameState::MAIN_MENU);
         m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
@@ -485,6 +505,9 @@ void MapState::DrawRuntimeUI() {
 void MapState::CompileAndGenerate() {
     std::cout << "[MapState] Inizio compilazione e generazione voxel per mappa piatta...\n";
     
+    // Auto-salva prima di generare l'anteprima in modo che il file non venga perso!
+    m_document.SaveJSON("saves/map/world_map.json");
+
     // 0. Se esiste già un mondo precedente, prima pulisci i puntatori nel context
     if (m_previewWorld) {
         m_context->forgeWorld = nullptr;
@@ -503,6 +526,10 @@ void MapState::CompileAndGenerate() {
     m_context->activeRegistry = &m_previewWorld->GetRegistry();
     m_context->forgeWorld = m_previewWorld.get(); // FONDAMENTALE PER RENDERFAIRWORLD
     m_context->isForgeMode = false;
+
+    if (m_context->engine && m_context->engine->GetRenderManager()) {
+        m_context->engine->GetRenderManager()->InvalidateForgeCache();
+    }
     
     // Imposta il GameMode a Map cosi' RenderFairworld viene chiamato correttamente
     if (m_context->engine) {

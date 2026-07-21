@@ -25,6 +25,18 @@ PhysicsLabState::PhysicsLabState(SharedContext* context) : m_context(context) {
 }
 
 PhysicsLabState::~PhysicsLabState() {
+    if (m_context) {
+        if (m_context->forgeWorld == m_labWorld) {
+            m_context->forgeWorld = m_originalWorld;
+        }
+        if (m_labWorld && m_context->activeRegistry == &m_labWorld->GetRegistry()) {
+            m_context->activeRegistry = nullptr;
+        }
+    }
+    if (m_labWorld) {
+        delete m_labWorld;
+        m_labWorld = nullptr;
+    }
     delete m_joltSystem;
     m_joltSystem = nullptr;
 }
