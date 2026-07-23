@@ -18,6 +18,10 @@ struct PBRMaterialDef {
     float roughnessFallback = 1.0f;
     float metallicFallback = 0.0f;
     float emissiveStrength = 0.0f;
+
+    // Parametric Geometry (Per-Block)
+    int shapeType = 0;          // 0 = Standard Voxel Cube, 1 = SuperSphere (|x|^n + |y|^n + |z|^n = 1)
+    float superSphereN = 2.0f;  // Exponent n for SuperSphere
 };
 
 class MaterialRegistry {

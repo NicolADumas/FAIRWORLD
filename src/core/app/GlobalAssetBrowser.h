@@ -20,7 +20,7 @@ public:
     
     void Initialize();
     void RefreshAssets();
-    void DrawUI(bool* isOpen, ::Player* player = nullptr, class ForgeWorld* forgeWorld = nullptr);
+    void DrawUI(bool* isOpen, ::Player* player = nullptr, class GameWorld* gameWorld = nullptr);
 
     // Callbacks optional for specific modes (like "Spawn" in PlayMode)
     std::string GetSelectedAssetToSpawn() const { return m_assetToSpawn; }

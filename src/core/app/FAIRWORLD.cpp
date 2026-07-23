@@ -15,6 +15,7 @@
 #include "HubState.h"
 #include "TexturePacker.h"
 #include "MaterialRegistry.h"
+#include "GameWorld.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -184,7 +185,7 @@ FairWorldEngine::FairWorldEngine()
       m_windowManager(std::make_unique<WindowManager>()) {
     
     // ForgeWorld Init
-    m_forgeWorld = std::make_unique<fw::ForgeWorld>();
+    m_forgeWorld = std::make_unique<fw::GameWorld>();
 
     // TimeManager Init
     m_timeManager = std::make_unique<fw::TimeManager>();

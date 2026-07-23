@@ -1,7 +1,7 @@
 #include "GlobalAssetBrowser.h"
 #include <iostream>
 #include "../entities/Player.h"
-#include "../ecs/ForgeWorld.h"
+#include "../ecs/GameWorld.h"
 #include "../ecs/TimeManager.h" // Per struct ItemType (indiretto, o InventoryItem)
 #include "../app/SharedContext.h" // Per struct InventoryItem
 #include <cstring>
@@ -39,7 +39,7 @@ void GlobalAssetBrowser::RefreshAssets() {
     } catch (...) {}
 }
 
-void GlobalAssetBrowser::DrawUI(bool* isOpen, Player* player, ForgeWorld* forgeWorld) {
+void GlobalAssetBrowser::DrawUI(bool* isOpen, Player* player, GameWorld* gameWorld) {
     if (!*isOpen) return;
 
     ImGui::SetNextWindowSize(ImVec2(500, 600), ImGuiCond_FirstUseEver);

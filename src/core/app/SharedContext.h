@@ -25,6 +25,7 @@ namespace fw {
     class VramSlabAllocator;
     class DiagnosticsManager;
     class ForgeWorld;
+    class GameWorld;
     class BlockRegistry;
     class MaterialRegistry;
     class SimulationManager;
@@ -66,7 +67,8 @@ struct SharedContext {
     fw::AsyncInput*         asyncInput   = nullptr;
     fw::VulkanDmaManager*   dmaManager   = nullptr;
     fw::VramSlabAllocator*  vramAllocator= nullptr;
-    fw::ForgeWorld*         forgeWorld   = nullptr;
+    fw::GameWorld*          gameWorld    = nullptr;
+    fw::GameWorld*          forgeWorld   = nullptr;
     fw::SimulationManager*  simManager   = nullptr;
     fw::CacheManager*       cacheManager = nullptr;
     AssetManager*           assetManager = nullptr;

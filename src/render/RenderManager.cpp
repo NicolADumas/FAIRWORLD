@@ -27,6 +27,10 @@
 
 RenderManager::RenderManager() : m_isVRMode(false) {
     m_blockMakerRenderer = std::make_unique<fw::BlockMakerRenderer>();
+    m_mapRenderer = std::make_unique<fw::MapRenderer>();
+    m_forgeRenderer = std::make_unique<fw::ForgeRenderer>();
+    m_playRenderer = std::make_unique<fw::PlayRenderer>();
+    m_physicsLabRenderer = std::make_unique<fw::PhysicsLabRenderer>();
 }
 
 VkDeviceMemory RenderManager::GetStagingDeviceMemory() const {
@@ -832,7 +836,15 @@ bool RenderManager::CreateSyncObjects() {
 struct CameraFrustum {
     glm::vec4 planes[6];
     
-    void extract(const glm::mat4& vp) {
+    void extract(const glm::mat4& vpInput) {
+        glm::mat4 vp = vpInput;
+        // Correzione per Y-flip Vulkan: se la matrice ha Y-flip (vp[1][1] < 0), un-flippiamo la riga 1 per l'estrazione dei piani
+        if (vp[1][1] < 0.0f) {
+            vp[0][1] = -vp[0][1];
+            vp[1][1] = -vp[1][1];
+            vp[2][1] = -vp[2][1];
+            vp[3][1] = -vp[3][1];
+        }
         // Left
         planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]);
         // Right
@@ -848,7 +860,9 @@ struct CameraFrustum {
         
         for (int i=0; i<6; ++i) {
             float length = glm::length(glm::vec3(planes[i]));
-            planes[i] /= length;
+            if (length > 0.00001f) {
+                planes[i] /= length;
+            }
         }
     }
     
@@ -960,7 +974,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         ForgePushConstantData pcData{};
         VkDeviceSize offsets[] = { 0 };
 
-        fw::ForgeWorld* activeWorld = overrideWorld ? overrideWorld : context->forgeWorld;
+        fw::GameWorld* activeWorld = overrideWorld ? overrideWorld : context->forgeWorld;
         auto& registry = activeWorld->GetRegistry();
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
@@ -1156,20 +1170,39 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     } else {
         if (context && context->stateManager && context->stateManager->GetCurrentState()) {
             GameMode mode = context->engine->GetGameMode();
-            if (mode == GameMode::BlockMaker) {
-                if (m_blockMakerRenderer) {
-                    float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
-                    glm::mat4 projMatrix = context->activeCameraView.projectionMatrix;
-                    if (projMatrix == glm::mat4(0.0f)) {
-                        projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
-                    }
-                    // Aggiorna extent e frame corrente prima del draw
-                    m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                    m_blockMakerRenderer->SetCurrentFrame(m_currentFrame);
-                    m_blockMakerRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-                }
+            float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
+            glm::mat4 projMatrix = context->activeCameraView.projectionMatrix;
+            if (projMatrix == glm::mat4(0.0f)) {
+                projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
             }
-            else if (mode == GameMode::Play || mode == GameMode::PhysicsLab || mode == GameMode::Map || mode == GameMode::Dev) {
+
+            if (mode == GameMode::BlockMaker && m_blockMakerRenderer) {
+                m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_blockMakerRenderer->SetCurrentFrame(m_currentFrame);
+                m_blockMakerRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::Map && m_mapRenderer) {
+                m_mapRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_mapRenderer->SetCurrentFrame(m_currentFrame);
+                m_mapRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::Dev && m_forgeRenderer) {
+                m_forgeRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_forgeRenderer->SetCurrentFrame(m_currentFrame);
+                m_forgeRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::PhysicsLab && m_physicsLabRenderer) {
+                m_physicsLabRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_physicsLabRenderer->SetCurrentFrame(m_currentFrame);
+                m_physicsLabRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::Play && m_playRenderer) {
+                m_playRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_playRenderer->SetCurrentFrame(m_currentFrame);
+                m_playRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+            }
+            else {
                 RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
             }
         }
@@ -2520,13 +2553,21 @@ bool RenderManager::CreateForgePipeline() {
     vkDestroyShaderModule(m_core->GetDevice(), fragShaderModule, nullptr);
     vkDestroyShaderModule(m_core->GetDevice(), vertShaderModule, nullptr);
 
-    // Inizializza temporaneamente l'Ape Artigiana (BlockMakerRenderer) con la pipeline Forge
-    if (m_blockMakerRenderer) {
-        m_blockMakerRenderer->SetPipeline(m_forgePipeline, m_forgePipelineLayout);
-        m_blockMakerRenderer->SetGlobalBuffer(m_memory->GetGlobalVramBuffer());
-        m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-        m_blockMakerRenderer->SetDescriptorSets(&m_memory->GetForgeDescriptorSets());
-    }
+    // Inizializza le Api Artigiane (Sub-Renderers per ogni App)
+    auto initSubRenderer = [&](auto& renderer) {
+        if (renderer) {
+            renderer->SetPipeline(m_forgePipeline, m_forgePipelineLayout);
+            renderer->SetGlobalBuffer(m_memory->GetGlobalVramBuffer());
+            renderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+            renderer->SetDescriptorSets(&m_memory->GetForgeDescriptorSets());
+        }
+    };
+
+    initSubRenderer(m_blockMakerRenderer);
+    initSubRenderer(m_mapRenderer);
+    initSubRenderer(m_forgeRenderer);
+    initSubRenderer(m_playRenderer);
+    initSubRenderer(m_physicsLabRenderer);
 
     return true;
 }

@@ -14,6 +14,10 @@
 #include "World.h"  // Per la struct Vertex
 #include "TexturePacker.h"
 #include "apps/BlockMakerRenderer.h"
+#include "apps/MapRenderer.h"
+#include "apps/ForgeRenderer.h"
+#include "apps/PlayRenderer.h"
+#include "apps/PhysicsLabRenderer.h"
 
 class XrManager;
 struct BlockDef;
@@ -153,6 +157,10 @@ private:
 
     // --- RENDERERS ---
     std::unique_ptr<fw::BlockMakerRenderer> m_blockMakerRenderer;
+    std::unique_ptr<fw::MapRenderer> m_mapRenderer;
+    std::unique_ptr<fw::ForgeRenderer> m_forgeRenderer;
+    std::unique_ptr<fw::PlayRenderer> m_playRenderer;
+    std::unique_ptr<fw::PhysicsLabRenderer> m_physicsLabRenderer;
 
     // --- FORGE DESCRIPTOR SETS ---
     VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };

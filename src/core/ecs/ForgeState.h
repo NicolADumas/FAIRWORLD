@@ -7,9 +7,7 @@
 #include "../app/GlobalAssetBrowser.h"
 
 struct SharedContext;
-namespace fw {
-    class ForgeWorld;
-}
+#include "GameWorld.h"
 
 #include <map>
 #include <string>

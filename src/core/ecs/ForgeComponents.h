@@ -1,5 +1,6 @@
 #pragma once
 #include "ForgeMath.h"
+#include <entt/entt.hpp>
 #include <string>
 #include <vector>
 #include "VramSlabAllocator.h"

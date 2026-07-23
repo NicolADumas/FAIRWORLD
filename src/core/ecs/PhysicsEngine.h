@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 
 // Forward declaration
-namespace fw { class ForgeWorld; }
+namespace fw { class GameWorld; class ForgeWorld; }
 
 #include <vector>
 
@@ -59,23 +59,23 @@ public:
     static constexpr float RHO_WATER = 1000.0f;  // [kg/m^3]
 
     // Integra il moto e risolve collisioni nel timestep dt
-    void StepSimulation(RigidBody& rb, float dt, const fw::ForgeWorld& world);
+    void StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world);
 
     // Esegue uno sweep di un AABB contro il mondo voxel, restituendo il punto di collisione
-    bool SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& hitResult, const fw::ForgeWorld& world);
+    bool SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& hitResult, const fw::GameWorld& world);
 
     // Calcola il danno da caduta basato sulla variazione istantanea di velocità all'impatto (Cap. 12/13)
     float ComputeFallDamage(float deltaV, float mass);
 
 private:
     // Applica forza peso: F = m * g (Cap. 9)
-    void ApplyGravity(RigidBody& rb, const fw::ForgeWorld& world);
+    void ApplyGravity(RigidBody& rb, const fw::GameWorld& world);
 
     // Applica attrito viscoso: F = -k * v (Cap. 9)
     void ApplyDrag(RigidBody& rb);
 
     // Risolve collisioni AABB contro i blocchi Voxel (Cap. 9 - reazioni vincolari normali)
-    void ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWorld& world);
+    void ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world);
 
     // Integrazione Numerica (Metodo di Eulero/Verlet) (Cap. 7)
     void Integrate(RigidBody& rb, float dt);

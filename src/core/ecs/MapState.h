@@ -8,7 +8,7 @@
 
 // Forward declaration per evitare inclusioni circolari
 struct SharedContext;
-namespace fw { class ForgeWorld; }
+#include "GameWorld.h"
 
 class MapState : public State {
 public:
@@ -47,7 +47,7 @@ private:
     int m_selectedDensity = 0;   // Default: Bassa densità (0)
 
     // --- MONDO DI PREVIEW (Fase 2) ---
-    std::unique_ptr<fw::ForgeWorld> m_previewWorld;
+    std::unique_ptr<fw::GameWorld> m_previewWorld;
 
     // --- TELECAMERA ORBITALE ---
     float m_orbitDistance = 150.0f;

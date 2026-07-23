@@ -47,6 +47,7 @@ class RenderManager;
 class WindowManager;
 
 namespace fw {
+    class GameWorld;
     class ForgeWorld;
     class TimeManager;
 }
@@ -123,7 +124,7 @@ private:
     bool m_hasShutdown = false;
     bool m_isVrMode;
     World  m_world; // Deprecated
-    std::unique_ptr<fw::ForgeWorld> m_forgeWorld;
+    std::unique_ptr<fw::GameWorld> m_forgeWorld;
     std::unique_ptr<fw::TimeManager> m_timeManager;
 
     // Input mouse

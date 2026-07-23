@@ -6,7 +6,8 @@
 #include <vector>
 #include "Systems.h"
 
-namespace fw { class ForgeWorld; }
+#include "GameWorld.h"
+#include "MeshGenerators.h"
 struct SharedContext;
 
 class BlockMakerState : public State {
@@ -61,5 +62,9 @@ private:
     void UpdatePreviewMesh();
     void HandlePhysicsSimulation(float dt);
 
-    std::unique_ptr<fw::ForgeWorld> m_previewWorld;
+    // --- Parametric Shape controls ---
+    int m_selectedShapeIndex = 0; // 0 = Standard Cube, 1 = SuperSphere (|x|^n + |y|^n + |z|^n = 1)
+    float m_superSphereN = 2.0f;  // n parameter (0.6 = Star, 1.0 = Octahedron, 2.0 = Sphere, 4.0 = Rounded Cube, 10.0 = Near Cube)
+
+    std::unique_ptr<fw::GameWorld> m_previewWorld;
 };

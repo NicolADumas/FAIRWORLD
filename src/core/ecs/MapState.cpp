@@ -5,7 +5,7 @@
 #include "HubState.h"
 #include "FAIRWORLD.h"
 #include "MapWorldGenerator.h"
-#include "ForgeWorld.h"
+#include "GameWorld.h"
 #include "PlayState.h"
 #include "BlockRegistry.h"
 #include "ForgeComponents.h"
@@ -84,13 +84,13 @@ void MapState::Update(float dt) {
         m_context->activeCameraView.cameraFront = glm::normalize(m_orbitTarget - camPos);
         m_context->activeCameraView.viewMatrix = glm::lookAt(camPos, m_orbitTarget, glm::vec3(0, 1, 0));
         
-        // Passiamo un aspect ratio approssimativo (ideale prendere le dimensioni della finestra)
         float aspect = 16.0f / 9.0f; 
-        if (m_context->engine) {
-            // Se abbiamo accesso all'engine, usiamo la risoluzione corrente
-            // Ma per ora un default funziona bene
+        if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+            uint32_t w = m_context->engine->GetRenderManager()->GetWindowWidth();
+            uint32_t h = m_context->engine->GetRenderManager()->GetWindowHeight();
+            if (h > 0) aspect = (float)w / (float)h;
         }
-        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 2000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Correzione Y per Vulkan
 
         if (m_context && m_context->jobSystem && m_context->assetManager) {
@@ -515,7 +515,7 @@ void MapState::CompileAndGenerate() {
     }
 
     // 1. Alloca il mondo di collaudo e resettalo se esisteva gia'
-    m_previewWorld = std::make_unique<fw::ForgeWorld>();
+    m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
     
     // Pulisci il vecchio LOD sferico (non serve per la mappa voxel piatta)
@@ -544,13 +544,14 @@ void MapState::CompileAndGenerate() {
 
     const auto& currentPlanet = m_document.planets[m_activePlanetIndex];
 
-    // Posiziona la telecamera al centro della mappa generata
+    // Posiziona la telecamera al centro della mappa generata (superficie del terreno ~ Y=20)
     float midX = ((float)(currentPlanet.maxX + currentPlanet.minX) * 0.5f) * 16.0f;
     float midZ = ((float)(currentPlanet.maxZ + currentPlanet.minZ) * 0.5f) * 16.0f;
-    float midY = ((float)(currentPlanet.maxY + currentPlanet.minY) * 0.5f);
+    float midY = 20.0f; // Superficie media del terreno
     m_orbitTarget = glm::vec3(midX, midY, midZ); // FONDAMENTALE: punta la camera al centro!
-    m_orbitDistance = std::max((float)(currentPlanet.maxX - currentPlanet.minX) * 12.0f, 200.0f);
-    m_orbitPitch = 45.0f;
+    float mapSpan = std::max((float)(currentPlanet.maxX - currentPlanet.minX), (float)(currentPlanet.maxZ - currentPlanet.minZ)) * 16.0f;
+    m_orbitDistance = std::max(mapSpan * 1.5f, 60.0f);
+    m_orbitPitch = 40.0f;
     m_orbitYaw = 45.0f;
 
     std::cout << "[MapState] Anteprima generata! Camera al centro: (" << midX << ", " << midY << ", " << midZ << ")\n";

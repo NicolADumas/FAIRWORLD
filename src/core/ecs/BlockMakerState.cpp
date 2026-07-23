@@ -5,7 +5,7 @@
 #include "HubState.h"
 #include "FAIRWORLD.h"
 #include "RenderManager.h"
-#include "ForgeWorld.h"
+#include "GameWorld.h"
 #include "JobSystem.h"
 #include "AsyncInput.h"
 #include "Systems.h"
@@ -111,8 +111,8 @@ bool BlockMakerState::Init() {
         }
     }
 
-    // Inizializziamo l'istanza isolata di ForgeWorld per il Block Maker
-    m_previewWorld = std::make_unique<fw::ForgeWorld>();
+    // Inizializziamo l'istanza isolata di GameWorld per il Block Maker
+    m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
 
     m_context->forgeWorld = m_previewWorld.get();
@@ -267,14 +267,19 @@ void BlockMakerState::Render() {
 }
 
 void BlockMakerState::UpdatePreviewMesh() {
-    if (!m_context || !m_previewWorld || !m_context->blockRegistry) return;
-    
-    auto previewMesh = fw::MeshGenerators::MakeCube(1.0f);
-    previewMesh.type = fw::MeshType::Chunk; // RenderFairworld disegna solo Chunk o Prefab
-    previewMesh.colorOverride[3] = 1.0f; // Enable color override? Wait, the shader uses colorOverride only if useColorOverride is set. Let's just set the vertex colors directly.
+    if (!m_context || !m_previewWorld || !m_context->blockRegistry || !m_context->materialRegistry) return;
     
     fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
     fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+
+    fw::MeshComponent previewMesh;
+    if (mat.shapeType == 1) {
+        previewMesh = fw::MeshGenerators::MakeSuperSphere(mat.superSphereN, 0.5f, 28);
+    } else {
+        previewMesh = fw::MeshGenerators::MakeCube(1.0f);
+    }
+    previewMesh.type = fw::MeshType::Chunk;
+    previewMesh.colorOverride[3] = 1.0f;
     
     // Inietta i dati fisici (PBR) nei vertici della mesh in base al MaterialRegistry
     for (auto& v : previewMesh.vertices) {
@@ -354,9 +359,9 @@ void BlockMakerState::DrawUI() {
         ImGui::Text("Editing Block ID: %d", m_selectedBlockId);
         ImGui::Separator();
 
-        // Recupera il blocco selezionato e aggiorna i campi di input temporanei se l'ID cambia (todo: serve caching)
         fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
-        
+        fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+
         // --- TABS ---
         if (ImGui::BeginTabBar("BlockTabs")) {
             
@@ -383,16 +388,13 @@ void BlockMakerState::DrawUI() {
                 ImGui::EndTabItem();
             }
             
-            // TAB: PBR MATERIAL
-            // TAB: PBR MATERIAL (GRAFICA E TEXTURE PACK)
+            // TAB: PBR MATERIAL (GRAFICA E TEXTURE PACK & GEOMETRIA PARAMETRICA PER-BLOCCO)
             if (ImGui::BeginTabItem("Graphics (Texture Pack)")) {
                 ImGui::Spacing();
                 
-                fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
-                
                 bool isDirty = false;
                 
-                // Fallback Colors (utili prima dell'implementazione TexturePacker)
+                // Fallback Colors
                 ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Fallback / Solid Colors");
                 float color[3] = { mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z };
                 if (ImGui::ColorEdit3("Base Color", color)) {
@@ -403,6 +405,22 @@ void BlockMakerState::DrawUI() {
                 if (ImGui::SliderFloat("Metallic", &mat.metallicFallback, 0.0f, 1.0f)) isDirty = true;
                 if (ImGui::SliderFloat("Roughness", &mat.roughnessFallback, 0.0f, 1.0f)) isDirty = true;
                 if (ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 10.0f)) isDirty = true;
+                
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco (|x|^n + |y|^n + |z|^n = 1)");
+                const char* shapes[] = { "Standard Voxel Cube (n -> inf)", "Super-Sphere / Superellipsoid" };
+                if (ImGui::Combo("Block Geometry", &mat.shapeType, shapes, 2)) {
+                    isDirty = true;
+                }
+                if (mat.shapeType == 1) {
+                    if (ImGui::SliderFloat("Esponente SuperSfera (n)", &mat.superSphereN, 0.2f, 10.0f, "n = %.2f")) {
+                        isDirty = true;
+                    }
+                    ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
+                }
+                if (isDirty) {
+                    UpdatePreviewMesh();
+                }
                 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PBR Texture Maps");
@@ -512,11 +530,15 @@ void BlockMakerState::DrawUI() {
                     ImGui::SliderFloat("Manual Rotation", &m_blockRotationY, 0.0f, 360.0f);
                 }
                 
-                if (ImGui::Button("Save Physics Parameters", ImVec2(-1, 40))) {
-            m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
-            m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
-            std::cout << "[BlockMaker] Dati salvati in assets/definitions/\n";
-        }
+                if (ImGui::Button("SALVA TUTTE LE DEFINIZIONI BLOCCHI", ImVec2(-1, 40))) {
+                    m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+                    m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                    if (m_context->cacheManager) {
+                        m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
+                    }
+                    m_saveMessageTimer = 3.0f;
+                    std::cout << "[BlockMaker] Dati blocco " << m_selectedBlockId << " salvati in assets/definitions/\n";
+                }
                 
                 ImGui::EndTabItem();
             }
@@ -526,10 +548,18 @@ void BlockMakerState::DrawUI() {
         
         ImGui::Separator();
         
-        if (ImGui::Button("SAVE TO DISK (JSON)", ImVec2(-1, 30))) {
+        if (ImGui::Button("SALVA DEFINIZIONE & ASSET BLOCCO (JSON/GPU)", ImVec2(-1, 35))) {
             m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
-            std::cout << "[BlockMaker] Dati salvati in assets/definitions/\n";
+            if (m_context->cacheManager) {
+                m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
+            }
+            m_saveMessageTimer = 3.0f;
+            std::cout << "[BlockMaker] Definizioni fisiche, grafiche e geometriche salvate con successo su disco!\n";
+        }
+        
+        if (m_saveMessageTimer > 0.0f) {
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Definizione Blocco ID %d (Geometria + PBR) salvata con successo!", m_selectedBlockId);
         }
 
         ImGui::Separator();

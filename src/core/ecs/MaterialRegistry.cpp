@@ -71,6 +71,8 @@ bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
             def.metallicFallback = jMat.value("metallicFallback", 0.0f);
             def.roughnessFallback = jMat.value("roughnessFallback", 1.0f);
             def.emissiveStrength = jMat.value("emissiveStrength", 0.0f);
+            def.shapeType = jMat.value("shapeType", 0);
+            def.superSphereN = jMat.value("superSphereN", 2.0f);
         }
         std::cout << "[MaterialRegistry] Caricati " << j["materials"].size() << " materiali da " << filepath << "\n";
         return true;
@@ -97,6 +99,8 @@ bool MaterialRegistry::SaveToJson(const std::string& filepath) {
         jMat["metallicFallback"] = def.metallicFallback;
         jMat["roughnessFallback"] = def.roughnessFallback;
         jMat["emissiveStrength"] = def.emissiveStrength;
+        jMat["shapeType"] = def.shapeType;
+        jMat["superSphereN"] = def.superSphereN;
         
         jMaterials.push_back(jMat);
     }

@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "PhysicsEngine.h"
-#include "ForgeWorld.h"
+#include "GameWorld.h"
 #include <algorithm>
 
-void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::ForgeWorld& world) {
+void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world) {
     // 1. Azzera la forza netta del frame precedente
     rb.netForce = glm::vec3(0.0f);
 
@@ -44,7 +44,7 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::ForgeWorld
     ResolveCollisions(rb, dt, world);
 }
 
-void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::ForgeWorld& world) {
+void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
     // F_g = m * g (verso il basso) usando la gravità del pianeta
     float g = G_EARTH; // TODO: usare world.GetCurrentPlanet()->gravity se reintrodotto
     glm::vec3 gravityForce = glm::vec3(0.0f, -g * rb.mass, 0.0f);
@@ -80,7 +80,7 @@ void PhysicsEngine::Integrate(RigidBody& rb, float dt) {
     // La posizione verrà aggiornata parzialmente in ResolveCollisions per gestire l'AABB
 }
 
-void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::ForgeWorld& world) {
+void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world) {
     rb.isGrounded = false;
     rb.isAgainstWall = false;
     
@@ -609,7 +609,7 @@ bool SweptAABB(const AABB& b1, const glm::vec3& v, const AABB& b2, float& outFra
     return true;
 }
 
-bool PhysicsEngine::SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& outHit, const fw::ForgeWorld& world) {
+bool PhysicsEngine::SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& outHit, const fw::GameWorld& world) {
     outHit.hit = false;
     outHit.fraction = 1.0f;
     

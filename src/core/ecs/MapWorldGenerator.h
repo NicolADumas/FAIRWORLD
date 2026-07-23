@@ -4,14 +4,15 @@ class AssetManager;
 struct BiomeDef;
 
 namespace fw {
+    class GameWorld;
     class ForgeWorld;
     class JobSystem;
 
     class MapWorldGenerator {
     public:
-        // Prende il MapDocument e popola un'istanza ForgeWorld con i chunk
+        // Prende il MapDocument e popola un'istanza GameWorld con i chunk
         // basati su campionamento spaziale 3D e rumore di Perlin.
-        static void Generate(const MapDocument& doc, int planetIndex, ForgeWorld& targetWorld, fw::JobSystem* jobs);
+        static void Generate(const MapDocument& doc, int planetIndex, GameWorld& targetWorld, fw::JobSystem* jobs);
         
         // Cerca il bioma più adatto date le variabili ambientali attuali
         static const ::BiomeDef* EvaluateBiome(float temp, float humidity, float height, AssetManager* assets);

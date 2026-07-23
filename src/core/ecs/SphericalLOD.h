@@ -9,6 +9,7 @@ class AssetManager;
 namespace fw {
 
 class JobSystem;
+class GameWorld;
 class ForgeWorld;
 struct PlanetMap;
 
@@ -23,7 +24,7 @@ struct ChunkNode {
     
     std::unique_ptr<ChunkNode> children[4];
     
-    // Entità generata nel ForgeWorld
+    // Entità generata nel GameWorld
     entt::entity targetEntity = entt::null;
     
     // Indica se c'è un job pendente per questo nodo
@@ -42,13 +43,13 @@ private:
         return chunkRadius * DISTANCE_MULTIPLIER * (lodLevel + 1);
     }
 
-    void SplitNode(ChunkNode& node, ForgeWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
-    void MergeNode(ChunkNode& node, ForgeWorld* world);
-    void RequestMeshGeneration(ChunkNode* node, ForgeWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
+    void SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
+    void MergeNode(ChunkNode& node, GameWorld* world);
+    void RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
 
 public:
     void SetPlanetRadius(float radius) { m_planetRadius = radius; }
-    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, ForgeWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
+    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
 };
 
 } // namespace fw

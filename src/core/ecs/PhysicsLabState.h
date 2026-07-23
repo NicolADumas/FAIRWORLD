@@ -101,6 +101,6 @@ private:
     void LoadRig(const std::string& path);
     
     // Mondo
-    fw::ForgeWorld* m_originalWorld = nullptr;
-    fw::ForgeWorld* m_labWorld = nullptr;
+    fw::GameWorld* m_originalWorld = nullptr;
+    fw::GameWorld* m_labWorld = nullptr;
 };

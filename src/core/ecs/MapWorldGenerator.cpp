@@ -7,9 +7,11 @@
 
 #include "../utils/PerlinNoise.h"
 
+#include "GameWorld.h"
+
 namespace fw {
 
-void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, ForgeWorld& targetWorld, fw::JobSystem* jobs) {
+void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWorld& targetWorld, fw::JobSystem* jobs) {
     if (planetIndex < 0 || planetIndex >= (int)doc.planets.size()) return;
     
     const PlanetMap& planet = doc.planets[planetIndex];

@@ -1,13 +1,13 @@
 #include "pch.h"
 #include "SphericalLOD.h"
-#include "ForgeWorld.h"
+#include "GameWorld.h"
 #include "JobSystem.h"
 #include "../app/AssetManager.h"
 #include "MapWorldGenerator.h"
 
 namespace fw {
 
-void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, ForgeWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
+void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
     float distance = glm::length(node.centerPos - playerPos);
     
     // Genera la mesh se non esiste e non stiamo già generando
@@ -40,7 +40,7 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
     }
 }
 
-void SphericalLODSystem::SplitNode(ChunkNode& node, ForgeWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
+void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
     node.isSplit = true;
     
     glm::vec3 m0 = glm::normalize(node.p00 + node.p10) * m_planetRadius;
@@ -58,7 +58,7 @@ void SphericalLODSystem::SplitNode(ChunkNode& node, ForgeWorld* world, JobSystem
     node.children[3] = std::make_unique<ChunkNode>(glm::normalize(center + node.p11) * m_planetRadius, newRadius, nextLod, center, m3, m1, node.p11);
 }
 
-void SphericalLODSystem::MergeNode(ChunkNode& node, ForgeWorld* world) {
+void SphericalLODSystem::MergeNode(ChunkNode& node, GameWorld* world) {
     node.isSplit = false;
     for (int i = 0; i < 4; ++i) {
         if (node.children[i]) {
@@ -70,7 +70,7 @@ void SphericalLODSystem::MergeNode(ChunkNode& node, ForgeWorld* world) {
     }
 }
 
-void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, ForgeWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
+void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
     node->isGenerating = true;
     
     glm::vec3 p00 = node->p00;
