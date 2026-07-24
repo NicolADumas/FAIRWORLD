@@ -143,6 +143,11 @@ bool BlockMakerState::Init() {
     m_previewWorld->EnqueueDeferredMesh("BlockMakerEnv", glm::vec3(0.0f, -0.55f, 0.0f), std::move(floorMesh), nullptr, envEntity);
 
     // Spawn preview entity in registry
+    if (m_context && m_context->blockRegistry) {
+        auto& initDef = m_context->blockRegistry->GetBlock(m_selectedBlockId);
+        strncpy(m_inputStringId, initDef.stringId.c_str(), sizeof(m_inputStringId) - 1);
+        strncpy(m_inputDisplayName, initDef.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
+    }
     UpdatePreviewMesh();
 
     return true;
@@ -345,6 +350,8 @@ void BlockMakerState::DrawUI() {
             if (ImGui::Selectable(label.c_str(), m_selectedBlockId == i)) {
                 if (m_selectedBlockId != i) {
                     m_selectedBlockId = i;
+                    strncpy(m_inputStringId, blockDef.stringId.c_str(), sizeof(m_inputStringId) - 1);
+                    strncpy(m_inputDisplayName, blockDef.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
                     UpdatePreviewMesh();
                 }
             }
@@ -369,15 +376,13 @@ void BlockMakerState::DrawUI() {
             if (ImGui::BeginTabItem("Identity")) {
                 ImGui::Spacing();
                 
-                // Truncate per sicurezza 
-                strncpy(m_inputStringId, def.stringId.c_str(), sizeof(m_inputStringId) - 1);
-                strncpy(m_inputDisplayName, def.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
-                
                 if (ImGui::InputText("String ID", m_inputStringId, sizeof(m_inputStringId))) {
                     def.stringId = m_inputStringId;
+                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
                 }
                 if (ImGui::InputText("Display Name", m_inputDisplayName, sizeof(m_inputDisplayName))) {
                     def.displayName = m_inputDisplayName;
+                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
                 }
                 
                 ImGui::Separator();
@@ -531,11 +536,13 @@ void BlockMakerState::DrawUI() {
                 }
                 
                 if (ImGui::Button("SALVA TUTTE LE DEFINIZIONI BLOCCHI", ImVec2(-1, 40))) {
+                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
                     m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
                     m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                     if (m_context->cacheManager) {
                         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                     }
+                    UpdatePreviewMesh();
                     m_saveMessageTimer = 3.0f;
                     std::cout << "[BlockMaker] Dati blocco " << m_selectedBlockId << " salvati in assets/definitions/\n";
                 }
@@ -549,17 +556,31 @@ void BlockMakerState::DrawUI() {
         ImGui::Separator();
         
         if (ImGui::Button("SALVA DEFINIZIONE & ASSET BLOCCO (JSON/GPU)", ImVec2(-1, 35))) {
+            m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
             m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+            
+            // Esporta asset file in assets/blocks/ per l'Asset Browser di FORGE
+            std::filesystem::create_directories("assets/blocks");
+            std::string cleanName = def.stringId;
+            std::replace(cleanName.begin(), cleanName.end(), ':', '_');
+            if (cleanName.empty()) cleanName = "block_" + std::to_string(m_selectedBlockId);
+            
+            std::unordered_map<glm::ivec3, fw::StructureBlock> bMap;
+            bMap[glm::ivec3(0,0,0)] = { (int)m_selectedBlockId, glm::vec4(mat.baseColorFallback, 1.0f) };
+            m_previewWorld->GetStructureManager().SaveStructure(cleanName, bMap, 0, 0, 0, 0);
+
             if (m_context->cacheManager) {
                 m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
             }
+            
+            UpdatePreviewMesh();
             m_saveMessageTimer = 3.0f;
-            std::cout << "[BlockMaker] Definizioni fisiche, grafiche e geometriche salvate con successo su disco!\n";
+            std::cout << "[BlockMaker] Definizioni fisiche, grafiche e geometriche del blocco " << m_selectedBlockId << " salvate con successo su disco e sincronizzate in GPU!\n";
         }
         
         if (m_saveMessageTimer > 0.0f) {
-            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Definizione Blocco ID %d (Geometria + PBR) salvata con successo!", m_selectedBlockId);
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Definizione Blocco ID %d (%s) salvata ed esportata per FORGE!", m_selectedBlockId, def.displayName.c_str());
         }
 
         ImGui::Separator();

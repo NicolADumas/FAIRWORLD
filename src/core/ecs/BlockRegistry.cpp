@@ -70,8 +70,12 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
 
             SimBlockDef& def = m_blocks[id];
             def.id = id;
-            def.stringId = jBlock.value("stringId", "fairworld:unknown");
-            def.displayName = jBlock.value("displayName", "Unknown");
+            std::string legacyName = jBlock.value("name", "");
+            std::string defaultStrId = legacyName.empty() ? "fairworld:unknown" : ("fairworld:" + legacyName);
+            std::string defaultDispName = legacyName.empty() ? "Unknown" : legacyName;
+
+            def.stringId = jBlock.value("stringId", defaultStrId);
+            def.displayName = jBlock.value("displayName", defaultDispName);
             
             def.isSolid = jBlock.value("isSolid", true);
             def.isTransparent = jBlock.value("isTransparent", false);
