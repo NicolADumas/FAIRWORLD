@@ -19,10 +19,18 @@ enum class MapRegionType : int {
     Portal
 };
 
+enum class RegionShape : int {
+    Rectangle = 0,
+    Circle = 1,
+    Rhombus = 2,
+    Star = 3
+};
+
 struct MapRegion {
     glm::ivec2 rectMin = glm::ivec2(-2, -2); // Chunk min
     glm::ivec2 rectMax = glm::ivec2(2, 2);   // Chunk max
     MapRegionType type;
+    RegionShape shape = RegionShape::Rectangle; // Forma della struttura (Rettangolo, Cerchio, Rombo, Stella)
     std::string label;
     uint32_t seed;
     float gravityModifier = 1.0f;

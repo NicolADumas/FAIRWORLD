@@ -41,6 +41,7 @@ private:
     int m_paintSurfaceBlock = 1;
     int m_paintSubsurfaceBlock = 3;
     int m_paintRegionType = 0;
+    int m_paintBrushShape = 0; // 0=Rettangolo, 1=Cerchio, 2=Rombo, 3=Stella
     
     // SimCity Tools
     int m_selectedZoneType = 1;  // Default: Residenziale (1)

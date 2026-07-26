@@ -29,7 +29,7 @@ PlayState::PlayState(SharedContext* context) : m_context(context) {
 }
 
 PlayState::~PlayState() {
-    std::cout << "[PlayState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
+    std::cout << "[PlayState] Distrutto.\n";
     if (m_context && m_context->jobSystem) {
         m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano
         m_context->jobSystem->Initialize(); // Riaccende i thread
@@ -37,9 +37,10 @@ PlayState::~PlayState() {
     
     if (m_context && m_context->forgeWorld) {
         m_context->forgeWorld->ClearWorld(true); // Salva in saves/world e svuota
+        delete m_context->forgeWorld;
+        m_context->forgeWorld = nullptr;
+        m_context->activeRegistry = nullptr;
     }
-    
-    std::cout << "[PlayState] Distrutto.\n";
 }
 
 #include <filesystem>
@@ -222,6 +223,12 @@ bool PlayState::Init() {
     // Generiamo l'anteprima in VRAM per la sfera di Brush (se serve)
     auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(1, m_context);
     std::cout << "[PlayState] Generazione procedurale prato e montagne completata. Avvio ciclo di gioco...\n";
+
+    // Inizializza le statistiche del giocatore per non farlo nascere morto (con 0 HP)
+    if (m_context && m_context->engine) {
+        m_context->engine->GetPlayer().stats.Initialize();
+    }
+
     return true;
 }
 
@@ -254,6 +261,11 @@ void PlayState::Update(float dt) {
         system->Update(m_registry, m_context, dt);
     }
 
+    // Aggiorna ciclo Giorno-Notte (Sole/Luna)
+    if (m_context && m_context->engine) {
+        m_context->engine->GetTimeManager().Update(dt);
+    }
+
     // Aggiunto l'aggiornamento di ForgeWorld per permettere la generazione asincrona dei chunk
     if (m_context && m_context->forgeWorld) {
         m_context->forgeWorld->Update(dt);
@@ -275,8 +287,6 @@ void PlayState::Update(float dt) {
     bKeyWasDown = bKeyDown;
 
     if (m_showAssetBrowser) {
-        m_assetBrowser.DrawUI(&m_showAssetBrowser, &m_player, m_context->forgeWorld);
-        
         std::string toSpawn = m_assetBrowser.GetSelectedAssetToSpawn();
         if (!toSpawn.empty()) {
             m_isPlacingRig = true;
@@ -301,21 +311,7 @@ void PlayState::Update(float dt) {
             m_ghostPos = rayOrigin + rayDir * t;
             m_ghostPos.y += 0.5f; // Offset altezza
             
-            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2 - 150, ImGui::GetIO().DisplaySize.y - 100));
-            ImGui::Begin("Placing UI", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Click Sinistro: Piazza | Click Destro: Annulla");
-            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Target: %.1f, %.1f, %.1f", m_ghostPos.x, m_ghostPos.y, m_ghostPos.z);
-            ImGui::End();
-            
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().WantCaptureMouse) {
-                SpawnRig(m_rigToPlace, m_ghostPos);
-                m_isPlacingRig = false;
-                m_context->deviceManager->requireFreeCursor = false;
-            }
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::GetIO().WantCaptureMouse) {
-                m_isPlacingRig = false;
-                m_context->deviceManager->requireFreeCursor = false;
-            }
+            // La logica di ImGui per m_isPlacingRig è spostata in Render()
         }
     }
 
@@ -367,6 +363,35 @@ void PlayState::Render() {
     }
 
     m_context->engine->Render();
+
+    // Renderizza elementi UI interni al PlayState (es. HUD o Placing)
+    if (m_showAssetBrowser && m_context && m_context->engine) {
+        m_assetBrowser.DrawUI(&m_showAssetBrowser, &m_context->engine->GetPlayer(), m_context->forgeWorld);
+    }
+
+    if (m_isPlacingRig) {
+        glm::vec3 rayOrigin = m_context->activeCameraView.cameraPosition;
+        glm::vec3 rayDir = glm::normalize(m_context->activeCameraView.cameraFront);
+        float t = -rayOrigin.y / rayDir.y;
+        
+        if (t > 0 && t < 50.0f) {
+            ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2 - 150, ImGui::GetIO().DisplaySize.y - 100));
+            ImGui::Begin("Placing UI", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Click Sinistro: Piazza | Click Destro: Annulla");
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Target: %.1f, %.1f, %.1f", m_ghostPos.x, m_ghostPos.y, m_ghostPos.z);
+            ImGui::End();
+            
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().WantCaptureMouse) {
+                SpawnRig(m_rigToPlace, m_ghostPos);
+                m_isPlacingRig = false;
+                m_context->deviceManager->requireFreeCursor = false;
+            }
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::GetIO().WantCaptureMouse) {
+                m_isPlacingRig = false;
+                m_context->deviceManager->requireFreeCursor = false;
+            }
+        }
+    }
 }
 
 void PlayState::RefreshAvailableRigs() {

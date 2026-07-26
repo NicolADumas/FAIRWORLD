@@ -77,6 +77,7 @@ public:
 
     entt::registry& GetRegistry() { return m_registry; }
     void MarkChunkDirty(entt::entity chunkEntity);
+    void MarkAllChunksDirty();
     void GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz);
 
     bool SaveChunk(int cx, int cz) const { return m_chunkManager.SaveChunk(cx, cz, VoxelChunkComponent()); }

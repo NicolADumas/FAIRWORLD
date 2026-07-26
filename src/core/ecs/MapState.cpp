@@ -23,12 +23,9 @@ MapState::MapState(SharedContext* context) : m_context(context) {
 }
 
 MapState::~MapState() {
-    std::cout << "[MapState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
+    std::cout << "[MapState] Distrutto.\n";
     if (m_context) {
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-            m_context->forgeWorld = m_context->gameWorld;
-        }
-        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
             m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
         }
         if (m_context->jobSystem) {
@@ -152,181 +149,199 @@ void MapState::DrawBuilderUI() {
     // SIDEBAR (38.2%) - SYSTEM INSPECTOR
     // ==========================================
     ImGui::BeginChild("Sidebar", ImVec2(sidebarWidth, 0), true);
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "SYSTEM INSPECTOR (38.2%)");
+    ImGui::TextColored(ImVec4(0.2f, 0.9f, 1.0f, 1.0f), "SYSTEM INSPECTOR - PLANET MAPPER");
     ImGui::Separator();
     
-    // Tabs per i Pianeti
-    if (ImGui::BeginTabBar("PianetiTabBar")) {
-        for (int i = 0; i < (int)m_document.planets.size(); i++) {
-            if (ImGui::BeginTabItem(m_document.planets[i].name.c_str())) {
-                if (m_activePlanetIndex != i) {
-                    m_activePlanetIndex = i;
-                    m_selectedRegionIndex = -1; // Resetta la selezione cambiando pianeta
+    auto& currentPlanet = m_document.planets[m_activePlanetIndex];
+
+    // --- 1. SEZIONE PIANETI & DIMENSIONI ---
+    if (ImGui::CollapsingHeader("🪐 Pianeti & Configurazione", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::BeginTabBar("PianetiTabBar")) {
+            for (int i = 0; i < (int)m_document.planets.size(); i++) {
+                if (ImGui::BeginTabItem(m_document.planets[i].name.c_str())) {
+                    if (m_activePlanetIndex != i) {
+                        m_activePlanetIndex = i;
+                        m_selectedRegionIndex = -1;
+                    }
+                    ImGui::EndTabItem();
                 }
-                ImGui::EndTabItem();
             }
+            ImGui::EndTabBar();
         }
-        ImGui::EndTabBar();
+        
+        if (ImGui::Button("+ Aggiungi Nuovo Pianeta", ImVec2(-1, 24))) {
+            fw::PlanetMap newP;
+            newP.name = "Nuovo Pianeta " + std::to_string(m_document.planets.size() + 1);
+            m_document.planets.push_back(newP);
+            m_activePlanetIndex = (int)m_document.planets.size() - 1;
+        }
+
+        char pNameBuf[128];
+        strncpy_s(pNameBuf, currentPlanet.name.c_str(), sizeof(pNameBuf));
+        if (ImGui::InputText("Nome Pianeta", pNameBuf, sizeof(pNameBuf))) {
+            currentPlanet.name = pNameBuf;
+        }
+
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Dimensioni Mappa (Chunk)");
+        ImGui::DragInt("Min X", &currentPlanet.minX);
+        ImGui::DragInt("Max X", &currentPlanet.maxX);
+        ImGui::DragInt("Min Z", &currentPlanet.minZ);
+        ImGui::DragInt("Max Z", &currentPlanet.maxZ);
     }
     
     ImGui::Spacing();
     
-    auto& currentPlanet = m_document.planets[m_activePlanetIndex];
-    
-    // Configurazione Dimensioni Globali della Mappa
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Map Dimensions (Chunks)");
-    ImGui::DragInt("Min X", &currentPlanet.minX);
-    ImGui::DragInt("Max X", &currentPlanet.maxX);
-    ImGui::DragInt("Min Y (Altezza)", &currentPlanet.minY);
-    ImGui::DragInt("Max Y (Altezza)", &currentPlanet.maxY);
-    ImGui::DragInt("Min Z", &currentPlanet.minZ);
-    ImGui::DragInt("Max Z", &currentPlanet.maxZ);
-    ImGui::Separator();
-    
-    ImGui::Text("Regioni in %s: %d", currentPlanet.name.c_str(), (int)currentPlanet.regions.size());
-    
-    // Strumenti di Disegno (Pennello Biomi & Blocchi Block Maker)
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "STRUMENTI BIOMI & BLOCCHI (BLOCK MAKER)");
-    ImGui::Separator();
-    
-    const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
-    int oldPaintType = m_paintRegionType;
-    if (ImGui::Combo("Preset Bioma", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames))) {
-        if (m_paintRegionType != oldPaintType) {
-            // Preset di default per il bioma selezionato
-            if (m_paintRegionType == (int)fw::MapRegionType::Forest) { m_paintSurfaceBlock = 1; m_paintSubsurfaceBlock = 2; }
-            else if (m_paintRegionType == (int)fw::MapRegionType::Desert) { m_paintSurfaceBlock = 5; m_paintSubsurfaceBlock = 5; }
-            else if (m_paintRegionType == (int)fw::MapRegionType::Ocean) { m_paintSurfaceBlock = 6; m_paintSubsurfaceBlock = 5; }
-            else if (m_paintRegionType == (int)fw::MapRegionType::Volcano) { m_paintSurfaceBlock = 3; m_paintSubsurfaceBlock = 7; }
-            else if (m_paintRegionType == (int)fw::MapRegionType::Tundra) { m_paintSurfaceBlock = 5; m_paintSubsurfaceBlock = 3; }
-        }
-    }
-    
-    // --- SELEZIONE DINAMICA BLOCCHI DA BLOCK MAKER ---
-    if (m_context && m_context->blockRegistry) {
-        const auto& blocks = m_context->blockRegistry->GetAllBlocks();
-        
-        // Surface Block Combo
-        std::string surfPreview = "1: Grass";
-        for (const auto& b : blocks) {
-            if (b.id == m_paintSurfaceBlock) {
-                surfPreview = std::to_string(b.id) + ": " + b.displayName;
-                break;
-            }
-        }
-        if (ImGui::BeginCombo("Blocco Superficie (Block Maker)", surfPreview.c_str())) {
-            for (const auto& b : blocks) {
-                bool isSelected = (b.id == m_paintSurfaceBlock);
-                std::string itemText = std::to_string(b.id) + ": " + b.displayName + " (" + b.stringId + ")";
-                if (ImGui::Selectable(itemText.c_str(), isSelected)) {
-                    m_paintSurfaceBlock = b.id;
-                }
-                if (isSelected) ImGui::SetItemDefaultFocus();
-            }
-            ImGui::EndCombo();
-        }
+    // --- 2. SEZIONE STRUMENTI PENNELLO & BLOCK MAKER ---
+    if (ImGui::CollapsingHeader("🎨 Pennello & Blocchi (Block Maker)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* shapeNames[] = { "Rettangolo / Quadrato", "Cerchio (Circle)", "Rombo (Rhombus)", "Stella (Star)" };
+        ImGui::Combo("Forma Struttura", &m_paintBrushShape, shapeNames, IM_ARRAYSIZE(shapeNames));
 
-        // Subsurface Block Combo
-        std::string subPreview = "2: Dirt";
-        for (const auto& b : blocks) {
-            if (b.id == m_paintSubsurfaceBlock) {
-                subPreview = std::to_string(b.id) + ": " + b.displayName;
-                break;
+        const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+        int oldPaintType = m_paintRegionType;
+        if (ImGui::Combo("Preset Bioma", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames))) {
+            if (m_paintRegionType != oldPaintType) {
+                if (m_paintRegionType == (int)fw::MapRegionType::Forest) { m_paintSurfaceBlock = 1; m_paintSubsurfaceBlock = 2; }
+                else if (m_paintRegionType == (int)fw::MapRegionType::Desert) { m_paintSurfaceBlock = 5; m_paintSubsurfaceBlock = 5; }
+                else if (m_paintRegionType == (int)fw::MapRegionType::Ocean) { m_paintSurfaceBlock = 6; m_paintSubsurfaceBlock = 5; }
+                else if (m_paintRegionType == (int)fw::MapRegionType::Volcano) { m_paintSurfaceBlock = 3; m_paintSubsurfaceBlock = 7; }
+                else if (m_paintRegionType == (int)fw::MapRegionType::Tundra) { m_paintSurfaceBlock = 5; m_paintSubsurfaceBlock = 3; }
             }
-        }
-        if (ImGui::BeginCombo("Blocco Sottosuolo (Block Maker)", subPreview.c_str())) {
-            for (const auto& b : blocks) {
-                bool isSelected = (b.id == m_paintSubsurfaceBlock);
-                std::string itemText = std::to_string(b.id) + ": " + b.displayName + " (" + b.stringId + ")";
-                if (ImGui::Selectable(itemText.c_str(), isSelected)) {
-                    m_paintSubsurfaceBlock = b.id;
-                }
-                if (isSelected) ImGui::SetItemDefaultFocus();
-            }
-            ImGui::EndCombo();
-        }
-    }
-
-    ImGui::SliderInt("Dim. Pennello (Chunk)", &m_brushSize, 1, 10);
-
-    // --- ISPETTORE REGIONE SELEZIONATA ---
-    if (m_selectedRegionIndex >= 0 && m_selectedRegionIndex < (int)currentPlanet.regions.size()) {
-        auto& selRegion = currentPlanet.regions[m_selectedRegionIndex];
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.8f, 1.0f), "ISPETTORE REGIONE SELEZIONATA [#%d]", m_selectedRegionIndex);
-        ImGui::Separator();
-        
-        char labelBuf[128];
-        strncpy_s(labelBuf, selRegion.label.c_str(), sizeof(labelBuf));
-        if (ImGui::InputText("Nome Regione", labelBuf, sizeof(labelBuf))) {
-            selRegion.label = labelBuf;
         }
         
         if (m_context && m_context->blockRegistry) {
             const auto& blocks = m_context->blockRegistry->GetAllBlocks();
-            std::string surfLabel = std::to_string(selRegion.surfaceBlockId) + ": " + m_context->blockRegistry->GetBlock(selRegion.surfaceBlockId).displayName;
-            if (ImGui::BeginCombo("Superficie Regione", surfLabel.c_str())) {
+            
+            std::string surfPreview = "1: Grass";
+            for (const auto& b : blocks) {
+                if (b.id == m_paintSurfaceBlock) {
+                    surfPreview = std::to_string(b.id) + ": " + b.displayName;
+                    break;
+                }
+            }
+            if (ImGui::BeginCombo("Superficie (Block Maker)", surfPreview.c_str())) {
                 for (const auto& b : blocks) {
-                    bool isSel = (b.id == selRegion.surfaceBlockId);
-                    std::string itemText = std::to_string(b.id) + ": " + b.displayName;
-                    if (ImGui::Selectable(itemText.c_str(), isSel)) {
-                        selRegion.surfaceBlockId = b.id;
+                    bool isSelected = (b.id == m_paintSurfaceBlock);
+                    std::string itemText = std::to_string(b.id) + ": " + b.displayName + " (" + b.stringId + ")";
+                    if (ImGui::Selectable(itemText.c_str(), isSelected)) {
+                        m_paintSurfaceBlock = b.id;
                     }
-                    if (isSel) ImGui::SetItemDefaultFocus();
+                    if (isSelected) ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
             }
 
-            std::string subLabel = std::to_string(selRegion.subsurfaceBlockId) + ": " + m_context->blockRegistry->GetBlock(selRegion.subsurfaceBlockId).displayName;
-            if (ImGui::BeginCombo("Sottosuolo Regione", subLabel.c_str())) {
+            std::string subPreview = "2: Dirt";
+            for (const auto& b : blocks) {
+                if (b.id == m_paintSubsurfaceBlock) {
+                    subPreview = std::to_string(b.id) + ": " + b.displayName;
+                    break;
+                }
+            }
+            if (ImGui::BeginCombo("Sottosuolo (Block Maker)", subPreview.c_str())) {
                 for (const auto& b : blocks) {
-                    bool isSel = (b.id == selRegion.subsurfaceBlockId);
-                    std::string itemText = std::to_string(b.id) + ": " + b.displayName;
-                    if (ImGui::Selectable(itemText.c_str(), isSel)) {
-                        selRegion.subsurfaceBlockId = b.id;
+                    bool isSelected = (b.id == m_paintSubsurfaceBlock);
+                    std::string itemText = std::to_string(b.id) + ": " + b.displayName + " (" + b.stringId + ")";
+                    if (ImGui::Selectable(itemText.c_str(), isSelected)) {
+                        m_paintSubsurfaceBlock = b.id;
                     }
-                    if (isSel) ImGui::SetItemDefaultFocus();
+                    if (isSelected) ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
             }
         }
 
-        if (ImGui::Button("ELIMINA REGIONE SELEZIONATA", ImVec2(-1, 25))) {
-            currentPlanet.regions.erase(currentPlanet.regions.begin() + m_selectedRegionIndex);
-            m_selectedRegionIndex = -1;
+        ImGui::SliderInt("Dim. Pennello (Chunk)", &m_brushSize, 1, 10);
+
+        if (ImGui::Button("RIEMPI TUTTO CON OCEANO", ImVec2(-1, 26))) {
+            currentPlanet.regions.clear();
+            fw::MapRegion oceanRegion;
+            oceanRegion.rectMin = glm::ivec2(currentPlanet.minX, currentPlanet.minZ);
+            oceanRegion.rectMax = glm::ivec2(currentPlanet.maxX, currentPlanet.maxZ);
+            oceanRegion.type = fw::MapRegionType::Ocean;
+            oceanRegion.shape = fw::RegionShape::Rectangle;
+            oceanRegion.label = "Oceano Globale";
+            oceanRegion.surfaceBlockId = 6;
+            oceanRegion.subsurfaceBlockId = 5;
+            currentPlanet.regions.push_back(oceanRegion);
         }
     }
 
     ImGui::Spacing();
-    if (ImGui::Button("RIEMPI TUTTO CON OCEANO", ImVec2(-1, 30))) {
-        currentPlanet.regions.clear();
-        fw::MapRegion oceanRegion;
-        oceanRegion.rectMin = glm::ivec2(currentPlanet.minX, currentPlanet.minZ);
-        oceanRegion.rectMax = glm::ivec2(currentPlanet.maxX, currentPlanet.maxZ);
-        oceanRegion.type = fw::MapRegionType::Ocean;
-        oceanRegion.label = "Oceano Globale";
-        oceanRegion.surfaceBlockId = 6; // Water (6)
-        oceanRegion.subsurfaceBlockId = 5; // Sand (5)
-        currentPlanet.regions.push_back(oceanRegion);
+
+    // --- 3. SEZIONE ISPETTORE REGIONI & LISTA ---
+    if (ImGui::CollapsingHeader("🔍 Ispettore Regioni Mappa", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Regioni totali: %d", (int)currentPlanet.regions.size());
+        
+        if (m_selectedRegionIndex >= 0 && m_selectedRegionIndex < (int)currentPlanet.regions.size()) {
+            auto& selRegion = currentPlanet.regions[m_selectedRegionIndex];
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.8f, 1.0f), "Modifica Region [#%d]", m_selectedRegionIndex);
+            
+            char labelBuf[128];
+            strncpy_s(labelBuf, selRegion.label.c_str(), sizeof(labelBuf));
+            if (ImGui::InputText("Nome Regione", labelBuf, sizeof(labelBuf))) {
+                selRegion.label = labelBuf;
+            }
+            
+            const char* shapeNames[] = { "Rettangolo / Quadrato", "Cerchio (Circle)", "Rombo (Rhombus)", "Stella (Star)" };
+            int curShape = static_cast<int>(selRegion.shape);
+            if (ImGui::Combo("Forma Geometrica", &curShape, shapeNames, IM_ARRAYSIZE(shapeNames))) {
+                selRegion.shape = static_cast<fw::RegionShape>(curShape);
+            }
+
+            if (m_context && m_context->blockRegistry) {
+                const auto& blocks = m_context->blockRegistry->GetAllBlocks();
+                std::string surfLabel = std::to_string(selRegion.surfaceBlockId) + ": " + m_context->blockRegistry->GetBlock(selRegion.surfaceBlockId).displayName;
+                if (ImGui::BeginCombo("Superficie Regione", surfLabel.c_str())) {
+                    for (const auto& b : blocks) {
+                        bool isSel = (b.id == selRegion.surfaceBlockId);
+                        std::string itemText = std::to_string(b.id) + ": " + b.displayName;
+                        if (ImGui::Selectable(itemText.c_str(), isSel)) {
+                            selRegion.surfaceBlockId = b.id;
+                        }
+                        if (isSel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                std::string subLabel = std::to_string(selRegion.subsurfaceBlockId) + ": " + m_context->blockRegistry->GetBlock(selRegion.subsurfaceBlockId).displayName;
+                if (ImGui::BeginCombo("Sottosuolo Regione", subLabel.c_str())) {
+                    for (const auto& b : blocks) {
+                        bool isSel = (b.id == selRegion.subsurfaceBlockId);
+                        std::string itemText = std::to_string(b.id) + ": " + b.displayName;
+                        if (ImGui::Selectable(itemText.c_str(), isSel)) {
+                            selRegion.subsurfaceBlockId = b.id;
+                        }
+                        if (isSel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            if (ImGui::Button("ELIMINA REGIONE", ImVec2(-1, 24))) {
+                currentPlanet.regions.erase(currentPlanet.regions.begin() + m_selectedRegionIndex);
+                m_selectedRegionIndex = -1;
+            }
+        }
     }
     
     // Bottom Buttons
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 150.0f); // Spingi in basso
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 150.0f);
     ImGui::Separator();
     static float saveNotificationTimer = 0.0f;
     if (saveNotificationTimer > 0.0f) {
         saveNotificationTimer -= ImGui::GetIO().DeltaTime;
         ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "[OK] PROGETTO MAPPA SALVATO!");
     }
-    if (ImGui::Button("SALVA PROGETTO", ImVec2(-1, 40))) {
+    if (ImGui::Button("SALVA PROGETTO MAPPA (JSON)", ImVec2(-1, 35))) {
         if (m_document.SaveJSON("saves/map/world_map.json")) {
             saveNotificationTimer = 3.0f;
         }
     }
-    if (ImGui::Button("COMPILA E GENERA VOXEL (FASE 2)", ImVec2(-1, 40))) {
+    if (ImGui::Button("COMPILA E GENERA ANTEPRIMA VOXEL 3D", ImVec2(-1, 35))) {
         CompileAndGenerate();
     }
-    if (ImGui::Button("TORNA ALL'HUB", ImVec2(-1, 30))) {
+    if (ImGui::Button("TORNA ALL'HUB", ImVec2(-1, 28))) {
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
             m_context->forgeWorld = nullptr;
         }
@@ -432,10 +447,13 @@ void MapState::DrawBuilderUI() {
     // Forza il clipping alle coordinate della mappa in modo che le regioni non escano dai bordi
     drawList->PushClipRect(mapMin, mapMax, true);
 
-    for (int i = 0; i < (int)currentPlanet.regions.size(); ++i) {
+    bool hideRegions = ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::GetIO().KeyCtrl;
+
+    if (!hideRegions) {
+        for (int i = 0; i < (int)currentPlanet.regions.size(); ++i) {
         const auto& r = currentPlanet.regions[i];
         ImVec2 pMin = ChunkToScreen(r.rectMin.x, r.rectMin.y);
-        ImVec2 pMax = ChunkToScreen(r.rectMax.x, r.rectMax.y);
+        ImVec2 pMax = ChunkToScreen(r.rectMax.x + 1, r.rectMax.y + 1);
         if (pMin.x > pMax.x) std::swap(pMin.x, pMax.x);
         if (pMin.y > pMax.y) std::swap(pMin.y, pMax.y);
         
@@ -444,30 +462,67 @@ void MapState::DrawBuilderUI() {
             fillColor  = IM_COL32(255, 255, 100, 210);
         } else {
             switch (r.type) {
-                case fw::MapRegionType::Forest:  fillColor = IM_COL32(40,  180, 40,  255); break;
-                case fw::MapRegionType::Desert:  fillColor = IM_COL32(220, 200, 100, 255); break;
-                case fw::MapRegionType::Tundra:  fillColor = IM_COL32(180, 220, 220, 255); break;
-                case fw::MapRegionType::Ocean:   fillColor = IM_COL32(40,  80,  220, 255); break;
-                case fw::MapRegionType::Volcano: fillColor = IM_COL32(220, 40,  40,  255); break;
-                case fw::MapRegionType::City:    fillColor = IM_COL32(150, 150, 150, 255); break;
-                case fw::MapRegionType::Dungeon: fillColor = IM_COL32(120, 60,  160, 255); break;
-                case fw::MapRegionType::Portal:  fillColor = IM_COL32(220, 100, 220, 255); break;
-                default:                         fillColor = IM_COL32(100, 200, 100, 255); break;
+                case fw::MapRegionType::Forest:  fillColor = IM_COL32(40,  180, 40,  235); break;
+                case fw::MapRegionType::Desert:  fillColor = IM_COL32(220, 200, 100, 235); break;
+                case fw::MapRegionType::Tundra:  fillColor = IM_COL32(180, 220, 220, 235); break;
+                case fw::MapRegionType::Ocean:   fillColor = IM_COL32(40,  80,  220, 235); break;
+                case fw::MapRegionType::Volcano: fillColor = IM_COL32(220, 40,  40,  235); break;
+                case fw::MapRegionType::City:    fillColor = IM_COL32(150, 150, 150, 235); break;
+                case fw::MapRegionType::Dungeon: fillColor = IM_COL32(120, 60,  160, 235); break;
+                case fw::MapRegionType::Portal:  fillColor = IM_COL32(220, 100, 220, 235); break;
+                default:                         fillColor = IM_COL32(100, 200, 100, 235); break;
             }
         }
         
-        drawList->AddRectFilled(pMin, pMax, fillColor);
-        
-        // Bordo regione
-        if (i == m_selectedRegionIndex) {
-            drawList->AddRect(pMin, pMax, IM_COL32(255, 220, 0, 255), 0, 0, 2.0f);
+        ImVec2 pCenter = ImVec2((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
+        float rx = (pMax.x - pMin.x) * 0.5f;
+        float ry = (pMax.y - pMin.y) * 0.5f;
+
+        if (r.shape == fw::RegionShape::Circle) {
+            drawList->AddEllipseFilled(pCenter, ImVec2(rx, ry), fillColor);
+            if (i == m_selectedRegionIndex) {
+                drawList->AddEllipse(pCenter, ImVec2(rx, ry), IM_COL32(255, 220, 0, 255), 0.0f, 0, 2.5f);
+            }
+        } else if (r.shape == fw::RegionShape::Rhombus) {
+            ImVec2 pts[4] = {
+                ImVec2(pCenter.x, pMin.y),
+                ImVec2(pMax.x, pCenter.y),
+                ImVec2(pCenter.x, pMax.y),
+                ImVec2(pMin.x, pCenter.y)
+            };
+            drawList->AddConvexPolyFilled(pts, 4, fillColor);
+            if (i == m_selectedRegionIndex) {
+                drawList->AddPolyline(pts, 4, IM_COL32(255, 220, 0, 255), ImDrawFlags_Closed, 2.5f);
+            }
+        } else if (r.shape == fw::RegionShape::Star) {
+            ImVec2 pts[10];
+            float rOuter = std::min(rx, ry);
+            float rInner = rOuter * 0.45f;
+            for (int k = 0; k < 10; ++k) {
+                float angle = k * (3.14159265f / 5.0f) - (3.14159265f * 0.5f);
+                float radius = (k % 2 == 0) ? rOuter : rInner;
+                pts[k] = ImVec2(pCenter.x + radius * cosf(angle), pCenter.y + radius * sinf(angle));
+            }
+            drawList->AddConvexPolyFilled(pts, 10, fillColor);
+            if (i == m_selectedRegionIndex) {
+                drawList->AddPolyline(pts, 10, IM_COL32(255, 220, 0, 255), ImDrawFlags_Closed, 2.5f);
+            }
+        } else {
+            drawList->AddRectFilled(pMin, pMax, fillColor);
+            if (i == m_selectedRegionIndex) {
+                drawList->AddRect(pMin, pMax, IM_COL32(255, 220, 0, 255), 0, 0, 2.5f);
+            }
         }
-        
-        // Etichetta (se c'è spazio)
+
+        // Etichetta unica centrata al centro della struttura
         if ((pMax.x - pMin.x) > 20.0f * m_canvasZoom) {
-            drawList->AddText(ImVec2(pMin.x + 3, pMin.y + 3), IM_COL32(255,255,255,255), r.label.c_str());
+            ImVec2 textSize = ImGui::CalcTextSize(r.label.c_str());
+            ImVec2 textPos = ImVec2(pCenter.x - textSize.x * 0.5f, pCenter.y - textSize.y * 0.5f);
+            drawList->AddText(ImVec2(textPos.x + 1, textPos.y + 1), IM_COL32(0, 0, 0, 230), r.label.c_str());
+            drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), r.label.c_str());
         }
     }
+    } // Chiude if (!hideRegions)
     drawList->PopClipRect();
     
     // Disegna il Bordo Esterno della mappa
@@ -518,32 +573,69 @@ void MapState::DrawBuilderUI() {
             snprintf(brushLabel, sizeof(brushLabel), "%dx%d", (bMaxX - bMinX), (bMaxZ - bMinZ));
             drawList->AddText(ImVec2(mousePos.x + 12, mousePos.y + 4), IM_COL32(50, 255, 255, 255), brushLabel);
             
-            // Tasto Sinistro (senza CTRL): Dipingi (supporta anche il trascinamento)
+            // Tasto Sinistro (senza CTRL): Dipingi la Forma Scelta
             if (!io.KeyCtrl && (ImGui::IsItemClicked(ImGuiMouseButton_Left) || (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)))) {
-                // Aggiungi una nuova regione quando dipingiamo (con rate limiting o su click per evitare troppe regioni)
                 static float paintTimer = 0.0f;
-                paintTimer += io.DeltaTime;
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || paintTimer > 0.1f) {
-                    fw::MapRegion newRegion;
-                    newRegion.rectMin = glm::ivec2(bMinX, bMinZ);
-                    newRegion.rectMax = glm::ivec2(bMaxX - 1, bMaxZ - 1);
-                    newRegion.type = static_cast<fw::MapRegionType>(m_paintRegionType);
+                fw::RegionShape strokeShape = static_cast<fw::RegionShape>(m_paintBrushShape);
+                
+                // Se non è rettangolo, dipingi solo al CLICK (niente drag per evitare sovrapposizioni infinite di cerchi)
+                bool canPaint = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+                if (strokeShape == fw::RegionShape::Rectangle) {
+                    paintTimer += io.DeltaTime;
+                    if (paintTimer > 0.12f) canPaint = true;
+                }
+
+                if (canPaint) {
+                    glm::ivec2 strokeMin(bMinX, bMinZ);
+                    glm::ivec2 strokeMax(bMaxX - 1, bMaxZ - 1);
+                    fw::MapRegionType strokeType = static_cast<fw::MapRegionType>(m_paintRegionType);
+                    static const char* s_biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+                    std::string strokeLabel = (m_paintRegionType >= 0 && m_paintRegionType < 8) ? s_biomeNames[m_paintRegionType] : "Regione";
                     
-                    newRegion.surfaceBlockId = m_paintSurfaceBlock;
-                    newRegion.subsurfaceBlockId = m_paintSubsurfaceBlock;
-                    newRegion.label = (m_paintRegionType >= 0 && m_paintRegionType < 8) ? biomeNames[m_paintRegionType] : "Regione";
+                    int mergedIndex = -1;
+                    // Fai auto-merge solo se la forma è Rettangolo/Quadrato (DISABILITATO: causa il bug "diventa un blocco unico")
+                    // if (strokeShape == fw::RegionShape::Rectangle) { ... }
                     
-                    currentPlanet.regions.push_back(newRegion);
+                    if (mergedIndex == -1) {
+                        fw::MapRegion newRegion;
+                        newRegion.rectMin = strokeMin;
+                        newRegion.rectMax = strokeMax;
+                        newRegion.type = strokeType;
+                        newRegion.shape = strokeShape;
+                        newRegion.surfaceBlockId = m_paintSurfaceBlock;
+                        newRegion.subsurfaceBlockId = m_paintSubsurfaceBlock;
+                        newRegion.label = strokeLabel;
+                        currentPlanet.regions.push_back(newRegion);
+                    }
+                    
                     paintTimer = 0.0f;
                 }
             }
             
-            // Tasto Destro: Cancella l'ultima regione o svuota
+            // --- GESTIONE TASTO DESTRO (Gomma al Trascinamento & Triple-Click Reset) ---
+            static float rClickTimeWindow = 0.0f;
+            static int rClickCount = 0;
+            
+            rClickTimeWindow += io.DeltaTime;
+            
             if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                if (!currentPlanet.regions.empty()) {
-                    currentPlanet.regions.pop_back();
+                if (rClickTimeWindow < 0.4f) {
+                    rClickCount++;
+                } else {
+                    rClickCount = 1;
+                }
+                rClickTimeWindow = 0.0f;
+                
+                // TRIPLE CLICK TASTO DESTRO: CANCELLA TUTTO!
+                if (rClickCount >= 3) {
+                    currentPlanet.regions.clear();
+                    m_selectedRegionIndex = -1;
+                    rClickCount = 0;
                 }
             }
+            
+            // TASTO DESTRO TENUTO PREMUTO: Ora nasconde la mappa (già gestito in fase di draw). L'eliminazione è rimossa!
+            // (La logica del triple click per eliminare tutto rimane attiva).
         }
     }
     

@@ -52,6 +52,7 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 rj["rectMin"] = { region.rectMin.x, region.rectMin.y };
                 rj["rectMax"] = { region.rectMax.x, region.rectMax.y };
                 rj["type"] = static_cast<int>(region.type);
+                rj["shape"] = static_cast<int>(region.shape);
                 rj["label"] = region.label;
                 rj["seed"] = region.seed;
                 rj["gravityModifier"] = region.gravityModifier;
@@ -118,6 +119,7 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         }
                         
                         region.type = static_cast<MapRegionType>(rj.value("type", 0));
+                        region.shape = static_cast<RegionShape>(rj.value("shape", 0));
                         region.label = rj.value("label", "Region");
                         region.seed = rj.value("seed", 12345U);
                         region.gravityModifier = rj.value("gravityModifier", 1.0f);

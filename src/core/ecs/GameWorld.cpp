@@ -215,13 +215,23 @@ void GameWorld::Update(float dt) {
                 vertices.reserve(16384);
 
                 auto getBlock = [&](int x, int y, int z) -> uint8_t {
-                    if (static_cast<unsigned>(x) >= CHUNK_SIZE || static_cast<unsigned>(y) >= CHUNK_HEIGHT || static_cast<unsigned>(z) >= CHUNK_SIZE) return 0;
-                    return chunkData->blocks[x][y][z];
+                    if (y < 0 || y >= CHUNK_HEIGHT) return 0;
+                    if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
+                        return chunkData->blocks[x][y][z];
+                    }
+                    int wx = chunkData->cx * CHUNK_SIZE + x;
+                    int wz = chunkData->cz * CHUNK_SIZE + z;
+                    fw::BlockType neighborBlock = GetBlock(wx, y, wz);
+                    if (neighborBlock == fw::BlockType::OutOfBounds) return 0;
+                    return static_cast<uint8_t>(neighborBlock);
                 };
 
                 auto getLight = [&](int x, int y, int z) -> float {
-                    if (static_cast<unsigned>(x) >= CHUNK_SIZE || static_cast<unsigned>(y) >= CHUNK_HEIGHT || static_cast<unsigned>(z) >= CHUNK_SIZE) return 1.0f;
-                    return chunkData->light[x][y][z] / 255.0f;
+                    if (y < 0 || y >= CHUNK_HEIGHT) return 1.0f;
+                    if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
+                        return chunkData->light[x][y][z] / 255.0f;
+                    }
+                    return 1.0f;
                 };
 
                 auto calcAO = [&](bool side1, bool side2, bool corner) -> float {
@@ -537,6 +547,13 @@ void GameWorld::MarkChunkDirty(entt::entity chunkEntity) {
         } else {
             m_registry.emplace<ChunkDirtyComponent>(chunkEntity);
         }
+    }
+}
+
+void GameWorld::MarkAllChunksDirty() {
+    auto view = m_registry.view<VoxelChunkComponent>();
+    for (auto entity : view) {
+        MarkChunkDirty(entity);
     }
 }
 

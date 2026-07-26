@@ -835,15 +835,7 @@ bool RenderManager::CreateSyncObjects() {
 struct CameraFrustum {
     glm::vec4 planes[6];
     
-    void extract(const glm::mat4& vpInput) {
-        glm::mat4 vp = vpInput;
-        // Correzione per Y-flip Vulkan: se la matrice ha Y-flip (vp[1][1] < 0), un-flippiamo la riga 1 per l'estrazione dei piani
-        if (vp[1][1] < 0.0f) {
-            vp[0][1] = -vp[0][1];
-            vp[1][1] = -vp[1][1];
-            vp[2][1] = -vp[2][1];
-            vp[3][1] = -vp[3][1];
-        }
+    void extract(const glm::mat4& vp) {
         // Left
         planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]);
         // Right
@@ -901,7 +893,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(45.0f), m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height, 0.1f, 1000.0f);
         skyPC.invView = glm::inverse(skyView);
         skyPC.invProj = glm::inverse(projMatrix);
-        skyPC.timeOfDay = context && context->engine ? context->engine->GetTimeManager().GetTimeOfDay() : 0.5f;
+        skyPC.timeOfDay = context && context->engine ? (context->engine->GetTimeManager().GetTimeOfDay() / 24.0f) : 0.5f;
         skyPC.moonPhase = context && context->engine ? context->engine->GetTimeManager().GetMoonPhase() : 0.5f;
         
         vkCmdPushConstants(cmd, m_skyPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants), &skyPC);

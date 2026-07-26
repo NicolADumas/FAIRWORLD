@@ -43,10 +43,44 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
             entt::entity chunkEnt = targetWorld.CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
             auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
-            // Cerca se il chunk appartiene a una regione disegnata
+            // Cerca se il chunk appartiene a una regione disegnata (in base alla sua FORMA GEOMETRICA)
             const MapRegion* activeRegion = nullptr;
             for (auto it = planet.regions.rbegin(); it != planet.regions.rend(); ++it) {
-                if (cx >= it->rectMin.x && cx <= it->rectMax.x && cz >= it->rectMin.y && cz <= it->rectMax.y) {
+                bool isInside = false;
+                if (it->shape == RegionShape::Circle) {
+                    float centerCX = (it->rectMin.x + it->rectMax.x) * 0.5f;
+                    float centerCZ = (it->rectMin.y + it->rectMax.y) * 0.5f;
+                    float radiusX = (it->rectMax.x - it->rectMin.x + 1) * 0.5f;
+                    float radiusZ = (it->rectMax.y - it->rectMin.y + 1) * 0.5f;
+                    float dx = (cx - centerCX) / (radiusX > 0.001f ? radiusX : 1.0f);
+                    float dz = (cz - centerCZ) / (radiusZ > 0.001f ? radiusZ : 1.0f);
+                    if (dx * dx + dz * dz <= 1.0f) isInside = true;
+                } else if (it->shape == RegionShape::Rhombus) {
+                    float centerCX = (it->rectMin.x + it->rectMax.x) * 0.5f;
+                    float centerCZ = (it->rectMin.y + it->rectMax.y) * 0.5f;
+                    float radiusX = (it->rectMax.x - it->rectMin.x + 1) * 0.5f;
+                    float radiusZ = (it->rectMax.y - it->rectMin.y + 1) * 0.5f;
+                    float dx = std::abs(cx - centerCX) / (radiusX > 0.001f ? radiusX : 1.0f);
+                    float dz = std::abs(cz - centerCZ) / (radiusZ > 0.001f ? radiusZ : 1.0f);
+                    if (dx + dz <= 1.0f) isInside = true;
+                } else if (it->shape == RegionShape::Star) {
+                    float centerCX = (it->rectMin.x + it->rectMax.x) * 0.5f;
+                    float centerCZ = (it->rectMin.y + it->rectMax.y) * 0.5f;
+                    float radiusX = (it->rectMax.x - it->rectMin.x + 1) * 0.5f;
+                    float radiusZ = (it->rectMax.y - it->rectMin.y + 1) * 0.5f;
+                    float dx = (cx - centerCX) / (radiusX > 0.001f ? radiusX : 1.0f);
+                    float dz = (cz - centerCZ) / (radiusZ > 0.001f ? radiusZ : 1.0f);
+                    float dist = std::sqrt(dx * dx + dz * dz);
+                    float angle = std::atan2(dz, dx);
+                    float starFactor = 0.65f + 0.35f * std::cos(5.0f * angle);
+                    if (dist <= starFactor) isInside = true;
+                } else {
+                    if (cx >= it->rectMin.x && cx <= it->rectMax.x && cz >= it->rectMin.y && cz <= it->rectMax.y) {
+                        isInside = true;
+                    }
+                }
+                
+                if (isInside) {
                     activeRegion = &(*it);
                     break;
                 }

@@ -538,11 +538,17 @@ void BlockMakerState::DrawUI() {
                 
                 if (ImGui::Button("SALVA TUTTE LE DEFINIZIONI BLOCCHI", ImVec2(-1, 40))) {
                     m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
+                    m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
                     m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
                     m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                     if (m_context->cacheManager) {
                         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                     }
+                    if (m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->InvalidateForgeCache();
+                    }
+                    if (m_context->gameWorld) m_context->gameWorld->MarkAllChunksDirty();
+                    if (m_context->forgeWorld) m_context->forgeWorld->MarkAllChunksDirty();
                     UpdatePreviewMesh();
                     m_saveMessageTimer = 3.0f;
                     std::cout << "[BlockMaker] Dati blocco " << m_selectedBlockId << " salvati in assets/definitions/\n";
@@ -558,6 +564,7 @@ void BlockMakerState::DrawUI() {
         
         if (ImGui::Button("SALVA DEFINIZIONE & ASSET BLOCCO (JSON/GPU)", ImVec2(-1, 35))) {
             m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
+            m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
             m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
             
@@ -574,6 +581,11 @@ void BlockMakerState::DrawUI() {
             if (m_context->cacheManager) {
                 m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
             }
+            if (m_context->engine && m_context->engine->GetRenderManager()) {
+                m_context->engine->GetRenderManager()->InvalidateForgeCache();
+            }
+            if (m_context->gameWorld) m_context->gameWorld->MarkAllChunksDirty();
+            if (m_context->forgeWorld) m_context->forgeWorld->MarkAllChunksDirty();
             
             UpdatePreviewMesh();
             m_saveMessageTimer = 3.0f;
