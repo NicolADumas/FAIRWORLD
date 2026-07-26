@@ -318,6 +318,7 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
     m_sharedContext = ctx;
     if (ctx && m_windowManager) {
         ctx->window = (WindowHandle)m_windowManager->GetWindowHandle();
+        ctx->gameWorld = m_forgeWorld.get();
         ctx->forgeWorld = m_forgeWorld.get();
         ctx->assetManager = &m_assets; // BUG FIX: AssetManager was NULL!
         

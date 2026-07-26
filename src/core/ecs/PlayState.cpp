@@ -56,29 +56,25 @@ bool PlayState::Init() {
     auto& bindings = m_context->deviceManager->GetActionMap().bindings;
 
     // Movimento
-    bindings["MOVE_FORWARD"_hs].push_back({fw::InputID::KEY_W});
-    bindings["MOVE_BACKWARD"_hs].push_back({fw::InputID::KEY_S});
-    bindings["MOVE_LEFT"_hs].push_back({fw::InputID::KEY_A});
-    bindings["MOVE_RIGHT"_hs].push_back({fw::InputID::KEY_D});
+    bindings["MOVE_FORWARD"_hs] = {{fw::InputID::KEY_W}};
+    bindings["MOVE_BACKWARD"_hs] = {{fw::InputID::KEY_S}};
+    bindings["MOVE_LEFT"_hs] = {{fw::InputID::KEY_A}};
+    bindings["MOVE_RIGHT"_hs] = {{fw::InputID::KEY_D}};
 
     // Corsa: combo W + Shift
-    bindings["RUN_FORWARD"_hs].push_back({fw::InputID::KEY_W, fw::InputID::KEY_SHIFT});
+    bindings["RUN_FORWARD"_hs] = {{fw::InputID::KEY_W, fw::InputID::KEY_SHIFT}};
 
     // Salto: tasto + grilletto gamepad
-    bindings["JUMP"_hs].push_back({fw::InputID::KEY_SPACE});
-    bindings["JUMP"_hs].push_back({fw::InputID::PAD_FACE_DOWN});
+    bindings["JUMP"_hs] = {{fw::InputID::KEY_SPACE}, {fw::InputID::PAD_FACE_DOWN}};
 
     // Distruzione blocco: mouse sinistro O grilletto destro gamepad
-    bindings["DESTROY_BLOCK"_hs].push_back({fw::InputID::MOUSE_LEFT});
-    bindings["DESTROY_BLOCK"_hs].push_back({fw::InputID::PAD_TRIGGER_R});
+    bindings["DESTROY_BLOCK"_hs] = {{fw::InputID::MOUSE_LEFT}, {fw::InputID::PAD_TRIGGER_R}};
 
     // Posizionamento blocco: mouse destro O grilletto sinistro gamepad
-    bindings["PLACE_BLOCK"_hs].push_back({fw::InputID::MOUSE_RIGHT});
-    bindings["PLACE_BLOCK"_hs].push_back({fw::InputID::PAD_TRIGGER_L});
+    bindings["PLACE_BLOCK"_hs] = {{fw::InputID::MOUSE_RIGHT}, {fw::InputID::PAD_TRIGGER_L}};
 
     // Menu / Pausa
-    bindings["PAUSE"_hs].push_back({fw::InputID::KEY_ESC});
-    bindings["PAUSE"_hs].push_back({fw::InputID::PAD_START});
+    bindings["PAUSE"_hs] = {{fw::InputID::KEY_ESC}, {fw::InputID::PAD_START}};
 
     std::cout << "[PlayState] Action Map registrata: "
               << bindings.size() << " azioni logiche nel Kernel Bus.\n";
@@ -130,7 +126,7 @@ bool PlayState::Init() {
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
     // Posizione iniziale — rotazione inizializzata a identità (forward = -Z)
-    m_registry.emplace<TransformComponent>(cameraEntity, 8.0f, 52.0f, 8.0f);
+    m_registry.emplace<TransformComponent>(cameraEntity, 8.0f, 100.0f, 8.0f);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
     // Yaw 0 gradi ora punta verso -Z (dopo il fix della camera)
     cam.yaw   = 0.0f;
@@ -139,11 +135,27 @@ bool PlayState::Init() {
     
     // Inizializza il RigidBody per la fisica
     auto& rbOpt = m_registry.emplace<RigidBodyComponent>(cameraEntity);
-    rbOpt.body.position = glm::vec3(8.0f, 52.0f, 8.0f);
+    rbOpt.body.position = glm::vec3(8.0f, 100.0f, 8.0f);
     rbOpt.body.mass = 70.0f;
 
-    // --- INIZIALIZZAZIONE FORGE ---
+    // --- INIZIALIZZAZIONE WORLD ---
     m_context->isForgeMode = false;
+    m_context->isBlockMakerMode = false;
+
+    if (!m_context->forgeWorld) {
+        if (m_context->gameWorld) {
+            m_context->forgeWorld = m_context->gameWorld;
+        } else {
+            std::cout << "[PlayState] WARNING: forgeWorld e gameWorld non trovati nel contesto! Utilizzo di un nuovo GameWorld.\n";
+            static auto fallbackWorld = std::make_unique<fw::GameWorld>();
+            fallbackWorld->Initialize(m_context);
+            m_context->forgeWorld = fallbackWorld.get();
+            m_context->gameWorld = fallbackWorld.get();
+        }
+    }
+
+    m_context->activeRegistry = &m_context->forgeWorld->GetRegistry();
+
     // Il PlayState usa la directory saves/world/ — separata dalla Forge (saves/forge/)
     // I chunk già esistenti vengono caricati dal disco, quelli mancanti sono generati proceduralmente
     m_context->forgeWorld->SetSaveDirectory("saves/world");
@@ -215,9 +227,13 @@ bool PlayState::Init() {
 
 void PlayState::Update(float dt) {
     if (!m_context) return;
-    m_context->isForgeMode = false;
-    
     using namespace entt::literals;
+
+    m_context->isForgeMode = false;
+    m_context->isBlockMakerMode = false;
+    if (m_context->forgeWorld) {
+        m_context->activeRegistry = &m_context->forgeWorld->GetRegistry();
+    }
 
     // Aggiorna le matrici di tutti i portali
     fw::PortalSystem::UpdatePortals(m_registry);

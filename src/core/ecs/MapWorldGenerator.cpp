@@ -60,8 +60,8 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                 biomeData.isCustomMapped = true;
             } else {
                 biomeData.type = fw::MapRegionType::Forest; 
-                biomeData.surfaceBlockId = 1;
-                biomeData.subsurfaceBlockId = 3;
+                biomeData.surfaceBlockId = 1; // Grass
+                biomeData.subsurfaceBlockId = 2; // Dirt
                 biomeData.isCustomMapped = false;
             }
             

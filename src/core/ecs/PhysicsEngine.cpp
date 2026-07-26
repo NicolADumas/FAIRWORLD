@@ -86,9 +86,11 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     
     // Helper per verificare se un blocco è solido
     auto isSolid = [&](int x, int y, int z) {
+        if (y < 0 || y >= 128) return false;
         fw::BlockType b = world.GetBlock(x, y, z);
         return (b != fw::BlockType::Air && b != fw::BlockType::Water && 
-                b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal);
+                b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal &&
+                b != fw::BlockType::OutOfBounds);
     };
 
     // Stargate Trigger check

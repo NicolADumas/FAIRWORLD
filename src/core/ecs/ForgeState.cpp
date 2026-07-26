@@ -45,7 +45,7 @@ bool ForgeState::Init() {
     
     if (!m_context->vramAllocator) {
         // Alloca un "VRAM monolite" logico da 512MB per i Chunk
-        m_context->vramAllocator = new fw::VramSlabAllocator(512 * 1024 * 1024);
+        m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
     }
     
     if (!m_context->dmaManager) {

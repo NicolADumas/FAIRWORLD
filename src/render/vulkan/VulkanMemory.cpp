@@ -57,9 +57,9 @@ bool VulkanMemory::Initialize() {
     vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
     m_mappedStagingData = vmaRingInfo.pMappedData;
 
-    // --- 4. CREATE GLOBAL VRAM BUFFER (512 MB per i chunk) ---
+    // --- 4. CREATE GLOBAL VRAM BUFFER (2048 MB per i chunk) ---
     VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    vramBufInfo.size = 512 * 1024 * 1024; // 512 MB
+    vramBufInfo.size = 2048ULL * 1024ULL * 1024ULL; // 2048 MB (2 GB)
     vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     
     std::vector<uint32_t> uniqueQueueFamilies;
@@ -82,11 +82,11 @@ bool VulkanMemory::Initialize() {
     vramAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     
     if (vmaCreateBuffer(m_vmaAllocator, &vramBufInfo, &vramAllocInfo, &m_globalVramBuffer, &m_globalVramAllocation, nullptr) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare il Global VRAM Buffer da 512MB!\n";
+        std::cerr << "[VULKAN ERROR] Impossibile creare il Global VRAM Buffer da 2048MB!\n";
         return false;
     }
 
-    std::cout << "[VMA] VmaAllocator e Global VRAM Buffer (512MB) inizializzati con successo." << std::endl;
+    std::cout << "[VMA] VmaAllocator e Global VRAM Buffer (2048MB) inizializzati con successo." << std::endl;
     return true;
 }
 

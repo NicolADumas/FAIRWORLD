@@ -54,27 +54,27 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame)
                     if (baseHeight <= 16.0f) {
                         // Sotto o al livello del mare: Oceano / Spiaggia
                         colBiome = fw::MapRegionType::Ocean;
-                        surfaceBlock = 8; // Sand (assumiamo 8 = Sand, se non c'è userà fallback)
-                        subsurfaceBlock = 3; // Stone o Sand
+                        surfaceBlock = 5; // Sand (5)
+                        subsurfaceBlock = 5; // Sand (5)
                     } else {
                         if (tempVal > 0.6f) {
                             if (humVal < 0.4f) {
                                 colBiome = fw::MapRegionType::Desert;
-                                surfaceBlock = 8; // Sand
-                                subsurfaceBlock = 8;
+                                surfaceBlock = 5; // Sand (5)
+                                subsurfaceBlock = 5; // Sand (5)
                             } else {
-                                colBiome = fw::MapRegionType::Forest; // Jungle (ma usiamo Forest per ora)
-                                surfaceBlock = 1;
-                                subsurfaceBlock = 2;
+                                colBiome = fw::MapRegionType::Forest;
+                                surfaceBlock = 1; // Grass (1)
+                                subsurfaceBlock = 2; // Dirt (2)
                             }
                         } else if (tempVal < 0.35f) {
                             colBiome = fw::MapRegionType::Tundra;
-                            surfaceBlock = 9; // Snow (assumiamo 9 = Snow)
-                            subsurfaceBlock = 3; // Stone o frozen dirt
+                            surfaceBlock = 5; // Sand/Snow (5)
+                            subsurfaceBlock = 3; // Stone (3)
                         } else {
                             colBiome = fw::MapRegionType::Forest;
-                            surfaceBlock = 1;
-                            subsurfaceBlock = 2;
+                            surfaceBlock = 1; // Grass (1)
+                            subsurfaceBlock = 2; // Dirt (2)
                         }
                     }
                 } else {
@@ -88,20 +88,18 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame)
                 // Popolamento blocchi
                 for (int y = 0; y < 128; ++y) {
                     if (y < height - 3) {
-                        chunk.blocks[x][y][z] = 2; // Stone (Core)
+                        chunk.blocks[x][y][z] = 3; // Stone Core (3)
                     } else if (y < height) {
                         chunk.blocks[x][y][z] = subsurfaceBlock;
                     } else if (y == height) {
                         chunk.blocks[x][y][z] = surfaceBlock;
                     } else if (y <= 16) { // Livello del mare globale
-                        chunk.blocks[x][y][z] = 4; // Water
+                        chunk.blocks[x][y][z] = 6; // Water (6)
                     } else {
-                        chunk.blocks[x][y][z] = 0; // Air
+                        chunk.blocks[x][y][z] = 0; // Air (0)
                     }
                     chunk.light[x][y][z] = 255; 
                 }
-                // Salvataggio altezza massima superficiale in un array se servisse ai decoratori
-                // Ma per ora ricalcoleremo o cercheremo dall'alto in basso.
             }
         }
 
@@ -137,7 +135,7 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
                     // Trova la Y della superficie (scendendo da 127)
                     int surfaceY = 0;
                     for (int y = 127; y >= 0; --y) {
-                        if (chunk.blocks[x][y][z] != 0 && chunk.blocks[x][y][z] != 4) { // Ignora aria e acqua
+                        if (chunk.blocks[x][y][z] != 0 && chunk.blocks[x][y][z] != 6) { // Ignora aria e acqua (6)
                             surfaceY = y;
                             break;
                         }
@@ -145,18 +143,18 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
 
                     // Se la superficie e' erba (1), possiamo spawnare un albero (Bioma Foresta)
                     if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == 1) {
-                        // Costruisci albero
-                        chunk.blocks[x][surfaceY+1][z] = 12; // Legno
-                        chunk.blocks[x][surfaceY+2][z] = 12;
-                        chunk.blocks[x][surfaceY+3][z] = 12;
+                        // Costruisci albero (4 = Legno, 8 = Foglie)
+                        chunk.blocks[x][surfaceY+1][z] = 4; // Legno (4)
+                        chunk.blocks[x][surfaceY+2][z] = 4;
+                        chunk.blocks[x][surfaceY+3][z] = 4;
                         
                         for (int lx = -1; lx <= 1; ++lx) {
                             for (int lz = -1; lz <= 1; ++lz) {
-                                chunk.blocks[x+lx][surfaceY+3][z+lz] = 13; // Foglie
-                                chunk.blocks[x+lx][surfaceY+4][z+lz] = 13;
+                                chunk.blocks[x+lx][surfaceY+3][z+lz] = 8; // Foglie (8)
+                                chunk.blocks[x+lx][surfaceY+4][z+lz] = 8;
                             }
                         }
-                        chunk.blocks[x][surfaceY+5][z] = 13; // Punta
+                        chunk.blocks[x][surfaceY+5][z] = 8; // Punta foglie (8)
                     }
                 }
             }

@@ -22,6 +22,10 @@ struct TransformComponent {
     float prev_y = 0.0f;
     float prev_z = 0.0f;
     glm::quat prev_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    // --- Constructors ---
+    TransformComponent() = default;
+    TransformComponent(float px, float py, float pz)
+        : x(px), y(py), z(pz), prev_x(px), prev_y(py), prev_z(pz) {}
 };
 
 // =============================================================================

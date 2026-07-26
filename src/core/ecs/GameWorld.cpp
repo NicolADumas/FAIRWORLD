@@ -63,7 +63,9 @@ GameWorld::~GameWorld() {
 void GameWorld::Initialize(SharedContext* context) {
     m_context = context;
     if (m_context) {
-        m_context->gameWorld = this;
+        if (!m_context->gameWorld) {
+            m_context->gameWorld = this;
+        }
         m_context->forgeWorld = this;
         m_context->activeRegistry = &m_registry;
 
@@ -414,8 +416,7 @@ entt::entity GameWorld::CreateEmptyEntity(const std::string& name) {
 }
 
 BlockType GameWorld::GetBlock(int x, int y, int z) const {
-    if (y >= 128) return BlockType::Air;
-    if (y < 0) return BlockType::OutOfBounds;
+    if (y < 0 || y >= 128) return BlockType::OutOfBounds;
     int cx = x >= 0 ? x / 16 : (x - 15) / 16;
     int cz = z >= 0 ? z / 16 : (z - 15) / 16;
     int lx = x - (cx * 16);

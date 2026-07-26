@@ -26,10 +26,10 @@ MapState::~MapState() {
     std::cout << "[MapState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
     if (m_context) {
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-            m_context->forgeWorld = nullptr;
+            m_context->forgeWorld = m_context->gameWorld;
         }
         if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
-            m_context->activeRegistry = nullptr;
+            m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
         }
         if (m_context->jobSystem) {
             m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano, evitando uso-dopo-rilascio
@@ -185,14 +185,117 @@ void MapState::DrawBuilderUI() {
     
     ImGui::Text("Regioni in %s: %d", currentPlanet.name.c_str(), (int)currentPlanet.regions.size());
     
-    // Strumenti di Disegno (Pennello Biomi)
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "STRUMENTI BIOMI");
+    // Strumenti di Disegno (Pennello Biomi & Blocchi Block Maker)
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "STRUMENTI BIOMI & BLOCCHI (BLOCK MAKER)");
     ImGui::Separator();
     
     const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
-    ImGui::Combo("Tipo Bioma", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
+    int oldPaintType = m_paintRegionType;
+    if (ImGui::Combo("Preset Bioma", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames))) {
+        if (m_paintRegionType != oldPaintType) {
+            // Preset di default per il bioma selezionato
+            if (m_paintRegionType == (int)fw::MapRegionType::Forest) { m_paintSurfaceBlock = 1; m_paintSubsurfaceBlock = 2; }
+            else if (m_paintRegionType == (int)fw::MapRegionType::Desert) { m_paintSurfaceBlock = 5; m_paintSubsurfaceBlock = 5; }
+            else if (m_paintRegionType == (int)fw::MapRegionType::Ocean) { m_paintSurfaceBlock = 6; m_paintSubsurfaceBlock = 5; }
+            else if (m_paintRegionType == (int)fw::MapRegionType::Volcano) { m_paintSurfaceBlock = 3; m_paintSubsurfaceBlock = 7; }
+            else if (m_paintRegionType == (int)fw::MapRegionType::Tundra) { m_paintSurfaceBlock = 5; m_paintSubsurfaceBlock = 3; }
+        }
+    }
     
+    // --- SELEZIONE DINAMICA BLOCCHI DA BLOCK MAKER ---
+    if (m_context && m_context->blockRegistry) {
+        const auto& blocks = m_context->blockRegistry->GetAllBlocks();
+        
+        // Surface Block Combo
+        std::string surfPreview = "1: Grass";
+        for (const auto& b : blocks) {
+            if (b.id == m_paintSurfaceBlock) {
+                surfPreview = std::to_string(b.id) + ": " + b.displayName;
+                break;
+            }
+        }
+        if (ImGui::BeginCombo("Blocco Superficie (Block Maker)", surfPreview.c_str())) {
+            for (const auto& b : blocks) {
+                bool isSelected = (b.id == m_paintSurfaceBlock);
+                std::string itemText = std::to_string(b.id) + ": " + b.displayName + " (" + b.stringId + ")";
+                if (ImGui::Selectable(itemText.c_str(), isSelected)) {
+                    m_paintSurfaceBlock = b.id;
+                }
+                if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        // Subsurface Block Combo
+        std::string subPreview = "2: Dirt";
+        for (const auto& b : blocks) {
+            if (b.id == m_paintSubsurfaceBlock) {
+                subPreview = std::to_string(b.id) + ": " + b.displayName;
+                break;
+            }
+        }
+        if (ImGui::BeginCombo("Blocco Sottosuolo (Block Maker)", subPreview.c_str())) {
+            for (const auto& b : blocks) {
+                bool isSelected = (b.id == m_paintSubsurfaceBlock);
+                std::string itemText = std::to_string(b.id) + ": " + b.displayName + " (" + b.stringId + ")";
+                if (ImGui::Selectable(itemText.c_str(), isSelected)) {
+                    m_paintSubsurfaceBlock = b.id;
+                }
+                if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    }
+
     ImGui::SliderInt("Dim. Pennello (Chunk)", &m_brushSize, 1, 10);
+
+    // --- ISPETTORE REGIONE SELEZIONATA ---
+    if (m_selectedRegionIndex >= 0 && m_selectedRegionIndex < (int)currentPlanet.regions.size()) {
+        auto& selRegion = currentPlanet.regions[m_selectedRegionIndex];
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.8f, 1.0f), "ISPETTORE REGIONE SELEZIONATA [#%d]", m_selectedRegionIndex);
+        ImGui::Separator();
+        
+        char labelBuf[128];
+        strncpy_s(labelBuf, selRegion.label.c_str(), sizeof(labelBuf));
+        if (ImGui::InputText("Nome Regione", labelBuf, sizeof(labelBuf))) {
+            selRegion.label = labelBuf;
+        }
+        
+        if (m_context && m_context->blockRegistry) {
+            const auto& blocks = m_context->blockRegistry->GetAllBlocks();
+            std::string surfLabel = std::to_string(selRegion.surfaceBlockId) + ": " + m_context->blockRegistry->GetBlock(selRegion.surfaceBlockId).displayName;
+            if (ImGui::BeginCombo("Superficie Regione", surfLabel.c_str())) {
+                for (const auto& b : blocks) {
+                    bool isSel = (b.id == selRegion.surfaceBlockId);
+                    std::string itemText = std::to_string(b.id) + ": " + b.displayName;
+                    if (ImGui::Selectable(itemText.c_str(), isSel)) {
+                        selRegion.surfaceBlockId = b.id;
+                    }
+                    if (isSel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            std::string subLabel = std::to_string(selRegion.subsurfaceBlockId) + ": " + m_context->blockRegistry->GetBlock(selRegion.subsurfaceBlockId).displayName;
+            if (ImGui::BeginCombo("Sottosuolo Regione", subLabel.c_str())) {
+                for (const auto& b : blocks) {
+                    bool isSel = (b.id == selRegion.subsurfaceBlockId);
+                    std::string itemText = std::to_string(b.id) + ": " + b.displayName;
+                    if (ImGui::Selectable(itemText.c_str(), isSel)) {
+                        selRegion.subsurfaceBlockId = b.id;
+                    }
+                    if (isSel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        if (ImGui::Button("ELIMINA REGIONE SELEZIONATA", ImVec2(-1, 25))) {
+            currentPlanet.regions.erase(currentPlanet.regions.begin() + m_selectedRegionIndex);
+            m_selectedRegionIndex = -1;
+        }
+    }
 
     ImGui::Spacing();
     if (ImGui::Button("RIEMPI TUTTO CON OCEANO", ImVec2(-1, 30))) {
@@ -202,8 +305,8 @@ void MapState::DrawBuilderUI() {
         oceanRegion.rectMax = glm::ivec2(currentPlanet.maxX, currentPlanet.maxZ);
         oceanRegion.type = fw::MapRegionType::Ocean;
         oceanRegion.label = "Oceano Globale";
-        oceanRegion.surfaceBlockId = 4; // Assuming 4 is Water or Sand
-        oceanRegion.subsurfaceBlockId = 2; // Stone
+        oceanRegion.surfaceBlockId = 6; // Water (6)
+        oceanRegion.subsurfaceBlockId = 5; // Sand (5)
         currentPlanet.regions.push_back(oceanRegion);
     }
     
@@ -426,12 +529,9 @@ void MapState::DrawBuilderUI() {
                     newRegion.rectMax = glm::ivec2(bMaxX - 1, bMaxZ - 1);
                     newRegion.type = static_cast<fw::MapRegionType>(m_paintRegionType);
                     
-                    if (newRegion.type == fw::MapRegionType::Forest) { newRegion.label = "Foresta"; newRegion.surfaceBlockId = 1; newRegion.subsurfaceBlockId = 3; }
-                    else if (newRegion.type == fw::MapRegionType::Desert) { newRegion.label = "Deserto"; newRegion.surfaceBlockId = 6; newRegion.subsurfaceBlockId = 6; } // Sabbia (es. 6)
-                    else if (newRegion.type == fw::MapRegionType::Ocean) { newRegion.label = "Oceano"; newRegion.surfaceBlockId = 4; newRegion.subsurfaceBlockId = 2; } // Acqua (4)
-                    else if (newRegion.type == fw::MapRegionType::Volcano) { newRegion.label = "Vulcano"; newRegion.surfaceBlockId = 2; newRegion.subsurfaceBlockId = 2; } // Pietra
-                    else if (newRegion.type == fw::MapRegionType::Tundra) { newRegion.label = "Tundra"; newRegion.surfaceBlockId = 5; newRegion.subsurfaceBlockId = 3; } // Neve (5)
-                    else { newRegion.label = "Regione"; newRegion.surfaceBlockId = 1; }
+                    newRegion.surfaceBlockId = m_paintSurfaceBlock;
+                    newRegion.subsurfaceBlockId = m_paintSubsurfaceBlock;
+                    newRegion.label = (m_paintRegionType >= 0 && m_paintRegionType < 8) ? biomeNames[m_paintRegionType] : "Regione";
                     
                     currentPlanet.regions.push_back(newRegion);
                     paintTimer = 0.0f;

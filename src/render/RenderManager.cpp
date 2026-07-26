@@ -269,6 +269,11 @@ bool RenderManager::CreateRenderPass() {
 // STEP 2: FRAMEBUFFERS (Collegano Swapchain e RenderPass)
 // ---------------------------------------------------------
 bool RenderManager::CreateFramebuffers() {
+    if (m_renderPass == VK_NULL_HANDLE) {
+        OutputDebugStringA("[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n");
+        return false;
+    }
+
     char debugMsg[256];
     sprintf_s(debugMsg, "[DEBUG] CreateFramebuffers chiamato! m_renderPass = %p\n", (void*)m_renderPass);
     OutputDebugStringA(debugMsg);
@@ -285,12 +290,6 @@ bool RenderManager::CreateFramebuffers() {
         framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass      = m_renderPass;
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        
-        if (m_renderPass == VK_NULL_HANDLE) {
-            OutputDebugStringA("[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n");
-            std::cerr << "[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n";
-            return false;
-        }
         framebufferInfo.pAttachments    = attachments.data();
         framebufferInfo.width           = m_core->GetSwapchainExtent().width;
         framebufferInfo.height          = m_core->GetSwapchainExtent().height;
@@ -980,11 +979,13 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
         // ATTENZIONE: In RenderFairworld viewMatrix è SOLO la View matrix!
         float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
-        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
+        glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(m_fov), aspect, 0.1f, 2000.0f);
         glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
-
+        
+        // Per l'estrazione delle culling planes usiamo una prospettiva standard (senza Y-flip)
+        glm::mat4 cullProj = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 2000.0f);
         CameraFrustum frustum;
-        frustum.extract(viewProjMatrix);
+        frustum.extract(cullProj * viewMatrix);
 
         for (auto entity : view) {
             const auto& mesh = view.get<fw::MeshComponent>(entity);

@@ -69,11 +69,12 @@ BlockMakerState::~BlockMakerState() {
     std::cout << "[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
     if (m_context) {
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-            m_context->forgeWorld = nullptr;
+            m_context->forgeWorld = m_context->gameWorld;
         }
         if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
-            m_context->activeRegistry = nullptr;
+            m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
         }
+        m_context->isBlockMakerMode = false;
         if (m_context->jobSystem) {
             m_context->jobSystem->Shutdown();
             m_context->jobSystem->Initialize();
@@ -98,7 +99,7 @@ bool BlockMakerState::Init() {
         m_context->asyncInput = new fw::AsyncInput();
     }
     if (!m_context->vramAllocator) {
-        m_context->vramAllocator = new fw::VramSlabAllocator(512 * 1024 * 1024);
+        m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
     }
     if (!m_context->dmaManager) {
         m_context->dmaManager = new fw::VulkanDmaManager();
@@ -314,9 +315,9 @@ void BlockMakerState::DrawUI() {
     if (ImGui::Begin("Block Maker (Data-Driven)")) {
         if (ImGui::Button("< TORNA ALL'HUB")) {
             if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-                m_context->forgeWorld = nullptr;
+                m_context->forgeWorld = m_context->gameWorld;
             }
-            m_context->activeRegistry = nullptr;
+            m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
             m_context->isBlockMakerMode = false;
             m_context->engine->SetGameMode(GameMode::Hub);
             m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
