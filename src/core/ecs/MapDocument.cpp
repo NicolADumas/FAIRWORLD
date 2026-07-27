@@ -19,6 +19,30 @@ bool MapDocument::SaveJSON(const std::string& path) {
 
         json j;
         j["isCompiled"] = isCompiled;
+        j["terrainLibrary"] = json::array();
+        for (const auto& t : terrainLibrary) {
+            json tj;
+            tj["id"] = t.id;
+            tj["name"] = t.name;
+            tj["baseType"] = static_cast<int>(t.baseType);
+            tj["basePerlinFrequency"] = t.basePerlinFrequency;
+            tj["baseGravityModifier"] = t.baseGravityModifier;
+            tj["seed"] = t.seed;
+            tj["subRegions"] = json::array();
+            for (const auto& r : t.subRegions) {
+                json rj;
+                rj["rectMin"] = { r.rectMin.x, r.rectMin.y };
+                rj["rectMax"] = { r.rectMax.x, r.rectMax.y };
+                rj["type"] = static_cast<int>(r.type);
+                rj["shape"] = static_cast<int>(r.shape);
+                rj["label"] = r.label;
+                rj["surfaceBlockId"] = r.surfaceBlockId;
+                rj["subsurfaceBlockId"] = r.subsurfaceBlockId;
+                tj["subRegions"].push_back(rj);
+            }
+            j["terrainLibrary"].push_back(tj);
+        }
+
         j["planets"] = json::array();
 
         for (const auto& planet : planets) {
@@ -62,6 +86,15 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 rj["subsurfaceBlockId"] = region.subsurfaceBlockId;
                 pj["regions"].push_back(rj);
             }
+            
+            pj["chunkInstances"] = json::array();
+            for (const auto& inst : planet.chunkInstances) {
+                json cj;
+                cj["templateId"] = inst.templateId;
+                cj["centerNormal"] = { inst.centerNormal.x, inst.centerNormal.y, inst.centerNormal.z };
+                cj["angularRadius"] = inst.angularRadius;
+                pj["chunkInstances"].push_back(cj);
+            }
             j["planets"].push_back(pj);
         }
 
@@ -87,6 +120,40 @@ bool MapDocument::LoadJSON(const std::string& path) {
         file.close();
 
         isCompiled = j.value("isCompiled", false);
+        
+        terrainLibrary.clear();
+        if (j.contains("terrainLibrary") && j["terrainLibrary"].is_array()) {
+            for (const auto& tj : j["terrainLibrary"]) {
+                TerrainTemplate t;
+                t.id = tj.value("id", "default");
+                t.name = tj.value("name", "Unknown");
+                t.baseType = static_cast<MapRegionType>(tj.value("baseType", 0));
+                t.basePerlinFrequency = tj.value("basePerlinFrequency", 0.03f);
+                t.baseGravityModifier = tj.value("baseGravityModifier", 1.0f);
+                t.seed = tj.value("seed", 0U);
+                if (tj.contains("subRegions") && tj["subRegions"].is_array()) {
+                    for (const auto& rj : tj["subRegions"]) {
+                        MapRegion r;
+                        if (rj.contains("rectMin") && rj["rectMin"].is_array() && rj["rectMin"].size() >= 2) {
+                            r.rectMin.x = rj["rectMin"][0].get<int>();
+                            r.rectMin.y = rj["rectMin"][1].get<int>();
+                        }
+                        if (rj.contains("rectMax") && rj["rectMax"].is_array() && rj["rectMax"].size() >= 2) {
+                            r.rectMax.x = rj["rectMax"][0].get<int>();
+                            r.rectMax.y = rj["rectMax"][1].get<int>();
+                        }
+                        r.type = static_cast<MapRegionType>(rj.value("type", 0));
+                        r.shape = static_cast<RegionShape>(rj.value("shape", 0));
+                        r.label = rj.value("label", "");
+                        r.surfaceBlockId = rj.value("surfaceBlockId", 1);
+                        r.subsurfaceBlockId = rj.value("subsurfaceBlockId", 3);
+                        t.subRegions.push_back(r);
+                    }
+                }
+                terrainLibrary.push_back(t);
+            }
+        }
+        
         planets.clear();
 
         if (j.contains("planets") && j["planets"].is_array()) {
@@ -128,6 +195,20 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         region.surfaceBlockId = rj.value("surfaceBlockId", 1);
                         region.subsurfaceBlockId = rj.value("subsurfaceBlockId", 3);
                         planet.regions.push_back(region);
+                    }
+                }
+                
+                if (pj.contains("chunkInstances") && pj["chunkInstances"].is_array()) {
+                    for (const auto& cj : pj["chunkInstances"]) {
+                        PlanetChunkInstance inst;
+                        inst.templateId = cj.value("templateId", "");
+                        if (cj.contains("centerNormal") && cj["centerNormal"].is_array() && cj["centerNormal"].size() >= 3) {
+                            inst.centerNormal.x = cj["centerNormal"][0].get<float>();
+                            inst.centerNormal.y = cj["centerNormal"][1].get<float>();
+                            inst.centerNormal.z = cj["centerNormal"][2].get<float>();
+                        }
+                        inst.angularRadius = cj.value("angularRadius", 0.2f);
+                        planet.chunkInstances.push_back(inst);
                     }
                 }
                 planets.push_back(planet);

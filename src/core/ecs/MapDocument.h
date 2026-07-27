@@ -27,8 +27,11 @@ enum class RegionShape : int {
 };
 
 struct MapRegion {
-    glm::ivec2 rectMin = glm::ivec2(-2, -2); // Chunk min
-    glm::ivec2 rectMax = glm::ivec2(2, 2);   // Chunk max
+    glm::vec3 centerNormal = glm::vec3(0.0f, 1.0f, 0.0f); // Direzione del centro del bioma
+    float angularRadius = 0.2f; // Raggio di influenza (in radianti)
+    // Legacy 2D grid
+    glm::ivec2 rectMin = glm::ivec2(-2, -2);
+    glm::ivec2 rectMax = glm::ivec2(2, 2);
     MapRegionType type;
     RegionShape shape = RegionShape::Rectangle; // Forma della struttura (Rettangolo, Cerchio, Rombo, Stella)
     std::string label;
@@ -48,10 +51,27 @@ struct ChunkDataExport {
     ChunkMetadata meta;
 };
 
+struct TerrainTemplate {
+    std::string id = "default_terrain";
+    std::string name = "Nuovo Terreno";
+    MapRegionType baseType = MapRegionType::Forest;
+    float basePerlinFrequency = 0.03f;
+    float baseGravityModifier = 1.0f;
+    uint32_t seed = 0;
+    std::vector<MapRegion> subRegions; // 2D layout (dettagli dipinti)
+};
+
+struct PlanetChunkInstance {
+    std::string templateId; // Riferimento al TerrainTemplate
+    glm::vec3 centerNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+    float angularRadius = 0.2f;
+};
+
 struct PlanetMap {
     PlanetType type;
     std::string name;
-    std::vector<MapRegion> regions;
+    std::vector<MapRegion> regions; // Legacy / Fallback
+    std::vector<PlanetChunkInstance> chunkInstances;
     
     // Parametri DimensionsManager per Rigid Grid Map
     int32_t minX = -16;
@@ -64,6 +84,7 @@ struct PlanetMap {
 };
 
 struct MapDocument {
+    std::vector<TerrainTemplate> terrainLibrary;
     std::vector<PlanetMap> planets;
     bool isCompiled = false;
 

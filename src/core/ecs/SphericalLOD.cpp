@@ -7,7 +7,40 @@
 
 namespace fw {
 
-void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
+void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo, const glm::mat4& viewProj) {
+    // --- FRUSTUM CULLING ---
+    glm::vec4 planes[6];
+    planes[0] = glm::vec4(viewProj[0][3] + viewProj[0][0], viewProj[1][3] + viewProj[1][0], viewProj[2][3] + viewProj[2][0], viewProj[3][3] + viewProj[3][0]); // Left
+    planes[1] = glm::vec4(viewProj[0][3] - viewProj[0][0], viewProj[1][3] - viewProj[1][0], viewProj[2][3] - viewProj[2][0], viewProj[3][3] - viewProj[3][0]); // Right
+    planes[2] = glm::vec4(viewProj[0][3] + viewProj[0][1], viewProj[1][3] + viewProj[1][1], viewProj[2][3] + viewProj[2][1], viewProj[3][3] + viewProj[3][1]); // Bottom
+    planes[3] = glm::vec4(viewProj[0][3] - viewProj[0][1], viewProj[1][3] - viewProj[1][1], viewProj[2][3] - viewProj[2][1], viewProj[3][3] - viewProj[3][1]); // Top
+    planes[4] = glm::vec4(viewProj[0][3] + viewProj[0][2], viewProj[1][3] + viewProj[1][2], viewProj[2][3] + viewProj[2][2], viewProj[3][3] + viewProj[3][2]); // Near
+    planes[5] = glm::vec4(viewProj[0][3] - viewProj[0][2], viewProj[1][3] - viewProj[1][2], viewProj[2][3] - viewProj[2][2], viewProj[3][3] - viewProj[3][2]); // Far
+    
+    bool isVisible = true;
+    for (int i = 0; i < 6; i++) {
+        float len = glm::length(glm::vec3(planes[i]));
+        planes[i] /= len;
+        
+        float distance = glm::dot(glm::vec3(planes[i]), node.centerPos) + planes[i].w;
+        if (distance < -node.boundsRadius) {
+            isVisible = false;
+            break;
+        }
+    }
+    
+    // Se il nodo è fuori dal Frustum, distruggiamo la sua mesh (se esiste) e compattiamo i figli per risparmiare memoria
+    if (!isVisible) {
+        if (node.isSplit) {
+            MergeNode(node, world);
+        }
+        if (node.targetEntity != entt::null && !node.isGenerating) {
+            world->DestroyEntity(node.targetEntity);
+            node.targetEntity = entt::null;
+        }
+        return; // Interrompiamo l'aggiornamento per questo ramo
+    }
+
     float distance = glm::length(node.centerPos - playerPos);
     
     // Genera la mesh se non esiste e non stiamo già generando
@@ -27,7 +60,7 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
         }
         // Aggiorna ricorsivamente i figli
         for (auto& child : node.children) {
-            if (child) UpdateLODTree(*child, playerPos, world, jobs, assets, planetInfo);
+            if (child) UpdateLODTree(*child, playerPos, world, jobs, assets, planetInfo, viewProj);
         }
     } 
     // Ci siamo allontanati? Uniamo i figli e puliamo la memoria.
@@ -99,10 +132,12 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
         std::vector<glm::vec3> positions;
         std::vector<glm::vec3> normals;
         std::vector<glm::vec4> colors;
+        std::vector<float> emissives; // Nuova array per glow olografico
         
         positions.reserve((RESOLUTION + 1) * (RESOLUTION + 1));
         normals.reserve((RESOLUTION + 1) * (RESOLUTION + 1));
         colors.reserve((RESOLUTION + 1) * (RESOLUTION + 1));
+        emissives.reserve((RESOLUTION + 1) * (RESOLUTION + 1));
         
         for (int y = 0; y <= RESOLUTION; ++y) {
             float v = (float)y / RESOLUTION;
@@ -115,51 +150,69 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 
                 glm::vec3 normal = glm::normalize(p);
                 
-                // DATA-DRIVEN: Calcoliamo l'influenza delle regioni
+                // DATA-DRIVEN: Calcoliamo l'influenza delle regioni tramite distanza angolare
                 MapRegion activeRegion;
                 activeRegion.seed = 12345;
                 activeRegion.gravityModifier = 1.0f;
                 activeRegion.perlinFrequency = 0.005f; // Base
                 
-                // NOTA: Con la migrazione alle coordinate Chunk (rectMin/rectMax), il calcolo
-                // dell'influenza per la macro-sfera visiva (SphericalLOD) richiede una conversione 
-                // da coordinate geografiche (lat/long) a Chunk. 
-                // Per ora, applichiamo un rumore di base uniforme per il pianeta LOD in lontananza.
-                
-                float latitude = asin(normal.y); // Necessario per il bioma
-                
-                // Usa i dati della regione per la generazione procedurale!
-                float noiseVal = MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, activeRegion.perlinFrequency);
-                float height = planetRadius + (noiseVal * planetRadius * 0.05f * activeRegion.gravityModifier);
-                
-                positions.push_back(normal * height);
-                normals.push_back(normal);
-                
-                // Temperatura influenzata dalla latitudine (poli freddi, equatore caldo)
-                float latTemp = 1.0f - std::abs(latitude) / (glm::pi<float>() / 2.0f);
-                
-                float tempNoise = (MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, 0.001f) + 1.0f) * 0.5f;
-                float humNoise = (MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, 0.003f) + 1.0f) * 0.5f;
-                
-                float tempFinal = (tempNoise * 0.5f) + (latTemp * 0.5f);
-                float relHeight = std::clamp((height - planetRadius) / (planetRadius * 0.05f), 0.0f, 1.0f);
-                
-                const ::BiomeDef* biome = MapWorldGenerator::EvaluateBiome(tempFinal, humNoise, relHeight, assets);
-                
-                glm::vec4 color(0.3f, 0.8f, 0.3f, 1.0f);
-                if (biome) {
-                    if (biome->name.find("Deserto") != std::string::npos || activeRegion.type == MapRegionType::Desert) color = glm::vec4(0.8f, 0.7f, 0.4f, 1.0f);
-                    else if (biome->name.find("Oceano") != std::string::npos || activeRegion.type == MapRegionType::Ocean) color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);
-                    else if (biome->name.find("Neve") != std::string::npos || activeRegion.type == MapRegionType::Tundra) color = glm::vec4(0.9f, 0.9f, 0.95f, 1.0f);
-                    else if (activeRegion.type == MapRegionType::Volcano) color = glm::vec4(0.8f, 0.2f, 0.2f, 1.0f);
+                float maxInfluence = -1.0f;
+                for (const auto& r : safeRegions) {
+                    float dotProduct = glm::dot(normal, r.centerNormal);
+                    float threshold = cos(r.angularRadius);
+                    if (dotProduct > threshold) {
+                        float influence = (dotProduct - threshold) / (1.0f - threshold);
+                        if (influence > maxInfluence) {
+                            maxInfluence = influence;
+                            activeRegion = r;
+                        }
+                    }
                 }
-                
-                if (height < planetRadius + 0.1f) {
-                    positions.back() = normal * (planetRadius + 0.1f);
-                    color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);
+                if (maxInfluence < 0.0f) {
+                    // Rendering Olografico / Wireframe per zone non dipinte
+                    float height = planetRadius;
+                    positions.push_back(normal * height);
+                    normals.push_back(normal);
+                    
+                    // Crea griglia olografica basata su lat/lon sferica
+                    float uGrid = atan2(normal.z, normal.x) * 40.0f;
+                    float vGrid = asin(normal.y) * 40.0f;
+                    bool isLine = (fmod(std::abs(uGrid), 1.0f) < 0.05f || fmod(std::abs(vGrid), 1.0f) < 0.05f);
+                    
+                    colors.push_back(isLine ? glm::vec4(0.1f, 0.8f, 1.0f, 0.9f) : glm::vec4(0.0f, 0.1f, 0.3f, 0.2f));
+                    emissives.push_back(isLine ? 1.0f : 0.0f);
+                } else {
+                    // Generazione Voxel Reale
+                    float noiseVal = MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, activeRegion.perlinFrequency);
+                    float height = planetRadius + (noiseVal * planetRadius * 0.05f * activeRegion.gravityModifier);
+                    
+                    positions.push_back(normal * height);
+                    normals.push_back(normal);
+                    
+                    float latitude = asin(normal.y);
+                    float latTemp = 1.0f - std::abs(latitude) / (glm::pi<float>() / 2.0f);
+                    float tempNoise = (MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, 0.001f) + 1.0f) * 0.5f;
+                    float humNoise = (MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, 0.003f) + 1.0f) * 0.5f;
+                    float tempFinal = (tempNoise * 0.5f) + (latTemp * 0.5f);
+                    float relHeight = std::clamp((height - planetRadius) / (planetRadius * 0.05f), 0.0f, 1.0f);
+                    
+                    const ::BiomeDef* biome = MapWorldGenerator::EvaluateBiome(tempFinal, humNoise, relHeight, assets);
+                    glm::vec4 color(0.3f, 0.8f, 0.3f, 1.0f);
+                    if (biome) {
+                        if (biome->name.find("Deserto") != std::string::npos || activeRegion.type == MapRegionType::Desert) color = glm::vec4(0.8f, 0.7f, 0.4f, 1.0f);
+                        else if (biome->name.find("Oceano") != std::string::npos || activeRegion.type == MapRegionType::Ocean) color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);
+                        else if (biome->name.find("Neve") != std::string::npos || activeRegion.type == MapRegionType::Tundra) color = glm::vec4(0.9f, 0.9f, 0.95f, 1.0f);
+                        else if (activeRegion.type == MapRegionType::Volcano) color = glm::vec4(0.8f, 0.2f, 0.2f, 1.0f);
+                    }
+                    
+                    if (height < planetRadius + 0.1f) {
+                        positions.back() = normal * (planetRadius + 0.1f);
+                        color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);
+                    }
+                    
+                    colors.push_back(color);
+                    emissives.push_back(0.0f);
                 }
-                
-                colors.push_back(color);
             }
         }
         
@@ -180,7 +233,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     vtx.materialID = 0;
                     vtx.ao = 1.0f;
                     vtx.light = 1.0f;
-                    vtx.emissive = 0.0f;
+                    vtx.emissive = emissives[idx];
                     mesh.vertices.push_back(vtx);
                 };
                 

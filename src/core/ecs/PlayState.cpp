@@ -20,6 +20,7 @@
 #include "MapDocument.h"
 #include "MapWorldGenerator.h"
 #include "JobSystem.h"
+#include "VulkanDmaManager.h"
 #include <imgui.h>
 
 using json = nlohmann::json;
@@ -50,6 +51,15 @@ PlayState::~PlayState() {
 
 
 bool PlayState::Init() {
+    // --- CRITICAL FIX FOR GPU RENDERING BUG ---
+    // Ensure JobSystem is initialized so background meshes can be generated and sent to GPU.
+    if (m_context) {
+        if (!m_context->jobSystem) {
+            m_context->jobSystem = new fw::JobSystem();
+            m_context->jobSystem->Initialize();
+        }
+    }
+
     // === REGISTRAZIONE DEL KERNEL BUS INPUT (Action Mapping) ===
     // Le stringhe vengono hashate a compile-time da EnTT: costo zero a runtime
     using namespace entt::literals;
@@ -79,6 +89,20 @@ bool PlayState::Init() {
 
     std::cout << "[PlayState] Action Map registrata: "
               << bindings.size() << " azioni logiche nel Kernel Bus.\n";
+
+    if (!m_context->vramAllocator) {
+        m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
+    }
+    if (!m_context->dmaManager) {
+        m_context->dmaManager = new fw::VulkanDmaManager();
+        if (auto* rm = m_context->engine->GetRenderManager()) {
+            m_context->dmaManager->Initialize(
+                rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
+                rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
+                rm->GetStagingBufferSize(), rm->GetGlobalVramBuffer(), rm->GetQueueMutex()
+            );
+        }
+    }
 
     // === CARICAMENTO CONFIGURAZIONE DATA-DRIVEN (JSON) ===
     std::string configPath = m_context->targetGameJsonPath;
@@ -170,6 +194,7 @@ bool PlayState::Init() {
         std::cout << "[PlayState] Cartuccia Mappa rilevata: " << configPath << "\n";
         fw::MapDocument doc;
         if (doc.LoadJSON(configPath)) {
+            std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA avviato...\n";
             std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
             fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
         } else {
@@ -181,6 +206,7 @@ bool PlayState::Init() {
     // Generazione procedurale di un prato circondato da montagne (11x11 chunk)
     // Eseguito SOLO SE NON c'è una cartuccia mappa custom caricata.
     if (!hasCustomMap) {
+        std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA (Procedurale Fallback) avviato...\n";
         int chunkRadius = 5; // Enorme prato
         for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
             for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {

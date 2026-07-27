@@ -18,6 +18,9 @@ public:
     }
 
     void Initialize() {
+        m_shutdown = false;
+        m_workers.clear();
+        
         unsigned int numThreads = std::thread::hardware_concurrency();
         if (numThreads == 0) numThreads = 4; // Fallback
         
@@ -46,6 +49,7 @@ public:
                 worker.join();
             }
         }
+        m_workers.clear();
     }
 
     void Enqueue(std::function<void()> job) {

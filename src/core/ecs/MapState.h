@@ -31,6 +31,13 @@ private:
     int m_activePlanetIndex = 0;
     int m_selectedRegionIndex = -1;
     bool m_isBuilderMode = true;
+    std::vector<std::vector<fw::MapRegion>> m_undoStack;
+    
+    // UI Notification State
+    bool m_hasUnsavedChanges = false;
+    bool m_previewIsUpToDate = false;
+    std::string m_lastActionStatus = "";
+    float m_statusTimer = 0.0f;
     
     // Zoom/Pan per il Canvas 2D
     glm::vec2 m_canvasPan = glm::vec2(0.0f);
@@ -46,6 +53,10 @@ private:
     // SimCity Tools
     int m_selectedZoneType = 1;  // Default: Residenziale (1)
     int m_selectedDensity = 0;   // Default: Bassa densità (0)
+
+    // --- TERRAIN WORKFLOW ---
+    int m_activeTemplateIndex = -1; // Indice in m_document.terrainLibrary
+    int m_selectedChunkInstanceIndex = -1; // Indice in currentPlanet.chunkInstances
 
     // --- MONDO DI PREVIEW (Fase 2) ---
     std::unique_ptr<fw::GameWorld> m_previewWorld;

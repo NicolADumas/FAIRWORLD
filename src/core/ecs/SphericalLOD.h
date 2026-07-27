@@ -49,7 +49,7 @@ private:
 
 public:
     void SetPlanetRadius(float radius) { m_planetRadius = radius; }
-    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
+    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo, const glm::mat4& viewProj);
 };
 
 } // namespace fw
