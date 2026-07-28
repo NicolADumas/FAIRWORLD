@@ -77,9 +77,15 @@ void MapRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 vi
     }
 
     VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float)m_extent.width;
+    if (context->isMapBuilderMode) {
+        viewport.x = m_extent.width * 0.45f;
+        viewport.y = 0.0f;
+        viewport.width = m_extent.width * 0.55f;
+    } else {
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float)m_extent.width;
+    }
     viewport.height = (float)m_extent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;

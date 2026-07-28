@@ -100,6 +100,10 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 cj["templateId"] = inst.templateId;
                 cj["eulerAngles"] = { inst.eulerAngles.x, inst.eulerAngles.y, inst.eulerAngles.z };
                 cj["angularRadius"] = inst.angularRadius;
+                cj["isGridAligned"] = inst.isGridAligned;
+                cj["faceIndex"] = inst.faceIndex;
+                cj["gridX"] = inst.gridX;
+                cj["gridY"] = inst.gridY;
                 pj["chunkInstances"].push_back(cj);
             }
             j["planets"].push_back(pj);
@@ -148,8 +152,8 @@ bool MapDocument::LoadJSON(const std::string& path) {
                             r.eulerAngles.z = rj["eulerAngles"][2].get<float>();
                         } else if (rj.contains("centerNormal") && rj["centerNormal"].is_array() && rj["centerNormal"].size() >= 3) {
                             glm::vec3 cn(rj["centerNormal"][0].get<float>(), rj["centerNormal"][1].get<float>(), rj["centerNormal"][2].get<float>());
-                            r.eulerAngles.x = asin(cn.y);
-                            r.eulerAngles.y = atan2(cn.z, cn.x);
+                            r.eulerAngles.x = glm::degrees(asin(cn.y));
+                            r.eulerAngles.y = glm::degrees(atan2(cn.z, cn.x));
                             r.eulerAngles.z = 0.0f;
                         }
                         r.angularRadius = rj.value("angularRadius", 0.2f);
@@ -198,8 +202,8 @@ bool MapDocument::LoadJSON(const std::string& path) {
                             region.eulerAngles.z = rj["eulerAngles"][2].get<float>();
                         } else if (rj.contains("centerNormal") && rj["centerNormal"].is_array() && rj["centerNormal"].size() >= 3) {
                             glm::vec3 cn(rj["centerNormal"][0].get<float>(), rj["centerNormal"][1].get<float>(), rj["centerNormal"][2].get<float>());
-                            region.eulerAngles.x = asin(cn.y);
-                            region.eulerAngles.y = atan2(cn.z, cn.x);
+                            region.eulerAngles.x = glm::degrees(asin(cn.y));
+                            region.eulerAngles.y = glm::degrees(atan2(cn.z, cn.x));
                             region.eulerAngles.z = 0.0f;
                         }
                         region.angularRadius = rj.value("angularRadius", 0.2f);
@@ -241,11 +245,15 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         } else if (cj.contains("centerNormal") && cj["centerNormal"].is_array() && cj["centerNormal"].size() >= 3) {
                             // Fallback per vecchi salvataggi
                             glm::vec3 cn(cj["centerNormal"][0].get<float>(), cj["centerNormal"][1].get<float>(), cj["centerNormal"][2].get<float>());
-                            inst.eulerAngles.x = asin(cn.y);
-                            inst.eulerAngles.y = atan2(cn.z, cn.x);
+                            inst.eulerAngles.x = glm::degrees(asin(cn.y));
+                            inst.eulerAngles.y = glm::degrees(atan2(cn.z, cn.x));
                             inst.eulerAngles.z = 0.0f;
                         }
                         inst.angularRadius = cj.value("angularRadius", 0.2f);
+                        inst.isGridAligned = cj.value("isGridAligned", false);
+                        inst.faceIndex = cj.value("faceIndex", 0);
+                        inst.gridX = cj.value("gridX", 0);
+                        inst.gridY = cj.value("gridY", 0);
                         planet.chunkInstances.push_back(inst);
                     }
                 }

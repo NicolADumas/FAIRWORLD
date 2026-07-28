@@ -156,8 +156,8 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 
                 float maxInfluence = -1.0f;
                 for (const auto& r : safeRegions) {
-                    float pitch = r.eulerAngles.x;
-                    float yaw = r.eulerAngles.y;
+                    float pitch = glm::radians(r.eulerAngles.x);
+                    float yaw = glm::radians(r.eulerAngles.y);
                     glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
                     float dotProduct = glm::dot(normal, rCenterNormal);
                     float threshold = cos(r.angularRadius);

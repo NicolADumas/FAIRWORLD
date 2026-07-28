@@ -78,6 +78,7 @@ struct SharedContext {
     entt::registry*         activeRegistry = nullptr;
     bool                    isForgeMode = false;
     bool                    isBlockMakerMode = false;
+    bool                    isMapBuilderMode = false;
     glm::vec3               previewLightDir = glm::vec3(0.5f, -1.0f, 0.5f);
     int                     debugColorMode = 0; // 0=Normale, 1=Inverti, 2=Swap RB // TRUE = siamo nell'editor Forge, FALSE = siamo in Game
 

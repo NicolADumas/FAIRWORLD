@@ -34,10 +34,15 @@ MapState::~MapState() {
             m_context->jobSystem->Initialize(); // Riaccende i thread per gli altri stati
         }
     }
+    if (m_context) {
+        m_context->isMapBuilderMode = false;
+    }
     std::cout << "[MapState] Distrutto. Memoria isolata rilasciata.\n";
 }
 
 bool MapState::Init() {
+    m_context->isMapBuilderMode = true;
+    
     // Prova a caricare la mappa esistente
     if (!m_document.LoadJSON("saves/map/world_map.json") || m_document.planets.empty()) {
         // Fallback: Setup iniziale del Mega-Pianeta Unificato
@@ -150,7 +155,13 @@ void MapState::Update(float dt) {
         if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
             uint32_t w = m_context->engine->GetRenderManager()->GetWindowWidth();
             uint32_t h = m_context->engine->GetRenderManager()->GetWindowHeight();
-            if (h > 0) aspect = (float)w / (float)h;
+            if (h > 0) {
+                if (m_isBuilderMode) {
+                    aspect = (w * 0.55f) / (float)h;
+                } else {
+                    aspect = (float)w / (float)h;
+                }
+            }
         }
         m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 2000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Correzione Y per Vulkan
