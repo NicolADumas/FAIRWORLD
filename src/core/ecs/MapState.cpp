@@ -81,7 +81,17 @@ bool MapState::Init() {
     }
 
     // Inizializza i 6 root nodes della Cube-Sphere (LOD Sferico)
+    RebuildPlanetRoots();
+
+    return true;
+}
+
+void MapState::RebuildPlanetRoots() {
     float R = 50.0f;
+    if (m_activePlanetIndex >= 0 && m_activePlanetIndex < m_document.planets.size()) {
+        R = m_document.planets[m_activePlanetIndex].planetRadius;
+    }
+    
     m_lodSystem.SetPlanetRadius(R);
     m_planetRootNodes.clear();
 
@@ -98,8 +108,6 @@ bool MapState::Init() {
     m_planetRootNodes.emplace_back(glm::vec3(0, R, 0), R, 2, glm::vec3(-1,1,1), glm::vec3(1,1,1), glm::vec3(-1,1,-1), glm::vec3(1,1,-1));
     // Faccia -Y (Bottom)
     m_planetRootNodes.emplace_back(glm::vec3(0, -R, 0), R, 2, glm::vec3(-1,-1,-1), glm::vec3(1,-1,-1), glm::vec3(-1,-1,1), glm::vec3(1,-1,1));
-
-    return true;
 }
 
 void MapState::Update(float dt) {
@@ -147,22 +155,55 @@ void MapState::Update(float dt) {
         m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 2000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Correzione Y per Vulkan
 
-        if (m_context && m_context->jobSystem && m_context->assetManager) {
+    }
+    
+    // ===============================================================
+    // LOD SYSTEM: Update in BOTH modes (Builder and Runtime)
+    // ===============================================================
+    if (m_context && m_context->jobSystem && m_context->assetManager) {
         const fw::PlanetMap* pMap = nullptr;
+        std::vector<fw::MapRegion> activeRegions;
         if (!m_document.planets.empty()) {
             m_activePlanetIndex = 0; // Forza il Mega-Pianeta
             pMap = &m_document.planets[0];
+            
+            // Unisci le regioni classiche
+            activeRegions = pMap->regions;
+            
+            // Converti Chunk Instances in Regioni temporanee per il LOD
+            for (const auto& inst : pMap->chunkInstances) {
+                fw::MapRegion r;
+                r.eulerAngles = inst.eulerAngles;
+                r.angularRadius = inst.angularRadius;
+                r.type = fw::MapRegionType::Forest; // Default
+                r.gravityModifier = 1.0f;
+                r.perlinFrequency = 0.005f;
+                
+                // Cerca i dati del template
+                for (const auto& tpl : m_document.terrainLibrary) {
+                    if (tpl.id == inst.templateId) {
+                        r.type = tpl.baseType;
+                        r.gravityModifier = tpl.baseGravityModifier;
+                        r.perlinFrequency = tpl.basePerlinFrequency;
+                        break;
+                    }
+                }
+                activeRegions.push_back(r);
+            }
         }
         
         glm::mat4 vpMatrix = m_context->activeCameraView.projectionMatrix * m_context->activeCameraView.viewMatrix;
+        glm::vec3 activeCamPos = m_context->activeCameraView.cameraPosition;
         
+        if (pMap) {
+            m_lodSystem.SetPlanetRadius(pMap->planetRadius);
+        }
         for (auto& root : m_planetRootNodes) {
-            m_lodSystem.UpdateLODTree(root, camPos, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, pMap, vpMatrix);
+            m_lodSystem.UpdateLODTree(root, activeCamPos, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix);
         }
     }
         
-        if (m_previewWorld) m_previewWorld->Update(dt);
-    }
+    if (m_previewWorld) m_previewWorld->Update(dt);
 }
 
 void MapState::Render() {
@@ -186,7 +227,9 @@ void MapState::DrawBuilderUI() {
                                    ImGuiWindowFlags_NoSavedSettings | 
                                    ImGuiWindowFlags_NoBringToFrontOnFocus;
 
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0)); // Sfondo principale trasparente per mostrare il 3D
     ImGui::Begin("MAP BUILDER - COESISTENZA", nullptr, windowFlags);
+    ImGui::PopStyleColor();
     
     float width = viewport->Size.x;
     float height = viewport->Size.y;
@@ -211,6 +254,7 @@ void MapState::DrawBuilderUI() {
     // ==========================================
     // PANNELLO SINISTRO - EDITOR TERRENI (2D)
     // ==========================================
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.14f, 0.95f)); // Sfondo opaco
     ImGui::BeginChild("TerrainEditor", ImVec2(leftWidth, 0), true);
     ImGui::TextColored(ImVec4(0.2f, 0.9f, 1.0f, 1.0f), "EDITOR TERRENI (TEMPLATE 2D)");
     ImGui::Separator();
@@ -236,38 +280,10 @@ void MapState::DrawBuilderUI() {
     if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < m_document.terrainLibrary.size()) {
         auto& activeTemplate = m_document.terrainLibrary[m_activeTemplateIndex];
         
-        if (ImGui::CollapsingHeader("Proprietà Generali Modello", ImGuiTreeNodeFlags_DefaultOpen)) {
-            char labelBuf[128];
-            strncpy_s(labelBuf, activeTemplate.name.c_str(), sizeof(labelBuf));
-            if (ImGui::InputText("Nome Modello", labelBuf, sizeof(labelBuf))) activeTemplate.name = labelBuf;
-            
-            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
-            int typeIdx = static_cast<int>(activeTemplate.baseType);
-            if (ImGui::Combo("Bioma Base", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) activeTemplate.baseType = static_cast<fw::MapRegionType>(typeIdx);
-            
-            ImGui::SliderFloat("Frequenza Perlin Base", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f");
-            ImGui::SliderFloat("Modificatore Gravità", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f");
-            int seed = (int)activeTemplate.seed;
-            if (ImGui::InputInt("Seme (Seed)", &seed)) activeTemplate.seed = seed;
-        }
-        
-        // Strumenti Canvas 2D
-        if (ImGui::CollapsingHeader("Strumenti Disegno (Micro-Design)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const char* shapeNames[] = { "Rettangolo", "Cerchio", "Rombo", "Stella" };
-            ImGui::Combo("Forma Struttura", &m_paintBrushShape, shapeNames, IM_ARRAYSIZE(shapeNames));
-            
-            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
-            ImGui::Combo("Tipo Sotto-Regione", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
-            ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, 10);
-            if (ImGui::Button("PULISCI MICRO-DESIGN", ImVec2(-1, 25))) {
-                activeTemplate.subRegions.clear();
-            }
-        }
-        
-        // CANVAS 2D
-        ImGui::Text("Dipingi Dettagli (Fiumi, Zone, ecc.)");
-        ImGuiWindowFlags canvasFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-        ImGui::BeginChild("Canvas2D", ImVec2(0, 300), true, canvasFlags);
+        // CANVAS 2D (Spostato in alto come richiesto)
+        if (ImGui::CollapsingHeader("Tela 2D - Dipingi Dettagli (Fiumi, Zone, ecc.)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGuiWindowFlags canvasFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+            ImGui::BeginChild("Canvas2D", ImVec2(0, 300), true, canvasFlags);
         
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
@@ -336,39 +352,288 @@ void MapState::DrawBuilderUI() {
             drawList->AddRect(ChunkToScreen(bMinX, bMinZ), ChunkToScreen(bMaxX, bMaxZ), IM_COL32(255, 255, 0, 255));
             
             if (!io.KeyCtrl && ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                fw::MapRegion nr;
-                nr.rectMin = glm::ivec2(bMinX, bMinZ);
-                nr.rectMax = glm::ivec2(bMaxX - 1, bMaxZ - 1);
-                nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
-                nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
-                activeTemplate.subRegions.push_back(nr);
-                m_hasUnsavedChanges = true;
+                bool isDuplicate = false;
+                if (!activeTemplate.subRegions.empty()) {
+                    const auto& lastRegion = activeTemplate.subRegions.back();
+                    if (lastRegion.rectMin == glm::ivec2(bMinX, bMinZ) &&
+                        lastRegion.rectMax == glm::ivec2(bMaxX - 1, bMaxZ - 1) &&
+                        lastRegion.type == static_cast<fw::MapRegionType>(m_paintRegionType)) {
+                        isDuplicate = true;
+                    }
+                }
+                
+                if (!isDuplicate) {
+                    fw::MapRegion nr;
+                    nr.rectMin = glm::ivec2(bMinX, bMinZ);
+                    nr.rectMax = glm::ivec2(bMaxX - 1, bMaxZ - 1);
+                    nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
+                    nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
+                    nr.surfaceBlockId = m_paintSurfaceBlock;
+                    nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
+                    activeTemplate.subRegions.push_back(nr);
+                    m_hasUnsavedChanges = true;
+                }
             }
         }
         ImGui::EndChild(); // Canvas2D
+        } // End CollapsingHeader Tela 2D
+
+        if (ImGui::CollapsingHeader("Proprietà Generali Modello", ImGuiTreeNodeFlags_DefaultOpen)) {
+            char labelBuf[128];
+            strncpy_s(labelBuf, activeTemplate.name.c_str(), sizeof(labelBuf));
+            if (ImGui::InputText("Nome Modello", labelBuf, sizeof(labelBuf))) {
+                activeTemplate.name = labelBuf;
+                m_hasUnsavedChanges = true;
+            }
+            
+            // The Mathematical Law of the Spherical Surface (as requested by the user)
+            if (m_document.planets.size() > 0) {
+                float& pRadius = m_document.planets[m_activePlanetIndex].planetRadius;
+                if (ImGui::SliderFloat("Raggio del Pianeta (m)", &pRadius, 50.0f, 5000.0f, "%.1f")) {
+                    m_hasUnsavedChanges = true;
+                    m_lodSystem.SetPlanetRadius(pRadius);
+                    RebuildPlanetRoots();
+                }
+                
+                // Calculate exact chunks based on the user's law
+                float S = 32.0f; // Chunk size
+                float N_lato = std::ceil((glm::pi<float>() * pRadius) / (2.0f * S));
+                int C_totale = 6 * (int)(N_lato * N_lato);
+                
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Legge della Superficie Sferica (C = 4*PI*R^2 / S^2)");
+                ImGui::Text("Dimensione Chunk Base: %.1f m", S);
+                ImGui::Text("Risoluzione per Faccia (N_lato): %d x %d", (int)N_lato, (int)N_lato);
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Chunk Totali Generati: %d", C_totale);
+                ImGui::Spacing();
+            }
+            
+            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+            int typeIdx = static_cast<int>(activeTemplate.baseType);
+            if (ImGui::Combo("Bioma Base", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
+                activeTemplate.baseType = static_cast<fw::MapRegionType>(typeIdx);
+                m_hasUnsavedChanges = true;
+            }
+            
+            if (ImGui::SliderFloat("Frequenza Perlin Base", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f")) m_hasUnsavedChanges = true;
+            if (ImGui::SliderFloat("Modificatore Gravità", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f")) m_hasUnsavedChanges = true;
+            int seed = (int)activeTemplate.seed;
+            if (ImGui::InputInt("Seme (Seed)", &seed)) {
+                activeTemplate.seed = seed;
+                m_hasUnsavedChanges = true;
+            }
+            
+            if (ImGui::SliderFloat("Raggio Angolare (Estensione Chunk)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f")) m_hasUnsavedChanges = true;
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Valori bassi (~0.05) = isola piccola.\nValori alti (~0.3) = continente esteso.\nDipende dal raggio del pianeta configurato.");
+            }
+            
+            ImGui::Spacing();
+            if (ImGui::Button("Genera Livello Acqua (Sovrascrivi Tutto)", ImVec2(-1, 25))) {
+                activeTemplate.subRegions.clear();
+                fw::MapRegion oceanBase;
+                oceanBase.type = fw::MapRegionType::Ocean;
+                oceanBase.shape = fw::RegionShape::Rectangle;
+                oceanBase.rectMin = glm::ivec2(-16, -16);
+                oceanBase.rectMax = glm::ivec2(16, 16);
+                oceanBase.surfaceBlockId = 4; // Water
+                oceanBase.subsurfaceBlockId = 2; // Sand
+                activeTemplate.subRegions.push_back(oceanBase);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Riempie l'intero template 2D con un oceano base da -16 a +16.\nQualsiasi dettaglio dipinto in precedenza verrà cancellato!");
+            }
+        }
+        
+        // Strumenti Canvas 2D
+        if (ImGui::CollapsingHeader("Strumenti Disegno (Micro-Design)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const char* shapeNames[] = { "Rettangolo", "Cerchio", "Rombo", "Stella" };
+            ImGui::Combo("Forma Struttura", &m_paintBrushShape, shapeNames, IM_ARRAYSIZE(shapeNames));
+            
+            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+            ImGui::Combo("Tipo Sotto-Regione", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
+            auto drawBlockCombo = [&](const char* label, int& blockId) {
+                std::string comboPreview = "ID: " + std::to_string(blockId);
+                if (m_context && m_context->blockRegistry) {
+                    const auto& def = m_context->blockRegistry->GetBlock((uint8_t)blockId);
+                    comboPreview = def.displayName + " (" + def.stringId + ")";
+                }
+                if (ImGui::BeginCombo(label, comboPreview.c_str())) {
+                    if (m_context && m_context->blockRegistry) {
+                        for (const auto& b : m_context->blockRegistry->GetAllBlocks()) {
+                            bool isSelected = (blockId == b.id);
+                            if (ImGui::Selectable((b.displayName + " (" + b.stringId + ")").c_str(), isSelected)) {
+                                blockId = b.id;
+                            }
+                            if (isSelected) ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            };
+
+            drawBlockCombo("Blocco Superficie", m_paintSurfaceBlock);
+            drawBlockCombo("Blocco Sottosuolo", m_paintSubsurfaceBlock);
+
+            
+            ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, 10);
+            if (ImGui::Button("PULISCI MICRO-DESIGN", ImVec2(-1, 25))) {
+                activeTemplate.subRegions.clear();
+                m_hasUnsavedChanges = true;
+            }
+        }
     } else {
         ImGui::TextDisabled("Nessun Modello selezionato.");
     }
     
     // Bottom Buttons Sidebar
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 150.0f);
     ImGui::Separator();
-    if (m_hasUnsavedChanges) ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "🗺️ Modifiche non salvate!");
-    if (ImGui::Button("SALVA IL PROGETTO MAPPA", ImVec2(-1, 35))) {
-        if (m_document.SaveJSON("saves/map/world_map.json")) m_hasUnsavedChanges = false;
+    ImGui::Spacing();
+    if (m_hasUnsavedChanges) {
+        if (ImGui::Button("💾 SALVA MODIFICHE (JSON)", ImVec2(-1, 40.0f))) {
+            m_document.SaveJSON("saves/map/world_map.json");
+            m_hasUnsavedChanges = false;
+            m_showSaveConfirmPopup = true; // Mostra popup
+        }
+        ImGui::SetItemTooltip("Salva il blueprint attuale del pianeta su disco. Non genera mesh voxel.");
     }
-    if (ImGui::Button("TORNA AD HUB STATE", ImVec2(-1, 28))) {
-        m_context->engine->SetGameMode(GameMode::Hub);
-        m_context->engine->ForceGameState(GameState::MAIN_MENU);
-        m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
+    
+    if (m_showSaveConfirmPopup) {
+        ImGui::OpenPopup("SalvataggioCompletato");
+        m_showSaveConfirmPopup = false;
     }
-    ImGui::EndChild(); // Sidebar
+    if (ImGui::BeginPopupModal("SalvataggioCompletato", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Salvataggio completato:\n- Template 2D salvati nella libreria\n- Disposizione matematica sul globo 3D (Coordinate)");
+        if (ImGui::Button("OK", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    
+    if (ImGui::Button("APRI TABELLA CHUNKS EXCEL", ImVec2(-1, 30))) {
+        m_showPlacementTable = true;
+    }
+    
+    if (m_showPlacementTable && !m_document.planets.empty()) {
+        auto& currentPlanet = m_document.planets[m_activePlanetIndex];
+        float pRadius = currentPlanet.planetRadius;
+        int N_lato = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 32.0f));
+        if (N_lato < 1) N_lato = 1;
+
+        ImGui::SetNextWindowSize(ImVec2(1000, 600), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Tabella Collocamento Chunks (Legge Sferica)", &m_showPlacementTable)) {
+            
+            // Fast lookup for grid positions
+            std::map<int, int> gridLookup;
+            for (int i = 0; i < (int)currentPlanet.chunkInstances.size(); ++i) {
+                if (currentPlanet.chunkInstances[i].isGridAligned) {
+                    int key = currentPlanet.chunkInstances[i].faceIndex * 1000000 + currentPlanet.chunkInstances[i].gridY * 1000 + currentPlanet.chunkInstances[i].gridX;
+                    gridLookup[key] = i;
+                }
+            }
+
+            int toDeleteIndex = -1;
+            bool wantsAdd = false;
+            fw::PlanetChunkInstance toAdd;
+
+            if (ImGui::BeginTabBar("FacesTabBar")) {
+                const char* faceNames[] = { "+Z (Faccia Nord)", "-Z (Faccia Sud)", "+X (Est)", "-X (Ovest)", "+Y (Top/Cielo)", "-Y (Bottom/Nucleo)" };
+                for (int f = 0; f < 6; ++f) {
+                    if (ImGui::BeginTabItem(faceNames[f])) {
+                        ImGui::Text("Faccia %d - Risoluzione: %d x %d", f, N_lato, N_lato);
+                        ImGui::TextDisabled("Seleziona un Modello/Template a sinistra, poi clicca una cella per assegnarlo.");
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Clicca su una cella occupata per rimuoverla.");
+                        ImGui::Spacing();
+                        
+                        ImGui::BeginChild(std::string("GridScroll_" + std::to_string(f)).c_str(), ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+                        
+                        ImGuiListClipper clipper;
+                        clipper.Begin(N_lato, 35.0f);
+                        while (clipper.Step()) {
+                            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+                                for (int col = 0; col < N_lato; ++col) {
+                                    int key = f * 1000000 + row * 1000 + col;
+                                    auto it = gridLookup.find(key);
+                                    
+                                    ImGui::PushID(key);
+                                    if (col > 0) ImGui::SameLine(0, 2.0f);
+                                    
+                                    if (it != gridLookup.end()) {
+                                        auto& inst = currentPlanet.chunkInstances[it->second];
+                                        std::string shortName = "TPL";
+                                        for (const auto& t : m_document.terrainLibrary) {
+                                            if (t.id == inst.templateId) { shortName = t.name.substr(0, std::min<size_t>(t.name.size(), 4)); break; }
+                                        }
+                                        
+                                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+                                        if (ImGui::Button(shortName.c_str(), ImVec2(45, 30))) {
+                                            toDeleteIndex = it->second;
+                                        }
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chunk: %s\nTemplate: %s", inst.name.c_str(), inst.templateId.c_str());
+                                        ImGui::PopStyleColor();
+                                    } else {
+                                        if (ImGui::Button("---", ImVec2(45, 30))) {
+                                            if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < m_document.terrainLibrary.size()) {
+                                                toAdd.name = "Chunk_" + std::to_string(f) + "_" + std::to_string(col) + "_" + std::to_string(row);
+                                                toAdd.templateId = m_document.terrainLibrary[m_activeTemplateIndex].id;
+                                                toAdd.isGridAligned = true;
+                                                toAdd.faceIndex = f;
+                                                toAdd.gridX = col;
+                                                toAdd.gridY = row;
+                                                
+                                                float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
+                                                float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
+                                                glm::vec3 dir(0.0f);
+                                                switch(f) {
+                                                    case 0: dir = glm::vec3(cx, cy, 1.0f); break;
+                                                    case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
+                                                    case 2: dir = glm::vec3(1.0f, cy, -cx); break;
+                                                    case 3: dir = glm::vec3(-1.0f, cy, cx); break;
+                                                    case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
+                                                    case 5: dir = glm::vec3(cx, -1.0f, cy); break;
+                                                }
+                                                dir = glm::normalize(dir);
+                                                toAdd.eulerAngles.x = glm::degrees(asin(dir.y));
+                                                toAdd.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
+                                                toAdd.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 1.5f;
+
+                                                wantsAdd = true;
+                                            }
+                                        }
+                                    }
+                                    ImGui::PopID();
+                                }
+                            }
+                        }
+                        ImGui::EndChild();
+                        ImGui::EndTabItem();
+                    }
+                }
+                ImGui::EndTabBar();
+            }
+
+            if (toDeleteIndex >= 0) {
+                currentPlanet.chunkInstances.erase(currentPlanet.chunkInstances.begin() + toDeleteIndex);
+                m_hasUnsavedChanges = true;
+                RebuildPlanetRoots();
+            }
+            if (wantsAdd) {
+                currentPlanet.chunkInstances.push_back(toAdd);
+                m_hasUnsavedChanges = true;
+                RebuildPlanetRoots();
+            }
+        }
+        ImGui::End();
+    }
+    
+    ImGui::EndChild(); // TerrainEditor (Pannello Sinistro)
+    ImGui::PopStyleColor(); // Fine Sfondo Opaco
     
     ImGui::SameLine();
     
     // ==========================================
     // PANNELLO DESTRO - EDITOR PIANETA 3D
     // ==========================================
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // Sfondo trasparente per far vedere Vulkan!
     ImGui::BeginChild("Planet3D", ImVec2(rightWidth, 0), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "EDITOR PIANETA 3D (APPLICA MODELLI)");
     ImGui::SameLine();
@@ -415,6 +680,19 @@ void MapState::DrawBuilderUI() {
     );
     m_context->activeCameraView.projectionMatrix[1][1] *= -1;
 
+    // Slider per Dimensione Pianeta
+    ImGui::SetCursorPos(ImVec2(10.0f, 35.0f));
+    ImGui::BeginGroup();
+    if (ImGui::SliderFloat("Raggio Pianeta (m)", &currentPlanet.planetRadius, 10.0f, 1000.0f)) {
+        m_hasUnsavedChanges = true;
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        RebuildPlanetRoots();
+    }
+    float circumference = 2.0f * 3.14159f * currentPlanet.planetRadius;
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Circonferenza Equatoriale: %.1f m", circumference);
+    ImGui::EndGroup();
+
     // RAYCAST PER STAMPARE SUL PIANETA
     if ((pHovered || pActive) && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyCtrl) {
             float x = (io.MousePos.x - pOrigin.x) / pSize.x * 2.0f - 1.0f;
@@ -425,7 +703,7 @@ void MapState::DrawBuilderUI() {
             glm::vec3 rayDir = glm::normalize(glm::vec3(glm::inverse(m_context->activeCameraView.viewMatrix) * eyeCoords));
             glm::vec3 rayOrig = m_context->activeCameraView.cameraPosition;
             
-            float radius = 50.0f; // Raggio sferico di base
+            float radius = currentPlanet.planetRadius; // Usa il raggio reale del pianeta
             float a = glm::dot(rayDir, rayDir);
             float b = 2.0f * glm::dot(rayDir, rayOrig);
             float c = glm::dot(rayOrig, rayOrig) - radius * radius;
@@ -434,34 +712,89 @@ void MapState::DrawBuilderUI() {
             if (disc >= 0 && m_activeTemplateIndex >= 0) {
                 float dist = (-b - sqrt(disc)) / (2.0f * a);
                 if (dist > 0) {
-                    fw::PlanetChunkInstance inst;
-                    inst.templateId = m_document.terrainLibrary[m_activeTemplateIndex].id;
-                    inst.centerNormal = glm::normalize(rayOrig + rayDir * dist);
-                    inst.angularRadius = m_document.terrainLibrary[m_activeTemplateIndex].angularRadius; // Wait, angular radius non e' in template, let's fix it later. We'll use a default 0.2f.
-                    inst.angularRadius = 0.2f;
+                    glm::vec3 normal = glm::normalize(rayOrig + rayDir * dist);
+                    // Calcolo Gradi (invece di radianti, dato che la tabella usa i gradi!)
+                    float latDeg = glm::degrees(asin(normal.y));
+                    float lonDeg = glm::degrees(atan2(normal.z, normal.x));
                     
-                    currentPlanet.chunkInstances.push_back(inst);
+                    if (m_selectedChunkInstanceIndex >= 0 && m_selectedChunkInstanceIndex < currentPlanet.chunkInstances.size()) {
+                        // AGGIORNA IL CHUNK SELEZIONATO
+                        currentPlanet.chunkInstances[m_selectedChunkInstanceIndex].eulerAngles.x = latDeg;
+                        currentPlanet.chunkInstances[m_selectedChunkInstanceIndex].eulerAngles.y = lonDeg;
+                    } else {
+                        // CREA UN NUOVO CHUNK
+                        fw::PlanetChunkInstance inst;
+                        inst.templateId = m_document.terrainLibrary[m_activeTemplateIndex].id;
+                        inst.eulerAngles.x = latDeg;
+                        inst.eulerAngles.y = lonDeg;
+                        inst.eulerAngles.z = 0.0f; // Roll di default 0
+                        inst.angularRadius = m_document.terrainLibrary[m_activeTemplateIndex].baseAngularRadius;
+                        
+                        currentPlanet.chunkInstances.push_back(inst);
+                        m_selectedChunkInstanceIndex = currentPlanet.chunkInstances.size() - 1; // Selezionalo subito
+                    }
                     m_hasUnsavedChanges = true;
                 }
             }
+        } else if ((pHovered || pActive) && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            // Deseleziona se clicchi col destro per muovere la telecamera
+            m_selectedChunkInstanceIndex = -1;
         }
-    }
     
-    // UI Overlay per disfare
-    ImGui::SetCursorPos(ImVec2(pOrigin.x - ImGui::GetWindowPos().x + 10, pOrigin.y - ImGui::GetWindowPos().y + 10));
+    // UI Overlay per visualizzare e disfare le istanze
+    ImGui::SetCursorPos(ImVec2(10.0f, 100.0f));
+    ImGui::BeginChild("InstanceListOverlay", ImVec2(300, 250), true, ImGuiWindowFlags_NoScrollbar);
     ImGui::Text("Istanze Applicate: %d", (int)currentPlanet.chunkInstances.size());
-    if (ImGui::Button("ANNULLA ULTIMA ISTANZA")) {
+    ImGui::Separator();
+    
+    ImGui::BeginChild("ScrollableInstances", ImVec2(0, 180), false);
+    for (int i = 0; i < currentPlanet.chunkInstances.size(); ++i) {
+        auto& inst = currentPlanet.chunkInstances[i];
+        ImGui::PushID(i);
+        std::string label = "[" + std::to_string(i) + "] " + inst.templateId;
+        if (ImGui::Selectable(label.c_str(), m_selectedChunkInstanceIndex == i)) {
+            m_selectedChunkInstanceIndex = i;
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+    
+    if (ImGui::Button("ANNULLA ULTIMA ISTANZA", ImVec2(-1, 0))) {
         if (!currentPlanet.chunkInstances.empty()) {
             currentPlanet.chunkInstances.pop_back();
             m_hasUnsavedChanges = true;
         }
     }
     
+    if (m_selectedChunkInstanceIndex >= 0 && m_selectedChunkInstanceIndex < currentPlanet.chunkInstances.size()) {
+        if (ImGui::Button("ELIMINA SELEZIONATO", ImVec2(-1, 0))) {
+            currentPlanet.chunkInstances.erase(currentPlanet.chunkInstances.begin() + m_selectedChunkInstanceIndex);
+            m_selectedChunkInstanceIndex = -1;
+            m_hasUnsavedChanges = true;
+        }
+    }
+    ImGui::EndChild(); // InstanceListOverlay
+
+    // Bottoni Azione Anteprima Voxel
+    ImGui::SetCursorPos(ImVec2(leftWidth + 20.0f, pSize.y - 45.0f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+    if (ImGui::Button("🚀 AVVIA ANTEPRIMA VOXEL 3D", ImVec2(300, 40))) {
+        m_lastActionStatus = "Compilazione Anteprima Voxel avviata...";
+        m_statusTimer = 5.0f;
+        std::cout << "[DEBUG] [MapBuilder] " << m_lastActionStatus << "\n";
+        CompileAndGenerate();
+        m_previewIsUpToDate = true;
+    }
+    ImGui::SetItemTooltip("Compila il chunk selezionato in Voxel 3D e teletrasporta la camera per collaudarlo.");
+    ImGui::PopStyleColor(2);
+    
     ImGui::EndChild(); // Planet3D
+    ImGui::PopStyleColor(); // Fine Sfondo Trasparente
     ImGui::End(); // MAP BUILDER
     ImGui::PopStyleVar(2);
 }
-    
+
 
 
 void MapState::DrawRuntimeUI() {
@@ -510,7 +843,7 @@ void MapState::DrawRuntimeUI() {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 1.0f));
-    if (ImGui::Button("TORNA ALL'EDITOR MAPPA (2D)", ImVec2(-1, 30))) {
+    if (ImGui::Button("TORNA AL MAP BUILDER (2D)", ImVec2(-1, 30))) {
         // Ferma i thread in background per evitare crash (use-after-free)
         if (m_context && m_context->jobSystem) {
             m_context->jobSystem->Shutdown();
@@ -518,6 +851,8 @@ void MapState::DrawRuntimeUI() {
         }
         // Ritorna al Builder senza uscire dallo state
         m_previewWorld.reset(); 
+        if (m_context->engine) m_context->engine->SetGameMode(GameMode::Map);
+        RebuildPlanetRoots();
         m_isBuilderMode = true;
     }
     ImGui::PopStyleColor(3);
@@ -620,28 +955,25 @@ void MapState::CompileAndGenerate() {
     auto& currentPlanet = m_document.planets[m_activePlanetIndex];
     currentPlanet.regions.clear(); // Usa regions come cache flat
     
-    for (const auto& inst : currentPlanet.chunkInstances) {
-        // Cerca il template nella libreria
-        const fw::TerrainTemplate* tmpl = nullptr;
-        for (const auto& t : m_document.terrainLibrary) {
-            if (t.id == inst.templateId) {
-                tmpl = &t;
-                break;
-            }
-        }
+    // 1. Compila SOLO il Template attualmente selezionato per l'Anteprima
+    if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < m_document.terrainLibrary.size()) {
+        const auto& tmpl = m_document.terrainLibrary[m_activeTemplateIndex];
         
-        if (tmpl) {
-            // Aggiungi una macro-regione base per il template
-            fw::MapRegion baseRegion;
-            baseRegion.centerNormal = inst.centerNormal;
-            baseRegion.angularRadius = inst.angularRadius;
-            baseRegion.type = tmpl->baseType;
-            baseRegion.perlinFrequency = tmpl->basePerlinFrequency;
-            baseRegion.gravityModifier = tmpl->baseGravityModifier;
-            baseRegion.seed = tmpl->seed;
-            currentPlanet.regions.push_back(baseRegion);
-            
-            // TODO: In futuro, mappare anche le tmpl->subRegions (micro-design) usando proiezioni sferiche.
+        // Regione base del template
+        fw::MapRegion baseRegion;
+        baseRegion.eulerAngles = glm::vec3(0.0f); // Centro esatto
+        baseRegion.angularRadius = tmpl.baseAngularRadius;
+        baseRegion.type = tmpl.baseType;
+        baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
+        baseRegion.gravityModifier = tmpl.baseGravityModifier;
+        baseRegion.seed = tmpl.seed;
+        currentPlanet.regions.push_back(baseRegion);
+        
+        // Dettagli dipinti nel canvas (SubRegions)
+        for (const auto& sub : tmpl.subRegions) {
+            fw::MapRegion projectedSub = sub;
+            projectedSub.eulerAngles = glm::vec3(0.0f); // Vengono gestiti localmente dal Generatore tramite i rectMin/Max
+            currentPlanet.regions.push_back(projectedSub);
         }
     }
 
@@ -652,8 +984,6 @@ void MapState::CompileAndGenerate() {
     m_isBuilderMode = false; 
     m_hasUnsavedChanges = false;
     m_previewIsUpToDate = true;
-
-    const auto& currentPlanet = m_document.planets[m_activePlanetIndex];
 
     // Posiziona la telecamera al centro della mappa generata (superficie del terreno ~ Y=20)
     float midX = ((float)(currentPlanet.maxX + currentPlanet.minX) * 0.5f) * 16.0f;

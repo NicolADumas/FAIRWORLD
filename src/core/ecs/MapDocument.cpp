@@ -27,10 +27,13 @@ bool MapDocument::SaveJSON(const std::string& path) {
             tj["baseType"] = static_cast<int>(t.baseType);
             tj["basePerlinFrequency"] = t.basePerlinFrequency;
             tj["baseGravityModifier"] = t.baseGravityModifier;
+            tj["baseAngularRadius"] = t.baseAngularRadius;
             tj["seed"] = t.seed;
             tj["subRegions"] = json::array();
             for (const auto& r : t.subRegions) {
                 json rj;
+                rj["eulerAngles"] = { r.eulerAngles.x, r.eulerAngles.y, r.eulerAngles.z };
+                rj["angularRadius"] = r.angularRadius;
                 rj["rectMin"] = { r.rectMin.x, r.rectMin.y };
                 rj["rectMax"] = { r.rectMax.x, r.rectMax.y };
                 rj["type"] = static_cast<int>(r.type);
@@ -49,6 +52,7 @@ bool MapDocument::SaveJSON(const std::string& path) {
             json pj;
             pj["type"] = static_cast<int>(planet.type);
             pj["name"] = planet.name;
+            pj["planetRadius"] = planet.planetRadius;
             pj["regions"] = json::array();
 
             // Nuovi campi per DimensionsManager
@@ -73,6 +77,8 @@ bool MapDocument::SaveJSON(const std::string& path) {
 
             for (const auto& region : planet.regions) {
                 json rj;
+                rj["eulerAngles"] = { region.eulerAngles.x, region.eulerAngles.y, region.eulerAngles.z };
+                rj["angularRadius"] = region.angularRadius;
                 rj["rectMin"] = { region.rectMin.x, region.rectMin.y };
                 rj["rectMax"] = { region.rectMax.x, region.rectMax.y };
                 rj["type"] = static_cast<int>(region.type);
@@ -90,8 +96,9 @@ bool MapDocument::SaveJSON(const std::string& path) {
             pj["chunkInstances"] = json::array();
             for (const auto& inst : planet.chunkInstances) {
                 json cj;
+                cj["name"] = inst.name;
                 cj["templateId"] = inst.templateId;
-                cj["centerNormal"] = { inst.centerNormal.x, inst.centerNormal.y, inst.centerNormal.z };
+                cj["eulerAngles"] = { inst.eulerAngles.x, inst.eulerAngles.y, inst.eulerAngles.z };
                 cj["angularRadius"] = inst.angularRadius;
                 pj["chunkInstances"].push_back(cj);
             }
@@ -130,10 +137,22 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 t.baseType = static_cast<MapRegionType>(tj.value("baseType", 0));
                 t.basePerlinFrequency = tj.value("basePerlinFrequency", 0.03f);
                 t.baseGravityModifier = tj.value("baseGravityModifier", 1.0f);
+                t.baseAngularRadius = tj.value("baseAngularRadius", 0.2f);
                 t.seed = tj.value("seed", 0U);
                 if (tj.contains("subRegions") && tj["subRegions"].is_array()) {
                     for (const auto& rj : tj["subRegions"]) {
                         MapRegion r;
+                        if (rj.contains("eulerAngles") && rj["eulerAngles"].is_array() && rj["eulerAngles"].size() >= 3) {
+                            r.eulerAngles.x = rj["eulerAngles"][0].get<float>();
+                            r.eulerAngles.y = rj["eulerAngles"][1].get<float>();
+                            r.eulerAngles.z = rj["eulerAngles"][2].get<float>();
+                        } else if (rj.contains("centerNormal") && rj["centerNormal"].is_array() && rj["centerNormal"].size() >= 3) {
+                            glm::vec3 cn(rj["centerNormal"][0].get<float>(), rj["centerNormal"][1].get<float>(), rj["centerNormal"][2].get<float>());
+                            r.eulerAngles.x = asin(cn.y);
+                            r.eulerAngles.y = atan2(cn.z, cn.x);
+                            r.eulerAngles.z = 0.0f;
+                        }
+                        r.angularRadius = rj.value("angularRadius", 0.2f);
                         if (rj.contains("rectMin") && rj["rectMin"].is_array() && rj["rectMin"].size() >= 2) {
                             r.rectMin.x = rj["rectMin"][0].get<int>();
                             r.rectMin.y = rj["rectMin"][1].get<int>();
@@ -161,6 +180,7 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 PlanetMap planet;
                 planet.type = static_cast<PlanetType>(pj.value("type", 0));
                 planet.name = pj.value("name", "Unknown");
+                planet.planetRadius = pj.value("planetRadius", 50.0f);
 
                 planet.minX = pj.value("minX", -6);
                 planet.maxX = pj.value("maxX", 6);
@@ -172,6 +192,17 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 if (pj.contains("regions") && pj["regions"].is_array()) {
                     for (const auto& rj : pj["regions"]) {
                         MapRegion region;
+                        if (rj.contains("eulerAngles") && rj["eulerAngles"].is_array() && rj["eulerAngles"].size() >= 3) {
+                            region.eulerAngles.x = rj["eulerAngles"][0].get<float>();
+                            region.eulerAngles.y = rj["eulerAngles"][1].get<float>();
+                            region.eulerAngles.z = rj["eulerAngles"][2].get<float>();
+                        } else if (rj.contains("centerNormal") && rj["centerNormal"].is_array() && rj["centerNormal"].size() >= 3) {
+                            glm::vec3 cn(rj["centerNormal"][0].get<float>(), rj["centerNormal"][1].get<float>(), rj["centerNormal"][2].get<float>());
+                            region.eulerAngles.x = asin(cn.y);
+                            region.eulerAngles.y = atan2(cn.z, cn.x);
+                            region.eulerAngles.z = 0.0f;
+                        }
+                        region.angularRadius = rj.value("angularRadius", 0.2f);
                         if (rj.contains("rectMin") && rj["rectMin"].is_array() && rj["rectMin"].size() >= 2) {
                             region.rectMin.x = rj["rectMin"][0].get<int>();
                             region.rectMin.y = rj["rectMin"][1].get<int>();
@@ -201,11 +232,18 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 if (pj.contains("chunkInstances") && pj["chunkInstances"].is_array()) {
                     for (const auto& cj : pj["chunkInstances"]) {
                         PlanetChunkInstance inst;
+                        inst.name = cj.value("name", "Nuova Zona");
                         inst.templateId = cj.value("templateId", "");
-                        if (cj.contains("centerNormal") && cj["centerNormal"].is_array() && cj["centerNormal"].size() >= 3) {
-                            inst.centerNormal.x = cj["centerNormal"][0].get<float>();
-                            inst.centerNormal.y = cj["centerNormal"][1].get<float>();
-                            inst.centerNormal.z = cj["centerNormal"][2].get<float>();
+                        if (cj.contains("eulerAngles") && cj["eulerAngles"].is_array() && cj["eulerAngles"].size() >= 3) {
+                            inst.eulerAngles.x = cj["eulerAngles"][0].get<float>();
+                            inst.eulerAngles.y = cj["eulerAngles"][1].get<float>();
+                            inst.eulerAngles.z = cj["eulerAngles"][2].get<float>();
+                        } else if (cj.contains("centerNormal") && cj["centerNormal"].is_array() && cj["centerNormal"].size() >= 3) {
+                            // Fallback per vecchi salvataggi
+                            glm::vec3 cn(cj["centerNormal"][0].get<float>(), cj["centerNormal"][1].get<float>(), cj["centerNormal"][2].get<float>());
+                            inst.eulerAngles.x = asin(cn.y);
+                            inst.eulerAngles.y = atan2(cn.z, cn.x);
+                            inst.eulerAngles.z = 0.0f;
                         }
                         inst.angularRadius = cj.value("angularRadius", 0.2f);
                         planet.chunkInstances.push_back(inst);

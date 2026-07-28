@@ -27,7 +27,7 @@ enum class RegionShape : int {
 };
 
 struct MapRegion {
-    glm::vec3 centerNormal = glm::vec3(0.0f, 1.0f, 0.0f); // Direzione del centro del bioma
+    glm::vec3 eulerAngles = glm::vec3(0.0f); // X: Latitudine, Y: Longitudine, Z: Roll
     float angularRadius = 0.2f; // Raggio di influenza (in radianti)
     // Legacy 2D grid
     glm::ivec2 rectMin = glm::ivec2(-2, -2);
@@ -58,13 +58,21 @@ struct TerrainTemplate {
     float basePerlinFrequency = 0.03f;
     float baseGravityModifier = 1.0f;
     uint32_t seed = 0;
+    float baseAngularRadius = 0.2f; // Estensione spaziale (Raggio Angolare)
     std::vector<MapRegion> subRegions; // 2D layout (dettagli dipinti)
 };
 
 struct PlanetChunkInstance {
+    std::string name = "Nuova Zona"; // Nuovo campo per il nome personalizzato
     std::string templateId; // Riferimento al TerrainTemplate
-    glm::vec3 centerNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 eulerAngles = glm::vec3(0.0f); // X: Latitudine (Pitch), Y: Longitudine (Yaw), Z: Rotazione Locale (Roll)
     float angularRadius = 0.2f;
+    
+    // Nuovi campi per la Legge della Superficie Sferica (Tabella Chunk Excel)
+    bool isGridAligned = false; 
+    int faceIndex = -1; // 0: +Z (Front), 1: -Z (Back), 2: +X (Right), 3: -X (Left), 4: +Y (Top), 5: -Y (Bottom)
+    int gridX = -1;
+    int gridY = -1;
 };
 
 struct PlanetMap {
@@ -72,6 +80,8 @@ struct PlanetMap {
     std::string name;
     std::vector<MapRegion> regions; // Legacy / Fallback
     std::vector<PlanetChunkInstance> chunkInstances;
+    
+    float planetRadius = 50.0f; // Raggio del pianeta
     
     // Parametri DimensionsManager per Rigid Grid Map
     int32_t minX = -16;

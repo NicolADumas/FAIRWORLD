@@ -7,7 +7,7 @@
 
 namespace fw {
 
-void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo, const glm::mat4& viewProj) {
+void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj) {
     // --- FRUSTUM CULLING ---
     glm::vec4 planes[6];
     planes[0] = glm::vec4(viewProj[0][3] + viewProj[0][0], viewProj[1][3] + viewProj[1][0], viewProj[2][3] + viewProj[2][0], viewProj[3][3] + viewProj[3][0]); // Left
@@ -45,22 +45,18 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
     
     // Genera la mesh se non esiste e non stiamo già generando
     if (node.targetEntity == entt::null && !node.isGenerating && !node.isSplit) {
-        RequestMeshGeneration(&node, world, jobs, assets, planetInfo);
+        RequestMeshGeneration(&node, world, jobs, assets, activeRegions);
     }
     
     // Siamo vicini e possiamo ancora dividere? Dividiamo.
     if (distance < GetThresholdForLOD(node.lodLevel, node.boundsRadius) && node.lodLevel > 0) {
         if (!node.isSplit) {
-            SplitNode(node, world, jobs, assets, planetInfo);
-            // Nascondiamo il nodo genitore distruggendolo per liberare memoria
-            if (node.targetEntity != entt::null) {
-                world->DestroyEntity(node.targetEntity);
-                node.targetEntity = entt::null;
-            }
+            SplitNode(node, world, jobs, assets, activeRegions);
+            // Non distruggiamo subito il nodo genitore per evitare buchi, lo nasconderemo quando i figli sono pronti.
         }
         // Aggiorna ricorsivamente i figli
         for (auto& child : node.children) {
-            if (child) UpdateLODTree(*child, playerPos, world, jobs, assets, planetInfo, viewProj);
+            if (child) UpdateLODTree(*child, playerPos, world, jobs, assets, activeRegions, viewProj);
         }
     } 
     // Ci siamo allontanati? Uniamo i figli e puliamo la memoria.
@@ -68,12 +64,12 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
         MergeNode(node, world);
         // Richiediamo la generazione del nodo genitore
         if (node.targetEntity == entt::null && !node.isGenerating) {
-            RequestMeshGeneration(&node, world, jobs, assets, planetInfo);
+            RequestMeshGeneration(&node, world, jobs, assets, activeRegions);
         }
     }
 }
 
-void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
+void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions) {
     node.isSplit = true;
     
     glm::vec3 m0 = glm::normalize(node.p00 + node.p10) * m_planetRadius;
@@ -103,7 +99,7 @@ void SphericalLODSystem::MergeNode(ChunkNode& node, GameWorld* world) {
     }
 }
 
-void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo) {
+void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions) {
     node->isGenerating = true;
     
     glm::vec3 p00 = node->p00;
@@ -116,17 +112,19 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     
     if (node->targetEntity == entt::null) {
         node->targetEntity = world->CreateEmptyEntity(meshName);
+        fw::TransformComponent trans;
+        world->GetRegistry().emplace<fw::TransformComponent>(node->targetEntity, trans);
     }
     entt::entity target = node->targetEntity;
     
     // Per l'esecuzione asincrona, facciamo una copia dei dati di base per thread-safety
-    std::vector<MapRegion> safeRegions;
-    if (planetInfo) safeRegions = planetInfo->regions;
+    std::vector<MapRegion> safeRegions = activeRegions;
     
     // NOTA BENE: NON catturiamo 'node' come raw pointer, perché 'MergeNode' potrebbe distruggerlo nel thread principale prima che il job finisca!
     jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, safeRegions]() {
         MeshComponent mesh;
         mesh.name = meshName;
+        mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
         
         const int RESOLUTION = 16;
         std::vector<glm::vec3> positions;
@@ -158,7 +156,10 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 
                 float maxInfluence = -1.0f;
                 for (const auto& r : safeRegions) {
-                    float dotProduct = glm::dot(normal, r.centerNormal);
+                    float pitch = r.eulerAngles.x;
+                    float yaw = r.eulerAngles.y;
+                    glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
+                    float dotProduct = glm::dot(normal, rCenterNormal);
                     float threshold = cos(r.angularRadius);
                     if (dotProduct > threshold) {
                         float influence = (dotProduct - threshold) / (1.0f - threshold);
@@ -179,7 +180,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     float vGrid = asin(normal.y) * 40.0f;
                     bool isLine = (fmod(std::abs(uGrid), 1.0f) < 0.05f || fmod(std::abs(vGrid), 1.0f) < 0.05f);
                     
-                    colors.push_back(isLine ? glm::vec4(0.1f, 0.8f, 1.0f, 0.9f) : glm::vec4(0.0f, 0.1f, 0.3f, 0.2f));
+                    colors.push_back(isLine ? glm::vec4(0.0f, 0.8f, 1.0f, 1.0f) : glm::vec4(0.02f, 0.05f, 0.1f, 1.0f));
                     emissives.push_back(isLine ? 1.0f : 0.0f);
                 } else {
                     // Generazione Voxel Reale

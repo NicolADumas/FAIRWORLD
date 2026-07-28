@@ -261,10 +261,11 @@ void BlockMakerState::HandlePhysicsSimulation(float dt) {
         
         // Rotazione automatica per mostrare tutte le facce del blocco
         if (m_autoRotateBlock) {
-            m_blockRotationY += 45.0f * dt; // 45 gradi al secondo
-            if (m_blockRotationY >= 360.0f) m_blockRotationY -= 360.0f;
+            m_blockEulerAngles.y += 45.0f * dt; // 45 gradi al secondo su Yaw
+            if (m_blockEulerAngles.y >= 360.0f) m_blockEulerAngles.y -= 360.0f;
         }
-        transform.rotation = fw::Quat::angleAxis(glm::radians(m_blockRotationY), {0.0f, 1.0f, 0.0f});
+        glm::quat gq = glm::quat(glm::radians(m_blockEulerAngles));
+        transform.rotation = fw::Quat{gq.x, gq.y, gq.z, gq.w};
     }
 }
 
@@ -533,7 +534,7 @@ void BlockMakerState::DrawUI() {
                 ImGui::Checkbox("Simulate Physics (Bouncing)", &m_simulatePhysics);
                 ImGui::Checkbox("Auto-Rotate Block", &m_autoRotateBlock);
                 if (!m_autoRotateBlock) {
-                    ImGui::SliderFloat("Manual Rotation", &m_blockRotationY, 0.0f, 360.0f);
+                    ImGui::SliderFloat3("Manual Rotation (Euler)", &m_blockEulerAngles.x, 0.0f, 360.0f);
                 }
                 
                 if (ImGui::Button("SALVA TUTTE LE DEFINIZIONI BLOCCHI", ImVec2(-1, 40))) {

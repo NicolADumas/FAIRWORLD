@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include "entt/entt.hpp"
+#include "MapDocument.h"
 
 class AssetManager;
 
@@ -11,7 +12,6 @@ namespace fw {
 class JobSystem;
 class GameWorld;
 class ForgeWorld;
-struct PlanetMap;
 
 struct ChunkNode {
     glm::vec3 centerPos;
@@ -43,13 +43,13 @@ private:
         return chunkRadius * DISTANCE_MULTIPLIER * (lodLevel + 1);
     }
 
-    void SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
+    void SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions);
     void MergeNode(ChunkNode& node, GameWorld* world);
-    void RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo);
+    void RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions);
 
 public:
     void SetPlanetRadius(float radius) { m_planetRadius = radius; }
-    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const PlanetMap* planetInfo, const glm::mat4& viewProj);
+    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj);
 };
 
 } // namespace fw

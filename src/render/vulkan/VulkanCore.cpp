@@ -339,6 +339,8 @@ bool VulkanCore::CreateSwapchain(void* hwnd) {
     createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // V-Sync attivo
     createInfo.clipped = VK_TRUE;
 
+    std::cout << "[DEBUG] Chiamata a vkCreateSwapchainKHR in corso... (Se l'errore di validazione appare qui sotto, è colpa di un overlay esterno come Steam/Discord/OBS!)" << std::endl;
+    
     if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare la Swapchain!" << std::endl;
         return false;

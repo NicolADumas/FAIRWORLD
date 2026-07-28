@@ -20,6 +20,7 @@ public:
     void Render() override;
 
 private:
+    void RebuildPlanetRoots();
     void DrawBuilderUI();
     void DrawRuntimeUI();
     void CompileAndGenerate();
@@ -38,6 +39,8 @@ private:
     bool m_previewIsUpToDate = false;
     std::string m_lastActionStatus = "";
     float m_statusTimer = 0.0f;
+    bool m_showPlacementTable = false;
+    bool m_showSaveConfirmPopup = false;
     
     // Zoom/Pan per il Canvas 2D
     glm::vec2 m_canvasPan = glm::vec2(0.0f);

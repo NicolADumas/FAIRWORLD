@@ -35,7 +35,7 @@ private:
     float m_cameraFov = 60.0f;
 
     // --- Block Rotation ---
-    float m_blockRotationY = 0.0f;
+    glm::vec3 m_blockEulerAngles = glm::vec3(0.0f); // Pitch (X), Yaw (Y), Roll (Z)
     bool m_autoRotateBlock = true;
 
     // --- Preview Block ---
