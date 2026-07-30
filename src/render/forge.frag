@@ -5,6 +5,8 @@ layout(location = 0) in vec3 inWorldPos;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 layout(location = 3) flat in uint inMaterialID; // Intero puro!
+layout(location = 4) in vec4 inVertexColor;
+layout(location = 5) in float inEmissive;
 
 // Binding PBR (Grattacieli)
 layout(set = 0, binding = 0) uniform sampler2DArray albedoArray;
@@ -15,11 +17,6 @@ struct CellData {
     float heat;
     float pressure;
 };
-
-// // Binding Termodinamica (Set 1)
-// layout(std430, set = 1, binding = 0) readonly buffer GridStateRead {
-//     CellData read_cells[];
-// };
 
 // Push Constants
 layout(push_constant) uniform PushConstants {
@@ -148,28 +145,16 @@ void main() {
     // 4. Ambient & finalColor (Modulato dall'AO)
     vec3 ambient = vec3(0.15) * albedo.rgb * ao;
     vec3 finalColor = ambient + Lo;
+    
+    // Add glowing or colored overlays based on inEmissive
+    if (inEmissive > 0.0) {
+        finalColor = mix(finalColor, inVertexColor.rgb, inEmissive);
+        finalColor += inVertexColor.rgb * inEmissive * 1.5; // Additive glow
+    }
 
     // Tonemapping HDR e Gamma Correction
     finalColor = finalColor / (finalColor + vec3(1.0));
     finalColor = pow(finalColor, vec3(1.0 / 2.2));
-
-    // --- LENTE TERMICA DI DEBUG ---
-    if (push.debug_lens_active == 1) {
-        // [DISATTIVATO] Richiede il binding Set 1 del ThermodynamicsPipeline che al momento
-        // non è agganciato al RenderForge nel C++, causando crash di validazione Vulkan.
-        /*
-        uint gridX = uint(inWorldPos.x);
-        uint gridZ = uint(inWorldPos.z);
-        if (gridX < push.grid_width && gridZ < push.grid_width) {
-            uint flatIndex = gridZ * push.grid_width + gridX;
-            float localHeat = read_cells[flatIndex].heat;
-            
-            vec3 heatColor = vec3(1.0, 0.0, 0.0);
-            float blendFactor = clamp(localHeat / 100.0, 0.0, 1.0);
-            finalColor = mix(finalColor, heatColor, blendFactor * 0.7);
-        }
-        */
-    }
 
     outColor = vec4(finalColor, push.useColorOverride == 1 ? push.colorOverride.a : 1.0);
 }

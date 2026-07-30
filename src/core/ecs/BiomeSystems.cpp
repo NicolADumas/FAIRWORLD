@@ -5,12 +5,32 @@
 #include "../utils/PerlinNoise.h"
 #include <cmath>
 
+#include "BlockRegistry.h"
+
 namespace fw {
 
-void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame) {
+void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame, BlockRegistry* blockRegistry) {
     auto view = registry.view<fw::VoxelChunkComponent, BiomeDataComponent, TerrainGenTag>();
     
     int processed = 0;
+    
+    // Fallback constants just in case blockRegistry is missing
+    uint8_t idAir = 0;
+    uint8_t idGrass = 1;
+    uint8_t idDirt = 2;
+    uint8_t idStone = 3;
+    uint8_t idSand = 5;
+    uint8_t idWater = 6;
+    
+    if (blockRegistry) {
+        idAir = blockRegistry->GetBlock("fairworld:air").id;
+        idGrass = blockRegistry->GetBlock("fairworld:grass").id;
+        idDirt = blockRegistry->GetBlock("fairworld:dirt").id;
+        idStone = blockRegistry->GetBlock("fairworld:stone").id;
+        idSand = blockRegistry->GetBlock("fairworld:sand").id;
+        idWater = blockRegistry->GetBlock("fairworld:water").id;
+    }
+    
     for (auto entity : view) {
         if (processed >= maxChunksPerFrame) break;
 
@@ -54,27 +74,27 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame)
                     if (baseHeight <= 16.0f) {
                         // Sotto o al livello del mare: Oceano / Spiaggia
                         colBiome = fw::MapRegionType::Ocean;
-                        surfaceBlock = 5; // Sand (5)
-                        subsurfaceBlock = 5; // Sand (5)
+                        surfaceBlock = idSand;
+                        subsurfaceBlock = idSand;
                     } else {
                         if (tempVal > 0.6f) {
                             if (humVal < 0.4f) {
                                 colBiome = fw::MapRegionType::Desert;
-                                surfaceBlock = 5; // Sand (5)
-                                subsurfaceBlock = 5; // Sand (5)
+                                surfaceBlock = idSand;
+                                subsurfaceBlock = idSand;
                             } else {
                                 colBiome = fw::MapRegionType::Forest;
-                                surfaceBlock = 1; // Grass (1)
-                                subsurfaceBlock = 2; // Dirt (2)
+                                surfaceBlock = idGrass;
+                                subsurfaceBlock = idDirt;
                             }
                         } else if (tempVal < 0.35f) {
                             colBiome = fw::MapRegionType::Tundra;
-                            surfaceBlock = 5; // Sand/Snow (5)
-                            subsurfaceBlock = 3; // Stone (3)
+                            surfaceBlock = idSand; // Sand/Snow
+                            subsurfaceBlock = idStone;
                         } else {
                             colBiome = fw::MapRegionType::Forest;
-                            surfaceBlock = 1; // Grass (1)
-                            subsurfaceBlock = 2; // Dirt (2)
+                            surfaceBlock = idGrass;
+                            subsurfaceBlock = idDirt;
                         }
                     }
                 } else {
@@ -88,15 +108,15 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame)
                 // Popolamento blocchi
                 for (int y = 0; y < 128; ++y) {
                     if (y < height - 3) {
-                        chunk.blocks[x][y][z] = 3; // Stone Core (3)
+                        chunk.blocks[x][y][z] = idStone;
                     } else if (y < height) {
                         chunk.blocks[x][y][z] = subsurfaceBlock;
                     } else if (y == height) {
                         chunk.blocks[x][y][z] = surfaceBlock;
                     } else if (y <= 16) { // Livello del mare globale
-                        chunk.blocks[x][y][z] = 6; // Water (6)
+                        chunk.blocks[x][y][z] = idWater;
                     } else {
-                        chunk.blocks[x][y][z] = 0; // Air (0)
+                        chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 
                 }
@@ -112,10 +132,28 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame)
     }
 }
 
-void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFrame) {
+void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFrame, BlockRegistry* blockRegistry) {
     auto view = registry.view<fw::VoxelChunkComponent, BiomeDataComponent, DecoratorGenTag>();
     
     int processed = 0;
+    
+    uint8_t idAir = 0;
+    uint8_t idWater = 6;
+    uint8_t idGrass = 1;
+    uint8_t idWood = 4;
+    uint8_t idLeaves = 8;
+    
+    if (blockRegistry) {
+        idAir = blockRegistry->GetBlock("fairworld:air").id;
+        idWater = blockRegistry->GetBlock("fairworld:water").id;
+        idGrass = blockRegistry->GetBlock("fairworld:grass").id;
+        // As requested in the plan, using fairworld:wood and fairworld:leaves
+        idWood = blockRegistry->GetBlock("fairworld:wood").id;
+        if (idWood == 0) idWood = 4; // Fallback if not found in registry (e.g. they haven't created it yet)
+        idLeaves = blockRegistry->GetBlock("fairworld:leaves").id;
+        if (idLeaves == 0) idLeaves = 8; // Fallback
+    }
+
     for (auto entity : view) {
         if (processed >= maxChunksPerFrame) break;
 
@@ -135,26 +173,26 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
                     // Trova la Y della superficie (scendendo da 127)
                     int surfaceY = 0;
                     for (int y = 127; y >= 0; --y) {
-                        if (chunk.blocks[x][y][z] != 0 && chunk.blocks[x][y][z] != 6) { // Ignora aria e acqua (6)
+                        if (chunk.blocks[x][y][z] != idAir && chunk.blocks[x][y][z] != idWater) {
                             surfaceY = y;
                             break;
                         }
                     }
 
-                    // Se la superficie e' erba (1), possiamo spawnare un albero (Bioma Foresta)
-                    if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == 1) {
-                        // Costruisci albero (4 = Legno, 8 = Foglie)
-                        chunk.blocks[x][surfaceY+1][z] = 4; // Legno (4)
-                        chunk.blocks[x][surfaceY+2][z] = 4;
-                        chunk.blocks[x][surfaceY+3][z] = 4;
+                    // Se la superficie e' erba, possiamo spawnare un albero (Bioma Foresta)
+                    if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == idGrass) {
+                        // Costruisci albero
+                        chunk.blocks[x][surfaceY+1][z] = idWood;
+                        chunk.blocks[x][surfaceY+2][z] = idWood;
+                        chunk.blocks[x][surfaceY+3][z] = idWood;
                         
                         for (int lx = -1; lx <= 1; ++lx) {
                             for (int lz = -1; lz <= 1; ++lz) {
-                                chunk.blocks[x+lx][surfaceY+3][z+lz] = 8; // Foglie (8)
-                                chunk.blocks[x+lx][surfaceY+4][z+lz] = 8;
+                                chunk.blocks[x+lx][surfaceY+3][z+lz] = idLeaves;
+                                chunk.blocks[x+lx][surfaceY+4][z+lz] = idLeaves;
                             }
                         }
-                        chunk.blocks[x][surfaceY+5][z] = 8; // Punta foglie (8)
+                        chunk.blocks[x][surfaceY+5][z] = idLeaves; // Punta foglie
                     }
                 }
             }

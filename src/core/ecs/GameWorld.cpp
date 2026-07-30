@@ -175,8 +175,8 @@ void GameWorld::Update(float dt) {
 
     // 2. Pipeline Biomi
     int maxBatch = (m_context && m_context->engine && m_context->engine->GetGameMode() == GameMode::Map) ? 250 : 15;
-    fw::BiomeTerrainSystem::Update(m_registry, maxBatch);
-    fw::BiomeDecoratorSystem::Update(m_registry, maxBatch);
+    fw::BiomeTerrainSystem::Update(m_registry, maxBatch, GetBlockRegistry());
+    fw::BiomeDecoratorSystem::Update(m_registry, maxBatch, GetBlockRegistry());
 
     // 3. Chunk System: Rigenerazione asincrona per chunk Dirty
     if (m_context && m_context->jobSystem) {
@@ -648,6 +648,10 @@ entt::entity GameWorld::LoadStructureAsPrefab(const std::string& filepath, const
 
 bool GameWorld::LoadStructureAsVoxels(const std::string& filepath, int startX, int startY, int startZ) {
     return true;
+}
+
+class BlockRegistry* GameWorld::GetBlockRegistry() const {
+    return m_context ? m_context->blockRegistry : nullptr;
 }
 
 } // namespace fw

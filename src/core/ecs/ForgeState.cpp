@@ -136,7 +136,14 @@ void ForgeState::Update(float dt) {
     m_context->isForgeMode = true;
 
     if (m_selectedColorIndex != m_lastPreviewIndex) {
-        UpdatePreviewMesh(m_selectedColorIndex);
+        uint8_t actualId = 1;
+        if (m_context && m_context->blockRegistry) {
+            const auto& blocks = m_context->blockRegistry->GetAllBlocks();
+            if (m_selectedColorIndex > 0 && m_selectedColorIndex <= blocks.size()) {
+                actualId = blocks[m_selectedColorIndex - 1].id;
+            }
+        }
+        UpdatePreviewMesh(actualId);
         m_lastPreviewIndex = m_selectedColorIndex;
     }
 
@@ -414,7 +421,14 @@ void ForgeState::Update(float dt) {
                 
                 if(px >= 0 && px < 16 && py >= 0 && py < 128 && pz >= 0 && pz < 16) {
                     if (m_selectedTool == 1) { // Place
-                        m_context->forgeWorld->SetBlock(px, py, pz, (fw::BlockType)m_selectedColorIndex);
+                        uint8_t actualId = 1;
+                        if (m_context && m_context->blockRegistry) {
+                            const auto& blocks = m_context->blockRegistry->GetAllBlocks();
+                            if (m_selectedColorIndex > 0 && m_selectedColorIndex <= blocks.size()) {
+                                actualId = blocks[m_selectedColorIndex - 1].id;
+                            }
+                        }
+                        m_context->forgeWorld->SetBlock(px, py, pz, (fw::BlockType)actualId);
                     } else if (m_selectedTool == 2) { // Erase
                         m_context->forgeWorld->SetBlock(px, py, pz, fw::BlockType::Air);
                     }
@@ -548,22 +562,22 @@ void ForgeState::Render() {
         const auto& blocks = m_context->blockRegistry->GetAllBlocks();
         int activeBlocksCount = (int)blocks.size();
         
-        std::string blockName = "Sconosciuto";
-        if (m_selectedColorIndex > 0 && m_selectedColorIndex <= activeBlocksCount) {
-            blockName = blocks[m_selectedColorIndex - 1].displayName;
+        std::vector<std::string> comboNames;
+        for (const auto& b : blocks) {
+            comboNames.push_back(std::to_string(b.id) + " - " + b.displayName);
         }
-
-        ImGui::Text("Blocco PBR Selezionato: %d - %s", m_selectedColorIndex, blockName.c_str());
+        std::vector<const char*> comboNamesCStr;
+        for (const auto& name : comboNames) {
+            comboNamesCStr.push_back(name.c_str());
+        }
         
-        // Pulsanti di navigazione tra i materiali attivi
-        if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-            if (m_selectedColorIndex > 1) m_selectedColorIndex--;
-        }
-        ImGui::SameLine();
-        ImGui::Text("ID %d", m_selectedColorIndex);
-        ImGui::SameLine();
-        if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-            if (m_selectedColorIndex < activeBlocksCount) m_selectedColorIndex++;
+        int comboIndex = m_selectedColorIndex - 1;
+        if (comboIndex < 0) comboIndex = 0;
+        if (comboIndex >= activeBlocksCount) comboIndex = activeBlocksCount - 1;
+        
+        ImGui::Text("Selettore Blocco PBR");
+        if (ImGui::Combo("##blockcombo", &comboIndex, comboNamesCStr.data(), (int)comboNamesCStr.size())) {
+            m_selectedColorIndex = comboIndex + 1;
         }
         
         if (m_selectedColorIndex > 0 && m_selectedColorIndex <= activeBlocksCount) {

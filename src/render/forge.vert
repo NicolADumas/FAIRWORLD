@@ -24,6 +24,8 @@ layout(location = 0) out vec3 outWorldPos;
 layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outUV;
 layout(location = 3) flat out uint outMaterialID;
+layout(location = 4) out vec4 outColor;
+layout(location = 5) out float outEmissive;
 
 void main() {
     // Calcolo della posizione a schermo
@@ -48,4 +50,6 @@ void main() {
     outNormal = inNormal;
     outUV = uv;
     outMaterialID = inMaterialID;
+    outColor = inColor;
+    outEmissive = inEmissive;
 }

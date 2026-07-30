@@ -162,8 +162,37 @@ void PhysicsLabState::DrawJointProperties(fw::JointData& joint) {
         
         // --- TEXTURE/MATERIAL SELETTORE ---
         int bType = (int)joint.blockType;
-        const char* bTypes[] = { "Nessuno (Air)", "Erba", "Roccia", "Terra", "Legno", "Foglie", "Acqua", "Sabbia" };
-        if (ImGui::Combo("Texture Voxel", &bType, bTypes, 8)) {
+        
+        std::vector<std::string> blockNames;
+        std::vector<uint8_t> blockIds;
+        blockNames.push_back("Nessuno (Air)");
+        blockIds.push_back(0);
+        
+        if (m_context && m_context->blockRegistry) {
+            for (const auto& block : m_context->blockRegistry->GetAllBlocks()) {
+                if (block.id != 0) {
+                    blockNames.push_back(block.displayName);
+                    blockIds.push_back(block.id);
+                }
+            }
+        }
+        
+        std::vector<const char*> bTypes;
+        for (const auto& name : blockNames) {
+            bTypes.push_back(name.c_str());
+        }
+        
+        // Trova l'indice selezionato nella UI
+        int selectedIndex = 0;
+        for (size_t i = 0; i < blockIds.size(); ++i) {
+            if (blockIds[i] == bType) {
+                selectedIndex = (int)i;
+                break;
+            }
+        }
+
+        if (ImGui::Combo("Texture Voxel", &selectedIndex, bTypes.data(), (int)bTypes.size())) {
+            bType = blockIds[selectedIndex];
             joint.blockType = (uint8_t)bType;
             
             if (bType != 0 && joint.meshPath.empty() && m_labWorld) {

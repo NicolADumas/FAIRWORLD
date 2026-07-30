@@ -102,6 +102,8 @@ public:
 
     WorldChunkManager& GetChunkManager() { return m_chunkManager; }
     WorldStructureManager& GetStructureManager() { return m_structureManager; }
+    
+    class BlockRegistry* GetBlockRegistry() const;
 
 private:
     entt::registry m_registry;

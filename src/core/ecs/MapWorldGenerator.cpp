@@ -2,6 +2,7 @@
 #include "MapWorldGenerator.h"
 #include "ForgeWorld.h"
 #include "../app/AssetManager.h"
+#include "BlockRegistry.h"
 #include <iostream>
 #include "BiomeComponents.h"
 
@@ -94,8 +95,16 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                 biomeData.isCustomMapped = true;
             } else {
                 biomeData.type = fw::MapRegionType::Forest; 
-                biomeData.surfaceBlockId = 1; // Grass
-                biomeData.subsurfaceBlockId = 2; // Dirt
+                
+                uint8_t idGrass = 1;
+                uint8_t idDirt = 2;
+                if (auto reg = targetWorld.GetBlockRegistry()) {
+                    idGrass = reg->GetBlock("fairworld:grass").id;
+                    idDirt = reg->GetBlock("fairworld:dirt").id;
+                }
+                
+                biomeData.surfaceBlockId = idGrass;
+                biomeData.subsurfaceBlockId = idDirt;
                 biomeData.isCustomMapped = false;
             }
             
@@ -112,17 +121,59 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 float MapWorldGenerator::SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, float frequency) {
     ::PerlinNoise noiseGen(regionInfo.seed);
     
-    // Usa parametri esistenti in MapRegion o default se mancanti
+    // Parametri base ereditati dal template
     float noiseScale = frequency * 100.0f; 
     int octaves = 4;
+    float persistence = 0.5f;
     float heightMultiplier = 5.0f;
+    
+    // --- FORME GEOLOGICHE SPECIFICHE PER TIPO DI TERRENO ---
+    switch (regionInfo.type) {
+        case MapRegionType::Desert:
+            // Deserto: Dune sabbiose morbide e larghe (pochi ottavi, scale più grande)
+            octaves = 2;
+            persistence = 0.35f;
+            noiseScale *= 0.7f;
+            break;
+        case MapRegionType::Ocean:
+            // Oceano: Superficie estremamente piatta
+            octaves = 1;
+            heightMultiplier = 0.8f;
+            break;
+        case MapRegionType::Volcano:
+            // Vulcano: Montagne molto alte, frastagliate e appuntite
+            octaves = 6;
+            persistence = 0.65f;
+            heightMultiplier = 15.0f;
+            noiseScale *= 1.2f;
+            break;
+        case MapRegionType::Tundra:
+            // Tundra/Ghiacciaio: Terreno ruvido, solcato e freddo
+            octaves = 5;
+            persistence = 0.55f;
+            noiseScale *= 1.4f;
+            heightMultiplier = 8.0f;
+            break;
+        case MapRegionType::City:
+        case MapRegionType::Portal:
+            // Zone Artificiali: Terreno appiattito per costruire
+            octaves = 2;
+            heightMultiplier = 1.0f;
+            break;
+        case MapRegionType::Forest:
+        default:
+            // Foresta/Base: Colline morbide standard
+            octaves = 4;
+            persistence = 0.5f;
+            break;
+    }
     
     float noiseVal = noiseGen.octaveNoise(
         normal.x * noiseScale, 
         normal.y * noiseScale, 
         normal.z * noiseScale, 
         octaves,
-        0.5
+        persistence
     );
     
     return noiseVal * heightMultiplier;

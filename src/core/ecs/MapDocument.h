@@ -43,6 +43,12 @@ struct MapRegion {
     // Configurazione Blocchi
     uint8_t surfaceBlockId = 1;     // Grass
     uint8_t subsurfaceBlockId = 3;  // Dirt
+    
+    // Cube-Sphere Grid Mapping
+    bool isGridAligned = false;
+    int faceIndex = -1;
+    int gridX = -1;
+    int gridY = -1;
 };
 
 // Struttura serializzabile per una cella della griglia

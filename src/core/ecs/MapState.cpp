@@ -98,6 +98,22 @@ void MapState::RebuildPlanetRoots() {
     }
     
     m_lodSystem.SetPlanetRadius(R);
+    
+    // Distruggi fisicamente tutte le vecchie mesh prima di buttare via i nodi!
+    if (m_previewWorld) {
+        std::function<void(fw::ChunkNode&)> destroyTree = [&](fw::ChunkNode& n) {
+            if (n.targetEntity != entt::null && m_previewWorld->GetRegistry().valid(n.targetEntity)) {
+                m_previewWorld->DestroyEntity(n.targetEntity);
+            }
+            for (int i = 0; i < 4; ++i) {
+                if (n.children[i]) destroyTree(*n.children[i]);
+            }
+        };
+        for (auto& root : m_planetRootNodes) {
+            destroyTree(root);
+        }
+    }
+    
     m_planetRootNodes.clear();
 
     // 6 facce del cubo normalizzate a sfera
@@ -186,6 +202,11 @@ void MapState::Update(float dt) {
                 fw::MapRegion r;
                 r.eulerAngles = inst.eulerAngles;
                 r.angularRadius = inst.angularRadius;
+                r.isGridAligned = inst.isGridAligned;
+                r.faceIndex = inst.faceIndex;
+                r.gridX = inst.gridX;
+                r.gridY = inst.gridY;
+                
                 r.type = fw::MapRegionType::Forest; // Default
                 r.gravityModifier = 1.0f;
                 r.perlinFrequency = 0.005f;
@@ -196,6 +217,22 @@ void MapState::Update(float dt) {
                         r.type = tpl.baseType;
                         r.gravityModifier = tpl.baseGravityModifier;
                         r.perlinFrequency = tpl.basePerlinFrequency;
+                        if (!tpl.subRegions.empty()) {
+                            r.surfaceBlockId = tpl.subRegions.back().surfaceBlockId;
+                            r.subsurfaceBlockId = tpl.subRegions.back().subsurfaceBlockId;
+                            // FONDAMENTALE: Trasferisci anche il TIPO di bioma (es. Oceano) 
+                            // così il generatore 3D sa che deve abbassare/appiattire il terreno!
+                            r.type = tpl.subRegions.back().type;
+                        } else {
+                            uint8_t idGrass = 1;
+                            uint8_t idDirt = 2;
+                            if (m_context && m_context->blockRegistry) {
+                                idGrass = m_context->blockRegistry->GetBlock("fairworld:grass").id;
+                                idDirt = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
+                            }
+                            r.surfaceBlockId = idGrass; // Default Grass se non ha dipinto nulla
+                            r.subsurfaceBlockId = idDirt; // Dirt
+                        }
                         break;
                     }
                 }
@@ -210,7 +247,7 @@ void MapState::Update(float dt) {
             m_lodSystem.SetPlanetRadius(pMap->planetRadius);
         }
         for (auto& root : m_planetRootNodes) {
-            m_lodSystem.UpdateLODTree(root, activeCamPos, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix);
+            m_lodSystem.UpdateLODTree(root, activeCamPos, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry);
         }
     }
         
@@ -265,8 +302,9 @@ void MapState::DrawBuilderUI() {
     // ==========================================
     // PANNELLO SINISTRO - EDITOR TERRENI (2D)
     // ==========================================
+    ImGui::BeginChild("LeftPanelContainer", ImVec2(leftWidth, 0), false);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.14f, 0.95f)); // Sfondo opaco
-    ImGui::BeginChild("TerrainEditor", ImVec2(leftWidth, 0), true);
+    ImGui::BeginChild("TerrainEditor", ImVec2(leftWidth, -80.0f), true);
     ImGui::TextColored(ImVec4(0.2f, 0.9f, 1.0f, 1.0f), "EDITOR TERRENI (TEMPLATE 2D)");
     ImGui::Separator();
     
@@ -383,6 +421,7 @@ void MapState::DrawBuilderUI() {
                     nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
                     activeTemplate.subRegions.push_back(nr);
                     m_hasUnsavedChanges = true;
+                    RebuildPlanetRoots(); // Aggiorna il pianeta!
                 }
             }
         }
@@ -446,9 +485,17 @@ void MapState::DrawBuilderUI() {
                 oceanBase.shape = fw::RegionShape::Rectangle;
                 oceanBase.rectMin = glm::ivec2(-16, -16);
                 oceanBase.rectMax = glm::ivec2(16, 16);
-                oceanBase.surfaceBlockId = 4; // Water
-                oceanBase.subsurfaceBlockId = 2; // Sand
+                uint8_t idWater = 6;
+                uint8_t idSand = 5;
+                if (m_context && m_context->blockRegistry) {
+                    idWater = m_context->blockRegistry->GetBlock("fairworld:water").id;
+                    idSand = m_context->blockRegistry->GetBlock("fairworld:sand").id;
+                }
+                oceanBase.surfaceBlockId = idWater; // Water
+                oceanBase.subsurfaceBlockId = idSand; // Sand
                 activeTemplate.subRegions.push_back(oceanBase);
+                m_hasUnsavedChanges = true;
+                RebuildPlanetRoots(); // Forza la rigenerazione 3D!
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Riempie l'intero template 2D con un oceano base da -16 a +16.\nQualsiasi dettaglio dipinto in precedenza verrà cancellato!");
@@ -490,6 +537,7 @@ void MapState::DrawBuilderUI() {
             if (ImGui::Button("PULISCI MICRO-DESIGN", ImVec2(-1, 25))) {
                 activeTemplate.subRegions.clear();
                 m_hasUnsavedChanges = true;
+                RebuildPlanetRoots();
             }
         }
     } else {
@@ -497,16 +545,24 @@ void MapState::DrawBuilderUI() {
     }
     
     // Bottom Buttons Sidebar
-    ImGui::Separator();
-    ImGui::Spacing();
-    if (m_hasUnsavedChanges) {
-        if (ImGui::Button("💾 SALVA MODIFICHE (JSON)", ImVec2(-1, 40.0f))) {
-            m_document.SaveJSON("saves/map/world_map.json");
-            m_hasUnsavedChanges = false;
-            m_showSaveConfirmPopup = true; // Mostra popup
-        }
-        ImGui::SetItemTooltip("Salva il blueprint attuale del pianeta su disco. Non genera mesh voxel.");
+    ImGui::EndChild(); // TerrainEditor (Pannello Sinistro)
+    ImGui::PopStyleColor(); // Fine Sfondo Opaco
+    
+    // FISSO IN BASSO (NON SCROLLA)
+    ImGui::BeginChild("TerrainEditorBottom", ImVec2(leftWidth, 80.0f), true);
+    if (ImGui::Button("APRI TABELLA CHUNKS EXCEL", ImVec2(-1, 25))) {
+        m_showPlacementTable = true;
     }
+    
+    if (ImGui::Button("💾 SALVA MODIFICHE (JSON)", ImVec2(-1, 35.0f))) {
+        m_document.SaveJSON("saves/map/world_map.json");
+        m_hasUnsavedChanges = false;
+        m_showSaveConfirmPopup = true; // Mostra popup
+    }
+    ImGui::SetItemTooltip("Salva il blueprint attuale del pianeta su disco. Non genera mesh voxel.");
+    ImGui::EndChild();
+    
+    ImGui::EndChild(); // LeftPanelContainer
     
     if (m_showSaveConfirmPopup) {
         ImGui::OpenPopup("SalvataggioCompletato");
@@ -518,10 +574,6 @@ void MapState::DrawBuilderUI() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
-    }
-    
-    if (ImGui::Button("APRI TABELLA CHUNKS EXCEL", ImVec2(-1, 30))) {
-        m_showPlacementTable = true;
     }
     
     if (m_showPlacementTable && !m_document.planets.empty()) {
@@ -636,16 +688,15 @@ void MapState::DrawBuilderUI() {
         ImGui::End();
     }
     
-    ImGui::EndChild(); // TerrainEditor (Pannello Sinistro)
-    ImGui::PopStyleColor(); // Fine Sfondo Opaco
-    
     ImGui::SameLine();
     
     // ==========================================
     // PANNELLO DESTRO - EDITOR PIANETA 3D
     // ==========================================
+    ImGui::BeginChild("RightPanelContainer", ImVec2(rightWidth, 0), false);
+    
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // Sfondo trasparente per far vedere Vulkan!
-    ImGui::BeginChild("Planet3D", ImVec2(rightWidth, 0), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::BeginChild("Planet3D", ImVec2(rightWidth, -60.0f), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "EDITOR PIANETA 3D (APPLICA MODELLI)");
     ImGui::SameLine();
     ImGui::TextDisabled("[Sin: Stampa Modello] [Des: Ruota Sfera] [Rotella: Zoom]");
@@ -786,22 +837,31 @@ void MapState::DrawBuilderUI() {
     }
     ImGui::EndChild(); // InstanceListOverlay
 
-    // Bottoni Azione Anteprima Voxel
-    ImGui::SetCursorPos(ImVec2(leftWidth + 20.0f, pSize.y - 45.0f));
+    ImGui::EndChild(); // Planet3D
+    ImGui::PopStyleColor(); // Fine Sfondo Trasparente
+    
+    // FISSO IN BASSO DESTRA
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.14f, 0.95f));
+    ImGui::BeginChild("Planet3DBottom", ImVec2(rightWidth, 60.0f), true);
+    
+    // Centra il pulsante orizzontalmente
+    ImGui::SetCursorPos(ImVec2((rightWidth - 300.0f) * 0.5f, 10.0f));
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
-    if (ImGui::Button("🚀 AVVIA ANTEPRIMA VOXEL 3D", ImVec2(300, 40))) {
+    if (ImGui::Button("🚀 ESPLORA MAPPA IN PRIMA PERSONA", ImVec2(300, 40))) {
         m_lastActionStatus = "Compilazione Anteprima Voxel avviata...";
         m_statusTimer = 5.0f;
         std::cout << "[DEBUG] [MapBuilder] " << m_lastActionStatus << "\n";
         CompileAndGenerate();
         m_previewIsUpToDate = true;
     }
-    ImGui::SetItemTooltip("Compila il chunk selezionato in Voxel 3D e teletrasporta la camera per collaudarlo.");
+    ImGui::SetItemTooltip("Compila l'intero pianeta in Voxel 3D e teletrasporta la camera per esplorarlo a piedi.");
     ImGui::PopStyleColor(2);
     
-    ImGui::EndChild(); // Planet3D
-    ImGui::PopStyleColor(); // Fine Sfondo Trasparente
+    ImGui::EndChild(); // Planet3DBottom
+    ImGui::PopStyleColor(); // Fine sfondo bottone destro
+    
+    ImGui::EndChild(); // RightPanelContainer
     ImGui::End(); // MAP BUILDER
     ImGui::PopStyleVar(2);
 }
