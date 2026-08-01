@@ -3,8 +3,18 @@
 #include "json.hpp"
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 using json = nlohmann::json;
+
+namespace {
+    std::string toLowerStr(std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+        return s;
+    }
+}
+
 
 namespace fw {
 
@@ -20,32 +30,29 @@ void BlockRegistry::Initialize() {
 }
 
 void BlockRegistry::RegisterDefaultBlocks() {
-    // 0: Air
-    m_blocks[0].id = 0;
-    m_blocks[0].stringId = "fairworld:air";
-    m_blocks[0].displayName = "Air";
-    m_blocks[0].isSolid = false;
-    m_blocks[0].isTransparent = true;
-    m_stringToIdMap["fairworld:air"] = 0;
+    auto registerDef = [this](uint8_t id, const std::string& strId, const std::string& name, bool solid, bool transp) {
+        m_blocks[id].id = id;
+        m_blocks[id].stringId = strId;
+        m_blocks[id].displayName = name;
+        m_blocks[id].isSolid = solid;
+        m_blocks[id].isTransparent = transp;
+        m_stringToIdMap[strId] = id;
+        m_stringToIdMap[toLowerStr(strId)] = id;
+    };
 
-    // 1: Grass
-    m_blocks[1].id = 1;
-    m_blocks[1].stringId = "fairworld:grass";
-    m_blocks[1].displayName = "Grass";
-    m_stringToIdMap["fairworld:grass"] = 1;
-    
-    // 2: Dirt
-    m_blocks[2].id = 2;
-    m_blocks[2].stringId = "fairworld:dirt";
-    m_blocks[2].displayName = "Dirt";
-    m_stringToIdMap["fairworld:dirt"] = 2;
-
-    // 3: Stone
-    m_blocks[3].id = 3;
-    m_blocks[3].stringId = "fairworld:stone";
-    m_blocks[3].displayName = "Stone";
-    m_blocks[3].mass = 5.0f; // Heavy
-    m_stringToIdMap["fairworld:stone"] = 3;
+    registerDef(0,  "fairworld:air",        "Air",        false, true);
+    registerDef(1,  "fairworld:grass",      "Grass",      true,  false);
+    registerDef(2,  "fairworld:dirt",       "Dirt",       true,  false);
+    registerDef(3,  "fairworld:stone",      "Stone",      true,  false);
+    m_blocks[3].mass = 5.0f;
+    registerDef(4,  "fairworld:wood",       "Wood",       true,  false);
+    registerDef(5,  "fairworld:sand",       "Sand",       true,  false);
+    registerDef(6,  "fairworld:water",      "Water",      false, true);
+    registerDef(7,  "fairworld:lava",       "Lava",       false, false);
+    registerDef(8,  "fairworld:leaves",     "Leaves",     true,  true);
+    registerDef(9,  "fairworld:mobspawner", "MobSpawner", true,  false);
+    registerDef(10, "fairworld:lightsource","LightSource",true,  false);
+    registerDef(13, "fairworld:ice",        "Ice",        true,  true);
 }
 
 bool BlockRegistry::LoadFromJson(const std::string& filepath) {
@@ -88,6 +95,7 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
             def.lightEmissionLevel = jBlock.value("lightEmissionLevel", 0.0f);
             
             m_stringToIdMap[def.stringId] = id;
+            m_stringToIdMap[toLowerStr(def.stringId)] = id;
         }
         std::cout << "[BlockRegistry] Loaded " << j["blocks"].size() << " blocks from " << filepath << "\n";
         return true;
@@ -161,6 +169,11 @@ const SimBlockDef& BlockRegistry::GetBlock(uint8_t id) const {
 
 const SimBlockDef& BlockRegistry::GetBlock(const std::string& stringId) const {
     auto it = m_stringToIdMap.find(stringId);
+    if (it != m_stringToIdMap.end()) {
+        return m_blocks[it->second];
+    }
+    std::string low = toLowerStr(stringId);
+    it = m_stringToIdMap.find(low);
     if (it != m_stringToIdMap.end()) {
         return m_blocks[it->second];
     }

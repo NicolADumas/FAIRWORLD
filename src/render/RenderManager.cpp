@@ -31,6 +31,9 @@ RenderManager::RenderManager() : m_isVRMode(false) {
     m_forgeRenderer = std::make_unique<fw::ForgeRenderer>();
     m_playRenderer = std::make_unique<fw::PlayRenderer>();
     m_physicsLabRenderer = std::make_unique<fw::PhysicsLabRenderer>();
+    m_chunkEditorRenderer = std::make_unique<fw::ChunkEditorRenderer>();
+    m_planetMapperRenderer = std::make_unique<fw::PlanetMapperRenderer>();
+    m_solarSystemRenderer = std::make_unique<fw::SolarSystemRenderer>();
 }
 
 VkDeviceMemory RenderManager::GetStagingDeviceMemory() const {
@@ -1178,6 +1181,21 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
                 m_mapRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
                 m_mapRenderer->SetCurrentFrame(m_currentFrame);
                 m_mapRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::ChunkEditor && m_chunkEditorRenderer) {
+                m_chunkEditorRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_chunkEditorRenderer->SetCurrentFrame(m_currentFrame);
+                m_chunkEditorRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::PlanetMapper && m_planetMapperRenderer) {
+                m_planetMapperRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_planetMapperRenderer->SetCurrentFrame(m_currentFrame);
+                m_planetMapperRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            }
+            else if (mode == GameMode::SolarSystem && m_solarSystemRenderer) {
+                m_solarSystemRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                m_solarSystemRenderer->SetCurrentFrame(m_currentFrame);
+                m_solarSystemRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
             }
             else if (mode == GameMode::Dev && m_forgeRenderer) {
                 m_forgeRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
@@ -2561,6 +2579,9 @@ bool RenderManager::CreateForgePipeline() {
     initSubRenderer(m_forgeRenderer);
     initSubRenderer(m_playRenderer);
     initSubRenderer(m_physicsLabRenderer);
+    initSubRenderer(m_chunkEditorRenderer);
+    initSubRenderer(m_planetMapperRenderer);
+    initSubRenderer(m_solarSystemRenderer);
 
     return true;
 }

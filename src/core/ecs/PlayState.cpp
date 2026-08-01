@@ -18,6 +18,7 @@
 #include "RenderManager.h"
 #include "AsyncInput.h"
 #include "MapDocument.h"
+#include "WorldProjectManager.h"
 #include "MapWorldGenerator.h"
 #include "JobSystem.h"
 #include "VulkanDmaManager.h"
@@ -192,14 +193,23 @@ bool PlayState::Init() {
 
     if (hasCustomMap) {
         std::cout << "[PlayState] Cartuccia Mappa rilevata: " << configPath << "\n";
-        fw::MapDocument doc;
-        if (doc.LoadJSON(configPath)) {
+        if (m_context->projectManager) {
+            std::cout << "[PlayState] Caricamento mappa verificata in memoria via WorldProjectManager...\n";
+            m_context->projectManager->LoadProject(configPath, m_context->blockRegistry);
+            const auto& doc = m_context->projectManager->GetDocument();
             std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA avviato...\n";
             std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
             fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
         } else {
-            std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
-            hasCustomMap = false;
+            fw::MapDocument doc;
+            if (doc.LoadJSON(configPath)) {
+                std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA avviato...\n";
+                std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
+                fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
+            } else {
+                std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
+                hasCustomMap = false;
+            }
         }
     }
 

@@ -239,6 +239,13 @@ void GameWorld::Update(float dt) {
                     return 1.0f - (side1 + side2 + corner) * 0.25f;
                 };
 
+                auto shouldDrawFace = [&](uint8_t thisBlock, uint8_t neighborBlock) -> bool {
+                    if (neighborBlock == 0) return true;
+                    if (thisBlock == neighborBlock) return false;
+                    if (neighborBlock == 6 || neighborBlock == 8 || neighborBlock == 13) return true; // Acqua, Foglie, Ghiaccio
+                    return false;
+                };
+
                 for (int x = 0; x < CHUNK_SIZE; x++) {
                     for (int y = 0; y < CHUNK_HEIGHT; y++) {
                         for (int z = 0; z < CHUNK_SIZE; z++) {
@@ -255,7 +262,7 @@ void GameWorld::Update(float dt) {
                             uint32_t materialID = block;
 
                             // Top (+Y)
-                            if (getBlock(x, y + 1, z) == 0) {
+                            if (shouldDrawFace(block, getBlock(x, y + 1, z))) {
                                 float light = getLight(x, y + 1, z);
                                 float ao00 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z-1), getBlock(x-1, y+1, z-1));
                                 float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
@@ -269,7 +276,7 @@ void GameWorld::Update(float dt) {
                                 vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao01, light, emissive});
                             }
                             // Bottom (-Y)
-                            if (getBlock(x, y - 1, z) == 0) {
+                            if (shouldDrawFace(block, getBlock(x, y - 1, z))) {
                                 float light = getLight(x, y - 1, z);
                                 vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
                                 vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
@@ -279,7 +286,7 @@ void GameWorld::Update(float dt) {
                                 vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
                             }
                             // Left (-X)
-                            if (getBlock(x - 1, y, z) == 0) {
+                            if (shouldDrawFace(block, getBlock(x - 1, y, z))) {
                                 float light = getLight(x - 1, y, z);
                                 vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
                                 vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
@@ -289,7 +296,7 @@ void GameWorld::Update(float dt) {
                                 vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
                             }
                             // Right (+X)
-                            if (getBlock(x + 1, y, z) == 0) {
+                            if (shouldDrawFace(block, getBlock(x + 1, y, z))) {
                                 float light = getLight(x + 1, y, z);
                                 vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
                                 vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
@@ -299,7 +306,7 @@ void GameWorld::Update(float dt) {
                                 vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
                             }
                             // Front (+Z)
-                            if (getBlock(x, y, z + 1) == 0) {
+                            if (shouldDrawFace(block, getBlock(x, y, z + 1))) {
                                 float light = getLight(x, y, z + 1);
                                 vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
                                 vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
@@ -309,7 +316,7 @@ void GameWorld::Update(float dt) {
                                 vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
                             }
                             // Back (-Z)
-                            if (getBlock(x, y, z - 1) == 0) {
+                            if (shouldDrawFace(block, getBlock(x, y, z - 1))) {
                                 float light = getLight(x, y, z - 1);
                                 vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
                                 vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});

@@ -7,7 +7,8 @@
 #include "ForgeState.h"
 #include "FAIRWORLD.h"
 #include "PhysicsLabState.h"
-#include "MapState.h"
+#include "ChunkEditorState.h"
+#include "PlanetMapperState.h"
 #include "BlockMakerState.h"
 #include <iostream>
 #include "imgui.h"
@@ -54,16 +55,16 @@ void HubState::Render() {
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
 
-        // --- GRIGLIA CANALI (3 colonne x 2 righe) ---
+        // --- GRIGLIA CANALI (3 colonne x 3 righe) ---
         float totalW = viewport->Size.x;
         float totalH = viewport->Size.y;
         int cols = 3;
-        int rows = 2;
-        float padding = 20.0f;
+        int rows = 3;
+        float padding = 15.0f;
         float channelWidth  = (totalW - padding * (cols + 1)) / cols;
-        float channelHeight = std::min(180.0f, (totalH - 160.0f - padding * (rows + 1)) / rows);
+        float channelHeight = std::min(150.0f, (totalH - 160.0f - padding * (rows + 1)) / rows);
         float gridStartX = padding;
-        float gridStartY = 140.0f;
+        float gridStartY = 130.0f;
 
         struct TileInfo {
             const char* label;
@@ -71,16 +72,17 @@ void HubState::Render() {
             ImVec4 hoverColor;
             ImVec4 textColor;
         };
-        TileInfo tiles[6] = {
+        TileInfo tiles[7] = {
             { "FAIRWORLD\n[ Avvia Progetto JSON ]",         {0.3f,0.55f,0.9f,1.f}, {0.45f,0.7f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
-            { "LA FORGE\n[ Officina 3D ]",                {1.0f,0.55f,0.1f,1.f}, {1.f,0.7f,0.3f,1.f},   {0.1f,0.1f,0.1f,1.f} },
-            { "PHYSICS LAB\n[ Calibrazione Materiali ]",   {0.2f,0.75f,0.3f,1.f}, {0.3f,0.9f,0.4f,1.f},  {0.05f,0.05f,0.05f,1.f} },
-            { "CONNESSIONE DISPOSITIVI\n[ Hardware ]",     {0.7f,0.7f,0.7f,1.f}, {0.85f,0.85f,0.85f,1.f},{0.1f,0.1f,0.1f,1.f} },
-            { "PLANET MAPPER\n[ Configura Sistema Solare ]",{0.55f,0.3f,0.85f,1.f},{0.7f,0.45f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
-            { "BLOCK MAKER\n[ PBR & Lookdev ]",            {0.1f,0.7f,0.75f,1.f}, {0.2f,0.85f,0.9f,1.f}, {0.05f,0.05f,0.05f,1.f} },
+            { "LA FORGE\n[ Officina 3D ]",                  {1.0f,0.55f,0.1f,1.f}, {1.f,0.7f,0.3f,1.f},   {0.1f,0.1f,0.1f,1.f} },
+            { "PHYSICS LAB\n[ Calibrazione Materiali ]",     {0.2f,0.75f,0.3f,1.f}, {0.3f,0.9f,0.4f,1.f},  {0.05f,0.05f,0.05f,1.f} },
+            { "CHUNK EDITOR\n[ Modellazione Terreni 2D/3D ]",{0.8f,0.4f,0.2f,1.f}, {0.9f,0.5f,0.3f,1.f},  {1.f,1.f,1.f,1.f} },
+            { "PLANET MAPPER\n[ Configura Globo & Sistema ]",{0.55f,0.3f,0.85f,1.f},{0.7f,0.45f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
+            { "BLOCK MAKER\n[ PBR & Lookdev ]",              {0.1f,0.7f,0.75f,1.f}, {0.2f,0.85f,0.9f,1.f}, {0.05f,0.05f,0.05f,1.f} },
+            { "CONNESSIONE DISPOSITIVI\n[ Hardware ]",       {0.7f,0.7f,0.7f,1.f}, {0.85f,0.85f,0.85f,1.f},{0.1f,0.1f,0.1f,1.f} }
         };
 
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             int col = i % cols;
             int row = i / cols;
             float px = gridStartX + col * (channelWidth + padding);
@@ -107,18 +109,23 @@ void HubState::Render() {
                         m_context->engine->ForceGameState(GameState::PLAYING);
                         m_context->stateManager->ChangeState(std::make_unique<PhysicsLabState>(m_context));
                         break;
-                    case 3: // CONNESSIONE DISPOSITIVI
-                        showDeviceManager = true;
+                    case 3: // CHUNK EDITOR
+                        m_context->engine->SetGameMode(GameMode::ChunkEditor);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<ChunkEditorState>(m_context));
                         break;
                     case 4: // PLANET MAPPER
-                        m_context->engine->SetGameMode(GameMode::Map);
+                        m_context->engine->SetGameMode(GameMode::PlanetMapper);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<MapState>(m_context));
+                        m_context->stateManager->ChangeState(std::make_unique<PlanetMapperState>(m_context));
                         break;
                     case 5: // BLOCK MAKER
                         m_context->engine->SetGameMode(GameMode::BlockMaker);
                         m_context->engine->ForceGameState(GameState::PLAYING);
                         m_context->stateManager->ChangeState(std::make_unique<BlockMakerState>(m_context));
+                        break;
+                    case 6: // CONNESSIONE DISPOSITIVI
+                        showDeviceManager = true;
                         break;
                 }
             }

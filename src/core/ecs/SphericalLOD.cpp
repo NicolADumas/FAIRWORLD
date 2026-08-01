@@ -10,17 +10,26 @@ namespace fw {
 
 void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg) {
     // --- FRUSTUM CULLING ---
+    glm::mat4 vp = viewProj;
+    if (vp[1][1] < 0.0f) {
+        vp[0][1] = -vp[0][1];
+        vp[1][1] = -vp[1][1];
+        vp[2][1] = -vp[2][1];
+        vp[3][1] = -vp[3][1];
+    }
+
     glm::vec4 planes[6];
-    planes[0] = glm::vec4(viewProj[0][3] + viewProj[0][0], viewProj[1][3] + viewProj[1][0], viewProj[2][3] + viewProj[2][0], viewProj[3][3] + viewProj[3][0]); // Left
-    planes[1] = glm::vec4(viewProj[0][3] - viewProj[0][0], viewProj[1][3] - viewProj[1][0], viewProj[2][3] - viewProj[2][0], viewProj[3][3] - viewProj[3][0]); // Right
-    planes[2] = glm::vec4(viewProj[0][3] + viewProj[0][1], viewProj[1][3] + viewProj[1][1], viewProj[2][3] + viewProj[2][1], viewProj[3][3] + viewProj[3][1]); // Bottom
-    planes[3] = glm::vec4(viewProj[0][3] - viewProj[0][1], viewProj[1][3] - viewProj[1][1], viewProj[2][3] - viewProj[2][1], viewProj[3][3] - viewProj[3][1]); // Top
-    planes[4] = glm::vec4(viewProj[0][3] + viewProj[0][2], viewProj[1][3] + viewProj[1][2], viewProj[2][3] + viewProj[2][2], viewProj[3][3] + viewProj[3][2]); // Near
-    planes[5] = glm::vec4(viewProj[0][3] - viewProj[0][2], viewProj[1][3] - viewProj[1][2], viewProj[2][3] - viewProj[2][2], viewProj[3][3] - viewProj[3][2]); // Far
+    planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]); // Left
+    planes[1] = glm::vec4(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0], vp[3][3] - vp[3][0]); // Right
+    planes[2] = glm::vec4(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1], vp[3][3] + vp[3][1]); // Bottom
+    planes[3] = glm::vec4(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1], vp[3][3] - vp[3][1]); // Top
+    planes[4] = glm::vec4(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2], vp[3][3] + vp[3][2]); // Near
+    planes[5] = glm::vec4(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2], vp[3][3] - vp[3][2]); // Far
     
     bool isVisible = true;
     for (int i = 0; i < 6; i++) {
         float len = glm::length(glm::vec3(planes[i]));
+        if (len <= 0.00001f) continue;
         planes[i] /= len;
         
         float distance = glm::dot(glm::vec3(planes[i]), node.centerPos) + planes[i].w;
@@ -30,15 +39,8 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
         }
     }
     
-    // Se il nodo è fuori dal Frustum, distruggiamo la sua mesh (se esiste) e compattiamo i figli per risparmiare memoria
+    // Se il nodo è fuori dal Frustum, interrompiamo solo l'aggiornamento e la suddivisione senza distruggere la mesh (il rendering GPU eseguirà già il culling a run-time senza perdite)
     if (!isVisible) {
-        if (node.isSplit) {
-            MergeNode(node, world);
-        }
-        if (node.targetEntity != entt::null && !node.isGenerating) {
-            world->DestroyEntity(node.targetEntity);
-            node.targetEntity = entt::null;
-        }
         return; // Interrompiamo l'aggiornamento per questo ramo
     }
 
@@ -285,7 +287,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                         }
                     }
                     
-                    if (activeRegion.type == MapRegionType::Ocean || height < planetRadius + 0.1f) {
+                    if (activeRegion.type == MapRegionType::Ocean || matId == idWater || height < planetRadius + 0.1f) {
                         // Forza il livello del mare perfettamente piatto e l'ID acqua
                         positions.back() = normal * (planetRadius + 0.1f);
                         color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);

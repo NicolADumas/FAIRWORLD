@@ -10,8 +10,10 @@
 #include "ForgeState.h"
 #include "PlayState.h"
 #include "PhysicsLabState.h"
-#include "MapState.h"
+#include "PlanetMapperState.h"
+#include "ChunkEditorState.h"
 #include "BlockMakerState.h"
+#include "WorldProjectManager.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
 #include "TimeManager.h"
@@ -94,7 +96,36 @@ int main() {
     context.stateManager = &stateManager;
     context.engine = &engine; // SharedContext come osservatore non-owning
 
-    // 3. Bootstrap: Avvia lo stato selezionato
+    // 3. Inizializza i Servizi Fondamentali Prima Del Bootstrap degli Stati (per evitare che Init trovi puntatori nulli)
+    DeviceManager deviceManager;
+    fw::TimeManager timeManager;
+    fw::DiagnosticsManager diagnosticsManager;
+    fw::BlockRegistry blockRegistry;
+    fw::MaterialRegistry materialRegistry;
+    
+    blockRegistry.Initialize();
+    blockRegistry.LoadFromJson("assets/definitions/blocks.json");
+    
+    materialRegistry.Initialize();
+    materialRegistry.LoadFromJson("assets/definitions/materials.json");
+    
+    fw::CacheManager cacheManager;
+    cacheManager.Initialize(&context);
+
+    fw::WorldProjectManager projectManager;
+    projectManager.LoadProject("saves/map/world_map.json", &blockRegistry);
+    
+    context.deviceManager = &deviceManager;
+    context.timeManager = &timeManager;
+    context.diagnosticsManager = &diagnosticsManager;
+    context.blockRegistry = &blockRegistry;
+    context.materialRegistry = &materialRegistry;
+    context.cacheManager = &cacheManager;
+    context.projectManager = &projectManager;
+
+    engine.SetSharedContext(&context);
+
+    // 4. Bootstrap: Avvia lo stato selezionato con tutti i servizi connessi e sincronizzati
     if (choice == 2) {
         stateManager.ChangeState(std::make_unique<PlayState>(&context));
         engine.SetGameMode(GameMode::Play);
@@ -105,12 +136,12 @@ int main() {
         std::cout << "[SYSTEM] Avviato ForgeState...\n";
     } else if (choice == 4) {
         stateManager.ChangeState(std::make_unique<BlockMakerState>(&context));
-        engine.SetGameMode(GameMode::Dev); // Usa Dev come per Forge
+        engine.SetGameMode(GameMode::Dev);
         std::cout << "[SYSTEM] Avviato BlockMakerState...\n";
     } else if (choice == 5) {
-        stateManager.ChangeState(std::make_unique<MapState>(&context));
+        stateManager.ChangeState(std::make_unique<PlanetMapperState>(&context));
         engine.SetGameMode(GameMode::Map);
-        std::cout << "[SYSTEM] Avviato MapState...\n";
+        std::cout << "[SYSTEM] Avviato PlanetMapperState...\n";
     } else if (choice == 6) {
         stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
         engine.SetGameMode(GameMode::PhysicsLab);
@@ -121,32 +152,6 @@ int main() {
         engine.SetGameMode(GameMode::Hub);
         std::cout << "[SYSTEM] Avviato HubState...\n";
     }
-
-    DeviceManager deviceManager;
-    fw::TimeManager timeManager;
-    fw::DiagnosticsManager diagnosticsManager;
-    fw::BlockRegistry blockRegistry;
-    fw::MaterialRegistry materialRegistry;
-    
-    // Inizializza o carica i blocchi da file
-    blockRegistry.Initialize();
-    blockRegistry.LoadFromJson("assets/definitions/blocks.json");
-    
-    materialRegistry.Initialize();
-    materialRegistry.LoadFromJson("assets/definitions/materials.json");
-    
-    fw::CacheManager cacheManager;
-    cacheManager.Initialize(&context);
-    
-    context.deviceManager = &deviceManager;
-    context.timeManager = &timeManager;
-    context.diagnosticsManager = &diagnosticsManager;
-    context.blockRegistry = &blockRegistry;
-    context.materialRegistry = &materialRegistry;
-    context.cacheManager = &cacheManager;
-
-    // 5. Collega il Bus Dati dell'OS al motore (per l'Action Mapping)
-    engine.SetSharedContext(&context);
 
     std::cout << "\n[SYSTEM] Entro nel main loop guidato dalla State Machine...\n";
 

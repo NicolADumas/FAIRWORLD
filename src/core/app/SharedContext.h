@@ -30,6 +30,7 @@ namespace fw {
     class MaterialRegistry;
     class SimulationManager;
     class CacheManager;
+    class WorldProjectManager;
 }
 
 // Struttura dati per il monitoraggio delle onde cerebrali (BCI)
@@ -71,6 +72,7 @@ struct SharedContext {
     fw::GameWorld*          forgeWorld   = nullptr;
     fw::SimulationManager*  simManager   = nullptr;
     fw::CacheManager*       cacheManager = nullptr;
+    fw::WorldProjectManager* projectManager = nullptr;
     AssetManager*           assetManager = nullptr;
 
     // Sincronizzazione per RenderManager
