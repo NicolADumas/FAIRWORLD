@@ -156,5 +156,16 @@ void main() {
     finalColor = finalColor / (finalColor + vec3(1.0));
     finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
-    outColor = vec4(finalColor, push.useColorOverride == 1 ? push.colorOverride.a : 1.0);
+    float finalAlpha = 1.0;
+    if (push.useColorOverride == 1) {
+        finalAlpha = push.colorOverride.a;
+    } else if (inMaterialID == 6u) { // Trasparenza dell'acqua per vedere il fondale marino
+        finalAlpha = 0.80;
+    } else if (inMaterialID == 13u) { // Ghiaccio traslucido
+        finalAlpha = 0.85;
+    } else if (inVertexColor.a < 0.99 && inVertexColor.a > 0.05) {
+        finalAlpha = inVertexColor.a; // Supporto alpha dai vertici (Planet Mapper, ecc.)
+    }
+
+    outColor = vec4(finalColor, finalAlpha);
 }

@@ -661,4 +661,8 @@ class BlockRegistry* GameWorld::GetBlockRegistry() const {
     return m_context ? m_context->blockRegistry : nullptr;
 }
 
+class MaterialRegistry* GameWorld::GetMaterialRegistry() const {
+    return m_context ? m_context->materialRegistry : nullptr;
+}
+
 } // namespace fw

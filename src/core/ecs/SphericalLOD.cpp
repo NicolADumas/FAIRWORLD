@@ -5,6 +5,7 @@
 #include "../app/AssetManager.h"
 #include "MapWorldGenerator.h"
 #include "BlockRegistry.h"
+#include "MaterialRegistry.h"
 
 namespace fw {
 
@@ -124,7 +125,8 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     std::vector<MapRegion> safeRegions = activeRegions;
     
     // NOTA BENE: NON catturiamo 'node' come raw pointer, perché 'MergeNode' potrebbe distruggerlo nel thread principale prima che il job finisca!
-    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, safeRegions, blockReg]() {
+    auto* matReg = world ? world->GetMaterialRegistry() : nullptr;
+    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, safeRegions, blockReg, matReg]() {
         MeshComponent mesh;
         mesh.name = meshName;
         mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
@@ -328,7 +330,17 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     vtx.position = {positions[idx].x, positions[idx].y, positions[idx].z};
                     vtx.normal = {normals[idx].x, normals[idx].y, normals[idx].z};
                     vtx.color = {colors[idx].r, colors[idx].g, colors[idx].b, colors[idx].a};
-                    vtx.roughMetal = {0.8f, 0.0f};
+                    float rough = 0.8f;
+                    float metal = 0.0f;
+                    if (matReg) {
+                        const auto& matDef = matReg->GetMaterial(materials[idx]);
+                        rough = matDef.roughnessFallback;
+                        metal = matDef.metallicFallback;
+                    } else if (materials[idx] == 6 || materials[idx] == 13) {
+                        rough = 0.02f;
+                        metal = 0.25f;
+                    }
+                    vtx.roughMetal = {rough, metal};
                     vtx.materialID = materials[idx];
                     vtx.ao = 1.0f;
                     vtx.light = 1.0f;

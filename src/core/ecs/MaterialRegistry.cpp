@@ -36,6 +36,51 @@ void MaterialRegistry::RegisterDefaultMaterials() {
     m_materials[3].target_block_id = 3;
     m_materials[3].baseColorFallback = glm::vec3(0.5f, 0.5f, 0.5f);
     m_materials[3].roughnessFallback = 0.7f;
+
+    // 4: Wood
+    m_materials[4].target_block_id = 4;
+    m_materials[4].baseColorFallback = glm::vec3(0.6f, 0.4f, 0.2f);
+    m_materials[4].roughnessFallback = 0.8f;
+
+    // 5: Sand
+    m_materials[5].target_block_id = 5;
+    m_materials[5].baseColorFallback = glm::vec3(0.9f, 0.85f, 0.5f);
+    m_materials[5].roughnessFallback = 0.9f;
+
+    // 6: Water
+    m_materials[6].target_block_id = 6;
+    m_materials[6].baseColorFallback = glm::vec3(0.1f, 0.35f, 0.85f);
+    m_materials[6].roughnessFallback = 0.02f; // Superficie marina specchiante e liscissima
+    m_materials[6].metallicFallback = 0.25f;  // Riflesso solare (Fresnel PBR)
+
+    // 7: Lava
+    m_materials[7].target_block_id = 7;
+    m_materials[7].baseColorFallback = glm::vec3(0.95f, 0.3f, 0.05f);
+    m_materials[7].roughnessFallback = 0.9f;
+    m_materials[7].emissiveStrength = 2.5f;
+
+    // 8: Leaves
+    m_materials[8].target_block_id = 8;
+    m_materials[8].baseColorFallback = glm::vec3(0.15f, 0.6f, 0.15f);
+    m_materials[8].roughnessFallback = 0.85f;
+
+    // 9: MobSpawner
+    m_materials[9].target_block_id = 9;
+    m_materials[9].baseColorFallback = glm::vec3(0.2f, 0.2f, 0.25f);
+    m_materials[9].roughnessFallback = 0.4f;
+    m_materials[9].metallicFallback = 0.5f;
+
+    // 10: LightSource
+    m_materials[10].target_block_id = 10;
+    m_materials[10].baseColorFallback = glm::vec3(1.0f, 0.95f, 0.8f);
+    m_materials[10].roughnessFallback = 0.5f;
+    m_materials[10].emissiveStrength = 3.0f;
+
+    // 13: Ice
+    m_materials[13].target_block_id = 13;
+    m_materials[13].baseColorFallback = glm::vec3(0.75f, 0.88f, 0.95f);
+    m_materials[13].roughnessFallback = 0.05f;
+    m_materials[13].metallicFallback = 0.1f;
 }
 
 bool MaterialRegistry::LoadFromJson(const std::string& filepath) {

@@ -104,6 +104,8 @@ public:
     WorldStructureManager& GetStructureManager() { return m_structureManager; }
     
     class BlockRegistry* GetBlockRegistry() const;
+    class MaterialRegistry* GetMaterialRegistry() const;
+    struct SharedContext* GetContext() const { return m_context; }
 
 private:
     entt::registry m_registry;

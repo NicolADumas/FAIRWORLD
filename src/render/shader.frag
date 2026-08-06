@@ -198,5 +198,14 @@ void main() {
         finalColor = finalColor.bgr;
     }
 
-    outColor = vec4(finalColor, 1.0);
+    float finalAlpha = 1.0;
+    if (type == 6) { // Water transparency
+        finalAlpha = 0.80;
+    } else if (type == 13) { // Ice transparency
+        finalAlpha = 0.85;
+    } else if (fragColor.a < 0.99 && fragColor.a > 0.05) {
+        finalAlpha = fragColor.a;
+    }
+
+    outColor = vec4(finalColor, finalAlpha);
 }
