@@ -6,11 +6,23 @@
 namespace fw {
 
 void PlanetOrbitSystem::Update(entt::registry& registry, float dt) {
-    // 1. Aggiorniamo le rivoluzioni orbitali nel Sistema Solare
+    // 1. Aggiorniamo le rivoluzioni orbitali nel Sistema Solare (Orbite di Keplero)
     auto orbitView = registry.view<SolarSystemOrbitComponent, TransformComponent>();
     for (auto entity : orbitView) {
         auto& orbit = orbitView.get<SolarSystemOrbitComponent>(entity);
         auto& trans = orbitView.get<TransformComponent>(entity);
+
+        // Terza legge di Keplero: w = sqrt(G * M / r^3)
+        // Calcolo della velocità angolare in base a distanza e massa del corpo attrattore
+        const float G_GAME = 6.674e-11f;
+        float r = orbit.orbitRadius;
+        if (r > 0.001f) {
+            float r3 = r * r * r;
+            // Calcoliamo la velocità e applichiamo un moltiplicatore per rendere le orbite visibili e giocabili
+            orbit.angularSpeed = std::sqrt((G_GAME * orbit.centralMass) / r3) * 1.0f; // Moltiplicatore di time-lapse
+        } else {
+            orbit.angularSpeed = 0.0f;
+        }
 
         orbit.currentAngle += orbit.angularSpeed * dt;
         if (orbit.currentAngle > 6.283185307f) {

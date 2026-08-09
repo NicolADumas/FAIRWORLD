@@ -11,7 +11,7 @@ namespace fw {
 
 class JobQueueImpl {
 public:
-    JobQueueImpl() : m_shutdown(false) {}
+    JobQueueImpl() : m_shutdown(false), m_activeJobs(0) {}
     
     ~JobQueueImpl() {
         Shutdown();
@@ -61,6 +61,13 @@ public:
         m_condition.notify_one();
     }
 
+    void WaitAll() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_waitCondition.wait(lock, [this]() {
+            return m_jobs.empty() && m_activeJobs == 0;
+        });
+    }
+
 private:
     void WorkerLoop() {
         while (true) {
@@ -77,12 +84,20 @@ private:
                 
                 job = std::move(m_jobs.front());
                 m_jobs.pop();
+                m_activeJobs++;
             }
             
             // Execute the job outside the lock
             if (job) {
                 // std::cout << "[Worker Thread] Risvegliato! Esecuzione job in corso...\n";
                 job();
+                {
+                    std::unique_lock<std::mutex> lock(m_mutex);
+                    m_activeJobs--;
+                    if (m_jobs.empty() && m_activeJobs == 0) {
+                        m_waitCondition.notify_all();
+                    }
+                }
             }
         }
     }
@@ -91,7 +106,9 @@ private:
     std::queue<std::function<void()>> m_jobs;
     std::mutex m_mutex;
     std::condition_variable m_condition;
+    std::condition_variable m_waitCondition;
     bool m_shutdown;
+    int m_activeJobs;
 };
 
 JobSystem::JobSystem() : m_queueImpl(std::make_unique<JobQueueImpl>()) {
@@ -106,6 +123,10 @@ void JobSystem::Initialize() {
 
 void JobSystem::Shutdown() {
     m_queueImpl->Shutdown();
+}
+
+void JobSystem::WaitAll() {
+    m_queueImpl->WaitAll();
 }
 
 void JobSystem::Execute(std::function<void()> job) {

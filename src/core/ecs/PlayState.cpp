@@ -4,6 +4,8 @@
 #include "DeviceManager.h"
 #include "FAIRWORLD.h"
 #include "Components.h"
+#include "PlanetComponents.h"
+#include "PlanetSystems.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include "TimeManager.h"
@@ -250,6 +252,21 @@ bool PlayState::Init() {
     registry.get<fw::PortalComponent>(portalA).targetPortal = portalB;
     registry.get<fw::PortalComponent>(portalB).targetPortal = portalA;
 
+    // --- CORPI CELESTI (SOLE E LUNA) ---
+    auto sunEntity = registry.create();
+    registry.emplace<NameComponent>(sunEntity, "Sun");
+    auto& sunOrbit = registry.emplace<fw::SolarSystemOrbitComponent>(sunEntity);
+    sunOrbit.orbitRadius = 150000.0f; // Distanza astronomica
+    sunOrbit.centralMass = 1.989e30f; // Massa attrattore
+    registry.emplace<TransformComponent>(sunEntity);
+
+    auto moonEntity = registry.create();
+    registry.emplace<NameComponent>(moonEntity, "Moon");
+    auto& moonOrbit = registry.emplace<fw::SolarSystemOrbitComponent>(moonEntity);
+    moonOrbit.orbitRadius = 3000.0f; // Più vicina al pianeta
+    moonOrbit.centralMass = 5.972e24f; // Massa attrattore (Terra)
+    registry.emplace<TransformComponent>(moonEntity);
+
     // --- REGISTRAZIONE SISTEMI ECS ---
     m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // SALVA LO STATO PRECEDENTE
     m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>()); // MODIFICA LO STATO (Fisica Input)
@@ -296,6 +313,9 @@ void PlayState::Update(float dt) {
     for (auto& system : m_systems) {
         system->Update(m_registry, m_context, dt);
     }
+
+    // Aggiornamento orbite planetarie indipendenti
+    fw::PlanetOrbitSystem::Update(m_registry, dt);
 
     // Aggiorna ciclo Giorno-Notte (Sole/Luna)
     if (m_context && m_context->engine) {

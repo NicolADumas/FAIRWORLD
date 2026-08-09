@@ -81,6 +81,21 @@ void GameWorld::ClearWorld(bool saveToDisk) {
         SaveAllChunks();
     }
     
+    if (m_context && m_context->jobSystem) {
+        m_context->jobSystem->WaitAll();
+    }
+    
+    {
+        std::lock_guard<std::mutex> lock(m_deferredMutex);
+        for (auto& def : m_deferredMeshes) {
+            if (def.mesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+                m_context->vramAllocator->Free(def.mesh.vramAlloc);
+                def.mesh.vramAlloc.valid = false;
+            }
+        }
+        m_deferredMeshes.clear();
+    }
+    
     auto view = m_registry.view<MeshComponent>();
     for (auto entity : view) {
         auto& mesh = view.get<MeshComponent>(entity);

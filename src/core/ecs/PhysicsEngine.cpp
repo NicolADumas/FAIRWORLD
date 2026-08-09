@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "PhysicsEngine.h"
 #include "GameWorld.h"
+#include "PlanetComponents.h"
 #include <algorithm>
 
 void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world) {
@@ -45,10 +46,43 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld&
 }
 
 void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
-    // F_g = m * g (verso il basso) usando la gravità del pianeta
-    float g = G_EARTH; // TODO: usare world.GetCurrentPlanet()->gravity se reintrodotto
-    glm::vec3 gravityForce = glm::vec3(0.0f, -g * rb.mass, 0.0f);
-    rb.netForce += gravityForce;
+    glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
+    float surfaceGravity = 9.81f; // G_EARTH
+    float planetRadius = 50.0f;
+    bool isSpherical = false;
+
+    // Usiamo const_cast temporaneo perché GetRegistry() non è marcata const in GameWorld
+    auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetComponent>();
+    if (!planetView.empty()) {
+        auto entity = *planetView.begin();
+        auto& planet = planetView.get<fw::PlanetComponent>(entity);
+        surfaceGravity = planet.surfaceGravity;
+        planetRadius = planet.radius;
+        isSpherical = true;
+    }
+
+    if (isSpherical) {
+        glm::vec3 dirToCenter = planetCenter - rb.position;
+        float distSq = glm::dot(dirToCenter, dirToCenter);
+        if (distSq > 0.001f) {
+            float distance = std::sqrt(distSq);
+            glm::vec3 normDir = dirToCenter / distance;
+            
+            // Legge di gravitazione (Decadimento quadratico della distanza dal nucleo):
+            // g(r) = g_surf * (R_surf / r)^2
+            // Per evitare singolarità nel centro (r vicino a 0), usiamo un clamp interno al nucleo
+            float r_clamped = std::max(distance, planetRadius * 0.1f);
+            float ratio = planetRadius / r_clamped;
+            float currentG = surfaceGravity * (ratio * ratio);
+            
+            glm::vec3 gravityForce = normDir * (currentG * rb.mass);
+            rb.netForce += gravityForce;
+        }
+    } else {
+        // Gravità piana direzionale (Fallback per mappe non sferiche come ChunkEditor/BlockMaker)
+        glm::vec3 gravityForce = glm::vec3(0.0f, -surfaceGravity * rb.mass, 0.0f);
+        rb.netForce += gravityForce;
+    }
 }
 
 void PhysicsEngine::ApplyDrag(RigidBody& rb) {

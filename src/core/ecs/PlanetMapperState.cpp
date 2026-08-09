@@ -8,8 +8,10 @@
 #include "FAIRWORLD.h"
 #include "DeviceManager.h"
 #include "MapWorldGenerator.h"
+#include "BiomeSystems.h"
 #include "JobSystem.h"
 #include "RenderManager.h"
+#include "CacheManager.h"
 #include "imgui.h"
 #include "PlayState.h"
 #include <iostream>
@@ -63,7 +65,7 @@ void PlanetMapperState::RebuildPlanetRoots() {
     if (!m_context || !m_context->projectManager) return;
     const auto& doc = m_context->projectManager->GetDocument();
     float R = 50.0f;
-    if (!doc.planets.empty() && m_activePlanetIndex < (int)doc.planets.size()) {
+    if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
         R = doc.planets[m_activePlanetIndex].planetRadius;
     }
 
@@ -161,7 +163,7 @@ void PlanetMapperState::UpdateApp(float dt) {
     if (m_isBuilderMode && m_context->jobSystem && m_context->assetManager) {
         const fw::PlanetMap* pMap = nullptr;
         std::vector<fw::MapRegion> activeRegions;
-        if (!doc.planets.empty()) {
+        if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
             pMap = &doc.planets[m_activePlanetIndex];
             activeRegions = pMap->regions;
             
@@ -206,7 +208,13 @@ void PlanetMapperState::UpdateApp(float dt) {
         }
     }
 
-    if (m_previewWorld) m_previewWorld->Update(dt);
+    if (m_previewWorld) {
+        if (m_context && m_context->blockRegistry) {
+            fw::BiomeTerrainSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
+            fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
+        }
+        m_previewWorld->Update(dt);
+    }
 }
 
 void PlanetMapperState::RenderApp() {
@@ -238,7 +246,7 @@ void PlanetMapperState::DrawBuilderUI() {
 
     ImGui::BeginChild("PlanetControls", ImVec2(0, -135.0f), true);
 
-    if (!doc.planets.empty()) {
+    if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
         auto& p = doc.planets[m_activePlanetIndex];
         char nameBuf[128];
         strncpy_s(nameBuf, p.name.c_str(), sizeof(nameBuf));
@@ -318,7 +326,7 @@ void PlanetMapperState::DrawBuilderUI() {
         ImGui::EndPopup();
     }
 
-    if (m_showPlacementTable && !doc.planets.empty()) {
+    if (m_showPlacementTable && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
         auto& currentPlanet = doc.planets[m_activePlanetIndex];
         float pRadius = currentPlanet.planetRadius;
         int N_lato = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 32.0f));
@@ -443,6 +451,9 @@ void PlanetMapperState::CompileAndGenerate() {
     auto& doc = m_context->projectManager->GetDocumentMutable();
 
     std::cout << "[PlanetMapperState] Inizio compilazione e generazione voxel dell'intero pianeta...\n";
+    if (m_context && m_context->jobSystem) {
+        m_context->jobSystem->WaitAll();
+    }
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
 
@@ -450,14 +461,17 @@ void PlanetMapperState::CompileAndGenerate() {
     m_context->forgeWorld = m_previewWorld.get();
     m_context->isForgeMode = false;
 
-    if (m_context->engine && m_context->engine->GetRenderManager()) {
+    if (m_context->cacheManager) {
+        m_context->cacheManager->FlushGpuRenderCaches(m_context);
+        m_context->cacheManager->FlushCpuTransientCaches(m_context);
+    } else if (m_context->engine && m_context->engine->GetRenderManager()) {
         m_context->engine->GetRenderManager()->InvalidateForgeCache();
     }
     if (m_context->engine) {
         m_context->engine->SetGameMode(GameMode::PlanetMapper);
     }
 
-    if (doc.planets.empty()) return;
+    if (doc.planets.empty() || m_activePlanetIndex < 0 || m_activePlanetIndex >= (int)doc.planets.size()) return;
     auto& currentPlanet = doc.planets[m_activePlanetIndex];
     currentPlanet.regions.clear();
 
@@ -517,14 +531,24 @@ void PlanetMapperState::CompileAndGenerate() {
     fw::MapWorldGenerator::Generate(doc, m_activePlanetIndex, *m_previewWorld, m_context->jobSystem);
 
     m_isBuilderMode = false;
-    float midX = ((float)(currentPlanet.maxX + currentPlanet.minX) * 0.5f) * 16.0f;
-    float midZ = ((float)(currentPlanet.maxZ + currentPlanet.minZ) * 0.5f) * 16.0f;
-    float midY = 20.0f;
-    m_orbitTarget = glm::vec3(midX, midY, midZ);
-    float mapSpan = std::max((float)(currentPlanet.maxX - currentPlanet.minX), (float)(currentPlanet.maxZ - currentPlanet.minZ)) * 16.0f;
-    m_orbitDistance = std::max(mapSpan * 1.5f, 60.0f);
-    m_orbitPitch = 40.0f;
-    m_orbitYaw = 45.0f;
-
-    std::cout << "[PlanetMapperState] Anteprima Voxel del Pianeta completata! Camera centrata su: (" << midX << ", " << midY << ", " << midZ << ")\n";
+    
+    if (currentPlanet.planetRadius > 0.0f) {
+        // Telecamera sferica
+        m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+        m_orbitDistance = currentPlanet.planetRadius + 100.0f;
+        m_orbitPitch = 40.0f;
+        m_orbitYaw = 45.0f;
+        std::cout << "[PlanetMapperState] Anteprima Voxel sferica completata! Camera in orbita a raggio: " << m_orbitDistance << "\n";
+    } else {
+        // Telecamera piana (legacy)
+        float midX = ((float)(currentPlanet.maxX + currentPlanet.minX) * 0.5f) * 16.0f;
+        float midZ = ((float)(currentPlanet.maxZ + currentPlanet.minZ) * 0.5f) * 16.0f;
+        float midY = 20.0f;
+        m_orbitTarget = glm::vec3(midX, midY, midZ);
+        float mapSpan = std::max((float)(currentPlanet.maxX - currentPlanet.minX), (float)(currentPlanet.maxZ - currentPlanet.minZ)) * 16.0f;
+        m_orbitDistance = std::max(mapSpan * 1.5f, 60.0f);
+        m_orbitPitch = 40.0f;
+        m_orbitYaw = 45.0f;
+        std::cout << "[PlanetMapperState] Anteprima Voxel del Pianeta completata! Camera centrata su: (" << midX << ", " << midY << ", " << midZ << ")\n";
+    }
 }

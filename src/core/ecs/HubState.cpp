@@ -10,6 +10,7 @@
 #include "ChunkEditorState.h"
 #include "PlanetMapperState.h"
 #include "BlockMakerState.h"
+#include "SolarSystemState.h"
 #include <iostream>
 #include "imgui.h"
 
@@ -72,17 +73,18 @@ void HubState::Render() {
             ImVec4 hoverColor;
             ImVec4 textColor;
         };
-        TileInfo tiles[7] = {
+        TileInfo tiles[8] = {
             { "FAIRWORLD\n[ Avvia Progetto JSON ]",         {0.3f,0.55f,0.9f,1.f}, {0.45f,0.7f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
             { "LA FORGE\n[ Officina 3D ]",                  {1.0f,0.55f,0.1f,1.f}, {1.f,0.7f,0.3f,1.f},   {0.1f,0.1f,0.1f,1.f} },
             { "PHYSICS LAB\n[ Calibrazione Materiali ]",     {0.2f,0.75f,0.3f,1.f}, {0.3f,0.9f,0.4f,1.f},  {0.05f,0.05f,0.05f,1.f} },
             { "CHUNK EDITOR\n[ Modellazione Terreni 2D/3D ]",{0.8f,0.4f,0.2f,1.f}, {0.9f,0.5f,0.3f,1.f},  {1.f,1.f,1.f,1.f} },
             { "PLANET MAPPER\n[ Configura Globo & Sistema ]",{0.55f,0.3f,0.85f,1.f},{0.7f,0.45f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
             { "BLOCK MAKER\n[ PBR & Lookdev ]",              {0.1f,0.7f,0.75f,1.f}, {0.2f,0.85f,0.9f,1.f}, {0.05f,0.05f,0.05f,1.f} },
-            { "CONNESSIONE DISPOSITIVI\n[ Hardware ]",       {0.7f,0.7f,0.7f,1.f}, {0.85f,0.85f,0.85f,1.f},{0.1f,0.1f,0.1f,1.f} }
+            { "CONNESSIONE DISPOSITIVI\n[ Hardware ]",       {0.7f,0.7f,0.7f,1.f}, {0.85f,0.85f,0.85f,1.f},{0.1f,0.1f,0.1f,1.f} },
+            { "SOLAR SYSTEM\n[ Mappa Spaziale ]",            {0.9f,0.2f,0.5f,1.f}, {1.0f,0.3f,0.6f,1.f},   {1.f,1.f,1.f,1.f} }
         };
 
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 8; i++) {
             int col = i % cols;
             int row = i / cols;
             float px = gridStartX + col * (channelWidth + padding);
@@ -126,6 +128,11 @@ void HubState::Render() {
                         break;
                     case 6: // CONNESSIONE DISPOSITIVI
                         showDeviceManager = true;
+                        break;
+                    case 7: // MAPPA SOLARE
+                        m_context->engine->SetGameMode(GameMode::SolarSystem);
+                        m_context->engine->ForceGameState(GameState::PLAYING);
+                        m_context->stateManager->ChangeState(std::make_unique<SolarSystemState>(m_context));
                         break;
                 }
             }

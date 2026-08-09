@@ -19,6 +19,9 @@ public:
     // Ferma i worker e svuota la coda
     void Shutdown();
 
+    // Attende che tutti i job in coda e in esecuzione siano completati
+    void WaitAll();
+
     // Sottomette un task asincrono fire-and-forget
     void Execute(std::function<void()> job);
 

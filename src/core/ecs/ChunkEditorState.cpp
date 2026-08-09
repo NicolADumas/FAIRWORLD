@@ -8,8 +8,10 @@
 #include "FAIRWORLD.h"
 #include "DeviceManager.h"
 #include "MapWorldGenerator.h"
+#include "BiomeSystems.h"
 #include "JobSystem.h"
 #include "RenderManager.h"
+#include "CacheManager.h"
 #include "imgui.h"
 #include <iostream>
 #include <algorithm>
@@ -56,12 +58,21 @@ bool ChunkEditorState::InitApp() {
 void ChunkEditorState::RebuildChunkPreview() {
     if (!m_context || !m_context->projectManager || !m_previewWorld) return;
     auto& doc = m_context->projectManager->GetDocument();
+    if (m_context && m_context->jobSystem) {
+        m_context->jobSystem->WaitAll();
+    }
     if (doc.terrainLibrary.empty() || m_activeTemplateIndex < 0 || m_activeTemplateIndex >= (int)doc.terrainLibrary.size()) {
+        if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+            vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
+        }
         m_previewWorld = std::make_unique<fw::GameWorld>();
         m_previewWorld->Initialize(m_context);
         m_context->forgeWorld = m_previewWorld.get();
         m_context->activeRegistry = &m_previewWorld->GetRegistry();
-        if (m_context->engine && m_context->engine->GetRenderManager()) {
+        if (m_context->cacheManager) {
+            m_context->cacheManager->FlushGpuRenderCaches(m_context);
+            m_context->cacheManager->FlushCpuTransientCaches(m_context);
+        } else if (m_context->engine && m_context->engine->GetRenderManager()) {
             m_context->engine->GetRenderManager()->InvalidateForgeCache();
         }
         return;
@@ -69,11 +80,18 @@ void ChunkEditorState::RebuildChunkPreview() {
 
     std::cout << "[ChunkEditorState] Rigenerazione anteprima 3D Voxel per chunk corrente...\n";
 
+    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+        vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
+    }
+
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
     m_context->forgeWorld = m_previewWorld.get();
     m_context->activeRegistry = &m_previewWorld->GetRegistry();
-    if (m_context->engine && m_context->engine->GetRenderManager()) {
+    if (m_context->cacheManager) {
+        m_context->cacheManager->FlushGpuRenderCaches(m_context);
+        m_context->cacheManager->FlushCpuTransientCaches(m_context);
+    } else if (m_context->engine && m_context->engine->GetRenderManager()) {
         m_context->engine->GetRenderManager()->InvalidateForgeCache();
     }
 
@@ -82,11 +100,38 @@ void ChunkEditorState::RebuildChunkPreview() {
     fw::MapDocument tempDoc;
     fw::PlanetMap tempPlanet;
     tempPlanet.name = "PreviewChunk";
-    tempPlanet.planetRadius = 50.0f;
-    tempPlanet.minX = -2;
-    tempPlanet.maxX = 2;
-    tempPlanet.minZ = -2;
-    tempPlanet.maxZ = 2;
+    
+    // Calcola i limiti (Bounding Box) in base a ciò che hai disegnato nel Canvas 2D
+    int minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+    if (!tmpl.subRegions.empty()) {
+        minX = tmpl.subRegions[0].rectMin.x;
+        maxX = tmpl.subRegions[0].rectMax.x;
+        minZ = tmpl.subRegions[0].rectMin.y;
+        maxZ = tmpl.subRegions[0].rectMax.y;
+        for (const auto& sub : tmpl.subRegions) {
+            minX = std::min(minX, sub.rectMin.x);
+            maxX = std::max(maxX, sub.rectMax.x);
+            minZ = std::min(minZ, sub.rectMin.y);
+            maxZ = std::max(maxZ, sub.rectMax.y);
+        }
+    } else {
+        minX = -2; maxX = 2; minZ = -2; maxZ = 2; // Default se vuoto
+    }
+    
+    // Aggiungi un margine di 1 chunk per vedere i bordi
+    minX -= 1; maxX += 1; minZ -= 1; maxZ += 1;
+    
+    // Clamp estremo per evitare che se disegni a -16, +16 freezi l'intero PC (max 21x21 chunks)
+    minX = std::max(minX, -10);
+    maxX = std::min(maxX, 10);
+    minZ = std::max(minZ, -10);
+    maxZ = std::min(maxZ, 10);
+
+    tempPlanet.planetRadius = 0.0f; // DEVE essere 0.0f per forzare la generazione piana dell'anteprima
+    tempPlanet.minX = minX;
+    tempPlanet.maxX = maxX;
+    tempPlanet.minZ = minZ;
+    tempPlanet.maxZ = maxZ;
 
     fw::MapRegion baseRegion;
     baseRegion.eulerAngles = glm::vec3(0.0f);
@@ -159,7 +204,13 @@ void ChunkEditorState::UpdateApp(float dt) {
         m_context->activeCameraView.projectionMatrix[1][1] *= -1;
     }
 
-    if (m_previewWorld) m_previewWorld->Update(dt);
+    if (m_previewWorld) {
+        if (m_context && m_context->blockRegistry) {
+            fw::BiomeTerrainSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
+            fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
+        }
+        m_previewWorld->Update(dt);
+    }
 }
 
 void ChunkEditorState::RenderApp() {

@@ -31,11 +31,16 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
         idWater = blockRegistry->GetBlock("fairworld:water").id;
     }
     
+    std::vector<entt::entity> toProcess;
     for (auto entity : view) {
         if (processed >= maxChunksPerFrame) break;
+        toProcess.push_back(entity);
+        processed++;
+    }
 
-        auto& chunk = view.get<fw::VoxelChunkComponent>(entity);
-        const auto& biome = view.get<BiomeDataComponent>(entity);
+    for (auto entity : toProcess) {
+        auto& chunk = registry.get<fw::VoxelChunkComponent>(entity);
+        const auto& biome = registry.get<BiomeDataComponent>(entity);
 
         // Estrarre coordinate chunk dalla posizione
         int cx = chunk.cx;
@@ -127,8 +132,6 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
         registry.emplace<DecoratorGenTag>(entity);
-        
-        processed++;
     }
 }
 
@@ -154,46 +157,94 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
         if (idLeaves == 0) idLeaves = 8; // Fallback
     }
 
+    std::vector<entt::entity> toProcess;
     for (auto entity : view) {
         if (processed >= maxChunksPerFrame) break;
+        toProcess.push_back(entity);
+        processed++;
+    }
 
-        auto& chunk = view.get<fw::VoxelChunkComponent>(entity);
-        const auto& biome = view.get<BiomeDataComponent>(entity);
+    for (auto entity : toProcess) {
+        auto& chunk = registry.get<fw::VoxelChunkComponent>(entity);
 
-        int cx = chunk.cx;
-        int cz = chunk.cz;
+        // Alberi solo su erba (Forest) e un po' su Tundra, no Desert
+        bool canHaveTrees = false;
+        for (int lx = 0; lx < 16; ++lx) {
+            for (int lz = 0; lz < 16; ++lz) {
+                for (int ly = 127; ly >= 0; --ly) {
+                    if (chunk.blocks[lx][ly][lz] == idGrass) canHaveTrees = true;
+                }
+            }
+        }
 
-        for (int x = 2; x < 13; ++x) {
-            for (int z = 2; z < 13; ++z) {
-                float worldX = cx * 16.0f + x;
-                float worldZ = cz * 16.0f + z;
-
-                int randVal = (int)(std::abs(std::sin(worldX * 12.3f + worldZ * 45.6f)) * 1000.0f);
-                if (randVal % 100 < 2) { 
-                    // Trova la Y della superficie (scendendo da 127)
+        if (canHaveTrees) {
+            // Rimuove i blocchi in eccesso se si scontra con blocchi vicini (Semplificato)
+            std::vector<glm::ivec3> treePositions;
+            for (int x = 4; x < 12; x += 6) {
+                for (int z = 4; z < 12; z += 6) {
                     int surfaceY = 0;
                     for (int y = 127; y >= 0; --y) {
-                        if (chunk.blocks[x][y][z] != idAir && chunk.blocks[x][y][z] != idWater) {
+                        if (chunk.blocks[x][y][z] == idGrass) {
                             surfaceY = y;
                             break;
                         }
                     }
-
-                    // Se la superficie e' erba, possiamo spawnare un albero (Bioma Foresta)
-                    if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == idGrass) {
-                        // Costruisci albero
-                        chunk.blocks[x][surfaceY+1][z] = idWood;
-                        chunk.blocks[x][surfaceY+2][z] = idWood;
-                        chunk.blocks[x][surfaceY+3][z] = idWood;
-                        
-                        for (int lx = -1; lx <= 1; ++lx) {
-                            for (int lz = -1; lz <= 1; ++lz) {
-                                chunk.blocks[x+lx][surfaceY+3][z+lz] = idLeaves;
-                                chunk.blocks[x+lx][surfaceY+4][z+lz] = idLeaves;
+                    
+                    // Add some randomness
+                    if (surfaceY > 0 && (rand() % 100) < 40) {
+                        treePositions.push_back({x, surfaceY, z});
+                    }
+                }
+            }
+            
+            for (auto p : treePositions) {
+                int tx = p.x; int ty = p.y; int tz = p.z;
+                // Tronco
+                for (int h = 1; h <= 4; ++h) {
+                    if (ty + h < 128) {
+                        chunk.blocks[tx][ty + h][tz] = idWood;
+                    }
+                }
+                // Chioma
+                for (int lx = tx - 2; lx <= tx + 2; ++lx) {
+                    for (int lz = tz - 2; lz <= tz + 2; ++lz) {
+                        for (int ly = ty + 3; ly <= ty + 5; ++ly) {
+                            if (lx >= 0 && lx < 16 && lz >= 0 && lz < 16 && ly < 128) {
+                                if (chunk.blocks[lx][ly][lz] == 0) {
+                                    chunk.blocks[lx][ly][lz] = idLeaves;
+                                }
                             }
                         }
-                        chunk.blocks[x][surfaceY+5][z] = idLeaves; // Punta foglie
                     }
+                }
+            }
+        }
+
+        // Decorazioni extra
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                int surfaceY = 0;
+                for (int y = 127; y >= 0; --y) {
+                    if (chunk.blocks[x][y][z] != idAir && chunk.blocks[x][y][z] != idWater) {
+                        surfaceY = y;
+                        break;
+                    }
+                }
+
+                // Se la superficie e' erba, possiamo spawnare un albero (Bioma Foresta)
+                if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == idGrass) {
+                    // Costruisci albero
+                    chunk.blocks[x][surfaceY+1][z] = idWood;
+                    chunk.blocks[x][surfaceY+2][z] = idWood;
+                    chunk.blocks[x][surfaceY+3][z] = idWood;
+                    
+                    for (int lx = -1; lx <= 1; ++lx) {
+                        for (int lz = -1; lz <= 1; ++lz) {
+                            chunk.blocks[x+lx][surfaceY+3][z+lz] = idLeaves;
+                            chunk.blocks[x+lx][surfaceY+4][z+lz] = idLeaves;
+                        }
+                    }
+                    chunk.blocks[x][surfaceY+5][z] = idLeaves; // Punta foglie
                 }
             }
         }
@@ -204,8 +255,6 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
         
         // Ordina alla pipeline di rendering di costruire la mesh finale
         registry.emplace_or_replace<fw::ChunkDirtyComponent>(entity);
-
-        processed++;
     }
 }
 

@@ -177,8 +177,10 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
         vkQueueWaitIdle(m_transferQueue);
     }
 
-    std::cout << "[DMA Transfer] Mesh da " << (sizeInBytes / 1024) << "KB sparata sul PCIe. "
-              << "VRAM Offset: " << destination.offset << ". Timeline attesa: " << m_currentTimelineValue << "\n";
+    if (sizeInBytes > 1024 * 1024) {
+        std::cout << "[DMA Transfer] Mesh da " << (sizeInBytes / 1024) << "KB sparata sul PCIe. "
+                  << "VRAM Offset: " << destination.offset << ". Timeline attesa: " << m_currentTimelineValue << "\n";
+    }
 
     // 6. Registriamo il Command Buffer per la pulizia futura
     m_pendingTransfers.push_back({m_currentTimelineValue, cmd});
