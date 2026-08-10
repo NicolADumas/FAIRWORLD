@@ -42,6 +42,7 @@ set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "Use dynamic MSVC runtime for
 FetchContent_MakeAvailable(joltphysics)
 
 file(GLOB_RECURSE CORE_SOURCES "src/*.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "src/modules/(Modeling|Sculpting|GeometryNodes)\\.cpp")
 file(GLOB IMGUI_SOURCES "third_party/imgui/*.cpp")
 
 add_executable(FairworldCore ${CORE_SOURCES} ${IMGUI_SOURCES})
