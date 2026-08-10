@@ -228,20 +228,26 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
                     }
                 }
 
-                // Se la superficie e' erba, possiamo spawnare un albero (Bioma Foresta)
-                if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == idGrass) {
+                // Se la superficie e' erba, possiamo spawnare un albero (Bioma Foresta) con probabilita' ridotta
+                if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == idGrass && (rand() % 100) < 3) {
                     // Costruisci albero
-                    chunk.blocks[x][surfaceY+1][z] = idWood;
-                    chunk.blocks[x][surfaceY+2][z] = idWood;
-                    chunk.blocks[x][surfaceY+3][z] = idWood;
-                    
-                    for (int lx = -1; lx <= 1; ++lx) {
-                        for (int lz = -1; lz <= 1; ++lz) {
-                            chunk.blocks[x+lx][surfaceY+3][z+lz] = idLeaves;
-                            chunk.blocks[x+lx][surfaceY+4][z+lz] = idLeaves;
+                    if (surfaceY + 5 < 128) {
+                        chunk.blocks[x][surfaceY+1][z] = idWood;
+                        chunk.blocks[x][surfaceY+2][z] = idWood;
+                        chunk.blocks[x][surfaceY+3][z] = idWood;
+                        
+                        for (int lx = -1; lx <= 1; ++lx) {
+                            for (int lz = -1; lz <= 1; ++lz) {
+                                int nx = x + lx;
+                                int nz = z + lz;
+                                if (nx >= 0 && nx < 16 && nz >= 0 && nz < 16) {
+                                    chunk.blocks[nx][surfaceY+3][nz] = idLeaves;
+                                    chunk.blocks[nx][surfaceY+4][nz] = idLeaves;
+                                }
+                            }
                         }
+                        chunk.blocks[x][surfaceY+5][z] = idLeaves; // Punta foglie
                     }
-                    chunk.blocks[x][surfaceY+5][z] = idLeaves; // Punta foglie
                 }
             }
         }
