@@ -3,7 +3,7 @@
 #include "SharedContext.h"
 #include "Skeleton.h"
 #include "Camera.h"
-#include "../app/GlobalAssetBrowser.h"
+#include "GlobalAssetBrowser.h"
 #include <string>
 #include <vector>
 #include <unordered_map>

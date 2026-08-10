@@ -2,7 +2,7 @@
 #include "SphericalLOD.h"
 #include "GameWorld.h"
 #include "JobSystem.h"
-#include "../app/AssetManager.h"
+#include "AssetManager.h"
 #include "MapWorldGenerator.h"
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"

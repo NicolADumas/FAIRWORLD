@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <fstream>
 #include <iostream>
-#include "../json.hpp"
+#include "json.hpp"
 
 using json = nlohmann::json;
 

@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include "../core/ecs/MaterialRegistry.h" // Per PBRMaterialDef
+#include "MaterialRegistry.h" // Per PBRMaterialDef
 
 namespace fw {
 

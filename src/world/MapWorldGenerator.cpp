@@ -1,12 +1,12 @@
 #include "pch.h"
 #include "MapWorldGenerator.h"
 #include "ForgeWorld.h"
-#include "../app/AssetManager.h"
+#include "AssetManager.h"
 #include "BlockRegistry.h"
 #include <iostream>
 #include "BiomeComponents.h"
 
-#include "../utils/PerlinNoise.h"
+#include "PerlinNoise.h"
 
 #include "GameWorld.h"
 #include <glm/gtx/quaternion.hpp>

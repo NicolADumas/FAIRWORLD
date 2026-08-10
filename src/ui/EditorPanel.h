@@ -1,7 +1,7 @@
 #pragma once
 #include "AssetManager.h"
 #include <string>
-#include "Editor/ModelEditor.h"
+#include "ModelEditor.h"
 
 // Forward declarations
 class World;

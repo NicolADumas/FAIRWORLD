@@ -4,7 +4,7 @@
 #include <vector>
 #include <memory>
 #include "Systems.h"
-#include "../app/GlobalAssetBrowser.h"
+#include "GlobalAssetBrowser.h"
 
 struct SharedContext;
 #include "GameWorld.h"

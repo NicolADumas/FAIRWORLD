@@ -1,6 +1,6 @@
 #pragma once
-#include "../app/GlobalAssetBrowser.h"
-#include "../entities/Player.h"
+#include "GlobalAssetBrowser.h"
+#include "Player.h"
 #include "State.h"
 #include "entt/entt.hpp"
 #include <vector>

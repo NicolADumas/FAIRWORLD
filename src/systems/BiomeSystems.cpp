@@ -2,7 +2,7 @@
 #include "BiomeSystems.h"
 #include "BiomeComponents.h"
 #include "ForgeComponents.h"
-#include "../utils/PerlinNoise.h"
+#include "PerlinNoise.h"
 #include <cmath>
 
 #include "BlockRegistry.h"

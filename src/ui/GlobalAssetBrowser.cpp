@@ -1,9 +1,9 @@
 #include "GlobalAssetBrowser.h"
 #include <iostream>
-#include "../entities/Player.h"
-#include "../ecs/GameWorld.h"
-#include "../ecs/TimeManager.h" // Per struct ItemType (indiretto, o InventoryItem)
-#include "../app/SharedContext.h" // Per struct InventoryItem
+#include "Player.h"
+#include "GameWorld.h"
+#include "TimeManager.h" // Per struct ItemType (indiretto, o InventoryItem)
+#include "SharedContext.h" // Per struct InventoryItem
 #include <cstring>
 
 namespace fw {

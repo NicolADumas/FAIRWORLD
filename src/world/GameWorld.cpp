@@ -14,7 +14,7 @@
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
 #include "MapWorldGenerator.h"
-#include "../app/AssetManager.h"
+#include "AssetManager.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
