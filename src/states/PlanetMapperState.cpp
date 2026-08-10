@@ -23,6 +23,15 @@ PlanetMapperState::PlanetMapperState(SharedContext* context) : AppBaseState(cont
 }
 
 PlanetMapperState::~PlanetMapperState() {
+    if (m_context) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+            m_context->forgeWorld = nullptr;
+        }
+        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
+            m_context->activeRegistry = nullptr;
+        }
+    }
+    m_previewWorld.reset();
     std::cout << "[PlanetMapperState] Distrutto.\n";
 }
 
@@ -453,6 +462,10 @@ void PlanetMapperState::CompileAndGenerate() {
     std::cout << "[PlanetMapperState] Inizio compilazione e generazione voxel dell'intero pianeta...\n";
     if (m_context && m_context->jobSystem) {
         m_context->jobSystem->WaitAll();
+    }
+    if (m_context) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) m_context->forgeWorld = nullptr;
+        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) m_context->activeRegistry = nullptr;
     }
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);

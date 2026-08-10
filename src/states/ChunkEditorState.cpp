@@ -22,6 +22,15 @@ ChunkEditorState::ChunkEditorState(SharedContext* context) : AppBaseState(contex
 }
 
 ChunkEditorState::~ChunkEditorState() {
+    if (m_context) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+            m_context->forgeWorld = nullptr;
+        }
+        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
+            m_context->activeRegistry = nullptr;
+        }
+    }
+    m_previewWorld.reset();
     std::cout << "[ChunkEditorState] Distrutto.\n";
 }
 
@@ -65,6 +74,10 @@ void ChunkEditorState::RebuildChunkPreview() {
         if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
             vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
         }
+        if (m_context) {
+            if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) m_context->forgeWorld = nullptr;
+            if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) m_context->activeRegistry = nullptr;
+        }
         m_previewWorld = std::make_unique<fw::GameWorld>();
         m_previewWorld->Initialize(m_context);
         m_context->forgeWorld = m_previewWorld.get();
@@ -84,6 +97,10 @@ void ChunkEditorState::RebuildChunkPreview() {
         vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
     }
 
+    if (m_context) {
+        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) m_context->forgeWorld = nullptr;
+        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) m_context->activeRegistry = nullptr;
+    }
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
     m_context->forgeWorld = m_previewWorld.get();
