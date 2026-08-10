@@ -14,13 +14,13 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
     
     int processed = 0;
     
-    // Fallback constants just in case blockRegistry is missing
+    // Query BlockRegistry dynamically via string IDs
     uint8_t idAir = 0;
-    uint8_t idGrass = 1;
-    uint8_t idDirt = 2;
-    uint8_t idStone = 3;
-    uint8_t idSand = 5;
-    uint8_t idWater = 6;
+    uint8_t idGrass = 255;
+    uint8_t idDirt = 255;
+    uint8_t idStone = 255;
+    uint8_t idSand = 255;
+    uint8_t idWater = 255;
     
     if (blockRegistry) {
         idAir = blockRegistry->GetBlock("fairworld:air").id;
@@ -141,20 +141,17 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
     int processed = 0;
     
     uint8_t idAir = 0;
-    uint8_t idWater = 6;
-    uint8_t idGrass = 1;
-    uint8_t idWood = 4;
-    uint8_t idLeaves = 8;
+    uint8_t idWater = 255;
+    uint8_t idGrass = 255;
+    uint8_t idWood = 255;
+    uint8_t idLeaves = 255;
     
     if (blockRegistry) {
         idAir = blockRegistry->GetBlock("fairworld:air").id;
         idWater = blockRegistry->GetBlock("fairworld:water").id;
         idGrass = blockRegistry->GetBlock("fairworld:grass").id;
-        // As requested in the plan, using fairworld:wood and fairworld:leaves
         idWood = blockRegistry->GetBlock("fairworld:wood").id;
-        if (idWood == 0) idWood = 4; // Fallback if not found in registry (e.g. they haven't created it yet)
         idLeaves = blockRegistry->GetBlock("fairworld:leaves").id;
-        if (idLeaves == 0) idLeaves = 8; // Fallback
     }
 
     std::vector<entt::entity> toProcess;

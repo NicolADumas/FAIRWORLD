@@ -87,6 +87,12 @@ public:
         listeners[typeid(EventType)].push_back(std::make_unique<EventListener<EventType>>(callback));
     }
 
+    template<typename EventType>
+    void UnsubscribeAll() {
+        std::unique_lock<std::shared_mutex> lock(listenersMutex);
+        listeners.erase(typeid(EventType));
+    }
+
     // Dispatch Immediato (Sincrono)
     template<typename EventType>
     void Dispatch(const EventType& e) {

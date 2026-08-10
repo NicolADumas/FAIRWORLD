@@ -41,21 +41,29 @@ set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "Disable warnings as errors in Jolt" FORC
 set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "Use dynamic MSVC runtime for Jolt" FORCE)
 FetchContent_MakeAvailable(joltphysics)
 
-file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/render/*.cpp")
-list(APPEND CORE_SOURCES "src/core/ecs/PortalSystem.cpp")
+file(GLOB_RECURSE CORE_SOURCES "src/*.cpp")
 file(GLOB IMGUI_SOURCES "third_party/imgui/*.cpp")
 
 add_executable(FairworldCore ${CORE_SOURCES} ${IMGUI_SOURCES})
 
-# Includiamo le directory per far trovare gli header
+# Includiamo le directory per gli 8 Pilastri Fondamentali
 target_include_directories(FairworldCore PRIVATE 
-    src/core 
-    src/core/ecs 
+    src
+    src/states
+    src/blocks
+    src/world
+    src/systems
+    src/render
+    src/hardware
+    src/simulation
+    src/modules
+    src/ui
+    src/components
+    src/core
+    src/core/app 
     src/core/memory 
     src/core/entities 
-    src/core/app 
     src/core/utils 
-    src/render 
     third_party 
     third_party/imgui 
     packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/include 

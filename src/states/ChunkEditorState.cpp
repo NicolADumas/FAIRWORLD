@@ -154,6 +154,14 @@ void ChunkEditorState::RebuildChunkPreview() {
 }
 
 void ChunkEditorState::UpdateApp(float dt) {
+    if (m_needsRebuild) {
+        m_rebuildTimer -= dt;
+        if (m_rebuildTimer <= 0.0f) {
+            m_needsRebuild = false;
+            RebuildChunkPreview();
+        }
+    }
+
     if (m_context) {
         m_context->isMapBuilderMode = true;
         m_context->isForgeMode = false;
@@ -175,10 +183,19 @@ void ChunkEditorState::UpdateApp(float dt) {
     }
 
     if (!io.WantCaptureMouse && io.MousePos.x >= w * 0.45f) {
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
             m_orbitYaw -= io.MouseDelta.x * 0.5f;
             m_orbitPitch += io.MouseDelta.y * 0.5f;
             m_orbitPitch = std::clamp(m_orbitPitch, -89.0f, 89.0f);
+        }
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            float pitchRad = glm::radians(m_orbitPitch);
+            float yawRad = glm::radians(m_orbitYaw);
+            glm::vec3 forward = glm::vec3(cos(pitchRad) * sin(yawRad), sin(pitchRad), cos(pitchRad) * cos(yawRad));
+            glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
+            glm::vec3 up = glm::normalize(glm::cross(right, forward));
+            m_orbitTarget += right * io.MouseDelta.x * 0.1f;
+            m_orbitTarget -= up * io.MouseDelta.y * 0.1f;
         }
         if (io.MouseWheel != 0.0f) {
             m_orbitDistance -= io.MouseWheel * 5.0f;
@@ -253,7 +270,7 @@ void ChunkEditorState::DrawUI() {
         t.baseAngularRadius = 0.25f;
         doc.terrainLibrary.push_back(t);
         m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
-        RebuildChunkPreview();
+        m_needsRebuild = true; m_rebuildTimer = 0.2f;
     }
     ImGui::PopStyleColor(2);
 
@@ -279,7 +296,7 @@ void ChunkEditorState::DrawUI() {
         if (m_activeTemplateIndex >= (int)doc.terrainLibrary.size()) {
             m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
         }
-        RebuildChunkPreview();
+        m_needsRebuild = true; m_rebuildTimer = 0.2f;
     }
     ImGui::PopStyleColor(3);
     if (!canDelete) ImGui::EndDisabled();
@@ -289,7 +306,7 @@ void ChunkEditorState::DrawUI() {
         bool isSelected = (m_activeTemplateIndex == i);
         if (ImGui::Selectable((std::to_string(i+1) + ". " + doc.terrainLibrary[i].name).c_str(), isSelected)) {
             m_activeTemplateIndex = i;
-            RebuildChunkPreview();
+            m_needsRebuild = true; m_rebuildTimer = 0.2f;
         }
     }
     ImGui::EndChild();
@@ -385,7 +402,7 @@ void ChunkEditorState::DrawUI() {
                         nr.surfaceBlockId = m_paintSurfaceBlock;
                         nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
                         activeTemplate.subRegions.push_back(nr);
-                        if (m_autoRebuildPreview) RebuildChunkPreview();
+                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                     }
                 }
             }
@@ -403,22 +420,22 @@ void ChunkEditorState::DrawUI() {
             int typeIdx = static_cast<int>(activeTemplate.baseType);
             if (ImGui::Combo("Bioma Base", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
                 activeTemplate.baseType = static_cast<fw::MapRegionType>(typeIdx);
-                if (m_autoRebuildPreview) RebuildChunkPreview();
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
 
             if (ImGui::SliderFloat("Frequenza Perlin (Rugosità)", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f")) {
-                if (m_autoRebuildPreview) RebuildChunkPreview();
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
             if (ImGui::SliderFloat("Modificatore Gravità", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f")) {
-                if (m_autoRebuildPreview) RebuildChunkPreview();
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
             int seed = (int)activeTemplate.seed;
             if (ImGui::InputInt("Seme Geologico (Seed)", &seed)) {
                 activeTemplate.seed = seed;
-                if (m_autoRebuildPreview) RebuildChunkPreview();
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
             if (ImGui::SliderFloat("Estensione Base (Raggio Angolare)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f")) {
-                if (m_autoRebuildPreview) RebuildChunkPreview();
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
 
             ImGui::Spacing();
@@ -429,8 +446,8 @@ void ChunkEditorState::DrawUI() {
                 oceanBase.shape = fw::RegionShape::Rectangle;
                 oceanBase.rectMin = glm::ivec2(-16, -16);
                 oceanBase.rectMax = glm::ivec2(16, 16);
-                uint8_t idWater = 6;
-                uint8_t idSand = 5;
+                uint8_t idWater = 255;
+                uint8_t idSand = 255;
                 if (m_context && m_context->blockRegistry) {
                     idWater = m_context->blockRegistry->GetBlock("fairworld:water").id;
                     idSand = m_context->blockRegistry->GetBlock("fairworld:sand").id;
@@ -438,7 +455,7 @@ void ChunkEditorState::DrawUI() {
                 oceanBase.surfaceBlockId = idWater;
                 oceanBase.subsurfaceBlockId = idSand;
                 activeTemplate.subRegions.push_back(oceanBase);
-                RebuildChunkPreview();
+                m_needsRebuild = true; m_rebuildTimer = 0.2f;
             }
         }
 
@@ -474,7 +491,7 @@ void ChunkEditorState::DrawUI() {
             ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, 10);
             if (ImGui::Button("PULISCI SOTTO-REGIONI", ImVec2(-1, 25))) {
                 activeTemplate.subRegions.clear();
-                RebuildChunkPreview();
+                m_needsRebuild = true; m_rebuildTimer = 0.2f;
             }
         }
     } else {
@@ -486,7 +503,7 @@ void ChunkEditorState::DrawUI() {
     ImGui::Checkbox("Rigenera Voxel al volo ad ogni modifica", &m_autoRebuildPreview);
     if (!m_autoRebuildPreview) {
         if (ImGui::Button("🔄 RIGENERA ANTEPRIMA VOXEL 3D ORA", ImVec2(-1, 25))) {
-            RebuildChunkPreview();
+            m_needsRebuild = true; m_rebuildTimer = 0.2f;
         }
     }
     if (ImGui::Button("💾 SALVA LIBRO CHUNK (WORLD PROJECT)", ImVec2(-1, 30))) {

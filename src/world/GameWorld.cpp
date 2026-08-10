@@ -53,6 +53,7 @@ GameWorld::GameWorld() {
 
 GameWorld::~GameWorld() {
     ClearWorld(false);
+    EventManager::Get().UnsubscribeAll<Event_BlockUpdated>();
     if (m_masterMemoryBlock) {
         free(m_masterMemoryBlock);
         m_masterMemoryBlock = nullptr;
@@ -69,10 +70,12 @@ void GameWorld::Initialize(SharedContext* context) {
         m_context->forgeWorld = this;
         m_context->activeRegistry = &m_registry;
 
-        // Registrazione per i fluidi (Event-Driven)
-        EventManager::Get().Subscribe<Event_BlockUpdated>([this](const Event_BlockUpdated& e) {
-            this->ProcessFluidUpdate(e.position.x, e.position.y, e.position.z);
-        });
+        // Registrazione per i fluidi (Event-Driven) - solo per il mondo di gioco reale
+        if (!m_context->isMapBuilderMode) {
+            EventManager::Get().Subscribe<Event_BlockUpdated>([this](const Event_BlockUpdated& e) {
+                this->ProcessFluidUpdate(e.position.x, e.position.y, e.position.z);
+            });
+        }
     }
 }
 

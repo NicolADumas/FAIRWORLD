@@ -40,4 +40,7 @@ private:
     float m_orbitYaw = 45.0f;
     float m_orbitPitch = 35.0f;
     glm::vec3 m_orbitTarget = glm::vec3(0.0f, 15.0f, 0.0f);
+    
+    bool m_needsRebuild = false;
+    float m_rebuildTimer = 0.0f;
 };

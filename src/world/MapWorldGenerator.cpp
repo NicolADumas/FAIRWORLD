@@ -29,6 +29,25 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         dimManager.SetChunkMetadata(co.coord.x, co.coord.z, co.meta);
     }
     
+    std::vector<fw::MapRegion> combinedRegions = planet.regions;
+    for (const auto& inst : planet.chunkInstances) {
+        for (const auto& tmpl : doc.terrainLibrary) {
+            if (tmpl.id == inst.templateId) {
+                int baseX = inst.gridX;
+                int baseZ = inst.gridY;
+                for (const auto& sub : tmpl.subRegions) {
+                    fw::MapRegion projected = sub;
+                    projected.faceIndex = inst.faceIndex;
+                    projected.isGridAligned = inst.isGridAligned;
+                    projected.rectMin += glm::ivec2(baseX, baseZ);
+                    projected.rectMax += glm::ivec2(baseX, baseZ);
+                    combinedRegions.push_back(projected);
+                }
+                break;
+            }
+        }
+    }
+
     auto generateChunk = [&](int global_cx, int global_cz, int local_cx, int local_cz, int face, const glm::vec3& pos, const glm::quat& rot) {
         const ChunkMetadata* meta = dimManager.GetChunkMetadata(global_cx, global_cz);
         ChunkMetadata defaultMeta;
@@ -48,7 +67,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
         
         const MapRegion* activeRegion = nullptr;
-        for (auto it = planet.regions.rbegin(); it != planet.regions.rend(); ++it) {
+        for (auto it = combinedRegions.rbegin(); it != combinedRegions.rend(); ++it) {
             if (it->faceIndex != -1 && it->faceIndex != face) continue;
 
             float test_cx = (it->faceIndex != -1) ? (float)local_cx : (float)global_cx;
@@ -102,7 +121,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             biomeData.isCustomMapped = true;
         } else {
             biomeData.type = fw::MapRegionType::Forest; 
-            uint8_t idGrass = 1, idDirt = 2;
+            uint8_t idGrass = 255, idDirt = 255;
             if (auto reg = targetWorld.GetBlockRegistry()) {
                 idGrass = reg->GetBlock("fairworld:grass").id;
                 idDirt = reg->GetBlock("fairworld:dirt").id;
