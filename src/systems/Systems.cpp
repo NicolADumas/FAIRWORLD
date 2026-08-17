@@ -7,6 +7,7 @@
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
 #include "PhysicsEngine.h"
+#include "../components/Skeleton.h"
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -57,8 +58,17 @@ namespace fw {
             glm::vec3 flatRight = glm::normalize(glm::cross(flatFront, glm::vec3(0.0f, 1.0f, 0.0f)));
 
             glm::vec3 targetVelocity(0.0f);
-            if (input.moveForward != 0.0f) targetVelocity += flatFront * input.moveForward * moveSpeed;
-            if (input.moveRight != 0.0f) targetVelocity += flatRight * input.moveRight * moveSpeed;
+            
+            auto* combatState = registry.try_get<::CombatStateComponent>(entity);
+            bool canMove = true;
+            if (combatState && (combatState->state == CombatState::CHARGING || combatState->state == CombatState::SWINGING || combatState->state == CombatState::PARRYING)) {
+                canMove = false;
+            }
+            
+            if (canMove) {
+                if (input.moveForward != 0.0f) targetVelocity += flatFront * input.moveForward * moveSpeed;
+                if (input.moveRight != 0.0f) targetVelocity += flatRight * input.moveRight * moveSpeed;
+            }
             
             // Aggiorna velocita' orizzontale
             rbComp.body.velocity.x = targetVelocity.x;
@@ -106,4 +116,170 @@ namespace fw {
             trans.prev_rotation = trans.rotation;
         }
     }
-}
+
+    void MeleeCombatSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
+        if (!context || !context->deviceManager) return;
+        using namespace entt::literals;
+        auto& input = context->deviceManager->GetInput();
+        auto* devMgr = context->deviceManager;
+        
+        bool mouseLeftHeld = devMgr->IsActionActive("ATTACK_BASE"_hs);
+        bool mouseRightHeld = devMgr->IsActionActive("PARRY"_hs);
+        
+        auto view = registry.view<::EquippedWeaponComponent, ::CombatStateComponent, ::CameraComponent, ::TransformComponent>();
+        for (auto [entity, weapon, combat, cam, trans] : view.each()) {
+            // Parata
+            if (mouseRightHeld) {
+                combat.state = CombatState::PARRYING;
+                continue;
+            }
+            
+            // Tasti direzionali mappati nel Kernel Bus Action Map
+            bool isChargingFront = mouseLeftHeld && (devMgr->IsActionActive("ATTACK_FRONT_1"_hs) || devMgr->IsActionActive("ATTACK_FRONT_2"_hs) || 
+                                                     devMgr->IsActionActive("ATTACK_FRONT_3"_hs) || devMgr->IsActionActive("ATTACK_FRONT_4"_hs) ||
+                                                     input.moveForward > 0.0f);
+                                                     
+            bool isChargingBack = mouseLeftHeld && (devMgr->IsActionActive("ATTACK_BACK_1"_hs) || devMgr->IsActionActive("ATTACK_BACK_2"_hs) || 
+                                                    devMgr->IsActionActive("ATTACK_BACK_3"_hs) || devMgr->IsActionActive("ATTACK_BACK_4"_hs) ||
+                                                    input.moveForward < 0.0f);
+            
+            if (isChargingFront || isChargingBack) {
+                if (combat.state == CombatState::IDLE) {
+                    combat.state = CombatState::CHARGING;
+                    combat.chargeTimer = 0.0f;
+                    combat.isPosterior = isChargingBack;
+                }
+                
+                if (combat.state == CombatState::CHARGING) {
+                    combat.chargeTimer += dt;
+                    combat.attackDirection = combat.isPosterior ? -cam.front : cam.front;
+                }
+            } else {
+                // Rilascio! Sweep Cast / Damage
+                if (combat.state == CombatState::CHARGING && combat.chargeTimer > 0.2f) {
+                    combat.state = CombatState::SWINGING;
+                    
+                    float damageMult = 1.0f + (combat.chargeTimer * 2.0f); // Es: 1s carica = 3x danni
+                    if (damageMult > 5.0f) damageMult = 5.0f;
+                    float finalDamage = weapon.baseDamage * damageMult;
+                    
+                    glm::vec3 rayOrigin = glm::vec3(trans.x, trans.y, trans.z);
+                    glm::vec3 rayDir = combat.attackDirection;
+                    
+                    // Se l'entità ha uno Skeleton, usiamo la posizione della Mano Destra!
+                    if (auto* skeleton = registry.try_get<fw::Skeleton>(entity)) {
+                        const auto& globals = skeleton->GetGlobalTransforms();
+                        for (size_t i = 0; i < skeleton->m_joints.size(); ++i) {
+                            if (skeleton->m_joints[i].name == "Hand_R") {
+                                // Aggiungi la posizione del player all'offset della mano
+                                glm::vec3 handOffset = glm::vec3(globals[i][3]);
+                                rayOrigin = glm::vec3(trans.x, trans.y, trans.z) + handOffset;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    std::cout << "[Combat] SWEEP " << (combat.isPosterior ? "POSTERIORE" : "FRONTALE") << "! " 
+                              << "Danno: " << finalDamage << " (Carica: " << combat.chargeTimer << "s)\n";
+                              
+                    // Segnala al motore fisico/grafico (PhysicsLabState) di eseguire il raycast/shapecast
+                    combat.hasPendingSweep = true;
+                    combat.sweepDamage = finalDamage;
+                    combat.sweepOrigin = rayOrigin;
+                    combat.sweepDirection = rayDir;
+                    combat.sweepReach = weapon.reach;
+                }
+                
+                if (combat.state == CombatState::SWINGING) {
+                    // Finita l'animazione di sweep
+                    combat.state = CombatState::IDLE;
+                    combat.chargeTimer = 0.0f;
+                } else if (combat.state == CombatState::PARRYING) {
+                    combat.state = CombatState::IDLE;
+                }
+            }
+        }
+    }
+
+    void InventorySyncSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
+        if (!context || !context->engine || !context->deviceManager) return;
+        
+        auto& player = context->engine->GetPlayer();
+        const auto& actionMap = context->deviceManager->GetActionMap();
+        
+        // Controlla gli input per selezionare lo slot dell'hotbar (0-9)
+        using namespace entt::literals;
+        for (int i = 0; i < 10; ++i) {
+            std::string actionName = "HOTBAR_" + std::to_string(i + 1);
+            if (context->deviceManager->IsActionActive(entt::hashed_string(actionName.c_str()))) {
+                player.inventory.SetActiveSlotIndex(i);
+                break;
+            }
+        }
+        
+        int currentSlot = player.inventory.GetActiveSlotIndex();
+        
+        // Se lo slot attivo è lo stesso del frame precedente, non fare nulla (costo zero a runtime!)
+        if (currentSlot == m_lastActiveSlot) return;
+        
+        // Cerca l'entità Player nell'ECS (quella con PlayerControllerComponent)
+        auto view = registry.view<::PlayerControllerComponent>();
+        if (view.empty()) return;
+        
+        entt::entity playerEntity = view.front();
+        
+        // FASE 1: CLEANUP (Rimuovi l'arma precedente se esiste)
+        if (m_lastActiveSlot != -1) {
+            registry.remove<::EquippedWeaponComponent>(playerEntity);
+            registry.remove<::CombatStateComponent>(playerEntity);
+            
+            // Distruggi l'entità mesh dell'arma se è agganciata allo scheletro
+            if (auto* skeleton = registry.try_get<fw::Skeleton>(playerEntity)) {
+                for (auto& joint : skeleton->m_joints) {
+                    if (joint.name == "Hand_R" && joint.voxelEntity != 0xFFFFFFFF) {
+                        entt::entity oldWeaponEntity = static_cast<entt::entity>(joint.voxelEntity);
+                        if (registry.valid(oldWeaponEntity)) {
+                            registry.destroy(oldWeaponEntity);
+                        }
+                        joint.voxelEntity = 0xFFFFFFFF; // Sgancia l'arma dall'osso
+                        break;
+                    }
+                }
+            }
+            std::cout << "[InventorySync] Arma disequipaggiata. (Slot " << m_lastActiveSlot << " -> " << currentSlot << ")\n";
+        }
+        
+        // FASE 2: EQUIP (Istanzia e aggancia la nuova arma se è di tipo Weapon)
+        const auto& activeItem = player.inventory.GetActiveItem();
+        
+        if (!activeItem.IsEmpty() && activeItem.type == ItemType::Weapon) {
+            // Aggiungi i componenti per sbloccare la CombatStance (Hold-to-Charge e logiche fisiche)
+            registry.emplace<::EquippedWeaponComponent>(playerEntity);
+            registry.emplace<::CombatStateComponent>(playerEntity);
+            
+            // Genera l'entità mesh dell'arma
+            auto weaponEntity = registry.create();
+            registry.emplace<NameComponent>(weaponEntity, "Sword");
+            registry.emplace<fw::TransformComponent>(weaponEntity);
+            auto& weaponMesh = registry.emplace<fw::MeshComponent>(weaponEntity);
+            weaponMesh.name = activeItem.stringId.empty() ? "sword_placeholder" : activeItem.stringId;
+            weaponMesh.type = fw::MeshType::Prefab;
+            
+            // Associa l'entità dell'arma all'osso "Hand_R" dello scheletro
+            if (auto* skeleton = registry.try_get<fw::Skeleton>(playerEntity)) {
+                for (auto& joint : skeleton->m_joints) {
+                    if (joint.name == "Hand_R") {
+                        joint.voxelEntity = static_cast<uint32_t>(weaponEntity);
+                        break;
+                    }
+                }
+            }
+            
+            std::cout << "[InventorySync] Nuova arma equipaggiata! Mesh: " << weaponMesh.name << " (Slot " << currentSlot << ")\n";
+        }
+        
+        // Aggiorna lo stato
+        m_lastActiveSlot = currentSlot;
+    }
+
+} // namespace fw

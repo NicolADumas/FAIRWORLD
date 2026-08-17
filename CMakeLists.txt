@@ -102,6 +102,12 @@ add_custom_command(TARGET FairworldCore POST_BUILD
         "${CMAKE_SOURCE_DIR}/src/render/sky_frag.spv"
         $<TARGET_FILE_DIR:FairworldCore>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/chunk_culling.spv"
+        $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/terrain_generation.spv"
+        $<TARGET_FILE_DIR:FairworldCore>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/src/render/forge_vert.spv"
         $<TARGET_FILE_DIR:FairworldCore>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

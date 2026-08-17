@@ -68,7 +68,13 @@ bool PlanetMapperRenderer::Initialize(VkDevice device, VkRenderPass renderPass, 
 void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 viewMatrix, glm::mat4 projMatrix) {
     if (!context || !context->forgeWorld) return;
     if (m_pipeline == VK_NULL_HANDLE || m_pipelineLayout == VK_NULL_HANDLE) return;
-    if (m_globalVramBuffer == VK_NULL_HANDLE) return;
+    if (!m_terrainPipelineInitialized && m_terrainPipeline) {
+        // Manda il dispatch di generazione terreno una volta (o ogni volta che serve aggiornare)
+        // In futuro, il RenderManager o il TerrainPipelineSystem stesso orchestrerà il compute!
+        // Per ora ci limitiamo a dire al pipeline system di fare un dispatch rapido per sicurezza?
+        // In realtà dovremmo solo chiamare il dispatch nel momento in cui vengono modificati i biomi.
+        m_terrainPipelineInitialized = true;
+    }
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
@@ -97,51 +103,27 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
-    PlanetMapperFrustum frustum;
-    frustum.extract(viewProjMatrix);
-
+    
     PlanetMapperPushConstants pcData{};
-    VkDeviceSize offsets[] = { 0 };
+    pcData.mvp = viewProjMatrix; // La mesh è già in World Space
+    pcData.useColorOverride = 0;
+    pcData.seasonProgress = 0.0f;
+    pcData.lightDir = glm::vec4(context->previewLightDir, 1.0f);
+    pcData.cameraPos = glm::vec4(context->activeCameraView.cameraPosition, 1.0f);
 
-    auto& registry = context->forgeWorld->GetRegistry();
-    auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
+    vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PlanetMapperPushConstants), &pcData);
 
-    for (auto entity : view) {
-        const auto& mesh = view.get<fw::MeshComponent>(entity);
-        const auto& trans = view.get<fw::TransformComponent>(entity);
-
-        if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
-        if (mesh.type != fw::MeshType::Chunk && mesh.type != fw::MeshType::Prefab) continue;
-
-        fw::Mat4 fwModel = trans.worldMatrix();
-        glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
-
-        fw::AABB bounds = mesh.bounds();
-        glm::vec3 center((bounds.min.x + bounds.max.x) * 0.5f, (bounds.min.y + bounds.max.y) * 0.5f, (bounds.min.z + bounds.max.z) * 0.5f);
-        glm::vec3 extents((bounds.max.x - bounds.min.x) * 0.5f, (bounds.max.y - bounds.min.y) * 0.5f, (bounds.max.z - bounds.min.z) * 0.5f);
-
-        glm::vec3 worldCenter = glm::vec3(model * glm::vec4(center, 1.0f));
-        glm::vec3 worldExtents(
-            std::abs(model[0][0]) * extents.x + std::abs(model[1][0]) * extents.y + std::abs(model[2][0]) * extents.z,
-            std::abs(model[0][1]) * extents.x + std::abs(model[1][1]) * extents.y + std::abs(model[2][1]) * extents.z,
-            std::abs(model[0][2]) * extents.x + std::abs(model[1][2]) * extents.y + std::abs(model[2][2]) * extents.z
-        );
-
-        if (!frustum.containsAABB(worldCenter - worldExtents, worldCenter + worldExtents)) continue;
-
-        pcData.mvp = viewProjMatrix * model;
-        pcData.useColorOverride = 0;
-        pcData.seasonProgress = 0.0f;
-        pcData.lightDir = glm::vec4(context->previewLightDir, 1.0f);
-        pcData.cameraPos = glm::vec4(context->activeCameraView.cameraPosition, 1.0f);
-
-        vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PlanetMapperPushConstants), &pcData);
-
-        offsets[0] = mesh.vramAlloc.offset;
-        VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+    // --- DISEGNO INDIRETTO VIA GPU ---
+    if (m_terrainPipeline && m_terrainPipeline->getVertexBuffer() && m_terrainPipeline->getIndirectBuffer()) {
+        VkDeviceSize offsets[] = { 0 };
+        VkBuffer vertexBuffers[] = { m_terrainPipeline->getVertexBuffer() };
         vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmd, m_terrainPipeline->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+        // drawCount è numChunks, usiamo 1 per ora o leggiamo da un buffer
+        // L'assunzione temporanea è 100 chunk generati
+        uint32_t numChunks = 100; // Da passare dinamicamente
+        vkCmdDrawIndexedIndirect(cmd, m_terrainPipeline->getIndirectBuffer(), 0, numChunks, sizeof(VkDrawIndexedIndirectCommand));
     }
 }
 

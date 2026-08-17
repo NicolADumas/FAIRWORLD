@@ -3,6 +3,8 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <vector>
+#include <memory>
+#include "../vulkan/TerrainPipelineSystem.h"
 
 struct SharedContext;
 
@@ -39,6 +41,8 @@ public:
         m_currentFrame = frame;
     }
 
+    void SetTerrainPipeline(TerrainPipelineSystem* tps) { m_terrainPipeline = tps; }
+    
 private:
     VkPipeline m_pipeline{ VK_NULL_HANDLE };
     VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
@@ -46,6 +50,8 @@ private:
     VkExtent2D m_extent{ 0, 0 };
     const std::vector<VkDescriptorSet>* m_descriptorSets{ nullptr };
     uint32_t m_currentFrame{ 0 };
+    TerrainPipelineSystem* m_terrainPipeline{ nullptr };
+    bool m_terrainPipelineInitialized{ false };
 };
 
 } // namespace fw

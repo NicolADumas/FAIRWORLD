@@ -213,4 +213,13 @@ void Inventory::GiveStarterItems() {
     addBlock(10); // LightSource
     addBlock(11); // Mushroom
     addBlock(12); // Ore
+    
+    // Aggiungi una spada di default nello slot 0 (l'Hotbar parte da qui)
+    InventoryItem sword;
+    sword.type = ItemType::Weapon;
+    sword.stringId = "assets/models/sword.vox";
+    sword.count = 1;
+    sword.maxStack = 1;
+    sword.weightKg = 1.5f;
+    AddItem(sword);
 }

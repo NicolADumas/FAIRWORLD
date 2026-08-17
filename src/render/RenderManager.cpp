@@ -95,6 +95,13 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
 
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateForgePipeline()) return false;
+    
+    // Inizializza la pipeline del terreno (Compute Shader)
+    m_terrainPipeline = std::make_unique<TerrainPipelineSystem>(GetDevice(), GetPhysicalDevice());
+    auto genCode = ReadFile("terrain_generation.spv");
+    VkShaderModule genModule = CreateShaderModule(genCode);
+    m_terrainPipeline->init(50000, 1000, genModule); 
+    vkDestroyShaderModule(GetDevice(), genModule, nullptr);
 
     // Depth buffer: creato DOPO la pipeline (ha bisogno del command pool per i layout)
     if (!CreateDepthResources()) {
@@ -1191,6 +1198,13 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
                 m_planetMapperRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
                 m_planetMapperRenderer->SetCurrentFrame(m_currentFrame);
                 m_planetMapperRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                
+                // Fallback to also draw standard MapRenderer meshes (Spherical LODs)
+                if (m_mapRenderer) {
+                    m_mapRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_mapRenderer->SetCurrentFrame(m_currentFrame);
+                    m_mapRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
             }
             else if (mode == GameMode::SolarSystem && m_solarSystemRenderer) {
                 m_solarSystemRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
@@ -2571,6 +2585,9 @@ bool RenderManager::CreateForgePipeline() {
             renderer->SetGlobalBuffer(m_memory->GetGlobalVramBuffer());
             renderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
             renderer->SetDescriptorSets(&m_memory->GetForgeDescriptorSets());
+            
+            // Se il renderer ha il metodo SetTerrainPipeline (PlanetMapperRenderer) usa SFINAE o un cast
+            // Ma auto& renderer è un unique_ptr, quindi facciamo un cast grezzo se serve o lo settiamo esplicitamente
         }
     };
 
@@ -2581,6 +2598,9 @@ bool RenderManager::CreateForgePipeline() {
     initSubRenderer(m_physicsLabRenderer);
     initSubRenderer(m_chunkEditorRenderer);
     initSubRenderer(m_planetMapperRenderer);
+    if (m_planetMapperRenderer) {
+        m_planetMapperRenderer->SetTerrainPipeline(m_terrainPipeline.get());
+    }
     initSubRenderer(m_solarSystemRenderer);
 
     return true;

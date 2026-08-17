@@ -84,3 +84,34 @@ struct PlayerControllerComponent {
 struct RigidBodyComponent {
     RigidBody body;
 };
+
+// =============================================================================
+// COMBAT COMPONENTS
+// =============================================================================
+
+struct EquippedWeaponComponent {
+    std::string weaponId = "sword";
+    float baseDamage = 10.0f;
+    float reach = 2.0f; // Lunghezza della lama per Jolt ShapeCast / Raycast
+};
+
+enum class CombatState {
+    IDLE,
+    CHARGING,
+    SWINGING,
+    PARRYING
+};
+
+struct CombatStateComponent {
+    CombatState state = CombatState::IDLE;
+    float chargeTimer = 0.0f;
+    glm::vec3 attackDirection = glm::vec3(0.0f, 0.0f, -1.0f);
+    bool isPosterior = false;
+    
+    // --- Eventi di comunicazione col Physics Engine ---
+    bool hasPendingSweep = false;
+    float sweepDamage = 0.0f;
+    glm::vec3 sweepOrigin = glm::vec3(0.0f);
+    glm::vec3 sweepDirection = glm::vec3(0.0f);
+    float sweepReach = 0.0f;
+};

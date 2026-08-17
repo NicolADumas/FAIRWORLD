@@ -20,6 +20,12 @@ namespace Layers {
     static constexpr uint16_t NUM_LAYERS = 2;
 }
 
+namespace BroadPhaseLayers {
+    static constexpr JPH::BroadPhaseLayer NON_MOVING(0);
+    static constexpr JPH::BroadPhaseLayer MOVING(1);
+    static constexpr uint32_t NUM_LAYERS(2);
+}
+
 class JoltPhysicsSystem : public System {
 public:
     static void InitializeGlobals();

@@ -56,6 +56,7 @@ public:
     const std::string& GetSaveDirectory() const { return m_chunkManager.GetSaveDirectory(); }
 
     void ClearWorld(bool saveToDisk = false);
+    void CancelJobs();
     void Update(float dt);
     
 #ifdef _MSC_VER
@@ -111,6 +112,8 @@ private:
     entt::registry m_registry;
     SharedContext* m_context = nullptr;
     PerlinNoise m_noiseGen;
+
+    std::shared_ptr<std::atomic<bool>> m_cancelToken;
 
     WorldChunkManager m_chunkManager;
     WorldStructureManager m_structureManager;

@@ -26,6 +26,7 @@
 namespace fw {
 
 GameWorld::GameWorld() {
+    m_cancelToken = std::make_shared<std::atomic<bool>>(false);
     size_t totalMemorySize = 128 * 1024 * 1024; // 128MB Arena
     m_masterMemoryBlock = malloc(totalMemorySize);
     
@@ -52,6 +53,9 @@ GameWorld::GameWorld() {
 }
 
 GameWorld::~GameWorld() {
+    if (m_cancelToken) {
+        *m_cancelToken = true;
+    }
     ClearWorld(false);
     EventManager::Get().UnsubscribeAll<Event_BlockUpdated>();
     if (m_masterMemoryBlock) {
@@ -76,6 +80,12 @@ void GameWorld::Initialize(SharedContext* context) {
                 this->ProcessFluidUpdate(e.position.x, e.position.y, e.position.z);
             });
         }
+    }
+}
+
+void GameWorld::CancelJobs() {
+    if (m_cancelToken) {
+        *m_cancelToken = true;
     }
 }
 
@@ -142,6 +152,11 @@ void GameWorld::Update(float dt) {
             }
 
             m_registry.emplace_or_replace<PBRMaterialComponent>(def.targetEntity);
+            if (!m_registry.all_of<fw::TransformComponent>(def.targetEntity)) {
+                fw::TransformComponent tc;
+                tc.location = {def.position.x, def.position.y, def.position.z};
+                m_registry.emplace<fw::TransformComponent>(def.targetEntity, tc);
+            }
             if (!def.mesh.vertices.empty()) {
                 if (!def.mesh.vramAlloc.valid && m_context && m_context->vramAllocator && m_context->dmaManager) {
                     uint32_t meshSizeBytes = (uint32_t)(def.mesh.vertices.size() * sizeof(fw::Vertex));
@@ -215,33 +230,69 @@ void GameWorld::Update(float dt) {
             *chunkData = chunk;
             SharedContext* ctx = m_context;
 
-            m_context->jobSystem->Execute([this, entity, chunkName, chunkData, ctx]() {
+            std::shared_ptr<VoxelChunkComponent> neighbors[3][3];
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    if (dx == 0 && dz == 0) continue;
+                    entt::entity ne = m_chunkManager.GetChunkEntity(chunk.cx + dx, chunk.cz + dz);
+                    if (ne != entt::null && m_registry.valid(ne) && m_registry.all_of<VoxelChunkComponent>(ne)) {
+                        neighbors[dx + 1][dz + 1] = std::make_shared<VoxelChunkComponent>(m_registry.get<VoxelChunkComponent>(ne));
+                    }
+                }
+            }
+
+            GameWorld* self = this;
+            auto cancelToken = m_cancelToken;
+            m_context->jobSystem->Execute([self, entity, chunkName, chunkData, ctx, cancelToken,
+                                           n00=neighbors[0][0], n10=neighbors[1][0], n20=neighbors[2][0],
+                                           n01=neighbors[0][1],                      n21=neighbors[2][1],
+                                           n02=neighbors[0][2], n12=neighbors[1][2], n22=neighbors[2][2]]() {
+                if (*cancelToken) return;
+
                 bool newlyGen = false;
                 if (!chunkData->isGenerated) {
                     if (ctx && ctx->isForgeMode) {
                         // In Forge Mode partiamo con un chunk vuoto
                     } else {
-                        if (!LoadChunk(chunkData->cx, chunkData->cz, *chunkData)) {
-                            GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
+                        if (!self->LoadChunk(chunkData->cx, chunkData->cz, *chunkData)) {
+                            self->GenerateChunkData(*chunkData, chunkData->cx, chunkData->cz);
                         }
                     }
                     chunkData->isGenerated = true;
                     newlyGen = true;
                 }
 
+                if (*cancelToken) return;
+
                 std::vector<Vertex> vertices;
                 vertices.reserve(16384);
 
-                auto getBlock = [&](int x, int y, int z) -> uint8_t {
+                auto getBlock = [chunkData, n00, n10, n20, n01, n21, n02, n12, n22](int x, int y, int z) -> uint8_t {
                     if (y < 0 || y >= CHUNK_HEIGHT) return 0;
                     if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
                         return chunkData->blocks[x][y][z];
                     }
-                    int wx = chunkData->cx * CHUNK_SIZE + x;
-                    int wz = chunkData->cz * CHUNK_SIZE + z;
-                    fw::BlockType neighborBlock = GetBlock(wx, y, wz);
-                    if (neighborBlock == fw::BlockType::OutOfBounds) return 0;
-                    return static_cast<uint8_t>(neighborBlock);
+                    
+                    int nX = 1;
+                    if (x < 0) { nX = 0; x += CHUNK_SIZE; }
+                    else if (x >= CHUNK_SIZE) { nX = 2; x -= CHUNK_SIZE; }
+                    
+                    int nZ = 1;
+                    if (z < 0) { nZ = 0; z += CHUNK_SIZE; }
+                    else if (z >= CHUNK_SIZE) { nZ = 2; z -= CHUNK_SIZE; }
+                    
+                    std::shared_ptr<VoxelChunkComponent> targetChunk;
+                    if (nX == 0 && nZ == 0) targetChunk = n00;
+                    else if (nX == 1 && nZ == 0) targetChunk = n10;
+                    else if (nX == 2 && nZ == 0) targetChunk = n20;
+                    else if (nX == 0 && nZ == 1) targetChunk = n01;
+                    else if (nX == 2 && nZ == 1) targetChunk = n21;
+                    else if (nX == 0 && nZ == 2) targetChunk = n02;
+                    else if (nX == 1 && nZ == 2) targetChunk = n12;
+                    else if (nX == 2 && nZ == 2) targetChunk = n22;
+                    
+                    if (targetChunk) return targetChunk->blocks[x][y][z];
+                    return 0;
                 };
 
                 auto getLight = [&](int x, int y, int z) -> float {
@@ -348,8 +399,8 @@ void GameWorld::Update(float dt) {
                 }
 
                 if (vertices.empty()) {
-                    std::lock_guard<std::mutex> lock(m_deferredMutex);
-                    m_deferredMeshes.push_back({
+                    std::lock_guard<std::mutex> lock(self->m_deferredMutex);
+                    self->m_deferredMeshes.push_back({
                         chunkName + "_Empty", 
                         {(float)chunkData->cx * 16.0f, 0.0f, (float)chunkData->cz * 16.0f}, 
                         MeshComponent{},
@@ -360,9 +411,16 @@ void GameWorld::Update(float dt) {
                     return;
                 }
 
+                if (*cancelToken) return;
+
                 uint32_t meshSizeBytes = (uint32_t)(vertices.size() * sizeof(Vertex));
                 auto vramAlloc = ctx->vramAllocator->Allocate(meshSizeBytes);
                 if (!vramAlloc.valid) return;
+
+                if (*cancelToken) {
+                    ctx->vramAllocator->Free(vramAlloc);
+                    return;
+                }
 
                 ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, vramAlloc);
 
@@ -372,8 +430,8 @@ void GameWorld::Update(float dt) {
                 newMesh.vertices = std::move(vertices);
                 newMesh.vramAlloc = vramAlloc;
 
-                std::lock_guard<std::mutex> lock(m_deferredMutex);
-                m_deferredMeshes.push_back({
+                std::lock_guard<std::mutex> lock(self->m_deferredMutex);
+                self->m_deferredMeshes.push_back({
                     chunkName + "_Ready", 
                     {(float)chunkData->cx * 16.0f, 0.0f, (float)chunkData->cz * 16.0f}, 
                     std::move(newMesh),

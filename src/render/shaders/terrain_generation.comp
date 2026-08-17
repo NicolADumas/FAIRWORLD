@@ -1,0 +1,213 @@
+#version 450
+
+layout(local_size_x = 17, local_size_y = 17) in;
+
+// --- STRUTTURE DATI ---
+
+struct ChunkData {
+    vec3 center;
+    float radius;
+    uint chunkID;
+    uint faceIndex;
+    uint gridX;
+    uint gridY;
+};
+
+struct MapRegionGPU {
+    vec3 centerNormal;
+    float angularRadius;
+    vec4 rectMinMax;
+    uint shapeType;
+    uint biomeType;
+    float perlinFreq;
+    float gravityMod;
+    uint isGridAligned;
+    uint surfaceBlock;
+    uint subsurfaceBlock;
+    uint _pad;
+};
+
+struct Vertex {
+    vec3 position;
+    vec4 color;
+    vec2 roughMetal;
+    uint materialID;
+    vec3 normal;
+    float ao;
+    float light;
+    float emissive;
+};
+
+// --- BUFFER ---
+
+layout(std430, set = 0, binding = 0) readonly buffer ChunkBuffer {
+    ChunkData chunks[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer RegionBuffer {
+    MapRegionGPU regions[];
+};
+
+layout(std430, set = 0, binding = 2) writeonly buffer VertexBuffer {
+    Vertex vertices[];
+};
+
+// Costanti di push
+layout(push_constant) uniform PushConstants {
+    uint numChunks;
+    uint numRegions;
+    float planetRadius;
+    float _pad;
+} pc;
+
+// --- SIMPLEX NOISE 3D (Ashima Arts) ---
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) { 
+  const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+  const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+
+  vec3 i  = floor(v + dot(v, C.yyy) );
+  vec3 x0 = v - i + dot(i, C.xxx) ;
+
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min( g.xyz, l.zxy );
+  vec3 i2 = max( g.xyz, l.zxy );
+
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+
+  i = mod289(i); 
+  vec4 p = permute( permute( permute( 
+             i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+
+  float n_ = 0.142857142857;
+  vec3  ns = n_ * D.wyz - D.xzx;
+
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_ );
+
+  vec4 x = x_ *ns.x + ns.yyyy;
+  vec4 y = y_ *ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+
+  vec4 b0 = vec4( x.xy, y.xy );
+  vec4 b1 = vec4( x.zw, y.zw );
+
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+
+  vec3 p0 = vec3(a0.xy,h.x);
+  vec3 p1 = vec3(a0.zw,h.y);
+  vec3 p2 = vec3(a1.xy,h.z);
+  vec3 p3 = vec3(a1.zw,h.w);
+
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+  p0 *= norm.x;
+  p1 *= norm.y;
+  p2 *= norm.z;
+  p3 *= norm.w;
+
+  vec4 m = max(0.5 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
+                                dot(p2,x2), dot(p3,x3) ) );
+}
+
+float octaveNoise(vec3 pos, float freq, int octaves) {
+    float total = 0.0;
+    float maxVal = 0.0;
+    float amp = 1.0;
+    float f = freq;
+    for(int i = 0; i < octaves; ++i) {
+        total += snoise(pos * f) * amp;
+        maxVal += amp;
+        amp *= 0.5;
+        f *= 2.0;
+    }
+    return total / maxVal;
+}
+
+// --- CALCOLO VERTICE E SDF ---
+
+void main() {
+    uint chunkIdx = gl_WorkGroupID.x;
+    if (chunkIdx >= pc.numChunks) return;
+    
+    ChunkData chunk = chunks[chunkIdx];
+    
+    // Griglia 16x16 per chunk (17x17 vertici -> mapriamo gl_LocalInvocationID)
+    uint lx = gl_LocalInvocationID.x;
+    uint ly = gl_LocalInvocationID.y;
+    
+    // Per disegnare 16 quad servono 17 vertici, qui limitiamo ai primi 17x17 (richiede workgroup 17x17, 
+    // oppure inviamo 16x16 e l'ultimo workgroup gestisce i bordi. Per semplicità qui facciamo finta che sia un plane 16x16 vertici)
+    float u = float(lx) / 16.0;
+    float v = float(ly) / 16.0;
+    
+    // Calcoliamo la posizione sferica del vertice (Semplificato)
+    // Nella realtà bisogna usare p00, p10, p01, p11 dal chunk o sferizzare un cubo.
+    vec3 normal = normalize(chunk.center + vec3((u-0.5)*chunk.radius, (v-0.5)*chunk.radius, 0.0));
+    
+    float baseHeight = pc.planetRadius;
+    float finalHeight = baseHeight;
+    uint surfaceMat = 1; // Default
+    
+    // SDF Blending Logica Parallela
+    float minSdf = 9999.0;
+    for (uint i = 0; i < pc.numRegions; ++i) {
+        MapRegionGPU r = regions[i];
+        
+        float sdf = 9999.0;
+        float blendDistance = 0.08;
+        
+        if (r.angularRadius > 0.0) { // Sferico
+            float dt = clamp(dot(normal, r.centerNormal), -1.0, 1.0);
+            float angle = acos(dt);
+            sdf = angle - r.angularRadius;
+        } else { // 2D (Approssimato su GPU)
+            sdf = 9999.0; // Da implementare logica 2D GPU
+        }
+        
+        if (sdf < blendDistance) {
+            float n = octaveNoise(normal, r.perlinFreq * 100.0, 4);
+            float regionHeight = pc.planetRadius + (n * pc.planetRadius * 0.05 * r.gravityMod);
+            
+            float influence = clamp(1.0 - (sdf / blendDistance), 0.0, 1.0);
+            influence = influence * influence * (3.0 - 2.0 * influence); // smoothstep
+            
+            finalHeight = mix(finalHeight, regionHeight, influence);
+            
+            if (sdf < minSdf) {
+                minSdf = sdf;
+                if (influence > 0.5) surfaceMat = r.surfaceBlock;
+            }
+        }
+    }
+    
+    vec3 finalPos = normal * finalHeight;
+    
+    // Scrittura Output
+    uint vertexIdx = chunkIdx * 289 + (ly * 17 + lx); // 16x16 quad requires 17x17 vertices
+    vertices[vertexIdx].position = finalPos;
+    vertices[vertexIdx].color = vec4(1.0);
+    vertices[vertexIdx].roughMetal = vec2(0.8, 0.1);
+    vertices[vertexIdx].materialID = surfaceMat;
+    vertices[vertexIdx].normal = normal; // Approssimato, il normal andrebbe ricalcolato post-displacement
+    vertices[vertexIdx].ao = 1.0;
+    vertices[vertexIdx].light = 1.0;
+    vertices[vertexIdx].emissive = 0.0;
+}

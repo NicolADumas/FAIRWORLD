@@ -93,6 +93,10 @@ void ChunkEditorState::RebuildChunkPreview() {
 
     std::cout << "[ChunkEditorState] Rigenerazione anteprima 3D Voxel per chunk corrente...\n";
 
+    if (m_previewWorld) {
+        m_previewWorld->CancelJobs();
+    }
+
     if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
         vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
     }
@@ -372,11 +376,84 @@ void ChunkEditorState::DrawUI() {
             drawList->AddRect(mapMin, mapMax, IM_COL32(100, 100, 100, 255), 0.0f, 0, 2.0f);
             
             drawList->PushClipRect(mapMin, mapMax, true);
-            for (const auto& r : activeTemplate.subRegions) {
+            
+            // Gestione Interazione Istanze
+            int hoveredInstance = -1;
+            glm::ivec2 cMouseCoord = ScreenToChunk(io.MousePos);
+            
+            if (canvasHovered) {
+                for (int i = (int)activeTemplate.subRegions.size() - 1; i >= 0; --i) {
+                    const auto& r = activeTemplate.subRegions[i];
+                    if (cMouseCoord.x >= r.rectMin.x && cMouseCoord.x <= r.rectMax.x &&
+                        cMouseCoord.y >= r.rectMin.y && cMouseCoord.y <= r.rectMax.y) {
+                        hoveredInstance = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (canvasHovered) {
+                if (io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    // Crea nuova istanza (pennello continuo)
+                    int halfB = m_brushSize / 2;
+                    glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
+                    
+                    bool canAdd = true;
+                    glm::ivec2 targetMax = glm::ivec2(cMouseCoord.x - halfB + m_brushSize - 1, cMouseCoord.y - halfB + m_brushSize - 1);
+                    for (const auto& existing : activeTemplate.subRegions) {
+                        if (existing.rectMin == targetMin &&
+                            existing.rectMax == targetMax &&
+                            existing.type == static_cast<fw::MapRegionType>(m_paintRegionType) &&
+                            existing.shape == static_cast<fw::RegionShape>(m_paintBrushShape) &&
+                            existing.surfaceBlockId == m_paintSurfaceBlock &&
+                            existing.subsurfaceBlockId == m_paintSubsurfaceBlock) {
+                            canAdd = false;
+                            break;
+                        }
+                    }
+
+                    if (canAdd) {
+                        fw::MapRegion nr;
+                        nr.isGridAligned = true;
+                        nr.rectMin = targetMin;
+                        nr.rectMax = targetMax;
+                        nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
+                        nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
+                        nr.surfaceBlockId = m_paintSurfaceBlock;
+                        nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
+                        nr.perlinFrequency = 0.005f;
+                        nr.gravityModifier = 1.0f;
+                        activeTemplate.subRegions.push_back(nr);
+                        m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
+                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    }
+                } else if (!io.KeyShift && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    // Seleziona istanza
+                    m_selectedSubRegionIndex = hoveredInstance;
+                }
+            }
+            
+            // Dragging dell'istanza selezionata
+            if (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size()) {
+                if (canvasActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !io.KeyShift && !io.KeyCtrl) {
+                    ImVec2 prevMousePos = ImVec2(io.MousePos.x - io.MouseDelta.x, io.MousePos.y - io.MouseDelta.y);
+                    glm::ivec2 deltaChunk = ScreenToChunk(io.MousePos) - ScreenToChunk(prevMousePos);
+                    if (deltaChunk.x != 0 || deltaChunk.y != 0) {
+                        activeTemplate.subRegions[m_selectedSubRegionIndex].rectMin += deltaChunk;
+                        activeTemplate.subRegions[m_selectedSubRegionIndex].rectMax += deltaChunk;
+                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.5f; }
+                    }
+                }
+            }
+            
+            // Disegno Istanze
+            for (int i = 0; i < (int)activeTemplate.subRegions.size(); ++i) {
+                const auto& r = activeTemplate.subRegions[i];
                 ImVec2 pMin = ChunkToScreen(r.rectMin.x, r.rectMin.y);
                 ImVec2 pMax = ChunkToScreen(r.rectMax.x + 1, r.rectMax.y + 1);
                 if (pMin.x > pMax.x) std::swap(pMin.x, pMax.x);
                 if (pMin.y > pMax.y) std::swap(pMin.y, pMax.y);
+                
                 ImU32 fillColor = IM_COL32(150, 150, 150, 200);
                 switch (r.type) {
                     case fw::MapRegionType::Forest:  fillColor = IM_COL32(40,  180, 40,  235); break;
@@ -386,44 +463,77 @@ void ChunkEditorState::DrawUI() {
                     case fw::MapRegionType::Tundra:  fillColor = IM_COL32(200, 240, 255, 235); break;
                     default: break;
                 }
-                drawList->AddRectFilled(pMin, pMax, fillColor);
+                
+                ImU32 outlineColor = (i == m_selectedSubRegionIndex) ? IM_COL32(255, 255, 0, 255) : 
+                                     (i == hoveredInstance) ? IM_COL32(200, 200, 200, 255) : IM_COL32(0,0,0,0);
+                                     
+                if (r.shape == fw::RegionShape::Circle) {
+                    ImVec2 center((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
+                    float radius = std::min(pMax.x - pMin.x, pMax.y - pMin.y) * 0.5f;
+                    drawList->AddCircleFilled(center, radius, fillColor);
+                    if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddCircle(center, radius, outlineColor, 0, 2.0f);
+                } else if (r.shape == fw::RegionShape::Rhombus) {
+                    ImVec2 center((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
+                    ImVec2 points[4] = {
+                        ImVec2(center.x, pMin.y), ImVec2(pMax.x, center.y),
+                        ImVec2(center.x, pMax.y), ImVec2(pMin.x, center.y)
+                    };
+                    drawList->AddConvexPolyFilled(points, 4, fillColor);
+                    if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddPolyline(points, 4, outlineColor, ImDrawFlags_Closed, 2.0f);
+                } else {
+                    drawList->AddRectFilled(pMin, pMax, fillColor);
+                    if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddRect(pMin, pMax, outlineColor, 0.0f, 0, 2.0f);
+                }
             }
             drawList->PopClipRect();
             
-            if (canvasHovered) {
-                glm::ivec2 cCoord = ScreenToChunk(io.MousePos);
+            if (canvasHovered && io.KeyShift) {
                 int halfB = m_brushSize / 2;
-                int bMinX = cCoord.x - halfB;
-                int bMinZ = cCoord.y - halfB;
-                int bMaxX = cCoord.x - halfB + m_brushSize;
-                int bMaxZ = cCoord.y - halfB + m_brushSize;
-                
-                drawList->AddRect(ChunkToScreen(bMinX, bMinZ), ChunkToScreen(bMaxX, bMaxZ), IM_COL32(255, 255, 0, 255));
-                
-                if (!io.KeyCtrl && ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                    bool isDuplicate = false;
-                    if (!activeTemplate.subRegions.empty()) {
-                        const auto& lastR = activeTemplate.subRegions.back();
-                        if (lastR.rectMin == glm::ivec2(bMinX, bMinZ) &&
-                            lastR.rectMax == glm::ivec2(bMaxX - 1, bMaxZ - 1) &&
-                            lastR.type == static_cast<fw::MapRegionType>(m_paintRegionType)) {
-                            isDuplicate = true;
-                        }
-                    }
-                    if (!isDuplicate) {
-                        fw::MapRegion nr;
-                        nr.rectMin = glm::ivec2(bMinX, bMinZ);
-                        nr.rectMax = glm::ivec2(bMaxX - 1, bMaxZ - 1);
-                        nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
-                        nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
-                        nr.surfaceBlockId = m_paintSurfaceBlock;
-                        nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
-                        activeTemplate.subRegions.push_back(nr);
-                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
-                    }
-                }
+                int bMinX = cMouseCoord.x - halfB;
+                int bMinZ = cMouseCoord.y - halfB;
+                int bMaxX = cMouseCoord.x - halfB + m_brushSize;
+                int bMaxZ = cMouseCoord.y - halfB + m_brushSize;
+                drawList->AddRect(ChunkToScreen(bMinX, bMinZ), ChunkToScreen(bMaxX, bMaxZ), IM_COL32(255, 255, 0, 150), 0, 0, 2.0f);
             }
+            
+            ImGui::TextDisabled("Click sx: Seleziona | Shift+Click sx: Crea Istanza | Trascina: Sposta");
             ImGui::EndChild();
+        }
+
+        if (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size()) {
+            if (ImGui::CollapsingHeader("Proprietà Istanza Selezionata", ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto& inst = activeTemplate.subRegions[m_selectedSubRegionIndex];
+                
+                const char* shapeNames[] = { "Rectangle", "Circle", "Rhombus", "Star" };
+                int shapeIdx = static_cast<int>(inst.shape);
+                if (ImGui::Combo("Forma", &shapeIdx, shapeNames, IM_ARRAYSIZE(shapeNames))) {
+                    inst.shape = static_cast<fw::RegionShape>(shapeIdx);
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                }
+                
+                const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+                int typeIdx = static_cast<int>(inst.type);
+                if (ImGui::Combo("Bioma Istanza", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
+                    inst.type = static_cast<fw::MapRegionType>(typeIdx);
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                }
+                
+                if (ImGui::SliderFloat("Frequenza Perlin", &inst.perlinFrequency, 0.001f, 0.1f, "%.4f")) {
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                }
+                
+                if (ImGui::SliderFloat("Gravità (Altezza)", &inst.gravityModifier, 0.1f, 5.0f, "%.2f")) {
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                }
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+                if (ImGui::Button("Elimina Istanza", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                    activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + m_selectedSubRegionIndex);
+                    m_selectedSubRegionIndex = -1;
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                }
+                ImGui::PopStyleColor();
+            }
         }
 
         if (ImGui::CollapsingHeader("Proprietà Geologiche e di Bioma", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -461,6 +571,7 @@ void ChunkEditorState::DrawUI() {
                 fw::MapRegion oceanBase;
                 oceanBase.type = fw::MapRegionType::Ocean;
                 oceanBase.shape = fw::RegionShape::Rectangle;
+                oceanBase.isGridAligned = true;
                 oceanBase.rectMin = glm::ivec2(-16, -16);
                 oceanBase.rectMax = glm::ivec2(16, 16);
                 uint8_t idWater = 255;

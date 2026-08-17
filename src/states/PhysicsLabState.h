@@ -63,6 +63,22 @@ private:
     int m_renderMode = 1; // 0=Mesh, 1=Skeleton X-Ray, 2=Physics Debug, 3=Textured
     int m_gizmoMode = 0;  // 0=Off, 1=Translate, 2=Rotate
 
+    // --- Metriche di Combattimento (Arena) ---
+    struct DamageEvent {
+        glm::vec3 position;
+        float damage;
+        float timer;
+        float maxTime = 1.0f;
+        glm::vec3 randomOffset;
+    };
+    std::vector<DamageEvent> m_damageEvents;
+    float m_dpsAccumulator = 0.0f;
+    float m_dpsTimer = 0.0f;
+    float m_currentDPS = 0.0f;
+    
+    void SpawnDamageNumber(glm::vec3 worldPos, float damage);
+    void DrawCombatMetrics();
+
     // Colori per giunto (color picker)
     std::unordered_map<int, glm::vec4> m_jointColors;
 
@@ -70,8 +86,11 @@ private:
     void StartSimulation();
     void StopSimulation();
     
-    // Fisica Jolt locale al Lab
+    fw::GameWorld* m_labWorld = nullptr;
     fw::JoltPhysicsSystem* m_joltSystem = nullptr;
+    entt::entity m_playerEntity = entt::null;
+
+    uint32_t m_floorBodyID = 0;
     std::vector<uint32_t> m_joltBodies;      // Track body IDs (uint32_t to avoid full JPH headers)
     std::vector<void*> m_joltConstraints;   // Track constraints (void* to avoid full JPH headers)
     
@@ -102,5 +121,4 @@ private:
     
     // Mondo
     fw::GameWorld* m_originalWorld = nullptr;
-    fw::GameWorld* m_labWorld = nullptr;
 };

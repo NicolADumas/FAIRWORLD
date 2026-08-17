@@ -21,6 +21,7 @@
 #include "apps/ChunkEditorRenderer.h"
 #include "apps/PlanetMapperRenderer.h"
 #include "apps/SolarSystemRenderer.h"
+#include "vulkan/TerrainPipelineSystem.h"
 
 class XrManager;
 struct BlockDef;
@@ -167,6 +168,7 @@ private:
     std::unique_ptr<fw::ChunkEditorRenderer> m_chunkEditorRenderer;
     std::unique_ptr<fw::PlanetMapperRenderer> m_planetMapperRenderer;
     std::unique_ptr<fw::SolarSystemRenderer> m_solarSystemRenderer;
+    std::unique_ptr<TerrainPipelineSystem> m_terrainPipeline;
 
     // --- FORGE DESCRIPTOR SETS ---
     VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };

@@ -16,7 +16,8 @@ namespace fw {
         
         // --- TASTIERA ---
         KEY_W, KEY_A, KEY_S, KEY_D, 
-        KEY_E, KEY_Q, KEY_F, KEY_C, KEY_H, KEY_J, KEY_I,
+        KEY_E, KEY_Q, KEY_F, KEY_C, KEY_H, KEY_J, KEY_I, KEY_R,
+        KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0,
         KEY_SPACE, KEY_ESC, KEY_ENTER,
         KEY_SHIFT, KEY_CTRL, KEY_ALT, // Modificatori
 

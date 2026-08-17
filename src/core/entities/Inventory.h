@@ -97,4 +97,16 @@ public:
         float capacity = GetCarryCapacityKg(strAttribute);
         return capacity > 0.0f ? GetInventoryWeightKg() / capacity : 0.0f;
     }
+    
+    // --- HOTBAR ---
+    int GetActiveSlotIndex() const { return m_activeSlotIndex; }
+    void SetActiveSlotIndex(int index) { 
+        if (index >= 0 && index < HOTBAR_SIZE) {
+            m_activeSlotIndex = index;
+        }
+    }
+    const InventoryItem& GetActiveItem() const { return slots[m_activeSlotIndex]; }
+
+private:
+    int m_activeSlotIndex = 0;
 };

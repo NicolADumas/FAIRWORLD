@@ -13,6 +13,7 @@
 #include "PlanetMapperState.h"
 #include "ChunkEditorState.h"
 #include "BlockMakerState.h"
+#include "SolarSystemState.h"
 #include "WorldProjectManager.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
@@ -62,22 +63,24 @@ int main() {
     StartAIServer();
 
     std::cout << "\nSeleziona la modalita' di avvio:\n";
-    std::cout << "1. HUB (Hub Principale)\n";
-    std::cout << "2. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)\n";
-    std::cout << "3. FORGE (Editor Strutture e Minivoxel)\n";
-    std::cout << "4. BLOCK MAKER (Editor Blocchi e Materiali PBR)\n";
-    std::cout << "5. MAP EDITOR (Planet Mapper)\n";
-    std::cout << "6. LAB (Test Fisica e Materiali)\n";
-    std::cout << "Scelta [1-6] (predefinito 1): ";
+    std::cout << "0. HUB (Hub Principale)\n";
+    std::cout << "1. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)\n";
+    std::cout << "2. LA FORGE (Editor Strutture e Minivoxel)\n";
+    std::cout << "3. PHYSICS LAB (Test Fisica e Materiali)\n";
+    std::cout << "4. CHUNK EDITOR (Modellazione Terreni 2D/3D)\n";
+    std::cout << "5. PLANET MAPPER (Configura Globo & Sistema)\n";
+    std::cout << "6. BLOCK MAKER (Editor Blocchi e Materiali PBR)\n";
+    std::cout << "7. SOLAR SYSTEM (Mappa Spaziale)\n";
+    std::cout << "Scelta [0-7] (predefinito 0): ";
     
-    int choice = 1;
+    int choice = 0;
     std::string input;
     std::getline(std::cin, input);
     if (!input.empty()) {
         try {
             choice = std::stoi(input);
         } catch (...) {
-            choice = 1;
+            choice = 0;
         }
     }
 
@@ -126,28 +129,36 @@ int main() {
     engine.SetSharedContext(&context);
 
     // 4. Bootstrap: Avvia lo stato selezionato con tutti i servizi connessi e sincronizzati
-    if (choice == 2) {
+    if (choice == 1) {
         stateManager.ChangeState(std::make_unique<PlayState>(&context));
         engine.SetGameMode(GameMode::Play);
         std::cout << "[SYSTEM] Avviato PlayState...\n";
-    } else if (choice == 3) {
+    } else if (choice == 2) {
         stateManager.ChangeState(std::make_unique<ForgeState>(&context));
         engine.SetGameMode(GameMode::Dev);
         std::cout << "[SYSTEM] Avviato ForgeState...\n";
-    } else if (choice == 4) {
-        stateManager.ChangeState(std::make_unique<BlockMakerState>(&context));
-        engine.SetGameMode(GameMode::Dev);
-        std::cout << "[SYSTEM] Avviato BlockMakerState...\n";
-    } else if (choice == 5) {
-        stateManager.ChangeState(std::make_unique<PlanetMapperState>(&context));
-        engine.SetGameMode(GameMode::Map);
-        std::cout << "[SYSTEM] Avviato PlanetMapperState...\n";
-    } else if (choice == 6) {
+    } else if (choice == 3) {
         stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
         engine.SetGameMode(GameMode::PhysicsLab);
         std::cout << "[SYSTEM] Avviato PhysicsLabState...\n";
+    } else if (choice == 4) {
+        stateManager.ChangeState(std::make_unique<ChunkEditorState>(&context));
+        engine.SetGameMode(GameMode::ChunkEditor);
+        std::cout << "[SYSTEM] Avviato ChunkEditorState...\n";
+    } else if (choice == 5) {
+        stateManager.ChangeState(std::make_unique<PlanetMapperState>(&context));
+        engine.SetGameMode(GameMode::PlanetMapper);
+        std::cout << "[SYSTEM] Avviato PlanetMapperState...\n";
+    } else if (choice == 6) {
+        stateManager.ChangeState(std::make_unique<BlockMakerState>(&context));
+        engine.SetGameMode(GameMode::BlockMaker);
+        std::cout << "[SYSTEM] Avviato BlockMakerState...\n";
+    } else if (choice == 7) {
+        stateManager.ChangeState(std::make_unique<SolarSystemState>(&context));
+        engine.SetGameMode(GameMode::SolarSystem);
+        std::cout << "[SYSTEM] Avviato SolarSystemState...\n";
     } else {
-        // Fallback default: HUB (Scelta 1 o non valida)
+        // Fallback default: HUB (Scelta 0 o non valida)
         stateManager.ChangeState(std::make_unique<HubState>(&context));
         engine.SetGameMode(GameMode::Hub);
         std::cout << "[SYSTEM] Avviato HubState...\n";

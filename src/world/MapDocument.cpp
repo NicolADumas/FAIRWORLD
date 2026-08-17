@@ -193,6 +193,19 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 planet.minZ = pj.value("minZ", -6);
                 planet.maxZ = pj.value("maxZ", 6);
                 
+                if (pj.contains("chunkOverrides") && pj["chunkOverrides"].is_array()) {
+                    for (const auto& cj : pj["chunkOverrides"]) {
+                        ChunkDataExport c;
+                        c.coord.x = cj.value("x", 0);
+                        c.coord.z = cj.value("z", 0);
+                        c.meta.type = static_cast<ChunkType>(cj.value("type", 0));
+                        c.meta.biomeID = cj.value("biomeID", 1);
+                        c.meta.canSpawnMobs = cj.value("canSpawnMobs", true);
+                        c.meta.isDestructible = cj.value("isDestructible", true);
+                        planet.chunkOverrides.push_back(c);
+                    }
+                }
+                
                 if (pj.contains("regions") && pj["regions"].is_array()) {
                     for (const auto& rj : pj["regions"]) {
                         MapRegion region;

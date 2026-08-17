@@ -56,59 +56,90 @@ void BiomeTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
                 float worldX = cx * 16.0f + x;
                 float worldZ = cz * 16.0f + z;
 
-                // Calcolo rumore di base (Altitudine)
-                // Usiamo un rumore a frequenza media per le colline
-                float terrainVal = terrainNoiseGen.octaveNoise(worldX * 0.008f, 0.0, worldZ * 0.008f, 4, 0.5);
-                // Usiamo un rumore a frequenza bassissima per le montagne/continenti
-                float continentVal = terrainNoiseGen.octaveNoise(worldX * 0.002f, 0.0, worldZ * 0.002f, 3, 0.4);
-
-                // Calcolo Temperatura e Umidità (Mappe a frequenza molto bassa)
-                float tempVal = tempNoiseGen.octaveNoise(worldX * 0.003f, 0.0, worldZ * 0.003f, 3, 0.5);
-                float humVal = humNoiseGen.octaveNoise(worldX * 0.004f, 0.0, worldZ * 0.004f, 3, 0.5);
-
                 // Altitudine base (fluttuante in modo continuo e morbido!)
-                float baseHeight = 25.0f + (continentVal * 40.0f) + (terrainVal * 15.0f);
-                int height = (int)baseHeight;
-
-                // Determinazione del Bioma (Whittaker diagram semplificato)
-                fw::MapRegionType colBiome = biome.type;
-                uint8_t surfaceBlock = biome.surfaceBlockId;
-                uint8_t subsurfaceBlock = biome.subsurfaceBlockId;
-
-                if (!biome.isCustomMapped) {
-                    if (baseHeight <= 16.0f) {
-                        // Sotto o al livello del mare: Oceano / Spiaggia
-                        colBiome = fw::MapRegionType::Ocean;
-                        surfaceBlock = idSand;
-                        subsurfaceBlock = idSand;
+                float terrainVal = terrainNoiseGen.octaveNoise(worldX * biome.baseRegion.perlinFrequency, 0.0, worldZ * biome.baseRegion.perlinFrequency, 4, 0.5);
+                float baseHeight = 25.0f + (terrainVal * 25.0f * biome.baseRegion.gravityModifier);
+                
+                if (biome.baseRegion.type == fw::MapRegionType::Ocean) {
+                    baseHeight = 8.0f + (terrainVal * 5.0f); // Oceano profondo
+                }
+                
+                float finalHeight = baseHeight;
+                uint8_t surfaceBlock = biome.baseRegion.surfaceBlockId;
+                uint8_t subsurfaceBlock = biome.baseRegion.subsurfaceBlockId;
+                fw::MapRegionType colBiome = biome.baseRegion.type;
+                float minSdf = 9999.0f;
+                
+                // --- SDF BLENDING IBRIDO ---
+                // Calcoliamo la posizione sferica "approssimativa" della colonna (x, z) 
+                // basandoci su chunkCenterWorld (che e' sulla superficie della sfera)
+                glm::vec3 colNormal = glm::normalize(biome.chunkCenterWorld);
+                // NOTA: Per un chunk flat 16x16 l'errore angolare sui bordi e' minuscolo,
+                // ma per precisione assoluta si potrebbe sfalsare colNormal con x e z. 
+                // Usiamo chunkCenterWorld per semplicita' architetturale e consistenza col LOD.
+                
+                for (const auto& r : biome.overlappingRegions) {
+                    float sdf = 0.0f;
+                    float blendDistance = 0.0f;
+                    
+                    if (biome.planetRadius > 0.0f && r.angularRadius > 0.0f) {
+                        float pitch = glm::radians(r.eulerAngles.x);
+                        float yaw = glm::radians(r.eulerAngles.y);
+                        glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
+                        
+                        float dotProduct = glm::dot(colNormal, rCenterNormal);
+                        dotProduct = std::clamp(dotProduct, -1.0f, 1.0f);
+                        float angle = acos(dotProduct); 
+                        
+                        sdf = angle - r.angularRadius; // SDF sferico
+                        blendDistance = 0.08f;
                     } else {
-                        if (tempVal > 0.6f) {
-                            if (humVal < 0.4f) {
-                                colBiome = fw::MapRegionType::Desert;
-                                surfaceBlock = idSand;
-                                subsurfaceBlock = idSand;
-                            } else {
-                                colBiome = fw::MapRegionType::Forest;
-                                surfaceBlock = idGrass;
-                                subsurfaceBlock = idDirt;
-                            }
-                        } else if (tempVal < 0.35f) {
-                            colBiome = fw::MapRegionType::Tundra;
-                            surfaceBlock = idSand; // Sand/Snow
-                            subsurfaceBlock = idStone;
+                        // SDF 2D su griglia piana
+                        // Convertiamo rectMin e rectMax in coordinate mondo
+                        float rMinX = r.rectMin.x * 16.0f;
+                        float rMinZ = r.rectMin.y * 16.0f;
+                        float rMaxX = (r.rectMax.x + 1) * 16.0f;
+                        float rMaxZ = (r.rectMax.y + 1) * 16.0f;
+                        
+                        float centerX = (rMinX + rMaxX) * 0.5f;
+                        float centerZ = (rMinZ + rMaxZ) * 0.5f;
+                        float halfW = (rMaxX - rMinX) * 0.5f;
+                        float halfH = (rMaxZ - rMinZ) * 0.5f;
+                        
+                        if (r.shape == fw::RegionShape::Circle) {
+                            float dist = glm::distance(glm::vec2(worldX, worldZ), glm::vec2(centerX, centerZ));
+                            sdf = dist - halfW; // assumiamo halfW = halfH per il cerchio
                         } else {
-                            colBiome = fw::MapRegionType::Forest;
-                            surfaceBlock = idGrass;
-                            subsurfaceBlock = idDirt;
+                            // Rectangle SDF
+                            glm::vec2 d = glm::abs(glm::vec2(worldX - centerX, worldZ - centerZ)) - glm::vec2(halfW, halfH);
+                            sdf = glm::length(glm::max(d, glm::vec2(0.0f))) + std::min(std::max(d.x, d.y), 0.0f);
+                        }
+                        
+                        blendDistance = 12.0f; // 12 blocchi di sfumatura
+                    }
+                    
+                    if (sdf < blendDistance) {
+                        float rTerrainVal = terrainNoiseGen.octaveNoise(worldX * r.perlinFrequency, 0.0, worldZ * r.perlinFrequency, 4, 0.5);
+                        float rHeight = 25.0f + (rTerrainVal * 25.0f * r.gravityModifier);
+                        
+                        if (r.type == fw::MapRegionType::Ocean) {
+                            rHeight = 8.0f + (rTerrainVal * 5.0f); // Oceano profondo
+                        }
+                        
+                        // Blending tramite smoothstep
+                        float influence = std::clamp(1.0f - (sdf / blendDistance), 0.0f, 1.0f);
+                        influence = influence * influence * (3.0f - 2.0f * influence);
+                        finalHeight = glm::mix(finalHeight, rHeight, influence);
+                        
+                        if (influence > 0.5f) {
+                            surfaceBlock = r.surfaceBlockId;
+                            subsurfaceBlock = r.subsurfaceBlockId;
+                            colBiome = r.type;
                         }
                     }
-                } else {
-                    // Se la regione e' specificamente dipinta come Oceano, forza l'altezza ad essere sotto il livello del mare
-                    if (colBiome == fw::MapRegionType::Ocean) {
-                        baseHeight = 10.0f + (terrainVal * 5.0f); // Abbassa il fondale oceanico
-                        height = (int)baseHeight;
-                    }
                 }
+                
+                int height = (int)finalHeight;
                 
                 // Popolamento blocchi
                 for (int y = 0; y < 128; ++y) {
@@ -216,42 +247,6 @@ void BiomeDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFram
                 }
             }
         }
-
-        // Decorazioni extra
-        for (int x = 0; x < 16; ++x) {
-            for (int z = 0; z < 16; ++z) {
-                int surfaceY = 0;
-                for (int y = 127; y >= 0; --y) {
-                    if (chunk.blocks[x][y][z] != idAir && chunk.blocks[x][y][z] != idWater) {
-                        surfaceY = y;
-                        break;
-                    }
-                }
-
-                // Se la superficie e' erba, possiamo spawnare un albero (Bioma Foresta) con probabilita' ridotta
-                if (surfaceY > 16 && surfaceY < 120 && chunk.blocks[x][surfaceY][z] == idGrass && (rand() % 100) < 3) {
-                    // Costruisci albero
-                    if (surfaceY + 5 < 128) {
-                        chunk.blocks[x][surfaceY+1][z] = idWood;
-                        chunk.blocks[x][surfaceY+2][z] = idWood;
-                        chunk.blocks[x][surfaceY+3][z] = idWood;
-                        
-                        for (int lx = -1; lx <= 1; ++lx) {
-                            for (int lz = -1; lz <= 1; ++lz) {
-                                int nx = x + lx;
-                                int nz = z + lz;
-                                if (nx >= 0 && nx < 16 && nz >= 0 && nz < 16) {
-                                    chunk.blocks[nx][surfaceY+3][nz] = idLeaves;
-                                    chunk.blocks[nx][surfaceY+4][nz] = idLeaves;
-                                }
-                            }
-                        }
-                        chunk.blocks[x][surfaceY+5][z] = idLeaves; // Punta foglie
-                    }
-                }
-            }
-        }
-
         // Il chunk e' completamente pronto!
         chunk.isGenerated = true; // Flag per renderlo "ufficiale" per ForgeWorld
         registry.remove<DecoratorGenTag>(entity);

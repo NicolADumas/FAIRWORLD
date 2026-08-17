@@ -20,6 +20,8 @@
 #include "HubState.h"
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 
 PhysicsLabState::PhysicsLabState(SharedContext* context) : m_context(context) {
 }
@@ -65,6 +67,62 @@ bool PhysicsLabState::Init() {
     m_orbitPitch = 30.0f;
     m_assetBrowser.Initialize();
     
+    // --- Creazione Mesh Holodeck (Pavimento Piatto) ---
+    auto floorEntity = m_labWorld->GetRegistry().create();
+    auto& floorTrans = m_labWorld->GetRegistry().emplace<fw::TransformComponent>(floorEntity);
+    floorTrans.location = { 0.0f, 0.0f, 0.0f };
+    
+    // --- Creazione Entità Player / Telecamera per testare il combat ---
+    m_playerEntity = m_labWorld->GetRegistry().create();
+    m_labWorld->GetRegistry().emplace<fw::TransformComponent>(m_playerEntity);
+    m_labWorld->GetRegistry().emplace<fw::CameraComponent>(m_playerEntity);
+    m_labWorld->GetRegistry().emplace<EquippedWeaponComponent>(m_playerEntity);
+    m_labWorld->GetRegistry().emplace<CombatStateComponent>(m_playerEntity);
+    
+    // Genera lo scheletro fisico del Player
+    auto& playerSkeleton = m_labWorld->GetRegistry().emplace<fw::Skeleton>(m_playerEntity);
+    fw::Skeleton::GenerateBiped(playerSkeleton);
+    
+    auto& floorMesh = m_labWorld->GetRegistry().emplace<fw::MeshComponent>(floorEntity);
+    floorMesh.name = "Holodeck Floor";
+    floorMesh.type = fw::MeshType::Prefab;
+    
+    // Genera un quad gigantesco (es. 200x200m)
+    float halfSize = 100.0f;
+    // Top-Left
+    fw::Vertex v0{}; v0.position = {-halfSize, 0.0f, -halfSize}; v0.normal = {0.0f, 1.0f, 0.0f}; v0.color = {0.2f, 0.2f, 0.2f, 1.0f}; v0.materialID = 0;
+    // Top-Right
+    fw::Vertex v1{}; v1.position = { halfSize, 0.0f, -halfSize}; v1.normal = {0.0f, 1.0f, 0.0f}; v1.color = {0.2f, 0.2f, 0.2f, 1.0f}; v1.materialID = 0;
+    // Bottom-Right
+    fw::Vertex v2{}; v2.position = { halfSize, 0.0f,  halfSize}; v2.normal = {0.0f, 1.0f, 0.0f}; v2.color = {0.2f, 0.2f, 0.2f, 1.0f}; v2.materialID = 0;
+    // Bottom-Left
+    fw::Vertex v3{}; v3.position = {-halfSize, 0.0f,  halfSize}; v3.normal = {0.0f, 1.0f, 0.0f}; v3.color = {0.2f, 0.2f, 0.2f, 1.0f}; v3.materialID = 0;
+    
+    floorMesh.vertices = {v0, v1, v2, v3};
+    floorMesh.faces.push_back({{0, 3, 1}, v0.normal, 0});
+    floorMesh.faces.push_back({{1, 3, 2}, v0.normal, 0});
+    
+    // Passa la palla al RenderManager o aspetta che VramSlabAllocator la carichi.
+    // L'allocazione reale in VRAM viene gestita nel tick successivo se c'è un Job o possiamo chiamare l'upload a mano.
+    if (m_context->engine && m_context->engine->GetRenderManager()) {
+        // Carichiamo un proxy index buffer/vertex buffer
+        std::vector<uint32_t> indices = {0, 3, 1, 1, 3, 2};
+        // TODO: Inviare la mesh in VRAM. Al momento l'engine ha sistemi che polleranno la mesh e la invieranno in automatico?
+        // In ChunkEditorState la mesh è allocata nel frame stesso, assumiamo sia gestito dal sistema MeshUpload!
+    }
+    
+    // --- Creazione Pavimento Fisico (Jolt) ---
+    auto* physSys = m_joltSystem->GetSystem();
+    auto& bodyInterface = physSys->GetBodyInterface();
+    
+    JPH::BoxShapeSettings floorShapeSettings(JPH::Vec3(100.0f, 1.0f, 100.0f));
+    JPH::ShapeSettings::ShapeResult floorShapeResult = floorShapeSettings.Create();
+    JPH::ShapeRefC floorShape = floorShapeResult.Get();
+    JPH::BodyCreationSettings floorSettings(floorShape, JPH::RVec3(0.0, -1.0, 0.0), JPH::Quat::sIdentity(), JPH::EMotionType::Static, fw::Layers::NON_MOVING);
+    JPH::Body* floor = bodyInterface.CreateBody(floorSettings);
+    bodyInterface.AddBody(floor->GetID(), JPH::EActivation::DontActivate);
+    m_floorBodyID = floor->GetID().GetIndexAndSequenceNumber();
+    
     return true;
 }
 
@@ -90,15 +148,6 @@ void PhysicsLabState::StartSimulation() {
     
     auto* physSys = m_joltSystem->GetSystem();
     auto& bodyInterface = physSys->GetBodyInterface();
-    
-    // Create static floor
-    JPH::BoxShapeSettings floorShapeSettings(JPH::Vec3(100.0f, 1.0f, 100.0f));
-    JPH::ShapeSettings::ShapeResult floorShapeResult = floorShapeSettings.Create();
-    JPH::ShapeRefC floorShape = floorShapeResult.Get();
-    JPH::BodyCreationSettings floorSettings(floorShape, JPH::RVec3(0.0, -1.0, 0.0), JPH::Quat::sIdentity(), JPH::EMotionType::Static, fw::Layers::NON_MOVING);
-    JPH::Body* floor = bodyInterface.CreateBody(floorSettings);
-    bodyInterface.AddBody(floor->GetID(), JPH::EActivation::DontActivate);
-    m_joltBodies.push_back(floor->GetID().GetIndexAndSequenceNumber());
     
     // Create dynamic bodies for joints
     for (auto& joint : m_skeleton.m_joints) {
@@ -607,6 +656,56 @@ void PhysicsLabState::Update(float dt) {
 
     ImGuiIO& io = ImGui::GetIO();
     bool mouseOverUI = io.WantCaptureMouse;
+    // Sincronizza i Transform della camera di test nell'Holodeck
+    auto* playerTrans = m_labWorld->GetRegistry().try_get<fw::TransformComponent>(m_playerEntity);
+    auto* playerCam = m_labWorld->GetRegistry().try_get<fw::CameraComponent>(m_playerEntity);
+    if (playerTrans && playerCam) {
+        playerTrans->location.x = m_context->activeCameraView.cameraPosition.x;
+        playerTrans->location.y = m_context->activeCameraView.cameraPosition.y;
+        playerTrans->location.z = m_context->activeCameraView.cameraPosition.z;
+    }
+
+    // Esegui il sistema di sincronizzazione inventario per testare l'hotbar nell'arena
+    fw::InventorySyncSystem invSys;
+    invSys.Update(m_labWorld->GetRegistry(), m_context, dt);
+
+    // Esegui il sistema di combattimento solo sull'entità test del lab
+    fw::MeleeCombatSystem meleeSys;
+    meleeSys.Update(m_labWorld->GetRegistry(), m_context, dt);
+
+    // Gestione Sweep / Danni col Jolt Physics Engine
+    auto* combatState = m_labWorld->GetRegistry().try_get<CombatStateComponent>(m_playerEntity);
+    if (combatState && combatState->hasPendingSweep) {
+        if (m_joltSystem && m_simulateMode) {
+            auto* physSys = m_joltSystem->GetSystem();
+            const JPH::NarrowPhaseQuery& query = physSys->GetNarrowPhaseQuery();
+
+            JPH::RVec3 origin(combatState->sweepOrigin.x, combatState->sweepOrigin.y, combatState->sweepOrigin.z);
+            JPH::Vec3 direction(combatState->sweepDirection.x * combatState->sweepReach, 
+                                combatState->sweepDirection.y * combatState->sweepReach, 
+                                combatState->sweepDirection.z * combatState->sweepReach);
+
+            JPH::RRayCast raySettings(origin, direction);
+            JPH::RayCastResult hit;
+            
+            JPH::IgnoreMultipleBodiesFilter bodyFilter;
+            // Ignora il pavimento (floorBodyID) e se stesso
+            bodyFilter.IgnoreBody(JPH::BodyID(m_floorBodyID));
+
+            if (query.CastRay(raySettings, hit, JPH::SpecifiedBroadPhaseLayerFilter(fw::BroadPhaseLayers::MOVING), JPH::SpecifiedObjectLayerFilter(fw::Layers::MOVING), bodyFilter)) {
+                // Abbiamo colpito un mob/scheletro
+                glm::vec3 hitPos = combatState->sweepOrigin + combatState->sweepDirection * (combatState->sweepReach * hit.mFraction);
+                SpawnDamageNumber(hitPos, combatState->sweepDamage);
+                
+                std::cout << "[Holodeck] Bersaglio colpito! Danno inflitto: " << combatState->sweepDamage << "\n";
+            } else {
+                std::cout << "[Holodeck] Sweep a vuoto.\n";
+            }
+        }
+        
+        // Resetta l'evento dopo averlo consumato
+        combatState->hasPendingSweep = false;
+    }
 
     if (!mouseOverUI && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
         m_orbitYaw   -= io.MouseDelta.x * 0.4f;
@@ -679,15 +778,16 @@ void PhysicsLabState::Render() {
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
 
-    if (ImGui::Begin("Rigging Editor", nullptr, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Anteprima Animazione");
+    if (ImGui::Begin("Arena Control Panel", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Arena Master");
         ImGui::Separator();
         
+        // Modalità Simulazione / IA
         bool prevSim = m_simulateMode;
         if (m_simulateMode) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
         else ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
         
-        if (ImGui::Button(m_simulateMode ? "STOP SIMULATION" : "SIMULATE (Jolt Physics)", ImVec2(-1, 30))) {
+        if (ImGui::Button(m_simulateMode ? "STOP PHYSICS & AI" : "START PHYSICS & AI", ImVec2(-1, 30))) {
             m_simulateMode = !m_simulateMode;
         }
         ImGui::PopStyleColor();
@@ -698,22 +798,33 @@ void PhysicsLabState::Render() {
         }
         
         ImGui::Separator();
+        
+        if (ImGui::Button("Svuota Arena (Despawn All)", ImVec2(-1, 25))) {
+            if (m_simulateMode) {
+                StopSimulation();
+            }
+            m_skeleton.m_joints.clear();
+            m_selectedJointIndex = -1;
+        }
+        
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.1f, 1.0f), "Spawn Mob / Manichini");
+        
         if (!m_simulateMode) {
             ImGui::Checkbox("Preview Procedural Anim", &m_previewAnimation);
             ImGui::Combo("Anim Preset", &m_animationPreset, "Centipede\0Biped Walk\0");
             ImGui::Separator();
             
-            ImGui::Text("Model Setting");
-            if (ImGui::Button("Genera Bipede Standard", ImVec2(-1, 25))) {
+            if (ImGui::Button("Spawn Bipede Standard", ImVec2(-1, 25))) {
                 GenerateBipedSkeleton();
             }
-            if (ImGui::Button("Genera Centopiedi (10 segmenti)", ImVec2(-1, 25))) {
+            if (ImGui::Button("Spawn Centopiedi (10 segmenti)", ImVec2(-1, 25))) {
                 GenerateCentipedeSkeleton(10);
             }
-            if (ImGui::Button("Genera Serpente (12 vertebre)", ImVec2(-1, 25))) {
+            if (ImGui::Button("Spawn Serpente (12 vertebre)", ImVec2(-1, 25))) {
                 GenerateSnakeSkeleton(12);
             }
-            if (ImGui::Button("Genera Ragno (8 zampe)", ImVec2(-1, 25))) {
+            if (ImGui::Button("Spawn Ragno (8 zampe)", ImVec2(-1, 25))) {
                 GenerateSpiderSkeleton();
             }
             ImGui::Separator();
@@ -869,6 +980,7 @@ void PhysicsLabState::Render() {
     
     DrawTimeline();
     DrawViewportOverlay();
+    DrawCombatMetrics();
 
     // --- Pannello Aggiungi Giunto Manuale ---
     ImGui::SetNextWindowPos(ImVec2(370, 10), ImGuiCond_FirstUseEver);
@@ -940,37 +1052,8 @@ void PhysicsLabState::Render() {
 }
 
 void PhysicsLabState::GenerateBipedSkeleton() {
-    m_skeleton.m_joints.clear();
-    m_skeleton.GetDofState().clear();
+    fw::Skeleton::GenerateBiped(m_skeleton);
     m_selectedJointIndex = -1;
-
-    auto add = [&](const std::string& name, int parent, glm::vec3 off, fw::RigJointType type = fw::RigJointType::HINGE) {
-        fw::JointData j;
-        j.name = name; j.parentIndex = parent; j.type = type;
-        j.localRestTransform = glm::translate(glm::mat4(1.0f), off);
-        m_skeleton.m_joints.push_back(j);
-        m_skeleton.GetDofState().resize(m_skeleton.m_joints.size() * 3, 0.0f);
-    };
-
-    add("Root",      -1, {0,  0,    0},    fw::RigJointType::BALL);
-    add("Spine",      0, {0,  1.0f, 0},    fw::RigJointType::UNIVERSAL);
-    add("Chest",      1, {0,  0.8f, 0},    fw::RigJointType::UNIVERSAL);
-    add("Neck",       2, {0,  0.5f, 0},    fw::RigJointType::UNIVERSAL);
-    add("Head",       3, {0,  0.4f, 0},    fw::RigJointType::BALL);
-    add("ShoulderL",  2, {-0.6f, 0.4f, 0}, fw::RigJointType::BALL);
-    add("ElbowL",     5, {-0.6f, 0, 0},    fw::RigJointType::HINGE);
-    add("WristL",     6, {-0.5f, 0, 0},    fw::RigJointType::UNIVERSAL);
-    add("ShoulderR",  2, { 0.6f, 0.4f, 0}, fw::RigJointType::BALL);
-    add("ElbowR",     8, { 0.6f, 0, 0},    fw::RigJointType::HINGE);
-    add("WristR",     9, { 0.5f, 0, 0},    fw::RigJointType::UNIVERSAL);
-    add("HipL",       0, {-0.3f,-0.2f, 0}, fw::RigJointType::BALL);
-    add("KneeL",     11, {0, -0.8f, 0},    fw::RigJointType::HINGE);
-    add("AnkleL",    12, {0, -0.7f, 0},    fw::RigJointType::UNIVERSAL);
-    add("HipR",       0, { 0.3f,-0.2f, 0}, fw::RigJointType::BALL);
-    add("KneeR",     14, {0, -0.8f, 0},    fw::RigJointType::HINGE);
-    add("AnkleR",    15, {0, -0.7f, 0},    fw::RigJointType::UNIVERSAL);
-
-    m_skeleton.UpdateForwardKinematics();
     m_animationPreset = 1;
     m_renderMode = 1; // Mostra subito skeleton X-Ray
     std::cout << "[PhysicsLab] Bipede: " << m_skeleton.m_joints.size() << " giunti\n";
@@ -1072,4 +1155,77 @@ void PhysicsLabState::GenerateSpiderSkeleton() {
     m_animationPreset = 0;
     m_renderMode = 1;
     std::cout << "[PhysicsLab] Ragno: " << m_skeleton.m_joints.size() << " giunti\n";
+}
+
+void PhysicsLabState::SpawnDamageNumber(glm::vec3 worldPos, float damage) {
+    DamageEvent ev;
+    ev.position = worldPos;
+    ev.damage = damage;
+    ev.timer = 0.0f;
+    ev.maxTime = 1.0f;
+    ev.randomOffset = glm::vec3((rand() % 100 - 50) / 100.0f, (rand() % 100 - 50) / 100.0f, 0.0f);
+    m_damageEvents.push_back(ev);
+    
+    // Aggiorna DPS
+    m_dpsAccumulator += damage;
+}
+
+void PhysicsLabState::DrawCombatMetrics() {
+    float dt = ImGui::GetIO().DeltaTime;
+    // Calcolo DPS
+    m_dpsTimer += dt;
+    if (m_dpsTimer >= 1.0f) {
+        m_currentDPS = m_dpsAccumulator / m_dpsTimer;
+        m_dpsAccumulator = 0.0f;
+        m_dpsTimer = 0.0f;
+    }
+    
+    // Finestra DPS Meter
+    ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 120), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250, 100), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Combat Log / DPS Meter", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Damage Per Second:");
+        ImGui::SetWindowFontScale(1.5f);
+        ImGui::Text("%.0f", m_currentDPS);
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::Separator();
+        ImGui::Text("Click sinistro per colpire i manichini!");
+    }
+    ImGui::End();
+    
+    // Floating Damage Numbers
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    auto& view = m_context->activeCameraView;
+    glm::mat4 vp = view.projectionMatrix * view.viewMatrix;
+    
+    uint32_t width = m_context->engine->GetRenderManager()->GetWindowWidth();
+    uint32_t height = m_context->engine->GetRenderManager()->GetWindowHeight();
+    
+    for (auto it = m_damageEvents.begin(); it != m_damageEvents.end(); ) {
+        it->timer += dt;
+        if (it->timer >= it->maxTime) {
+            it = m_damageEvents.erase(it);
+            continue;
+        }
+        
+        // Sali verso l'alto nel tempo
+        glm::vec3 floatPos = it->position + glm::vec3(0.0f, it->timer * 2.0f, 0.0f) + it->randomOffset;
+        
+        // Proietta a schermo
+        glm::vec4 clipPos = vp * glm::vec4(floatPos, 1.0f);
+        if (clipPos.w > 0.0f) {
+            glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+            float screenX = (ndc.x * 0.5f + 0.5f) * width;
+            float screenY = (1.0f - (ndc.y * 0.5f + 0.5f)) * height;
+            
+            float alpha = 1.0f - (it->timer / it->maxTime);
+            ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.2f, 0.2f, alpha));
+            
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0f", it->damage);
+            drawList->AddText(ImGui::GetFont(), 24.0f, ImVec2(screenX, screenY), col, buf);
+        }
+        
+        ++it;
+    }
 }

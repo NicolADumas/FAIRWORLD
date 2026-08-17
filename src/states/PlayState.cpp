@@ -4,6 +4,7 @@
 #include "DeviceManager.h"
 #include "FAIRWORLD.h"
 #include "Components.h"
+#include "../components/Skeleton.h"
 #include "PlanetComponents.h"
 #include "PlanetSystems.h"
 #include <glm/gtc/matrix_transform.hpp>
@@ -63,34 +64,9 @@ bool PlayState::Init() {
         }
     }
 
-    // === REGISTRAZIONE DEL KERNEL BUS INPUT (Action Mapping) ===
-    // Le stringhe vengono hashate a compile-time da EnTT: costo zero a runtime
-    using namespace entt::literals;
-
+    // (Action Map registrata precedentemente nel DeviceManager)
     auto& bindings = m_context->deviceManager->GetActionMap().bindings;
-
-    // Movimento
-    bindings["MOVE_FORWARD"_hs] = {{fw::InputID::KEY_W}};
-    bindings["MOVE_BACKWARD"_hs] = {{fw::InputID::KEY_S}};
-    bindings["MOVE_LEFT"_hs] = {{fw::InputID::KEY_A}};
-    bindings["MOVE_RIGHT"_hs] = {{fw::InputID::KEY_D}};
-
-    // Corsa: combo W + Shift
-    bindings["RUN_FORWARD"_hs] = {{fw::InputID::KEY_W, fw::InputID::KEY_SHIFT}};
-
-    // Salto: tasto + grilletto gamepad
-    bindings["JUMP"_hs] = {{fw::InputID::KEY_SPACE}, {fw::InputID::PAD_FACE_DOWN}};
-
-    // Distruzione blocco: mouse sinistro O grilletto destro gamepad
-    bindings["DESTROY_BLOCK"_hs] = {{fw::InputID::MOUSE_LEFT}, {fw::InputID::PAD_TRIGGER_R}};
-
-    // Posizionamento blocco: mouse destro O grilletto sinistro gamepad
-    bindings["PLACE_BLOCK"_hs] = {{fw::InputID::MOUSE_RIGHT}, {fw::InputID::PAD_TRIGGER_L}};
-
-    // Menu / Pausa
-    bindings["PAUSE"_hs] = {{fw::InputID::KEY_ESC}, {fw::InputID::PAD_START}};
-
-    std::cout << "[PlayState] Action Map registrata: "
+    std::cout << "[PlayState] Action Map caricata: "
               << bindings.size() << " azioni logiche nel Kernel Bus.\n";
 
     if (!m_context->vramAllocator) {
@@ -166,6 +142,9 @@ bool PlayState::Init() {
     rbOpt.body.position = glm::vec3(8.0f, 100.0f, 8.0f);
     rbOpt.body.mass = 70.0f;
 
+    // Genera lo scheletro fisico del Player
+    auto& playerSkeleton = m_registry.emplace<fw::Skeleton>(cameraEntity);
+    fw::Skeleton::GenerateBiped(playerSkeleton);
     // --- INIZIALIZZAZIONE WORLD ---
     m_context->isForgeMode = false;
     m_context->isBlockMakerMode = false;
@@ -269,6 +248,8 @@ bool PlayState::Init() {
 
     // --- REGISTRAZIONE SISTEMI ECS ---
     m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // SALVA LO STATO PRECEDENTE
+    m_systems.push_back(std::make_unique<fw::InventorySyncSystem>()); // AGGIORNA ARMA EQUIPAGGIATA DALL'HOTBAR
+    m_systems.push_back(std::make_unique<fw::MeleeCombatSystem>()); // GESTISCE CARICA E ATTACCHI
     m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>()); // MODIFICA LO STATO (Fisica Input)
     m_systems.push_back(std::make_unique<fw::CameraSystem>()); // AGGIORNA TELECAMERA
     m_systems.push_back(std::make_unique<fw::PhysicsSystem>()); // AGGIORNA FISICA

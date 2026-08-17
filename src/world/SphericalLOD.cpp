@@ -6,18 +6,14 @@
 #include "MapWorldGenerator.h"
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
+#include <unordered_map>
+#include <cmath>
 
 namespace fw {
 
 void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg) {
     // --- FRUSTUM CULLING ---
     glm::mat4 vp = viewProj;
-    if (vp[1][1] < 0.0f) {
-        vp[0][1] = -vp[0][1];
-        vp[1][1] = -vp[1][1];
-        vp[2][1] = -vp[2][1];
-        vp[3][1] = -vp[3][1];
-    }
 
     glm::vec4 planes[6];
     planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]); // Left
@@ -121,15 +117,42 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     }
     entt::entity target = node->targetEntity;
     
+    glm::vec3 centerPos = node->centerPos;
+    float boundsRadius = node->boundsRadius;
+    
     // Per l'esecuzione asincrona, facciamo una copia dei dati di base per thread-safety
     std::vector<MapRegion> safeRegions = activeRegions;
     
     // NOTA BENE: NON catturiamo 'node' come raw pointer, perché 'MergeNode' potrebbe distruggerlo nel thread principale prima che il job finisca!
     auto* matReg = world ? world->GetMaterialRegistry() : nullptr;
-    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, safeRegions, blockReg, matReg]() {
+    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, safeRegions, blockReg, matReg, centerPos, boundsRadius]() {
         MeshComponent mesh;
         mesh.name = meshName;
         mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
+        
+        std::unordered_map<uint64_t, MapRegion> gridRegions;
+        std::vector<MapRegion> intersectingFreeRegions;
+        for (const auto& r : safeRegions) {
+            if (r.isGridAligned) {
+                for (int cy = r.rectMin.y; cy <= r.rectMax.y; ++cy) {
+                    for (int cx = r.rectMin.x; cx <= r.rectMax.x; ++cx) {
+                        uint64_t key = ((uint64_t)r.faceIndex << 32) | ((uint64_t)cy << 16) | (uint64_t)cx;
+                        gridRegions[key] = r;
+                    }
+                }
+            } else {
+                float pitch = glm::radians(r.eulerAngles.x);
+                float yaw = glm::radians(r.eulerAngles.y);
+                glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
+                glm::vec3 rCenterWorld = rCenterNormal * planetRadius;
+                float rRadius = r.angularRadius * planetRadius;
+                
+                float dist = glm::distance(centerPos, rCenterWorld);
+                if (dist - boundsRadius <= rRadius) {
+                    intersectingFreeRegions.push_back(r);
+                }
+            }
+        }
         
         const int RESOLUTION = 16;
         std::vector<glm::vec3> positions;
@@ -162,7 +185,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 activeRegion.perlinFrequency = 0.005f; // Base
                 
                 // --- GRID MAPPING LOGIC (Legge Sferica Esatta) ---
-                int N_lato = (int)std::ceil((glm::pi<float>() * planetRadius) / (2.0f * 32.0f));
+                int N_lato = (int)std::ceil((glm::pi<float>() * planetRadius) / (2.0f * 16.0f));
                 if (N_lato < 1) N_lato = 1;
                 
                 int face = -1;
@@ -186,74 +209,99 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 int gridRow = std::clamp((int)std::floor((1.0f - cy) * 0.5f * N_lato), 0, N_lato - 1);
                 
                 bool foundGridAligned = false;
+                uint64_t cellKey = ((uint64_t)face << 32) | ((uint64_t)gridRow << 16) | (uint64_t)gridCol;
                 
-                // Prima passata: Cerca una regione allineata alla griglia esatta (Tabella Excel)
-                for (const auto& r : safeRegions) {
-                    if (r.isGridAligned && r.faceIndex == face && r.gridX == gridCol && r.gridY == gridRow) {
-                        activeRegion = r;
-                        foundGridAligned = true;
-                        break;
-                    }
+                auto gridIt = gridRegions.find(cellKey);
+                if (gridIt != gridRegions.end()) {
+                    activeRegion = gridIt->second;
+                    foundGridAligned = true;
                 }
                 
-                float maxInfluence = -1.0f;
+                MapRegion baseRegion;
+                baseRegion.seed = 12345;
+                baseRegion.gravityModifier = 1.0f;
+                baseRegion.perlinFrequency = 0.005f;
+                baseRegion.type = MapRegionType::Forest;
+                
                 if (foundGridAligned) {
-                    maxInfluence = 1.0f; // Copertura perfetta per il rendering seamless
-                } else {
-                    // Seconda passata: Fallback ai chunk posizionati liberamente (Raycast manuale a pennello)
-                    for (const auto& r : safeRegions) {
-                        if (r.isGridAligned) continue; // Salta quelli rigidi
+                    baseRegion = activeRegion;
+                } else if (blockReg) {
+                    baseRegion.surfaceBlockId = blockReg->GetBlock("fairworld:grass").id;
+                    baseRegion.subsurfaceBlockId = blockReg->GetBlock("fairworld:dirt").id;
+                }
+                
+                float baseTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, baseRegion, baseRegion.perlinFrequency);
+                float baseHeight = planetRadius + (baseTerrainVal * planetRadius * 0.05f * baseRegion.gravityModifier);
+                if (baseRegion.type == MapRegionType::Ocean) {
+                    baseHeight = planetRadius - (planetRadius * 0.02f) + (baseTerrainVal * planetRadius * 0.01f);
+                }
+                float finalHeight = baseHeight;
+                MapRegion dominantRegion = baseRegion;
+                float minSdf = 9999.0f;
+                
+                for (const auto& r : intersectingFreeRegions) {
+                    float pitch = glm::radians(r.eulerAngles.x);
+                    float yaw = glm::radians(r.eulerAngles.y);
+                    glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
+                    
+                    float dotProduct = glm::dot(normal, rCenterNormal);
+                    dotProduct = std::clamp(dotProduct, -1.0f, 1.0f);
+                    float angle = acos(dotProduct); 
+                    
+                    float sdf = angle - r.angularRadius; // SDF: < 0 se dentro, > 0 se fuori
+                    
+                    float blendDistance = 0.08f; // Ampiezza della zona di transizione morbida
+                    
+                    if (sdf < blendDistance) {
+                        float rTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, r, r.perlinFrequency);
+                        float regionHeight = planetRadius + (rTerrainVal * planetRadius * 0.05f * r.gravityModifier);
+                        if (r.type == MapRegionType::Ocean) {
+                            regionHeight = planetRadius - (planetRadius * 0.02f) + (rTerrainVal * planetRadius * 0.01f);
+                        }
                         
-                        float pitch = glm::radians(r.eulerAngles.x);
-                        float yaw = glm::radians(r.eulerAngles.y);
-                        glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
-                        float dotProduct = glm::dot(normal, rCenterNormal);
-                        float threshold = cos(r.angularRadius);
+                        // Blending tramite smoothstep sull'SDF
+                        float influence = std::clamp(1.0f - (sdf / blendDistance), 0.0f, 1.0f);
+                        // smoothstep per rendere la transizione organica
+                        influence = influence * influence * (3.0f - 2.0f * influence);
                         
-                        if (dotProduct > threshold) {
-                            float influence = (dotProduct - threshold) / (1.0f - threshold);
-                            if (influence > maxInfluence) {
-                                maxInfluence = influence;
-                                activeRegion = r;
-                            }
+                        finalHeight = glm::mix(finalHeight, regionHeight, influence);
+                        
+                        if (influence > 0.5f) { // Il materiale cambia quando l'influenza supera il 50%
+                            dominantRegion = r;
                         }
                     }
                 }
-
-                if (maxInfluence < 0.0f) {
+                
+                // Nessuna regione trovata? Mettiamo il wireframe (solo se neanche la griglia base era presente e non ci sono regioni libere vicine)
+                if (!foundGridAligned && intersectingFreeRegions.empty()) {
                     // Rendering Olografico / Wireframe per zone non dipinte
                     float height = planetRadius;
                     positions.push_back(normal * height);
                     normals.push_back(normal);
                     
-                    // Crea griglia olografica basata su lat/lon sferica
                     float uGrid = atan2(normal.z, normal.x) * 40.0f;
                     float vGrid = asin(normal.y) * 40.0f;
                     bool isLine = (fmod(std::abs(uGrid), 1.0f) < 0.05f || fmod(std::abs(vGrid), 1.0f) < 0.05f);
                     
                     colors.push_back(isLine ? glm::vec4(0.0f, 0.8f, 1.0f, 1.0f) : glm::vec4(0.02f, 0.05f, 0.1f, 1.0f));
-                    materials.push_back(0); // Nessun materiale
+                    materials.push_back(0); 
                     emissives.push_back(isLine ? 1.0f : 0.0f);
                 } else {
-                    // Generazione Voxel Reale
-                    float noiseVal = MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, activeRegion.perlinFrequency);
-                    float height = planetRadius + (noiseVal * planetRadius * 0.05f * activeRegion.gravityModifier);
-                    
+                    float height = finalHeight;
                     positions.push_back(normal * height);
                     normals.push_back(normal);
                     
                     float latitude = asin(normal.y);
                     float latTemp = 1.0f - std::abs(latitude) / (glm::pi<float>() / 2.0f);
-                    float tempNoise = (MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, 0.001f) + 1.0f) * 0.5f;
-                    float humNoise = (MapWorldGenerator::SampleSphericalNoise(normal, activeRegion, 0.003f) + 1.0f) * 0.5f;
+                    float tempNoise = (MapWorldGenerator::SampleSphericalNoise(normal, dominantRegion, 0.001f) + 1.0f) * 0.5f;
+                    float humNoise = (MapWorldGenerator::SampleSphericalNoise(normal, dominantRegion, 0.003f) + 1.0f) * 0.5f;
                     float tempFinal = (tempNoise * 0.5f) + (latTemp * 0.5f);
                     float relHeight = std::clamp((height - planetRadius) / (planetRadius * 0.05f), 0.0f, 1.0f);
                     
                     const ::BiomeDef* biome = MapWorldGenerator::EvaluateBiome(tempFinal, humNoise, relHeight, assets);
                     glm::vec4 color(0.3f, 0.8f, 0.3f, 1.0f);
                     
-                    // INIZIALIZZA col blocco deciso dall'utente nella UI (Tabella/Template)!
-                    uint32_t matId = activeRegion.surfaceBlockId; 
+                    uint32_t matId = dominantRegion.surfaceBlockId; 
                     
                     uint8_t idSand = 5;
                     uint8_t idWater = 6;
@@ -289,7 +337,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                         }
                     }
                     
-                    if (activeRegion.type == MapRegionType::Ocean || matId == idWater || height < planetRadius + 0.1f) {
+                    if (dominantRegion.type == MapRegionType::Ocean || matId == idWater || height < planetRadius + 0.1f) {
                         // Forza il livello del mare perfettamente piatto e l'ID acqua
                         positions.back() = normal * (planetRadius + 0.1f);
                         color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);

@@ -177,34 +177,44 @@ void PlanetMapperState::UpdateApp(float dt) {
             activeRegions = pMap->regions;
             
             for (const auto& inst : pMap->chunkInstances) {
-                fw::MapRegion r;
-                r.eulerAngles = inst.eulerAngles;
-                r.angularRadius = inst.angularRadius;
-                r.isGridAligned = inst.isGridAligned;
-                r.faceIndex = inst.faceIndex;
-                r.gridX = inst.gridX;
-                r.gridY = inst.gridY;
-                r.type = fw::MapRegionType::Forest;
-                r.gravityModifier = 1.0f;
-                r.perlinFrequency = 0.005f;
-                
                 for (const auto& tpl : doc.terrainLibrary) {
                     if (tpl.id == inst.templateId) {
-                        r.type = tpl.baseType;
-                        r.gravityModifier = tpl.baseGravityModifier;
-                        r.perlinFrequency = tpl.basePerlinFrequency;
-                        if (!tpl.subRegions.empty()) {
-                            r.surfaceBlockId = tpl.subRegions.back().surfaceBlockId;
-                            r.subsurfaceBlockId = tpl.subRegions.back().subsurfaceBlockId;
-                            r.type = tpl.subRegions.back().type;
-                        } else if (m_context && m_context->blockRegistry) {
-                            r.surfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:grass").id;
-                            r.subsurfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
+                        int baseX = inst.gridX;
+                        int baseZ = inst.gridY;
+                        
+                        // Push base region
+                        fw::MapRegion baseR;
+                        baseR.eulerAngles = inst.eulerAngles;
+                        baseR.angularRadius = inst.angularRadius;
+                        baseR.isGridAligned = inst.isGridAligned;
+                        baseR.faceIndex = inst.faceIndex;
+                        baseR.gridX = baseX;
+                        baseR.gridY = baseZ;
+                        baseR.rectMin = glm::ivec2(baseX, baseZ);
+                        baseR.rectMax = glm::ivec2(baseX, baseZ);
+                        baseR.type = tpl.baseType;
+                        baseR.gravityModifier = tpl.baseGravityModifier;
+                        baseR.perlinFrequency = tpl.basePerlinFrequency;
+                        if (m_context && m_context->blockRegistry) {
+                            baseR.surfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:grass").id;
+                            baseR.subsurfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
+                        }
+                        activeRegions.push_back(baseR);
+                        
+                        // Push subregions (painter's algorithm)
+                        for (const auto& sub : tpl.subRegions) {
+                            fw::MapRegion projected = sub;
+                            projected.faceIndex = inst.faceIndex;
+                            projected.isGridAligned = inst.isGridAligned;
+                            projected.gridX = baseX;
+                            projected.gridY = baseZ;
+                            projected.rectMin += glm::ivec2(baseX, baseZ);
+                            projected.rectMax += glm::ivec2(baseX, baseZ);
+                            activeRegions.push_back(projected);
                         }
                         break;
                     }
                 }
-                activeRegions.push_back(r);
             }
         }
 
@@ -268,7 +278,7 @@ void PlanetMapperState::DrawBuilderUI() {
             RebuildPlanetRoots();
         }
 
-        float S = 32.0f;
+        float S = 16.0f;
         float N_lato = std::ceil((glm::pi<float>() * p.planetRadius) / (2.0f * S));
         int C_totale = 6 * (int)(N_lato * N_lato);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Legge della Superficie Sferica (C = 4*PI*R^2 / S^2)");
@@ -338,7 +348,7 @@ void PlanetMapperState::DrawBuilderUI() {
     if (m_showPlacementTable && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
         auto& currentPlanet = doc.planets[m_activePlanetIndex];
         float pRadius = currentPlanet.planetRadius;
-        int N_lato = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 32.0f));
+        int N_lato = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 16.0f));
         if (N_lato < 1) N_lato = 1;
 
         ImGui::SetNextWindowSize(ImVec2(1000, 600), ImGuiCond_FirstUseEver);

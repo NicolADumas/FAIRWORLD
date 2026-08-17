@@ -23,6 +23,7 @@ private:
     
     // Editor State (Specific Architecture)
     int m_activeTemplateIndex = 0;
+    int m_selectedSubRegionIndex = -1;
     
     // UI state & Canvas 2D
     glm::vec2 m_canvasPan = glm::vec2(0.0f);

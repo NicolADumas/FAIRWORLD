@@ -1,0 +1,67 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+struct ChunkData {
+    vec3 center;
+    float radius;
+    uint chunkID;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
+};
+
+struct DrawIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer InputBuffer {
+    ChunkData chunkData[];
+};
+
+layout(std430, set = 0, binding = 1) writeonly buffer OutputBuffer {
+    DrawIndirectCommand drawCmds[];
+};
+
+layout(push_constant) uniform CullingPushConstants {
+    vec3 cameraPos;
+    float safeRegionRadius;
+    vec3 safeRegionCenter;
+    uint numChunks;
+} pc;
+
+uint calculateLOD(float dist) {
+    if (dist < 100.0) return 0;
+    if (dist < 300.0) return 1;
+    if (dist < 600.0) return 2;
+    return 3;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= pc.numChunks) return;
+    
+    vec3 center = chunkData[idx].center;
+    float radius = chunkData[idx].radius;
+    
+    float distToCamera = distance(pc.cameraPos, center);
+    uint lodLevel = calculateLOD(distToCamera);
+    
+    float distToRegion = distance(pc.safeRegionCenter, center);
+    
+    uint state = 0; // 0 = culled, 1 = visible
+    if (distToRegion - radius <= pc.safeRegionRadius) {
+        // Frustum culling logic here (for now, safeRegion is the frustum/visible area)
+        state = 1; 
+    }
+    
+    drawCmds[idx].indexCount = 1536; // 16x16 grid = 256 quad = 512 tri = 1536 indici
+    drawCmds[idx].instanceCount = state; // 1 se visibile (disegna), 0 se fuori (culla)
+    drawCmds[idx].firstIndex = 0;
+    drawCmds[idx].vertexOffset = int(idx * 289);
+    drawCmds[idx].firstInstance = idx;
+}

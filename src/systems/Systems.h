@@ -22,4 +22,16 @@ namespace fw {
         void Update(entt::registry& registry, SharedContext* context, float dt) override;
     };
 
-}
+    class MeleeCombatSystem : public System {
+    public:
+        void Update(entt::registry& registry, SharedContext* context, float dt) override;
+    };
+
+    // Sincronizza l'inventario del Player globale con l'ECS
+    class InventorySyncSystem : public System {
+    public:
+        void Update(entt::registry& registry, SharedContext* context, float dt) override;
+    private:
+        int m_lastActiveSlot = -1;
+    };
+} // namespace fw

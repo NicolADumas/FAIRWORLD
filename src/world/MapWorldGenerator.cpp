@@ -66,69 +66,60 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 
         auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
         
-        const MapRegion* activeRegion = nullptr;
-        for (auto it = combinedRegions.rbegin(); it != combinedRegions.rend(); ++it) {
-            if (it->faceIndex != -1 && it->faceIndex != face) continue;
-
-            float test_cx = (it->faceIndex != -1) ? (float)local_cx : (float)global_cx;
-            float test_cz = (it->faceIndex != -1) ? (float)local_cz : (float)global_cz;
-
-            bool isInside = false;
-            if (it->shape == RegionShape::Circle) {
-                float centerCX = (it->rectMin.x + it->rectMax.x) * 0.5f;
-                float centerCZ = (it->rectMin.y + it->rectMax.y) * 0.5f;
-                float radiusX = (it->rectMax.x - it->rectMin.x + 1) * 0.5f;
-                float radiusZ = (it->rectMax.y - it->rectMin.y + 1) * 0.5f;
-                float dx = (test_cx - centerCX) / (radiusX > 0.001f ? radiusX : 1.0f);
-                float dz = (test_cz - centerCZ) / (radiusZ > 0.001f ? radiusZ : 1.0f);
-                if (dx * dx + dz * dz <= 1.0f) isInside = true;
-            } else if (it->shape == RegionShape::Rhombus) {
-                float centerCX = (it->rectMin.x + it->rectMax.x) * 0.5f;
-                float centerCZ = (it->rectMin.y + it->rectMax.y) * 0.5f;
-                float radiusX = (it->rectMax.x - it->rectMin.x + 1) * 0.5f;
-                float radiusZ = (it->rectMax.y - it->rectMin.y + 1) * 0.5f;
-                float dx = std::abs(test_cx - centerCX) / (radiusX > 0.001f ? radiusX : 1.0f);
-                float dz = std::abs(test_cz - centerCZ) / (radiusZ > 0.001f ? radiusZ : 1.0f);
-                if (dx + dz <= 1.0f) isInside = true;
-            } else if (it->shape == RegionShape::Star) {
-                float centerCX = (it->rectMin.x + it->rectMax.x) * 0.5f;
-                float centerCZ = (it->rectMin.y + it->rectMax.y) * 0.5f;
-                float radiusX = (it->rectMax.x - it->rectMin.x + 1) * 0.5f;
-                float radiusZ = (it->rectMax.y - it->rectMin.y + 1) * 0.5f;
-                float dx = (test_cx - centerCX) / (radiusX > 0.001f ? radiusX : 1.0f);
-                float dz = (test_cz - centerCZ) / (radiusZ > 0.001f ? radiusZ : 1.0f);
-                float dist = std::sqrt(dx * dx + dz * dz);
-                float angle = std::atan2(dz, dx);
-                float starFactor = 0.65f + 0.35f * std::cos(5.0f * angle);
-                if (dist <= starFactor) isInside = true;
-            } else {
-                if (test_cx >= it->rectMin.x && test_cx <= it->rectMax.x && test_cz >= it->rectMin.y && test_cz <= it->rectMax.y) {
-                    isInside = true;
+        fw::BiomeDataComponent biomeData;
+        biomeData.planetRadius = planet.planetRadius;
+        biomeData.chunkCenterWorld = pos;
+        
+        for (auto it = combinedRegions.begin(); it != combinedRegions.end(); ++it) {
+            if (it->isGridAligned) {
+                if (it->faceIndex == face && it->gridX == local_cx && it->gridY == local_cz) {
+                    biomeData.hasBaseRegion = true;
+                    biomeData.baseRegion = *it;
+                    biomeData.isCustomMapped = true;
                 }
-            }
-            
-            if (isInside) {
-                activeRegion = &(*it);
-                break;
+            } else if (planet.planetRadius > 0.0f && it->angularRadius > 0.0f) {
+                // Free-floating Spherical region
+                float rRadius = it->angularRadius * planet.planetRadius;
+                float pitch = glm::radians(it->eulerAngles.x);
+                float yaw = glm::radians(it->eulerAngles.y);
+                glm::vec3 rCenter = glm::vec3(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw)) * planet.planetRadius;
+                
+                float chunkRadius = 32.0f; // Safe margin
+                if (glm::distance(pos, rCenter) - chunkRadius <= rRadius) {
+                    biomeData.overlappingRegions.push_back(*it);
+                    biomeData.isCustomMapped = true;
+                }
+            } else {
+                // Flat 2D region (rectMin, rectMax)
+                float test_cx = (it->faceIndex != -1) ? (float)local_cx : (float)global_cx;
+                float test_cz = (it->faceIndex != -1) ? (float)local_cz : (float)global_cz;
+                
+                // Add margin for SDF blending overlap
+                float margin = 2.0f; 
+                if (test_cx >= it->rectMin.x - margin && test_cx <= it->rectMax.x + margin &&
+                    test_cz >= it->rectMin.y - margin && test_cz <= it->rectMax.y + margin) {
+                    biomeData.overlappingRegions.push_back(*it);
+                    biomeData.isCustomMapped = true;
+                }
             }
         }
 
-        fw::BiomeDataComponent biomeData;
-        if (activeRegion) {
-            biomeData.type = activeRegion->type;
-            biomeData.surfaceBlockId = activeRegion->surfaceBlockId;
-            biomeData.subsurfaceBlockId = activeRegion->subsurfaceBlockId;
-            biomeData.isCustomMapped = true;
-        } else {
-            biomeData.type = fw::MapRegionType::Forest; 
+        if (!biomeData.hasBaseRegion) {
+            biomeData.baseRegion.type = fw::MapRegionType::Forest; 
             uint8_t idGrass = 255, idDirt = 255;
             if (auto reg = targetWorld.GetBlockRegistry()) {
                 idGrass = reg->GetBlock("fairworld:grass").id;
                 idDirt = reg->GetBlock("fairworld:dirt").id;
             }
+            biomeData.baseRegion.surfaceBlockId = idGrass;
+            biomeData.baseRegion.subsurfaceBlockId = idDirt;
+            biomeData.baseRegion.gravityModifier = 1.0f;
+            biomeData.baseRegion.perlinFrequency = 0.005f;
             biomeData.surfaceBlockId = idGrass;
             biomeData.subsurfaceBlockId = idDirt;
-            biomeData.isCustomMapped = false;
+        } else {
+            biomeData.surfaceBlockId = biomeData.baseRegion.surfaceBlockId;
+            biomeData.subsurfaceBlockId = biomeData.baseRegion.subsurfaceBlockId;
         }
         
         targetWorld.GetRegistry().emplace<fw::BiomeDataComponent>(chunkEnt, biomeData);

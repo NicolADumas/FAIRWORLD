@@ -23,7 +23,11 @@ public:
         std::iota(p.begin(), p.end(), 0);
         std::default_random_engine engine(seed);
         std::shuffle(p.begin(), p.end(), engine);
-        p.insert(p.end(), p.begin(), p.end());
+        p.reserve(512);
+        size_t s = p.size();
+        for(size_t i = 0; i < s; ++i) {
+            p.push_back(p[i]);
+        }
     }
 
     double noise(double x, double y, double z) const {
