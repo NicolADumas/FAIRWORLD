@@ -67,54 +67,11 @@ bool ChunkEditorState::InitApp() {
 void ChunkEditorState::RebuildChunkPreview() {
     if (!m_context || !m_context->projectManager || !m_previewWorld) return;
     auto& doc = m_context->projectManager->GetDocument();
-    if (m_context && m_context->jobSystem) {
-        m_context->jobSystem->WaitAll();
-    }
+    
     if (doc.terrainLibrary.empty() || m_activeTemplateIndex < 0 || m_activeTemplateIndex >= (int)doc.terrainLibrary.size()) {
-        if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-            vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
-        }
-        if (m_context) {
-            if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) m_context->forgeWorld = nullptr;
-            if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) m_context->activeRegistry = nullptr;
-        }
-        m_previewWorld = std::make_unique<fw::GameWorld>();
-        m_previewWorld->Initialize(m_context);
-        m_context->forgeWorld = m_previewWorld.get();
-        m_context->activeRegistry = &m_previewWorld->GetRegistry();
-        if (m_context->cacheManager) {
-            m_context->cacheManager->FlushGpuRenderCaches(m_context);
-            m_context->cacheManager->FlushCpuTransientCaches(m_context);
-        } else if (m_context->engine && m_context->engine->GetRenderManager()) {
-            m_context->engine->GetRenderManager()->InvalidateForgeCache();
-        }
-        return;
     }
 
-    std::cout << "[ChunkEditorState] Rigenerazione anteprima 3D Voxel per chunk corrente...\n";
-
-    if (m_previewWorld) {
-        m_previewWorld->CancelJobs();
-    }
-
-    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-        vkDeviceWaitIdle(m_context->engine->GetRenderManager()->GetDevice());
-    }
-
-    if (m_context) {
-        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) m_context->forgeWorld = nullptr;
-        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) m_context->activeRegistry = nullptr;
-    }
-    m_previewWorld = std::make_unique<fw::GameWorld>();
-    m_previewWorld->Initialize(m_context);
-    m_context->forgeWorld = m_previewWorld.get();
-    m_context->activeRegistry = &m_previewWorld->GetRegistry();
-    if (m_context->cacheManager) {
-        m_context->cacheManager->FlushGpuRenderCaches(m_context);
-        m_context->cacheManager->FlushCpuTransientCaches(m_context);
-    } else if (m_context->engine && m_context->engine->GetRenderManager()) {
-        m_context->engine->GetRenderManager()->InvalidateForgeCache();
-    }
+    std::cout << "[ChunkEditorState] Rigenerazione asincrona anteprima 3D Voxel per chunk corrente...\n";
 
     const auto& tmpl = doc.terrainLibrary[m_activeTemplateIndex];
 
@@ -414,7 +371,6 @@ void ChunkEditorState::DrawUI() {
 
                     if (canAdd) {
                         fw::MapRegion nr;
-                        nr.isGridAligned = true;
                         nr.rectMin = targetMin;
                         nr.rectMax = targetMax;
                         nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
@@ -571,7 +527,6 @@ void ChunkEditorState::DrawUI() {
                 fw::MapRegion oceanBase;
                 oceanBase.type = fw::MapRegionType::Ocean;
                 oceanBase.shape = fw::RegionShape::Rectangle;
-                oceanBase.isGridAligned = true;
                 oceanBase.rectMin = glm::ivec2(-16, -16);
                 oceanBase.rectMax = glm::ivec2(16, 16);
                 uint8_t idWater = 255;

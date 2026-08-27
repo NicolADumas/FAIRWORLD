@@ -273,10 +273,17 @@ void PlanetMapperState::DrawBuilderUI() {
             p.name = nameBuf;
         }
 
-        if (ImGui::SliderFloat("Raggio del Pianeta (m)", &p.planetRadius, 50.0f, 5000.0f, "%.1f")) {
+        // Limite della grandezza abbassato a 1000.0f per ragioni di performance e stabilità memoria
+        if (ImGui::SliderFloat("Raggio del Pianeta (m)", &p.planetRadius, 50.0f, 1000.0f, "%.1f")) {
             m_lodSystem.SetPlanetRadius(p.planetRadius);
             RebuildPlanetRoots();
         }
+        
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.2f, 1.0f), "Parametri Astronomici (Sistema Solare)");
+        ImGui::SliderFloat("Inclinazione Asse (Gradi)", &p.axialTilt, -90.0f, 90.0f, "%.2f");
+        ImGui::SliderFloat("Durata Anno (Giorni)", &p.yearLength, 10.0f, 1000.0f, "%.0f");
+        ImGui::Spacing();
 
         float S = 16.0f;
         float N_lato = std::ceil((glm::pi<float>() * p.planetRadius) / (2.0f * S));

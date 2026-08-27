@@ -52,10 +52,7 @@ void SolarSystemState::Update(float dt) {
         // Acceleriamo il tempo per vedere i corpi in movimento
         m_context->engine->GetTimeManager().Update(dt * m_simulationSpeed);
 
-        if (m_context->forgeWorld) {
-            fw::PlanetOrbitSystem orbitSys;
-            orbitSys.Update(m_context->forgeWorld->GetRegistry(), dt * m_simulationSpeed);
-        }
+        // TODO: Aggiornare la visualizzazione del sistema solare basata sul nuovo AstronomySystem
     }
 }
 

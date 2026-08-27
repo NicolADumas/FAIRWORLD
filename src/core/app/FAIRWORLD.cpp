@@ -1724,7 +1724,16 @@ void FairWorldEngine::EndUIFrame() {
         m_xrManager->EndFrame();
     } else {
         ImGui::Render();
-        glm::vec3 skyColor = m_timeManager->GetSkyColor();
+        
+        glm::vec3 skyColor = {0.2f, 0.4f, 0.8f}; // Fallback sky color
+        if (m_forgeWorld && m_forgeWorld->GetRegistry().valid(m_forgeWorld->GetPlanetEntity())) {
+            auto& reg = m_forgeWorld->GetRegistry();
+            auto entity = m_forgeWorld->GetPlanetEntity();
+            if (reg.all_of<fw::PlanetAtmosphereComponent>(entity)) {
+                skyColor = reg.get<fw::PlanetAtmosphereComponent>(entity).skyBaseColor;
+            }
+        }
+        
         // Se siamo in Forge, forziamo uno sfondo grigio scuro neutro invece del cielo diurno
         if (m_sharedContext && m_sharedContext->isForgeMode) {
             skyColor = {0.12f, 0.12f, 0.15f};

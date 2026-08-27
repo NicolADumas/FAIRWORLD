@@ -88,6 +88,8 @@ struct PlanetMap {
     std::vector<PlanetChunkInstance> chunkInstances;
     
     float planetRadius = 50.0f; // Raggio del pianeta
+    float axialTilt = 23.44f;   // Inclinazione asse terrestre (gradi)
+    float yearLength = 365.0f;  // Durata dell'anno (in giorni)
     
     // Parametri DimensionsManager per Rigid Grid Map
     int32_t minX = -16;

@@ -3,6 +3,7 @@
 #include "IAllocator.h"
 #include "ForgeMath.h"
 #include "ForgeComponents.h"
+#include "PlanetComponents.h"
 #include "DimensionsManager.h"
 #include "PerlinNoise.h"
 #include "WorldChunkManager.h"
@@ -77,6 +78,10 @@ public:
     void DestroyEntity(entt::entity e);
 
     entt::registry& GetRegistry() { return m_registry; }
+    
+    // Ritorna l'entità centrale del Pianeta (Singleton Entity)
+    entt::entity GetPlanetEntity() const { return m_planetEntity; }
+    
     void MarkChunkDirty(entt::entity chunkEntity);
     void MarkAllChunksDirty();
     void GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz);
@@ -110,6 +115,8 @@ public:
 
 private:
     entt::registry m_registry;
+    entt::entity m_planetEntity = entt::null;
+    
     SharedContext* m_context = nullptr;
     PerlinNoise m_noiseGen;
 

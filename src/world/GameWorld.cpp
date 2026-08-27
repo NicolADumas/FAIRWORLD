@@ -7,7 +7,9 @@
 #include "SharedContext.h"
 #include "VulkanDmaManager.h"
 #include "VramSlabAllocator.h"
-#include "Components.h"
+#include "../components/PlanetComponents.h"
+#include "../simulation/PlanetTimeSystem.h"
+#include "../simulation/AstronomySystem.h"
 #include "FAIRWORLD.h"
 #include "RenderManager.h"
 #include "EventManager.h"
@@ -81,6 +83,21 @@ void GameWorld::Initialize(SharedContext* context) {
             });
         }
     }
+    
+    // Inizializzazione Entità Pianeta Centrale (Singleton ECS)
+    m_planetEntity = m_registry.create();
+    m_registry.emplace<PlanetTag>(m_planetEntity);
+    m_registry.emplace<PlanetTimeComponent>(m_planetEntity);
+    m_registry.emplace<PlanetAstronomyComponent>(m_planetEntity);
+    m_registry.emplace<PlanetGeometryComponent>(m_planetEntity);
+    m_registry.emplace<PlanetEnvironmentComponent>(m_planetEntity);
+    
+    // Nuovi Layer della Simulazione Globale
+    m_registry.emplace<PlanetAtmosphereComponent>(m_planetEntity);
+    m_registry.emplace<PlanetClimateComponent>(m_planetEntity);
+    m_registry.emplace<PlanetOceanComponent>(m_planetEntity);
+    m_registry.emplace<PlanetGeologyComponent>(m_planetEntity);
+    m_registry.emplace<PlanetEcologyComponent>(m_planetEntity);
 }
 
 void GameWorld::CancelJobs() {
@@ -126,6 +143,12 @@ void GameWorld::ClearWorld(bool saveToDisk) {
 }
 
 void GameWorld::Update(float dt) {
+    // 0. Aggiorna lo stack di simulazione planetaria (ECS)
+    if (m_registry.valid(m_planetEntity)) {
+        fw::PlanetTimeSystem::Update(m_registry, dt);
+        fw::AstronomySystem::Update(m_registry, dt);
+    }
+
     // 1. Processa la coda delle mesh differite da Worker Threads
     std::vector<DeferredMeshSpawn> meshBatch;
     {
@@ -459,10 +482,27 @@ entt::entity GameWorld::CreateChunkEntity(const std::string& name, const Vec3& p
     trans.location = position;
     trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
     trans.scale = {1.0f, 1.0f, 1.0f};
-    m_registry.emplace<TransformComponent>(entity, trans);
-    
     int cx = (int)position.x / 16;
     int cz = (int)position.z / 16;
+
+    if (m_registry.valid(m_planetEntity) && m_registry.all_of<PlanetGeometryComponent>(m_planetEntity)) {
+        auto& geom = m_registry.get<PlanetGeometryComponent>(m_planetEntity);
+        if (geom.planetRadius > 0.0f) {
+            glm::vec3 sphPos;
+            glm::quat sphRot;
+            if (fw::MapWorldGenerator::GetSphericalChunkTransform(geom.planetRadius, cx, cz, sphPos, sphRot)) {
+                trans.location = {sphPos.x, sphPos.y, sphPos.z};
+                trans.rotation = {sphRot.x, sphRot.y, sphRot.z, sphRot.w};
+            } else {
+                // Se il chunk è fuori dai limiti della mappa sferica (pianeta finito), 
+                // lo scaliamo a zero per non renderizzarlo e dopo lo marchiamo come vuoto
+                trans.scale = {0.0f, 0.0f, 0.0f};
+            }
+        }
+    }
+
+    m_registry.emplace<TransformComponent>(entity, trans);
+    
     m_registry.emplace<VoxelChunkComponent>(entity, cx, cz);
     
     auto& chunk = m_registry.get<VoxelChunkComponent>(entity);

@@ -3,11 +3,11 @@
 layout(location = 0) in vec2 fragUV;
 
 layout(push_constant) uniform PushConstants {
-    mat4 invView;
-    mat4 invProj;
-    float timeOfDay;
-    float moonPhase;
-    vec2 dummy;
+    mat4 invViewProj;
+    vec3 sunDir;
+    float dummy1;
+    vec3 moonDir;
+    float dummy2;
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -15,16 +15,15 @@ layout(location = 0) out vec4 outColor;
 void main() {
     // 1. Ricostruzione del raggio della telecamera (Ray Direction)
     // Trasformiamo la coordinata UV in Clip Space [-1, 1]
-    vec4 target = pc.invProj * vec4(fragUV.x * 2.0 - 1.0, fragUV.y * 2.0 - 1.0, 1.0, 1.0);
-    vec3 rayDir = (pc.invView * vec4(normalize(target.xyz / target.w), 0.0)).xyz;
-    rayDir = normalize(rayDir);
+    vec4 target = pc.invViewProj * vec4(fragUV.x * 2.0 - 1.0, fragUV.y * 2.0 - 1.0, 1.0, 1.0);
+    vec3 rayDir = normalize(target.xyz / target.w);
 
     // 2. Colore Base del Cielo (Gradiente Zenith -> Orizzonte)
     float heightStr = max(0.0, rayDir.y);
     
-    // Calcolo posizione del Sole
-    float sunAngle = (pc.timeOfDay - 0.25) * 2.0 * 3.14159265;
-    vec3 sunDir = normalize(vec3(cos(sunAngle), sin(sunAngle), 0.3)); // 0.3 sposta il sole un po' a sud/nord
+    // Posizione del Sole e della Luna fornita dall'AstronomySystem
+    vec3 sunDir = pc.sunDir;
+    vec3 moonDir = pc.moonDir;
     
     // Intensità della luce solare per il cielo (alba/tramonto/notte/giorno)
     float sunHeight = sunDir.y;
@@ -64,14 +63,7 @@ void main() {
         }
     }
     
-    // 4. Disegno della Luna (con Fasi Lunari simulate fisicamente!)
-    // La luna orbita spostata dalla fase lunare
-    // moonPhase=0.0 -> Luna Nuova (luna vicina al sole, opposta di 0 radianti, quindi stesso angolo!)
-    // moonPhase=0.5 -> Luna Piena (luna opposta al sole, + PI radianti)
-    float moonAngle = sunAngle + pc.moonPhase * 2.0 * 3.14159265; 
-    
-    vec3 moonDir = normalize(vec3(cos(moonAngle), sin(moonAngle), 0.3));
-    
+    // 4. Disegno della Luna
     float moonCos = dot(rayDir, moonDir);
     float moonRadiusCos = cos(0.02); // Dimensione Luna (leggermente più grande del disco solare)
     

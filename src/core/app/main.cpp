@@ -130,6 +130,7 @@ int main() {
 
     // 4. Bootstrap: Avvia lo stato selezionato con tutti i servizi connessi e sincronizzati
     if (choice == 1) {
+        context.targetGameJsonPath = "saves/map/world_map.json"; // Forza caricamento mappa generata
         stateManager.ChangeState(std::make_unique<PlayState>(&context));
         engine.SetGameMode(GameMode::Play);
         std::cout << "[SYSTEM] Avviato PlayState...\n";

@@ -55,8 +55,11 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 
         if (activeMeta.type == ChunkType::OuterBoundary) return;
 
-        std::string chunkName = "WorldChunk_" + std::to_string(global_cx) + "_" + std::to_string(global_cz);
-        entt::entity chunkEnt = targetWorld.CreateChunkEntity(chunkName, {pos.x, pos.y, pos.z});
+        entt::entity chunkEnt = targetWorld.GetChunkManager().GetChunkEntity(global_cx, global_cz);
+        if (chunkEnt == entt::null || !targetWorld.GetRegistry().valid(chunkEnt)) {
+            std::string chunkName = "WorldChunk_" + std::to_string(global_cx) + "_" + std::to_string(global_cz);
+            chunkEnt = targetWorld.CreateChunkEntity(chunkName, {pos.x, pos.y, pos.z});
+        }
         
         // APPLICA LA ROTAZIONE SFERICA
         if (targetWorld.GetRegistry().all_of<fw::TransformComponent>(chunkEnt)) {
@@ -122,43 +125,38 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             biomeData.subsurfaceBlockId = biomeData.baseRegion.subsurfaceBlockId;
         }
         
-        targetWorld.GetRegistry().emplace<fw::BiomeDataComponent>(chunkEnt, biomeData);
-        targetWorld.GetRegistry().emplace<fw::TerrainGenTag>(chunkEnt);
+        targetWorld.GetRegistry().emplace_or_replace<fw::BiomeDataComponent>(chunkEnt, biomeData);
+        targetWorld.GetRegistry().emplace_or_replace<fw::TerrainGenTag>(chunkEnt);
     };
 
     if (planet.planetRadius > 0.0f) {
-        float S = 16.0f; 
+        // Rapporto di incremento (Fasizzazione modulare) per curvare i chunk senza lasciare buchi.
+        // Più il pianeta è piccolo, più l'angolo è acuto e i chunk 16x16 piatti si divaricano.
+        // Utilizziamo una funzione continua modulata in base alla grandezza del pianeta:
+        // - Pianeti piccoli (R=50) -> overlap più aggressivo (~0.85) per coprire i buchi
+        // - Pianeti giganti (R=1000+) -> overlap vicino a 1.0 (0.98) quasi piatti
+        float overlapFactor = 0.80f + (planet.planetRadius / 2500.0f);
+        if (overlapFactor > 0.98f) overlapFactor = 0.98f;
+        if (overlapFactor < 0.80f) overlapFactor = 0.80f;
+
+        float S = 16.0f * overlapFactor; 
+        
         float R = planet.planetRadius;
         int N = (int)std::ceil((glm::pi<float>() * R) / (2.0f * S));
         if (N < 1) N = 1;
 
+        int stride = N * 2 + 1;
         for (int face = 0; face < 6; ++face) {
             for (int cy = -N; cy <= N; ++cy) {
                 for (int cx = -N; cx <= N; ++cx) {
-                    glm::vec3 localPos(0.0f);
-                    if (face == 0) localPos = glm::vec3(cx * S, cy * S, R);         // +Z
-                    else if (face == 1) localPos = glm::vec3(-cx * S, cy * S, -R);  // -Z
-                    else if (face == 2) localPos = glm::vec3(R, cy * S, -cx * S);   // +X
-                    else if (face == 3) localPos = glm::vec3(-R, cy * S, cx * S);   // -X
-                    else if (face == 4) localPos = glm::vec3(cx * S, R, -cy * S);   // +Y
-                    else if (face == 5) localPos = glm::vec3(cx * S, -R, cy * S);   // -Y
+                    int global_cx = face * stride + (cx + N);
+                    int global_cz = (cy + N);
                     
-                    glm::vec3 normal = glm::normalize(localPos);
-                    glm::vec3 spherePos = normal * R;
-
-                    // Gestione singolarità per rotation 180 gradi
+                    glm::vec3 spherePos;
                     glm::quat q;
-                    glm::vec3 up(0, 1, 0);
-                    if (glm::dot(up, normal) < -0.999f) {
-                        q = glm::angleAxis(glm::radians(180.0f), glm::vec3(1, 0, 0));
-                    } else {
-                        q = glm::rotation(up, normal);
+                    if (GetSphericalChunkTransform(planet.planetRadius, global_cx, global_cz, spherePos, q)) {
+                        generateChunk(global_cx, global_cz, cx, cy, face, spherePos, q);
                     }
-
-                    int global_cx = cx + (face % 3) * (N * 2 + 1);
-                    int global_cz = cy + (face / 3) * (N * 2 + 1);
-
-                    generateChunk(global_cx, global_cz, cx, cy, face, spherePos, q);
                 }
             }
         }
@@ -170,7 +168,101 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         }
     }
     
-    std::cout << "[MapWorldGenerator] Generazione completata con successo!\n";
+    std::cout << "[MapWorldGenerator] Generazione chunk completata.\n";
+}
+
+bool MapWorldGenerator::GetSphericalChunkTransform(float planetRadius, int global_cx, int global_cz, glm::vec3& outPos, glm::quat& outRot) {
+    if (planetRadius <= 0.0f) {
+        outPos = glm::vec3(global_cx * 16.0f, 0.0f, global_cz * 16.0f);
+        outRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        return true;
+    }
+
+    float overlapFactor = 0.80f + (planetRadius / 2500.0f);
+    if (overlapFactor > 0.98f) overlapFactor = 0.98f;
+    if (overlapFactor < 0.80f) overlapFactor = 0.80f;
+
+    float S = 16.0f * overlapFactor; 
+    int N = (int)std::ceil((glm::pi<float>() * planetRadius) / (2.0f * S));
+    if (N < 1) N = 1;
+
+    int stride = N * 2 + 1;
+    
+    // Reverse mapping
+    int face_col = (int)std::floor((float)(global_cx + N) / stride);
+    int face_row = (int)std::floor((float)(global_cz + N) / stride);
+
+    if (face_col >= 0 && face_col < 3 && face_row >= 0 && face_row < 2) {
+        int face = face_col + face_row * 3;
+        int cx = global_cx - face_col * stride;
+        int cy = global_cz - face_row * stride;
+
+        glm::vec3 localPos(0.0f);
+        if (face == 0) localPos = glm::vec3(cx * S, cy * S, planetRadius);         // +Z
+        else if (face == 1) localPos = glm::vec3(-cx * S, cy * S, -planetRadius);  // -Z
+        else if (face == 2) localPos = glm::vec3(planetRadius, cy * S, -cx * S);   // +X
+        else if (face == 3) localPos = glm::vec3(-planetRadius, cy * S, cx * S);   // -X
+        else if (face == 4) localPos = glm::vec3(cx * S, planetRadius, -cy * S);   // +Y
+        else if (face == 5) localPos = glm::vec3(cx * S, -planetRadius, cy * S);   // -Y
+        
+        glm::vec3 normal = glm::normalize(localPos);
+        outPos = normal * planetRadius;
+
+        glm::vec3 up(0, 1, 0);
+        if (glm::dot(up, normal) < -0.999f) {
+            outRot = glm::angleAxis(glm::radians(180.0f), glm::vec3(1, 0, 0));
+        } else {
+            outRot = glm::rotation(up, normal);
+        }
+        return true;
+    }
+    return false; // Fuori dalla sfera
+}
+
+void MapWorldGenerator::GetChunkCoordFromPosition(float planetRadius, const glm::vec3& worldPos, int& out_cx, int& out_cz) {
+    if (planetRadius <= 0.0f) {
+        out_cx = (int)std::floor(worldPos.x / 16.0f);
+        out_cz = (int)std::floor(worldPos.z / 16.0f);
+        return;
+    }
+
+    glm::vec3 normal = glm::normalize(worldPos);
+    glm::vec3 absNormal = glm::abs(normal);
+    int face = 0;
+    if (absNormal.z >= absNormal.x && absNormal.z >= absNormal.y) {
+        face = normal.z > 0 ? 0 : 1;
+    } else if (absNormal.x >= absNormal.y && absNormal.x >= absNormal.z) {
+        face = normal.x > 0 ? 2 : 3;
+    } else {
+        face = normal.y > 0 ? 4 : 5;
+    }
+
+    float overlapFactor = 0.80f + (planetRadius / 2500.0f);
+    if (overlapFactor > 0.98f) overlapFactor = 0.98f;
+    if (overlapFactor < 0.80f) overlapFactor = 0.80f;
+
+    float S = 16.0f * overlapFactor;
+    int N = (int)std::ceil((glm::pi<float>() * planetRadius) / (2.0f * S));
+    if (N < 1) N = 1;
+
+    float factor = planetRadius / S;
+    float local_cx = 0, local_cy = 0;
+
+    if (face == 0) { local_cx = (normal.x / normal.z) * factor; local_cy = (normal.y / normal.z) * factor; }
+    else if (face == 1) { local_cx = (normal.x / -normal.z) * -factor; local_cy = (normal.y / -normal.z) * factor; }
+    else if (face == 2) { local_cx = (normal.z / normal.x) * -factor; local_cy = (normal.y / normal.x) * factor; }
+    else if (face == 3) { local_cx = (normal.z / -normal.x) * factor; local_cy = (normal.y / -normal.x) * factor; }
+    else if (face == 4) { local_cx = (normal.x / normal.y) * factor; local_cy = (normal.z / normal.y) * -factor; }
+    else if (face == 5) { local_cx = (normal.x / -normal.y) * factor; local_cy = (normal.z / -normal.y) * factor; }
+
+    int cx = (int)std::round(local_cx);
+    int cy = (int)std::round(local_cy);
+
+    cx = std::clamp(cx, -N, N);
+    cy = std::clamp(cy, -N, N);
+
+    out_cx = cx + (face % 3) * (N * 2 + 1);
+    out_cz = cy + (face / 3) * (N * 2 + 1);
 }
 
 float MapWorldGenerator::SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, float frequency) {

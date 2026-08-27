@@ -52,12 +52,12 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
     bool isSpherical = false;
 
     // Usiamo const_cast temporaneo perché GetRegistry() non è marcata const in GameWorld
-    auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetComponent>();
+    auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
     if (!planetView.empty()) {
         auto entity = *planetView.begin();
-        auto& planet = planetView.get<fw::PlanetComponent>(entity);
-        surfaceGravity = planet.surfaceGravity;
-        planetRadius = planet.radius;
+        auto& planet = planetView.get<fw::PlanetGeometryComponent>(entity);
+        surfaceGravity = 9.81f; // Valore base fisso per ora
+        planetRadius = planet.planetRadius;
         isSpherical = true;
     }
 

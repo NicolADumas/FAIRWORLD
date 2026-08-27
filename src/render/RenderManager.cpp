@@ -889,22 +889,35 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline);
         
         struct SkyPushConstants {
-            glm::mat4 invView;
-            glm::mat4 invProj;
-            float timeOfDay;
-            float moonPhase;
-            glm::vec2 dummy;
+            glm::mat4 invViewProj;
+            glm::vec3 sunDir;
+            float dummy1;
+            glm::vec3 moonDir;
+            float dummy2;
         } skyPC;
         
-        // Per il cielo vogliamo solo la rotazione, quindi azzeriamo la traslazione (W=0 e P=0,0,0,1)
+        // Per il cielo vogliamo solo la rotazione, quindi azzeriamo la traslazione
         glm::mat4 skyView = viewMatrix;
         skyView[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
         
         glm::mat4 projMatrix = context ? context->activeCameraView.projectionMatrix : glm::perspective(glm::radians(45.0f), m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height, 0.1f, 1000.0f);
-        skyPC.invView = glm::inverse(skyView);
-        skyPC.invProj = glm::inverse(projMatrix);
-        skyPC.timeOfDay = context && context->engine ? (context->engine->GetTimeManager().GetTimeOfDay() / 24.0f) : 0.5f;
-        skyPC.moonPhase = context && context->engine ? context->engine->GetTimeManager().GetMoonPhase() : 0.5f;
+        skyPC.invViewProj = glm::inverse(projMatrix * skyView);
+        
+        // Lettura dall'Entity ECS Suprema del Pianeta
+        skyPC.sunDir = glm::vec3(0.0f, 1.0f, 0.0f); // Fallback Mezzogiorno
+        skyPC.moonDir = glm::vec3(0.0f, -1.0f, 0.0f);
+        skyPC.dummy1 = 0.0f;
+        skyPC.dummy2 = 0.0f;
+        
+        if (context && context->forgeWorld) {
+            auto& reg = context->forgeWorld->GetRegistry();
+            entt::entity planetEntity = context->forgeWorld->GetPlanetEntity();
+            if (reg.valid(planetEntity) && reg.all_of<fw::PlanetEnvironmentComponent>(planetEntity)) {
+                auto& env = reg.get<fw::PlanetEnvironmentComponent>(planetEntity);
+                skyPC.sunDir = env.sunDirection;
+                skyPC.moonDir = env.moonDirection;
+            }
+        }
         
         vkCmdPushConstants(cmd, m_skyPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants), &skyPC);
         

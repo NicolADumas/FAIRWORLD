@@ -4,6 +4,8 @@
 #include "DeviceManager.h"
 #include "FAIRWORLD.h"
 #include "Components.h"
+#include "BiomeComponents.h"
+#include "BlockRegistry.h"
 #include "../components/Skeleton.h"
 #include "PlanetComponents.h"
 #include "PlanetSystems.h"
@@ -42,8 +44,6 @@ PlayState::~PlayState() {
     
     if (m_context && m_context->forgeWorld) {
         m_context->forgeWorld->ClearWorld(true); // Salva in saves/world e svuota
-        delete m_context->forgeWorld;
-        m_context->forgeWorld = nullptr;
         m_context->activeRegistry = nullptr;
     }
 }
@@ -129,17 +129,25 @@ bool PlayState::Init() {
     // --- Creazione Telecamera Principale (Player) ---
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
-    // Posizione iniziale — rotazione inizializzata a identità (forward = -Z)
-    m_registry.emplace<TransformComponent>(cameraEntity, 8.0f, 100.0f, 8.0f);
+    
+    float spawnY = 100.0f;
+    if (hasCustomMap && m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
+        auto& geom = m_context->forgeWorld->GetRegistry().get<fw::PlanetGeometryComponent>(m_context->forgeWorld->GetPlanetEntity());
+        if (geom.planetRadius > 0.0f) {
+            spawnY = geom.planetRadius + 10.0f;
+        }
+    }
+    
+    // Posizione iniziale al Polo Nord della sfera (+Y)
+    m_registry.emplace<TransformComponent>(cameraEntity, 0.0f, spawnY, 0.0f);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
-    // Yaw 0 gradi ora punta verso -Z (dopo il fix della camera)
     cam.yaw   = 0.0f;
-    cam.pitch =   0.0f;
+    cam.pitch = 0.0f;
     m_registry.emplace<PlayerControllerComponent>(cameraEntity);
     
     // Inizializza il RigidBody per la fisica
     auto& rbOpt = m_registry.emplace<RigidBodyComponent>(cameraEntity);
-    rbOpt.body.position = glm::vec3(8.0f, 100.0f, 8.0f);
+    rbOpt.body.position = glm::vec3(0.0f, spawnY, 0.0f);
     rbOpt.body.mass = 70.0f;
 
     // Genera lo scheletro fisico del Player
@@ -174,38 +182,96 @@ bool PlayState::Init() {
 
     if (hasCustomMap) {
         std::cout << "[PlayState] Cartuccia Mappa rilevata: " << configPath << "\n";
+        fw::MapDocument doc;
+        bool loaded = false;
         if (m_context->projectManager) {
             std::cout << "[PlayState] Caricamento mappa verificata in memoria via WorldProjectManager...\n";
             m_context->projectManager->LoadProject(configPath, m_context->blockRegistry);
-            const auto& doc = m_context->projectManager->GetDocument();
-            std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA avviato...\n";
-            std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
-            fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
-        } else {
-            fw::MapDocument doc;
-            if (doc.LoadJSON(configPath)) {
-                std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA avviato...\n";
-                std::cout << "[PlayState] Generazione Universo in corso tramite MapWorldGenerator...\n";
-                fw::MapWorldGenerator::Generate(doc, 0, *m_context->forgeWorld, m_context->jobSystem);
-            } else {
-                std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
-                hasCustomMap = false;
+            doc = m_context->projectManager->GetDocument();
+            loaded = true;
+        } else if (doc.LoadJSON(configPath)) {
+            loaded = true;
+        }
+
+        if (loaded) {
+            std::cout << "[PlayState] Configurazione Pianeta caricata. Impostazione Geometria Sferica...\n";
+            if (!doc.planets.empty()) {
+                auto planetEnt = m_context->forgeWorld->GetPlanetEntity();
+                if (registry.valid(planetEnt)) {
+                    auto& geom = registry.get_or_emplace<fw::PlanetGeometryComponent>(planetEnt);
+                    geom.planetRadius = doc.planets[0].planetRadius;
+                    std::cout << "[PlayState] Raggio pianeta impostato a: " << geom.planetRadius << "\n";
+                }
             }
+        } else {
+            std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
+            hasCustomMap = false;
         }
     }
 
-    // Generazione procedurale di un prato circondato da montagne (11x11 chunk)
-    // Eseguito SOLO SE NON c'è una cartuccia mappa custom caricata.
-    if (!hasCustomMap) {
-        std::cout << "[DEBUG] [PlayState] COMPILA E GENERA TERRENO MAPPA (Procedurale Fallback) avviato...\n";
-        int chunkRadius = 5; // Enorme prato
-        for (int cx = -chunkRadius; cx <= chunkRadius; ++cx) {
-            for (int cz = -chunkRadius; cz <= chunkRadius; ++cz) {
-                std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
-                entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, {cx * 16.0f, 0.0f, cz * 16.0f});
-                auto& chunk = registry.get<fw::VoxelChunkComponent>(chunkEnt);
-                m_context->forgeWorld->MarkChunkDirty(chunkEnt);
+    std::cout << "[DEBUG] [PlayState] Generazione Terreno iniziale attorno al giocatore...\n";
+    int currentChunkX = 0;
+    int currentChunkZ = 0;
+    
+    glm::vec3 cameraPos(0.0f, spawnY, 0.0f);
+    float pRadius = 0.0f;
+    if (m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
+        auto planetEnt = m_context->forgeWorld->GetPlanetEntity();
+        auto& reg = m_context->forgeWorld->GetRegistry();
+        if (reg.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
+            pRadius = reg.get<fw::PlanetGeometryComponent>(planetEnt).planetRadius;
+            fw::MapWorldGenerator::GetChunkCoordFromPosition(pRadius, cameraPos, currentChunkX, currentChunkZ);
+        } else {
+            currentChunkX = (int)cameraPos.x / 16;
+            currentChunkZ = (int)cameraPos.z / 16;
+        }
+    } else {
+        currentChunkX = (int)cameraPos.x / 16;
+        currentChunkZ = (int)cameraPos.z / 16;
+    }
+    
+    int chunkRadius = 8;
+    for (int cx = currentChunkX - chunkRadius; cx <= currentChunkX + chunkRadius; ++cx) {
+        for (int cz = currentChunkZ - chunkRadius; cz <= currentChunkZ + chunkRadius; ++cz) {
+            std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
+            
+            glm::vec3 pos;
+            glm::quat rot;
+            if (pRadius > 0.0f) {
+                fw::MapWorldGenerator::GetSphericalChunkTransform(pRadius, cx, cz, pos, rot);
+            } else {
+                pos = {cx * 16.0f, 0.0f, cz * 16.0f};
+                rot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             }
+            
+            entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, fw::Vec3{pos.x, pos.y, pos.z});
+            
+            if (pRadius > 0.0f) {
+                auto& trans = registry.get<fw::TransformComponent>(chunkEnt);
+                trans.rotation = {rot.x, rot.y, rot.z, rot.w};
+            }
+            
+            fw::BiomeDataComponent biomeData;
+            biomeData.planetRadius = pRadius;
+            biomeData.chunkCenterWorld = pos;
+            
+            // Dummy forest biome for spherical test
+            biomeData.hasBaseRegion = true;
+            biomeData.baseRegion.type = fw::MapRegionType::Forest;
+            biomeData.baseRegion.gravityModifier = 1.0f;
+            biomeData.baseRegion.perlinFrequency = 0.005f;
+            uint8_t idGrass = 255, idDirt = 255;
+            if (auto reg = m_context->forgeWorld->GetBlockRegistry()) {
+                idGrass = reg->GetBlock("fairworld:grass").id;
+                idDirt = reg->GetBlock("fairworld:dirt").id;
+            }
+            biomeData.baseRegion.surfaceBlockId = idGrass;
+            biomeData.baseRegion.subsurfaceBlockId = idDirt;
+            biomeData.surfaceBlockId = idGrass;
+            biomeData.subsurfaceBlockId = idDirt;
+            
+            registry.emplace_or_replace<fw::BiomeDataComponent>(chunkEnt, biomeData);
+            registry.emplace_or_replace<fw::TerrainGenTag>(chunkEnt);
         }
     }
     
@@ -231,20 +297,7 @@ bool PlayState::Init() {
     registry.get<fw::PortalComponent>(portalA).targetPortal = portalB;
     registry.get<fw::PortalComponent>(portalB).targetPortal = portalA;
 
-    // --- CORPI CELESTI (SOLE E LUNA) ---
-    auto sunEntity = registry.create();
-    registry.emplace<NameComponent>(sunEntity, "Sun");
-    auto& sunOrbit = registry.emplace<fw::SolarSystemOrbitComponent>(sunEntity);
-    sunOrbit.orbitRadius = 150000.0f; // Distanza astronomica
-    sunOrbit.centralMass = 1.989e30f; // Massa attrattore
-    registry.emplace<TransformComponent>(sunEntity);
-
-    auto moonEntity = registry.create();
-    registry.emplace<NameComponent>(moonEntity, "Moon");
-    auto& moonOrbit = registry.emplace<fw::SolarSystemOrbitComponent>(moonEntity);
-    moonOrbit.orbitRadius = 3000.0f; // Più vicina al pianeta
-    moonOrbit.centralMass = 5.972e24f; // Massa attrattore (Terra)
-    registry.emplace<TransformComponent>(moonEntity);
+    // --- I CORPI CELESTI (SOLE E LUNA) SONO GESTITI ANALITICAMENTE DALL'ASTRONOMY SYSTEM SULL'ENTITA PIANETA ---
 
     // --- REGISTRAZIONE SISTEMI ECS ---
     m_systems.push_back(std::make_unique<fw::CameraSyncSystem>()); // SALVA LO STATO PRECEDENTE
@@ -295,8 +348,7 @@ void PlayState::Update(float dt) {
         system->Update(m_registry, m_context, dt);
     }
 
-    // Aggiornamento orbite planetarie indipendenti
-    fw::PlanetOrbitSystem::Update(m_registry, dt);
+    // Aggiornamento orbite planetarie indipendenti dismesso in favore di AstronomySystem analitico
 
     // Aggiorna ciclo Giorno-Notte (Sole/Luna)
     if (m_context && m_context->engine) {
