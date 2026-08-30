@@ -283,8 +283,13 @@ void MapWorldGenerator::GetChunkCoordFromPosition(float planetRadius, const glm:
     else if (face == 4) { local_cx = (normal.x / normal.y) * factor; local_cy = (normal.z / normal.y) * -factor; }
     else if (face == 5) { local_cx = (normal.x / -normal.y) * factor; local_cy = (normal.z / -normal.y) * factor; }
 
-    int cx = (int)std::round(local_cx);
-    int cy = (int)std::round(local_cy);
+    int cx = 0, cy = 0;
+    if (face == 0) { cx = (int)std::floor(local_cx); cy = (int)std::ceil(local_cy); }
+    else if (face == 1) { cx = (int)std::ceil(local_cx); cy = (int)std::floor(local_cy); }
+    else if (face == 2) { cx = (int)std::ceil(local_cx); cy = (int)std::floor(local_cy); }
+    else if (face == 3) { cx = (int)std::floor(local_cx); cy = (int)std::ceil(local_cy); }
+    else if (face == 4) { cx = (int)std::floor(local_cx); cy = (int)std::ceil(local_cy); }
+    else if (face == 5) { cx = (int)std::floor(local_cx); cy = (int)std::ceil(local_cy); }
 
     cx = std::clamp(cx, -N, N);
     cy = std::clamp(cy, -N, N);

@@ -232,6 +232,105 @@ void PlanetMapperState::UpdateApp(float dt) {
             fw::BiomeTerrainSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
             fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
         }
+        
+        // --- Sincronizzazione Marker Spawn Point ---
+        if (m_isBuilderMode && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
+            auto& p = doc.planets[m_activePlanetIndex];
+            // Se ci sono più marker che punti, elimina i marker in eccesso
+            while (m_spawnPointMarkers.size() > p.spawnPoints.size()) {
+                auto ent = m_spawnPointMarkers.back();
+                if (m_previewWorld->GetRegistry().valid(ent)) {
+                    m_previewWorld->DestroyEntity(ent);
+                }
+                m_spawnPointMarkers.pop_back();
+            }
+            // Se ci sono meno marker, creali come obelisco (pilastro + piramide)
+            while (m_spawnPointMarkers.size() < p.spawnPoints.size()) {
+                entt::entity newMarker = m_previewWorld->CreatePrimitive("SpawnMarker", fw::Vec3(0.0f, 0.0f, 0.0f), "obelisk");
+                auto& mesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(newMarker);
+                mesh.type = fw::MeshType::Standard;
+                m_previewWorld->UploadMeshToVram(newMarker);
+                m_spawnPointMarkers.push_back(newMarker);
+            }
+            
+            // Aggiorna posizione, scala e colore di ogni marker
+            for (size_t i = 0; i < p.spawnPoints.size(); ++i) {
+                auto& sp = p.spawnPoints[i];
+                auto ent = m_spawnPointMarkers[i];
+                if (!m_previewWorld->GetRegistry().valid(ent)) continue;
+                
+                float cx = sp.localX / p.planetRadius;
+                float cy = sp.localZ / p.planetRadius;
+                glm::vec3 dir(0.0f);
+                switch (sp.faceIndex) {
+                    case 0: dir = glm::vec3(cx, cy, 1.0f); break;
+                    case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
+                    case 2: dir = glm::vec3(1.0f, cy, -cx); break;
+                    case 3: dir = glm::vec3(-1.0f, cy, cx); break;
+                    case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
+                    case 5: dir = glm::vec3(cx, -1.0f, cy); break;
+                }
+                dir = glm::normalize(dir);
+                glm::vec3 pos = dir * (p.planetRadius + sp.heightOffset);
+                
+                auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(ent);
+                trans.location = fw::Vec3(pos.x, pos.y, pos.z);
+
+                // Rotazione: vogliamo che l'obelisco abbia la base sulla superficie
+                // e la punta puntata verso l'esterno del pianeta (dir = outward normal)
+                // Usiamo una matrice che mappa +Y locale -> dir del pianeta
+                glm::vec3 worldUp = dir; // la direzione "su" per questo punto sulla sfera
+                glm::vec3 forward(1.0f, 0.0f, 0.0f);
+                if (glm::abs(glm::dot(worldUp, forward)) > 0.99f) forward = glm::vec3(0.0f, 0.0f, 1.0f);
+                glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
+                forward = glm::normalize(glm::cross(right, worldUp));
+                glm::mat3 rotMat(right, worldUp, forward);
+                glm::quat oq = glm::quat_cast(rotMat);
+                trans.rotation = fw::Quat(oq.x, oq.y, oq.z, oq.w);
+                trans.scale = fw::Vec3(1.0f, 1.0f, 1.0f); // obelisco ha già le sue dimensioni
+                
+                auto& meshComp = m_previewWorld->GetRegistry().get<fw::MeshComponent>(ent);
+                meshComp.colorOverride[0] = sp.color.r;
+                meshComp.colorOverride[1] = sp.color.g;
+                meshComp.colorOverride[2] = sp.color.b;
+                meshComp.colorOverride[3] = sp.color.a; // usa l'alpha reale del colore spawn
+            }
+            
+            // --- GESTIONE CURSORE ---
+            if (!m_previewWorld->GetRegistry().valid(m_cursorMarker)) {
+                m_cursorMarker = m_previewWorld->CreatePrimitive("CursorMarker", fw::Vec3(0.0f, 0.0f, 0.0f), "cube");
+                auto& mesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(m_cursorMarker);
+                mesh.type = fw::MeshType::Standard;
+                m_previewWorld->UploadMeshToVram(m_cursorMarker);
+            }
+            
+            if (m_previewWorld->GetRegistry().valid(m_cursorMarker)) {
+                glm::vec3 cdir = glm::normalize(m_context->activeCameraView.cameraPosition);
+                glm::vec3 cpos = cdir * (p.planetRadius + 10.0f); // Leggermente sopra la superficie
+                
+                auto& ctrans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(m_cursorMarker);
+                ctrans.location = fw::Vec3(cpos.x, cpos.y, cpos.z);
+                
+                glm::vec3 cup(0.0f, 1.0f, 0.0f);
+                if (glm::abs(glm::dot(cdir, cup)) > 0.999f) cup = glm::vec3(1.0f, 0.0f, 0.0f);
+                glm::mat4 clookAt = glm::lookAt(glm::vec3(0.0f), cdir, cup);
+                glm::quat cq = glm::conjugate(glm::quat_cast(clookAt));
+                ctrans.rotation = fw::Quat(cq.x, cq.y, cq.z, cq.w);
+                
+                // Cursor pi piccolo e sottile degli spawn point, per indicare precisione
+                ctrans.scale = fw::Vec3(1.0f, 4.0f, 1.0f);
+                
+                auto& cmesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(m_cursorMarker);
+                cmesh.colorOverride[0] = 0.0f; // Ciano brillante
+                cmesh.colorOverride[1] = 1.0f;
+                cmesh.colorOverride[2] = 1.0f;
+                cmesh.colorOverride[3] = 1.0f;
+            }
+            // --- FINE GESTIONE CURSORE ---
+            
+        }
+        // --- Fine Sincronizzazione ---
+        
         m_previewWorld->Update(dt);
     }
 }
@@ -291,6 +390,10 @@ void PlanetMapperState::DrawBuilderUI() {
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Legge della Superficie Sferica (C = 4*PI*R^2 / S^2)");
         ImGui::Text("Dimensione Chunk Base: %.1f m | Risoluzione Faccia: %d x %d", S, (int)N_lato, (int)N_lato);
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Chunk Totali Generati: %d | Cursore Zoom Distanza: %.1f", C_totale, m_orbitDistance);
+        ImGui::SameLine();
+        if (ImGui::Button("Zoom +", ImVec2(60, 20))) m_orbitDistance = std::max(10.0f, m_orbitDistance - 25.0f);
+        ImGui::SameLine();
+        if (ImGui::Button("Zoom -", ImVec2(60, 20))) m_orbitDistance += 25.0f;
     }
     ImGui::Separator();
 
@@ -312,6 +415,89 @@ void PlanetMapperState::DrawBuilderUI() {
     if (ImGui::Button("📊 APRI TABELLA CHUNKS EXCEL (COLLOCAMENTO GEOGRAFICO)", ImVec2(-1, 35))) {
         m_showPlacementTable = true;
     }
+
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("📍 Punti di Inizio (Spawn Points)")) {
+        if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
+            auto& p = doc.planets[m_activePlanetIndex];
+            
+            if (ImGui::Button("➕  Aggiungi Punto di Inizio", ImVec2(-1, 25))) {
+                fw::SpawnPoint sp;
+                sp.name = "Spawn " + std::to_string(p.spawnPoints.size() + 1);
+                
+                // --- CALCOLA LA POSIZIONE DAL PUNTATORE (CAMERA) ---
+                if (m_context) {
+                    glm::vec3 pos = glm::normalize(m_context->activeCameraView.cameraPosition);
+                    float ax = std::abs(pos.x);
+                    float ay = std::abs(pos.y);
+                    float az = std::abs(pos.z);
+                    int faceIndex = 0;
+                    float u = 0.0f, v = 0.0f;
+                    if (az >= ax && az >= ay) {
+                        if (pos.z > 0) { faceIndex = 0; u = pos.x / az; v = pos.y / az; }
+                        else           { faceIndex = 1; u = -pos.x / az; v = pos.y / az; }
+                    } else if (ax >= ay && ax >= az) {
+                        if (pos.x > 0) { faceIndex = 2; u = -pos.z / ax; v = pos.y / ax; }
+                        else           { faceIndex = 3; u = pos.z / ax; v = pos.y / ax; }
+                    } else {
+                        if (pos.y > 0) { faceIndex = 4; u = pos.x / ay; v = -pos.z / ay; }
+                        else           { faceIndex = 5; u = pos.x / ay; v = pos.z / ay; }
+                    }
+                    sp.faceIndex = faceIndex;
+                    sp.localX = u * p.planetRadius;
+                    sp.localZ = v * p.planetRadius;
+                }
+                
+                p.spawnPoints.push_back(sp);
+                // Salvataggio immediato senza aspettare il "Save" completo
+                m_context->projectManager->SaveProject();
+            }
+            ImGui::Spacing();
+            
+            for (int i = 0; i < (int)p.spawnPoints.size(); ++i) {
+                auto& sp = p.spawnPoints[i];
+                ImGui::PushID(i);
+                
+                char spName[64];
+                strncpy_s(spName, sp.name.c_str(), sizeof(spName));
+                if (ImGui::InputText("Nome", spName, sizeof(spName))) {
+                    sp.name = spName;
+                }
+                
+                const char* faceNames[] = { "+Z (Nord)", "-Z (Sud)", "+X (Est)", "-X (Ovest)", "+Y (Top/Cielo)", "-Y (Bottom/Nucleo)" };
+                ImGui::Combo("Faccia Base", &sp.faceIndex, faceNames, IM_ARRAYSIZE(faceNames));
+                
+                ImGui::SliderFloat("Offset X", &sp.localX, -p.planetRadius, p.planetRadius, "%.1f");
+                ImGui::SliderFloat("Offset Z", &sp.localZ, -p.planetRadius, p.planetRadius, "%.1f");
+                ImGui::SliderFloat("Offset Y (Altezza)", &sp.heightOffset, 0.0f, p.planetRadius + 300.0f, "%.1f");
+                
+                float c[4] = { sp.color.r, sp.color.g, sp.color.b, sp.color.a };
+                if (ImGui::ColorEdit4("Colore Prisma", c)) {
+                    sp.color = glm::vec4(c[0], c[1], c[2], c[3]);
+                }
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.1f, 1.0f));
+                if (ImGui::Button("Rimuovi", ImVec2(80, 20))) {
+                    p.spawnPoints.erase(p.spawnPoints.begin() + i);
+                    m_context->projectManager->SaveProject();
+                    ImGui::PopStyleColor();
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.5f, 0.2f, 1.0f));
+                if (ImGui::Button("💾 Salva", ImVec2(-1, 20))) {
+                    m_context->projectManager->SaveProject();
+                }
+                ImGui::PopStyleColor();
+                
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+        }
+    }
+
     ImGui::EndChild();
 
     ImGui::BeginChild("BottomBar", ImVec2(0, 130.0f), true);

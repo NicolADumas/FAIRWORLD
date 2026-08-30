@@ -247,4 +247,52 @@ MeshComponent MeshGenerators::MakeGridBox(int width, int height, int depth, floa
     return m;
 }
 
+MeshComponent MeshGenerators::MakeObelisk(float baseW, float baseD, float height) {
+    MeshComponent m;
+    m.name = "Obelisk";
+    m.type = MeshType::Editor;
+    fw::Vec4 white = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    float hw = baseW * 0.5f;
+    float hd = baseD * 0.5f;
+
+    // Helper: aggiunge un quad (2 triangoli) con normale esplicita
+    auto addQuad = [&](fw::Vec3 v0, fw::Vec3 v1, fw::Vec3 v2, fw::Vec3 v3, fw::Vec3 n) {
+        m.vertices.push_back({v0, white, {0.0f, 1.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v1, white, {1.0f, 1.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v2, white, {1.0f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v0, white, {0.0f, 1.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v2, white, {1.0f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v3, white, {0.0f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+    };
+
+    // 4 lati verticali del corpo principale (base piena a +Y)
+    // Faccia -Z
+    addQuad({-hw, 0,    -hd}, { hw, 0,    -hd}, { hw, height, -hd}, {-hw, height, -hd}, { 0,  0, -1});
+    // Faccia +Z
+    addQuad({ hw, 0,     hd}, {-hw, 0,     hd}, {-hw, height,  hd}, { hw, height,  hd}, { 0,  0,  1});
+    // Faccia -X
+    addQuad({-hw, 0,     hd}, {-hw, 0,    -hd}, {-hw, height, -hd}, {-hw, height,  hd}, {-1,  0,  0});
+    // Faccia +X
+    addQuad({ hw, 0,    -hd}, { hw, 0,     hd}, { hw, height,  hd}, { hw, height, -hd}, { 1,  0,  0});
+    // Base -Y
+    addQuad({-hw, 0,    -hd}, {-hw, 0,     hd}, { hw, 0,      hd}, { hw, 0,     -hd}, { 0, -1,  0});
+
+    // --- Cappella piramidale in cima ---
+    float capH = height + baseW; // picco
+    float cs   = hw * 0.5f;     // base del cappello (metà del corpo)
+    // 4 triangoli della piramide
+    auto addTri = [&](fw::Vec3 a, fw::Vec3 b, fw::Vec3 c, fw::Vec3 n) {
+        m.vertices.push_back({a, white, {0.0f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({b, white, {1.0f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({c, white, {0.5f, 1.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+    };
+    addTri({-cs, height, -cs}, { cs, height, -cs}, { 0, capH, 0}, { 0, 0.5f, -1});
+    addTri({ cs, height, -cs}, { cs, height,  cs}, { 0, capH, 0}, { 1, 0.5f,  0});
+    addTri({ cs, height,  cs}, {-cs, height,  cs}, { 0, capH, 0}, { 0, 0.5f,  1});
+    addTri({-cs, height,  cs}, {-cs, height, -cs}, { 0, capH, 0}, {-1, 0.5f,  0});
+
+    return m;
+}
+
 } // namespace fw

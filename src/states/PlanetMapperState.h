@@ -42,5 +42,7 @@ private:
     
     // Sistema LOD Sferico
     std::vector<fw::ChunkNode> m_planetRootNodes;
+    std::vector<entt::entity> m_spawnPointMarkers;
+    entt::entity m_cursorMarker = entt::null;
     fw::SphericalLODSystem m_lodSystem;
 };

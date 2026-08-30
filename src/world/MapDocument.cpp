@@ -108,6 +108,17 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 cj["gridY"] = inst.gridY;
                 pj["chunkInstances"].push_back(cj);
             }
+            pj["spawnPoints"] = json::array();
+            for (const auto& sp : planet.spawnPoints) {
+                json sj;
+                sj["name"] = sp.name;
+                sj["faceIndex"] = sp.faceIndex;
+                sj["localX"] = sp.localX;
+                sj["localZ"] = sp.localZ;
+                sj["heightOffset"] = sp.heightOffset;
+                sj["color"] = { sp.color.r, sp.color.g, sp.color.b, sp.color.a };
+                pj["spawnPoints"].push_back(sj);
+            }
             j["planets"].push_back(pj);
         }
 
@@ -272,6 +283,23 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         inst.gridX = cj.value("gridX", 0);
                         inst.gridY = cj.value("gridY", 0);
                         planet.chunkInstances.push_back(inst);
+                    }
+                }
+                if (pj.contains("spawnPoints") && pj["spawnPoints"].is_array()) {
+                    for (const auto& sj : pj["spawnPoints"]) {
+                        SpawnPoint sp;
+                        sp.name = sj.value("name", "Nuovo Spawn");
+                        sp.faceIndex = sj.value("faceIndex", 4);
+                        sp.localX = sj.value("localX", 0.0f);
+                        sp.localZ = sj.value("localZ", 0.0f);
+                        sp.heightOffset = sj.value("heightOffset", 120.0f);
+                        if (sj.contains("color") && sj["color"].is_array() && sj["color"].size() >= 4) {
+                            sp.color.r = sj["color"][0].get<float>();
+                            sp.color.g = sj["color"][1].get<float>();
+                            sp.color.b = sj["color"][2].get<float>();
+                            sp.color.a = sj["color"][3].get<float>();
+                        }
+                        planet.spawnPoints.push_back(sp);
                     }
                 }
                 planets.push_back(planet);

@@ -126,20 +126,55 @@ bool PlayState::Init() {
         }
     }
     
+    // --- PRE-CARICAMENTO MAP DOCUMENT PER GLI SPAWN POINTS ---
+    fw::MapDocument mapDoc;
+    bool mapDocLoaded = false;
+    if (hasCustomMap) {
+        if (m_context->projectManager) {
+            m_context->projectManager->LoadProject(configPath, m_context->blockRegistry);
+            mapDoc = m_context->projectManager->GetDocument();
+            mapDocLoaded = true;
+        } else if (mapDoc.LoadJSON(configPath)) {
+            mapDocLoaded = true;
+        }
+    }
+
     // --- Creazione Telecamera Principale (Player) ---
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
     
     float spawnY = 150.0f;
-    if (hasCustomMap && m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
-        auto& geom = m_context->forgeWorld->GetRegistry().get<fw::PlanetGeometryComponent>(m_context->forgeWorld->GetPlanetEntity());
-        if (geom.planetRadius > 0.0f) {
-            spawnY = geom.planetRadius + 150.0f; // Aumentato per spawnare sopra le montagne (base terrain = 64)
+    glm::vec3 spawnPos(0.0f, spawnY, 0.0f);
+    
+    if (mapDocLoaded && !mapDoc.planets.empty()) {
+        auto& p = mapDoc.planets[0];
+        if (p.planetRadius > 0.0f) {
+            spawnY = p.planetRadius + 150.0f; // Default fallback su raggio
+            spawnPos = glm::vec3(0.0f, spawnY, 0.0f);
+        }
+        
+        if (!p.spawnPoints.empty()) {
+            auto& sp = p.spawnPoints[0];
+            float cx = sp.localX / p.planetRadius;
+            float cy = sp.localZ / p.planetRadius;
+            glm::vec3 dir(0.0f);
+            switch (sp.faceIndex) {
+                case 0: dir = glm::vec3(cx, cy, 1.0f); break; // Nord
+                case 1: dir = glm::vec3(-cx, cy, -1.0f); break; // Sud
+                case 2: dir = glm::vec3(1.0f, cy, -cx); break; // Est
+                case 3: dir = glm::vec3(-1.0f, cy, cx); break; // Ovest
+                case 4: dir = glm::vec3(cx, 1.0f, -cy); break; // Top
+                case 5: dir = glm::vec3(cx, -1.0f, cy); break; // Bottom
+            }
+            dir = glm::normalize(dir);
+            spawnPos = dir * (p.planetRadius + sp.heightOffset);
+            spawnY = spawnPos.y; // Update for rigidity below
+            std::cout << "[PlayState] Utilizzo Spawn Point custom '" << sp.name << "' a posizione: " << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << "\n";
         }
     }
     
-    // Posizione iniziale al Polo Nord della sfera (+Y)
-    m_registry.emplace<TransformComponent>(cameraEntity, 0.0f, spawnY, 0.0f);
+    // Posizione iniziale
+    m_registry.emplace<TransformComponent>(cameraEntity, spawnPos.x, spawnPos.y, spawnPos.z);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
     cam.yaw   = 0.0f;
     cam.pitch = 0.0f;
@@ -147,7 +182,7 @@ bool PlayState::Init() {
     
     // Inizializza il RigidBody per la fisica
     auto& rbOpt = m_registry.emplace<RigidBodyComponent>(cameraEntity);
-    rbOpt.body.position = glm::vec3(0.0f, spawnY, 0.0f);
+    rbOpt.body.position = spawnPos;
     rbOpt.body.mass = 70.0f;
 
     // Genera lo scheletro fisico del Player
@@ -446,6 +481,64 @@ void PlayState::Render() {
     if (m_showAssetBrowser && m_context && m_context->engine) {
         m_assetBrowser.DrawUI(&m_showAssetBrowser, &m_context->engine->GetPlayer(), m_context->forgeWorld);
     }
+    
+    // --- UI TELETRASPORTO MAPPA ---
+    if (m_context && m_context->projectManager) {
+        const auto& doc = m_context->projectManager->GetDocument();
+        if (!doc.planets.empty()) {
+            const auto& planet = doc.planets[0];
+            if (!planet.spawnPoints.empty()) {
+                ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+                ImGui::Begin("Teletrasporto", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+                ImGui::Text("Punti di Spawn disponibili:");
+                ImGui::Separator();
+                
+                for (size_t i = 0; i < planet.spawnPoints.size(); ++i) {
+                    const auto& sp = planet.spawnPoints[i];
+                    std::string label = sp.name.empty() ? ("Punto " + std::to_string(i + 1)) : sp.name;
+                    ImGui::PushID((int)i);
+                    ImColor btnColor(sp.color.r, sp.color.g, sp.color.b, 1.0f);
+                    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)btnColor);
+                    if (ImGui::Button(label.c_str(), ImVec2(200, 30))) {
+                        // Calcola la posizione 3D globale partendo dalle coordinate sferiche locali
+                        float cx = sp.localX / planet.planetRadius;
+                        float cy = sp.localZ / planet.planetRadius;
+                        glm::vec3 dir(0.0f);
+                        switch (sp.faceIndex) {
+                            case 0: dir = glm::vec3(cx, cy, 1.0f); break;
+                            case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
+                            case 2: dir = glm::vec3(1.0f, cy, -cx); break;
+                            case 3: dir = glm::vec3(-1.0f, cy, cx); break;
+                            case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
+                            case 5: dir = glm::vec3(cx, -1.0f, cy); break;
+                        }
+                        if (glm::length(dir) > 0.001f) dir = glm::normalize(dir);
+                        glm::vec3 worldPos = dir * (planet.planetRadius + sp.heightOffset);
+
+                        // Teletrasporta il giocatore!
+                        auto playerView = m_registry.view<CameraComponent, TransformComponent, PlayerControllerComponent, RigidBodyComponent>();
+                        for (auto playerEnt : playerView) {
+                            auto& rb = playerView.get<RigidBodyComponent>(playerEnt);
+                            rb.body.position = worldPos;
+                            rb.body.velocity = glm::vec3(0.0f);
+                            
+                            auto& trans = playerView.get<TransformComponent>(playerEnt);
+                            trans.x = rb.body.position.x;
+                            trans.y = rb.body.position.y + rb.body.eyeOffset;
+                            trans.z = rb.body.position.z;
+                            trans.prev_x = trans.x;
+                            trans.prev_y = trans.y;
+                            trans.prev_z = trans.z;
+                        }
+                    }
+                    ImGui::PopStyleColor();
+                    ImGui::PopID();
+                }
+                ImGui::End();
+            }
+        }
+    }
+    // --- FINE UI TELETRASPORTO ---
 
     if (m_isPlacingRig) {
         glm::vec3 rayOrigin = m_context->activeCameraView.cameraPosition;

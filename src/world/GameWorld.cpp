@@ -555,6 +555,8 @@ entt::entity GameWorld::CreatePrimitive(const std::string& name, const Vec3& pos
         m_registry.emplace<MeshComponent>(entity, MeshGenerators::MakeSphere());
     } else if (type == "SuperSphere" || type == "supersphere") {
         m_registry.emplace<MeshComponent>(entity, MeshGenerators::MakeSuperSphere(2.0f, 1.0f, 24));
+    } else if (type == "Obelisk" || type == "obelisk") {
+        m_registry.emplace<MeshComponent>(entity, MeshGenerators::MakeObelisk());
     }
     
     return entity;
@@ -564,6 +566,18 @@ entt::entity GameWorld::CreateEmptyEntity(const std::string& name) {
     auto entity = m_registry.create();
     m_registry.emplace<MetadataComponent>(entity, name, true, false);
     return entity;
+}
+
+void GameWorld::UploadMeshToVram(entt::entity e) {
+    if (auto* mesh = m_registry.try_get<MeshComponent>(e)) {
+        if (!mesh->vramAlloc.valid && m_context && m_context->vramAllocator && m_context->dmaManager) {
+            uint32_t meshSizeBytes = (uint32_t)(mesh->vertices.size() * sizeof(fw::Vertex));
+            mesh->vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
+            if (mesh->vramAlloc.valid) {
+                m_context->dmaManager->UploadMeshAsync(mesh->vertices.data(), meshSizeBytes, mesh->vramAlloc);
+            }
+        }
+    }
 }
 
 BlockType GameWorld::GetBlock(int x, int y, int z) const {

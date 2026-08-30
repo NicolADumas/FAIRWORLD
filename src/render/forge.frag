@@ -175,6 +175,7 @@ void main() {
 
     float finalAlpha = 1.0;
     if (push.useColorOverride == 1) {
+        finalColor = push.colorOverride.rgb;
         finalAlpha = push.colorOverride.a;
     } else if (inMaterialID == 6u) { // Trasparenza dell'acqua per vedere il fondale marino
         finalAlpha = 0.80;

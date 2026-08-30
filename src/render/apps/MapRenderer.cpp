@@ -73,13 +73,19 @@ void MapRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 vi
 
         if (!visibilityPolicy.IsVisible(registry, entity, mesh, trans)) continue;
 
-        if (mesh.type != fw::MeshType::Chunk && mesh.type != fw::MeshType::Prefab) continue;
+        if (mesh.type != fw::MeshType::Chunk && mesh.type != fw::MeshType::Prefab && mesh.type != fw::MeshType::Standard) continue;
 
         fw::Mat4 fwModel = trans.worldMatrix();
         glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
         pcData.mvp = viewProjMatrix * model;
-        pcData.useColorOverride = 0;
+        if (mesh.colorOverride[3] > 0.5f) {
+            pcData.useColorOverride = 1;
+            pcData.colorOverride = glm::vec4(mesh.colorOverride[0], mesh.colorOverride[1], mesh.colorOverride[2], mesh.colorOverride[3]);
+        } else {
+            pcData.useColorOverride = 0;
+            pcData.colorOverride = glm::vec4(1.0f);
+        }
         pcData.seasonProgress = 0.0f;
         pcData.lightDir = glm::vec4(context->previewLightDir, 1.0f);
         pcData.cameraPos = glm::vec4(context->activeCameraView.cameraPosition, 1.0f);

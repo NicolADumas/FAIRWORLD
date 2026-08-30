@@ -84,11 +84,21 @@ struct PlanetChunkInstance {
     int gridY = -1;
 };
 
+struct SpawnPoint {
+    std::string name = "Nuovo Spawn";
+    int faceIndex = 4; // Default: +Y (Top/Cielo)
+    float localX = 0.0f; // Offset dalla faccia
+    float localZ = 0.0f;
+    float heightOffset = 10.0f; // Altezza di spawn dalla superficie del pianeta
+    glm::vec4 color = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f); // Colore del puntatore
+};
+
 struct PlanetMap {
     PlanetType type;
     std::string name;
     std::vector<MapRegion> regions; // Legacy / Fallback
     std::vector<PlanetChunkInstance> chunkInstances;
+    std::vector<SpawnPoint> spawnPoints;
     
     float planetRadius = 50.0f; // Raggio del pianeta
     float axialTilt = 23.44f;   // Inclinazione asse terrestre (gradi)

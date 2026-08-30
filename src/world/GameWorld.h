@@ -67,6 +67,7 @@ public:
 #endif
     
     entt::entity CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type);
+    void UploadMeshToVram(entt::entity e);
     entt::entity CreateEmptyEntity(const std::string& name);
 
     BlockType GetBlock(int x, int y, int z) const;
