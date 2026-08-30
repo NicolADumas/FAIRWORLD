@@ -130,11 +130,11 @@ bool PlayState::Init() {
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
     
-    float spawnY = 100.0f;
+    float spawnY = 150.0f;
     if (hasCustomMap && m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
         auto& geom = m_context->forgeWorld->GetRegistry().get<fw::PlanetGeometryComponent>(m_context->forgeWorld->GetPlanetEntity());
         if (geom.planetRadius > 0.0f) {
-            spawnY = geom.planetRadius + 10.0f;
+            spawnY = geom.planetRadius + 150.0f; // Aumentato per spawnare sopra le montagne (base terrain = 64)
         }
     }
     
@@ -207,72 +207,43 @@ bool PlayState::Init() {
             std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
             hasCustomMap = false;
         }
+    }    // --- IMPOSTAZIONE GAME MODE PER L'HUD ---
+    if (m_context && m_context->engine) {
+        m_context->engine->SetGameMode(GameMode::Play);
     }
-
+    
     std::cout << "[DEBUG] [PlayState] Generazione Terreno iniziale attorno al giocatore...\n";
-    int currentChunkX = 0;
-    int currentChunkZ = 0;
     
-    glm::vec3 cameraPos(0.0f, spawnY, 0.0f);
-    float pRadius = 0.0f;
-    if (m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
-        auto planetEnt = m_context->forgeWorld->GetPlanetEntity();
-        auto& reg = m_context->forgeWorld->GetRegistry();
-        if (reg.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
-            pRadius = reg.get<fw::PlanetGeometryComponent>(planetEnt).planetRadius;
-            fw::MapWorldGenerator::GetChunkCoordFromPosition(pRadius, cameraPos, currentChunkX, currentChunkZ);
-        } else {
-            currentChunkX = (int)cameraPos.x / 16;
-            currentChunkZ = (int)cameraPos.z / 16;
+    float originalRadius = 50.0f;
+
+    // Al posto di spawnare chunk fittizi, utilizziamo il MapWorldGenerator
+    // per generare i voxel chunk partendo dal JSON del pianeta!
+    if (hasCustomMap && m_context->projectManager && m_context->jobSystem) {
+        auto docCopy = m_context->projectManager->GetDocumentMutable();
+        if (!docCopy.planets.empty()) {
+            originalRadius = docCopy.planets[0].planetRadius;
+            // docCopy.planets[0].planetRadius viene mantenuto per la generazione sferica 3D
         }
+        fw::MapWorldGenerator::Generate(docCopy, 0, *m_context->forgeWorld, m_context->jobSystem);
+        RebuildPlanetRoots(docCopy, 0); // Creiamo la mesh LOD sferica per il rendering a distanza
     } else {
-        currentChunkX = (int)cameraPos.x / 16;
-        currentChunkZ = (int)cameraPos.z / 16;
+        // Fallback: Generiamo un pianeta standard se non c'è mappa custom
+        fw::MapDocument dummyDoc;
+        fw::PlanetMap pm;
+        pm.planetRadius = 50.0f; // SFERA VERA DI DEFAULT
+        fw::MapRegion baseReg;
+        baseReg.type = fw::MapRegionType::Forest;
+        baseReg.perlinFrequency = 0.005f;
+        pm.regions.push_back(baseReg);
+        dummyDoc.planets.push_back(pm);
+        fw::MapWorldGenerator::Generate(dummyDoc, 0, *m_context->forgeWorld, m_context->jobSystem);
+        RebuildPlanetRoots(dummyDoc, 0);
     }
     
-    int chunkRadius = 8;
-    for (int cx = currentChunkX - chunkRadius; cx <= currentChunkX + chunkRadius; ++cx) {
-        for (int cz = currentChunkZ - chunkRadius; cz <= currentChunkZ + chunkRadius; ++cz) {
-            std::string chunkName = "WorldChunk_" + std::to_string(cx) + "_" + std::to_string(cz);
-            
-            glm::vec3 pos;
-            glm::quat rot;
-            if (pRadius > 0.0f) {
-                fw::MapWorldGenerator::GetSphericalChunkTransform(pRadius, cx, cz, pos, rot);
-            } else {
-                pos = {cx * 16.0f, 0.0f, cz * 16.0f};
-                rot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-            }
-            
-            entt::entity chunkEnt = m_context->forgeWorld->CreateChunkEntity(chunkName, fw::Vec3{pos.x, pos.y, pos.z});
-            
-            if (pRadius > 0.0f) {
-                auto& trans = registry.get<fw::TransformComponent>(chunkEnt);
-                trans.rotation = {rot.x, rot.y, rot.z, rot.w};
-            }
-            
-            fw::BiomeDataComponent biomeData;
-            biomeData.planetRadius = pRadius;
-            biomeData.chunkCenterWorld = pos;
-            
-            // Dummy forest biome for spherical test
-            biomeData.hasBaseRegion = true;
-            biomeData.baseRegion.type = fw::MapRegionType::Forest;
-            biomeData.baseRegion.gravityModifier = 1.0f;
-            biomeData.baseRegion.perlinFrequency = 0.005f;
-            uint8_t idGrass = 255, idDirt = 255;
-            if (auto reg = m_context->forgeWorld->GetBlockRegistry()) {
-                idGrass = reg->GetBlock("fairworld:grass").id;
-                idDirt = reg->GetBlock("fairworld:dirt").id;
-            }
-            biomeData.baseRegion.surfaceBlockId = idGrass;
-            biomeData.baseRegion.subsurfaceBlockId = idDirt;
-            biomeData.surfaceBlockId = idGrass;
-            biomeData.subsurfaceBlockId = idDirt;
-            
-            registry.emplace_or_replace<fw::BiomeDataComponent>(chunkEnt, biomeData);
-            registry.emplace_or_replace<fw::TerrainGenTag>(chunkEnt);
-        }
+    if (m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
+        auto& geom = m_context->forgeWorld->GetRegistry().get<fw::PlanetGeometryComponent>(m_context->forgeWorld->GetPlanetEntity());
+        geom.planetRadius = originalRadius;
+        geom.isLogicalSphere = true; // Il mondo per la logica di gioco e' una VERA SFERA 3D
     }
     
     // Creiamo due portali di test per il rendering non-euclideo!
@@ -332,16 +303,34 @@ void PlayState::Update(float dt) {
     // Aggiorna le matrici di tutti i portali
     fw::PortalSystem::UpdatePortals(m_registry);
 
-    // --- F1: CAMBIO MODALITÀ ---
+    // --- F1: CAMBIO ABILITÀ (Implementation/Creative Mode) ---
     static bool f1WasDown = false;
     bool f1Down = m_context->deviceManager->IsActionActive("PAUSE"_hs) == false && (GetAsyncKeyState(VK_F1) & 0x8000) != 0; 
     if (f1Down && !f1WasDown) {
-        GameMode currentMode = m_context->engine->GetGameMode();
-        m_context->engine->SetGameMode(currentMode == GameMode::Dev ? GameMode::Play : GameMode::Dev);
+        bool& creative = m_context->engine->GetPlayer().isCreativeMode;
+        creative = !creative;
         m_context->engine->GetPlayer().SaveToJson("assets/player.json");
-        std::cout << "[PlayState] GameMode cambiata in: " << (m_context->engine->GetGameMode() == GameMode::Dev ? "Dev" : "Play") << "\n";
+        std::cout << "[PlayState] Player isCreativeMode cambiato a: " << (creative ? "Attivo" : "Disattivo") << "\n";
     }
     f1WasDown = f1Down;
+
+    // --- AGGIORNAMENTO PIANETA LOD ---
+    // Aggiorniamo i nodi LOD sferici visibili a grande distanza (montagne distanti, continenti, etc.)
+    glm::mat4 vpMatrix = m_context->activeCameraView.projectionMatrix * m_context->activeCameraView.viewMatrix;
+    
+    // Costruiamo la lista di regioni attive da passare al LOD system
+    std::vector<fw::MapRegion> activeRegions;
+    if (m_context->projectManager) {
+        const auto& doc = m_context->projectManager->GetDocument();
+        if (!doc.planets.empty()) {
+            activeRegions = doc.planets[0].regions;
+            // ... potremmo anche espandere chunkInstances qui se necessario, ma per ora le regioni base bastano.
+        }
+    }
+    
+    for (auto& root : m_planetRootNodes) {
+        m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_context->forgeWorld, m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry);
+    }
 
     // --- ESECUZIONE SISTEMI ECS ---
     for (auto& system : m_systems) {
@@ -480,6 +469,39 @@ void PlayState::Render() {
                 m_context->deviceManager->requireFreeCursor = false;
             }
         }
+    }
+}
+
+void PlayState::RebuildPlanetRoots(const fw::MapDocument& doc, int activePlanetIndex) {
+    float R = 50.0f;
+    if (!doc.planets.empty() && activePlanetIndex >= 0 && activePlanetIndex < (int)doc.planets.size()) {
+        R = doc.planets[activePlanetIndex].planetRadius;
+    }
+
+    m_lodSystem.SetPlanetRadius(R);
+
+    std::function<void(fw::ChunkNode&)> destroyTree = [&](fw::ChunkNode& n) {
+        if (n.targetEntity != entt::null && m_context->forgeWorld->GetRegistry().valid(n.targetEntity)) {
+            m_context->forgeWorld->DestroyEntity(n.targetEntity);
+        }
+        for (int i = 0; i < 4; ++i) {
+            if (n.children[i]) destroyTree(*n.children[i]);
+        }
+    };
+    
+    for (auto& root : m_planetRootNodes) {
+        destroyTree(root);
+    }
+    m_planetRootNodes.clear();
+
+    if (R > 0.0f) {
+        // Le 6 facce base della Sfera a Cubo (Cube-Sphere)
+        m_planetRootNodes.emplace_back(glm::vec3(0, 0, R), R, 2, glm::vec3(-1,-1,1), glm::vec3(1,-1,1), glm::vec3(-1,1,1), glm::vec3(1,1,1));
+        m_planetRootNodes.emplace_back(glm::vec3(0, 0, -R), R, 2, glm::vec3(1,-1,-1), glm::vec3(-1,-1,-1), glm::vec3(1,1,-1), glm::vec3(-1,1,-1));
+        m_planetRootNodes.emplace_back(glm::vec3(-R, 0, 0), R, 2, glm::vec3(-1,-1,-1), glm::vec3(-1,-1,1), glm::vec3(-1,1,-1), glm::vec3(-1,1,1));
+        m_planetRootNodes.emplace_back(glm::vec3(R, 0, 0), R, 2, glm::vec3(1,-1,1), glm::vec3(1,-1,-1), glm::vec3(1,1,1), glm::vec3(1,1,-1));
+        m_planetRootNodes.emplace_back(glm::vec3(0, R, 0), R, 2, glm::vec3(-1,1,1), glm::vec3(1,1,1), glm::vec3(-1,1,-1), glm::vec3(1,1,-1));
+        m_planetRootNodes.emplace_back(glm::vec3(0, -R, 0), R, 2, glm::vec3(-1,-1,-1), glm::vec3(1,-1,-1), glm::vec3(-1,-1,1), glm::vec3(1,-1,1));
     }
 }
 

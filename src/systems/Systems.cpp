@@ -13,30 +13,63 @@
 
 namespace fw {
     void CameraSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
+        bool isSpherical = false;
+        if (context && context->forgeWorld) {
+            auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent>();
+            if (!planetView.empty()) {
+                auto& planet = planetView.get<fw::PlanetGeometryComponent>(planetView.front());
+                isSpherical = planet.isLogicalSphere;
+            }
+        }
+
         auto view = registry.view<::CameraComponent, ::TransformComponent>();
         for (auto [entity, cam, transform] : view.each()) {
             if (!cam.isMain) continue;
             
-            glm::vec3 front;
-            front.x = cos(glm::radians(cam.pitch)) * sin(glm::radians(cam.yaw));
-            front.y = sin(glm::radians(cam.pitch));
-            front.z = -cos(glm::radians(cam.pitch)) * cos(glm::radians(cam.yaw));
-            front = glm::normalize(front);
+            glm::vec3 up(0.0f, 1.0f, 0.0f);
+            if (isSpherical) {
+                float dist = glm::length(glm::vec3(transform.x, transform.y, transform.z));
+                if (dist > 0.01f) {
+                    up = glm::normalize(glm::vec3(transform.x, transform.y, transform.z));
+                }
+            }
+
+            // Calcolo del Front basato su Yaw (rotazione attorno a UP) e Pitch (rotazione locale X)
+            // Se usiamo semplicemente angoli di Eulero classici, il polo nord funziona, ma all'equatore lo yaw ruoterebbe attorno all'asse sbagliato.
+            // Soluzione Quaternion:
+            glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up); // Invertito per convenzione
             
-            glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0.0f, 1.0f, 0.0f)));
-            glm::vec3 up = glm::normalize(glm::cross(right, front));
+            // Front base "nord" fittizio (tangente alla sfera)
+            glm::vec3 baseForward = (std::abs(up.y) < 0.99f) ? glm::normalize(glm::cross(up, glm::vec3(0,1,0))) : glm::vec3(1,0,0);
+            if (up.y > 0.99f) baseForward = glm::vec3(0,0,-1);
+            else if (up.y < -0.99f) baseForward = glm::vec3(0,0,1);
+            
+            glm::vec3 front = qYaw * baseForward;
+            glm::vec3 right = glm::normalize(glm::cross(front, up));
+            
+            glm::quat qPitch = glm::angleAxis(glm::radians(cam.pitch), right);
+            front = qPitch * front;
+            up = glm::normalize(glm::cross(right, front));
             
             glm::mat3 rotMat;
             rotMat[0] = right;
             rotMat[1] = up;
-            rotMat[2] = -front; // Convenzione Right-Handed (OpenGL): Forward è -Z
-            
+            rotMat[2] = -front;
             transform.rotation = glm::quat_cast(rotMat);
         }
     }
 
     void PlayerMovementSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
         using namespace entt::literals;
+        bool isSpherical = false;
+        if (context && context->forgeWorld) {
+            auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent>();
+            if (!planetView.empty()) {
+                auto& planet = planetView.get<fw::PlanetGeometryComponent>(planetView.front());
+                isSpherical = planet.isLogicalSphere;
+            }
+        }
+
         auto view = registry.view<::PlayerControllerComponent, ::TransformComponent, ::CameraComponent, ::RigidBodyComponent>();
         for (auto [entity, player, transform, cam, rbComp] : view.each()) {
             if (context->deviceManager->requireFreeCursor) continue;
@@ -53,9 +86,22 @@ namespace fw {
 
             float moveSpeed = input.isRunning ? player.runSpeed : player.walkSpeed;
 
-            glm::vec3 flatFront(sin(glm::radians(cam.yaw)), 0.0f, -cos(glm::radians(cam.yaw)));
-            flatFront = glm::normalize(flatFront);
-            glm::vec3 flatRight = glm::normalize(glm::cross(flatFront, glm::vec3(0.0f, 1.0f, 0.0f)));
+            glm::vec3 up(0.0f, 1.0f, 0.0f);
+            if (isSpherical) {
+                float dist = glm::length(rbComp.body.position);
+                if (dist > 0.01f) up = glm::normalize(rbComp.body.position);
+            }
+
+            // Stessa logica della camera per trovare "avanti" e "destra" sulla superficie
+            glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up);
+            glm::vec3 baseForward = (std::abs(up.y) < 0.99f) ? glm::normalize(glm::cross(up, glm::vec3(0,1,0))) : glm::vec3(1,0,0);
+            if (up.y > 0.99f) baseForward = glm::vec3(0,0,-1);
+            else if (up.y < -0.99f) baseForward = glm::vec3(0,0,1);
+            
+            glm::vec3 surfaceFront = qYaw * baseForward;
+            glm::vec3 surfaceRight = glm::normalize(glm::cross(surfaceFront, up));
+
+            rbComp.body.isFlying = context->engine->GetPlayer().isCreativeMode;
 
             glm::vec3 targetVelocity(0.0f);
             
@@ -66,19 +112,31 @@ namespace fw {
             }
             
             if (canMove) {
-                if (input.moveForward != 0.0f) targetVelocity += flatFront * input.moveForward * moveSpeed;
-                if (input.moveRight != 0.0f) targetVelocity += flatRight * input.moveRight * moveSpeed;
-            }
-            
-            // Aggiorna velocita' orizzontale
-            rbComp.body.velocity.x = targetVelocity.x;
-            rbComp.body.velocity.z = targetVelocity.z;
-            
-            if (input.isJumping) {
-                if (rbComp.body.isGrounded) {
-                    rbComp.body.velocity.y = player.jumpForce; 
+                if (rbComp.body.isFlying) {
+                    // In volo, si muove lungo la vista 3D completa (ma approssimata qui con la camera)
+                    // Per semplificare in volo libero usiamo i vettori surface + up
+                    if (input.moveForward != 0.0f) targetVelocity += surfaceFront * input.moveForward * moveSpeed;
+                    if (input.moveRight != 0.0f) targetVelocity += surfaceRight * input.moveRight * moveSpeed;
+                    if (input.isJumping) targetVelocity += up * moveSpeed;
+                    if (context->deviceManager->IsActionActive(entt::hashed_string("CROUCH"))) targetVelocity -= up * moveSpeed;
+                    
+                    rbComp.body.velocity = targetVelocity;
+                } else {
+                    if (input.moveForward != 0.0f) targetVelocity += surfaceFront * input.moveForward * moveSpeed;
+                    if (input.moveRight != 0.0f) targetVelocity += surfaceRight * input.moveRight * moveSpeed;
+                    
+                    // Modifica la velocità planare senza toccare quella verticale (lungo l'Up)
+                    float verticalVel = glm::dot(rbComp.body.velocity, up);
+                    
+                    if (input.isJumping) {
+                        if (rbComp.body.isGrounded) {
+                            verticalVel = player.jumpForce; 
+                        }
+                        input.ConsumeJump(); 
+                    }
+                    
+                    rbComp.body.velocity = targetVelocity + (up * verticalVel);
                 }
-                input.ConsumeJump(); // Consuma sempre l'input dopo averlo processato
             }
             
             // Camera position matches the rigid body position + eye offset

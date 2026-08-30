@@ -27,6 +27,7 @@ namespace fw {
     // 3. Geometria Globale
     struct PlanetGeometryComponent {
         double planetRadius = 50.0;
+        bool isLogicalSphere = true;
         // In futuro: mappatura facce, LOD globale, coordinate sferiche del giocatore
     };
 

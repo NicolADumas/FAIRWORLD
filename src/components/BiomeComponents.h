@@ -28,4 +28,15 @@ struct TerrainGenTag {};
 // Tag Component: Indica che il chunk ha il terreno base e deve spawnare decorazioni (alberi, rocce)
 struct DecoratorGenTag {};
 
+// --- Tag specifici per Bioma (usati per smistare la generazione ai singoli Sistemi) ---
+struct ForestBiomeTag {};
+struct DesertBiomeTag {};
+struct TundraBiomeTag {};
+struct OceanBiomeTag {};
+struct VolcanoBiomeTag {};
+struct CityBiomeTag {};
+struct DungeonBiomeTag {};
+struct PortalBiomeTag {};
+struct FlatBiomeTag {};
+
 } // namespace fw

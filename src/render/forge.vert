@@ -4,9 +4,8 @@ layout(push_constant) uniform ForgePushConstantData {
     mat4 mvp;
     vec4 colorOverride;
     int useColorOverride;
-    float seasonProgress;
-    uint grid_width;
-    uint debug_lens_active;
+    float curvatureRadius;
+    vec2 chunkWorldXZ;
     vec4 lightDir;
     vec4 cameraPos;
 } push;
@@ -28,8 +27,20 @@ layout(location = 4) out vec4 outColor;
 layout(location = 5) out float outEmissive;
 
 void main() {
+    vec3 pos = inPosition;
+
+    // Animal Crossing Curvature Shader
+    if (push.curvatureRadius > 0.0) {
+        vec2 vertexWorldXZ = push.chunkWorldXZ + inPosition.xz;
+        float dist = distance(vertexWorldXZ, push.cameraPos.xz);
+        
+        // Simula la curvatura parabolica di una sfera
+        float curveOffset = (dist * dist) / (2.0 * push.curvatureRadius);
+        pos.y -= curveOffset;
+    }
+
     // Calcolo della posizione a schermo
-    gl_Position = push.mvp * vec4(inPosition, 1.0);
+    gl_Position = push.mvp * vec4(pos, 1.0);
     
     // UV Mapping procedurale (Proiezione planare basata sulla normale della faccia)
     vec3 absNormal = abs(inNormal);

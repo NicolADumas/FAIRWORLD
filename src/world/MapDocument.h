@@ -16,7 +16,8 @@ enum class MapRegionType : int {
     Volcano,
     City,
     Dungeon,
-    Portal
+    Portal,
+    Flat
 };
 
 enum class RegionShape : int {
@@ -32,10 +33,10 @@ struct MapRegion {
     // Legacy 2D grid
     glm::ivec2 rectMin = glm::ivec2(-2, -2);
     glm::ivec2 rectMax = glm::ivec2(2, 2);
-    MapRegionType type;
+    MapRegionType type = MapRegionType::Forest;
     RegionShape shape = RegionShape::Rectangle; // Forma della struttura (Rettangolo, Cerchio, Rombo, Stella)
     std::string label;
-    uint32_t seed;
+    uint32_t seed = 0;
     float gravityModifier = 1.0f;
     float perlinFrequency = 0.03f;
     float treeDensity = 0.5f;
@@ -65,6 +66,8 @@ struct TerrainTemplate {
     float baseGravityModifier = 1.0f;
     uint32_t seed = 0;
     float baseAngularRadius = 0.2f; // Estensione spaziale (Raggio Angolare)
+    uint8_t baseSurfaceBlockId = 1;     // Valore di default (es. Erba)
+    uint8_t baseSubsurfaceBlockId = 3;  // Valore di default (es. Terra)
     std::vector<MapRegion> subRegions; // 2D layout (dettagli dipinti)
 };
 

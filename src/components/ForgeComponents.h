@@ -100,6 +100,15 @@ struct MetadataComponent {
     bool selected = false;
 };
 
+// =============================================================================
+// VisibilityComponent
+// Gestisce lo stato logico di visibilità di un'entità per l'ECS (indipendentemente
+// dalla mesh ad essa associata).
+// =============================================================================
+struct VisibilityComponent {
+    bool enabled = true;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTI VOXEL/CHUNK
 // ─────────────────────────────────────────────────────────────────────────────

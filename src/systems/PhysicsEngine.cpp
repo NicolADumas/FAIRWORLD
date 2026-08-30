@@ -2,17 +2,24 @@
 #include "PhysicsEngine.h"
 #include "GameWorld.h"
 #include "PlanetComponents.h"
+#include "MapWorldGenerator.h"
 #include <algorithm>
 
 void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world) {
     // 1. Azzera la forza netta del frame precedente
     rb.netForce = glm::vec3(0.0f);
 
-    // 2. Controlla se è in acqua (Fluidodinamica Cap. 18)
+    // 2. Controlla il tipo di blocco ai piedi e al centro
     // rb.position.y rappresenta i piedi del giocatore
     fw::BlockType feetBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y + 0.1f), (int)floor(rb.position.z + 0.5f));
     fw::BlockType centerBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y + (rb.height * 0.5f)), (int)floor(rb.position.z + 0.5f));
     
+    // Se ci troviamo in un chunk non caricato, freeziamo la fisica!
+    if (feetBlock == fw::BlockType::OutOfBounds || centerBlock == fw::BlockType::OutOfBounds) {
+        rb.velocity = glm::vec3(0.0f);
+        return; // Mettiamo in pausa la caduta finché il chunk non appare
+    }
+
     bool feetInWater = (feetBlock == fw::BlockType::Water);
     bool centerInWater = (centerBlock == fw::BlockType::Water);
     rb.isInWater = feetInWater || centerInWater;
@@ -46,6 +53,8 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld&
 }
 
 void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
+    if (rb.isFlying) return; // Niente gravità in volo creativo
+
     glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
     float surfaceGravity = 9.81f; // G_EARTH
     float planetRadius = 50.0f;
@@ -58,7 +67,7 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
         auto& planet = planetView.get<fw::PlanetGeometryComponent>(entity);
         surfaceGravity = 9.81f; // Valore base fisso per ora
         planetRadius = planet.planetRadius;
-        isSpherical = true;
+        isSpherical = planet.isLogicalSphere;
     }
 
     if (isSpherical) {
@@ -68,9 +77,6 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
             float distance = std::sqrt(distSq);
             glm::vec3 normDir = dirToCenter / distance;
             
-            // Legge di gravitazione (Decadimento quadratico della distanza dal nucleo):
-            // g(r) = g_surf * (R_surf / r)^2
-            // Per evitare singolarità nel centro (r vicino a 0), usiamo un clamp interno al nucleo
             float r_clamped = std::max(distance, planetRadius * 0.1f);
             float ratio = planetRadius / r_clamped;
             float currentG = surfaceGravity * (ratio * ratio);
@@ -79,7 +85,6 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
             rb.netForce += gravityForce;
         }
     } else {
-        // Gravità piana direzionale (Fallback per mappe non sferiche come ChunkEditor/BlockMaker)
         glm::vec3 gravityForce = glm::vec3(0.0f, -surfaceGravity * rb.mass, 0.0f);
         rb.netForce += gravityForce;
     }
@@ -118,13 +123,45 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     rb.isGrounded = false;
     rb.isAgainstWall = false;
     
+    bool isSpherical = false;
+    float planetRadius = 50.0f;
+    auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
+    if (!planetView.empty()) {
+        planetRadius = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).planetRadius;
+        isSpherical = true;
+    }
+
+    glm::quat chunkRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    glm::vec3 chunkPos = glm::vec3(0.0f);
+    int cx = 0, cz = 0;
+
+    if (isSpherical) {
+        fw::MapWorldGenerator::GetChunkCoordFromPosition(planetRadius, rb.position, cx, cz);
+        if (fw::MapWorldGenerator::GetSphericalChunkTransform(planetRadius, cx, cz, chunkPos, chunkRot)) {
+            // Trasforma in Spazio Locale del Chunk per operare con la gravità (0, -1, 0)
+            rb.position = glm::inverse(chunkRot) * (rb.position - chunkPos);
+            rb.velocity = glm::inverse(chunkRot) * rb.velocity;
+        } else {
+            isSpherical = false; 
+        }
+    }
+
     // Helper per verificare se un blocco è solido
     auto isSolid = [&](int x, int y, int z) {
         if (y < 0 || y >= 128) return false;
-        fw::BlockType b = world.GetBlock(x, y, z);
+        
+        // Mappa le coordinate locali (x,y,z) del chunk alle coordinate flat globali di GameWorld
+        int flatX = x;
+        int flatZ = z;
+        if (isSpherical) {
+            flatX = (cx * 16) + x;
+            flatZ = (cz * 16) + z;
+        }
+
+        fw::BlockType b = world.GetBlock(flatX, y, flatZ);
+        if (b == fw::BlockType::OutOfBounds) return true; // Blocca il player in aria se il chunk sta caricando!
         return (b != fw::BlockType::Air && b != fw::BlockType::Water && 
-                b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal &&
-                b != fw::BlockType::OutOfBounds);
+                b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal);
     };
 
     // Stargate Trigger check
@@ -574,6 +611,12 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
             ev.value = damage;
             rb.pendingEvents.push_back(ev);
         }
+    }
+
+    // --- Ritorno a Spazio Globale ---
+    if (isSpherical) {
+        rb.position = chunkPos + (chunkRot * rb.position);
+        rb.velocity = chunkRot * rb.velocity;
     }
 }
 

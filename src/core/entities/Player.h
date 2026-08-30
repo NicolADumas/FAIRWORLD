@@ -13,6 +13,9 @@ public:
     
     Inventory inventory;
 
+    // Se true, il giocatore ha poteri divini (scavo istantaneo, no gravità)
+    bool isCreativeMode = false;
+
     // Massa corporea base del personaggio [kg] — separata dal carico
     // Modifica questo per personaggi diversi (es. nano=60kg, gigante=120kg)
     static constexpr float BASE_BODY_MASS = 70.0f;

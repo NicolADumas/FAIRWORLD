@@ -12,65 +12,80 @@
 namespace fw {
 
 void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg) {
-    // --- FRUSTUM CULLING ---
-    glm::mat4 vp = viewProj;
-
-    glm::vec4 planes[6];
-    planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]); // Left
-    planes[1] = glm::vec4(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0], vp[3][3] - vp[3][0]); // Right
-    planes[2] = glm::vec4(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1], vp[3][3] + vp[3][1]); // Bottom
-    planes[3] = glm::vec4(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1], vp[3][3] - vp[3][1]); // Top
-    planes[4] = glm::vec4(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2], vp[3][3] + vp[3][2]); // Near
-    planes[5] = glm::vec4(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2], vp[3][3] - vp[3][2]); // Far
-    
-    bool isVisible = true;
-    for (int i = 0; i < 6; i++) {
-        float len = glm::length(glm::vec3(planes[i]));
-        if (len <= 0.00001f) continue;
-        planes[i] /= len;
-        
-        float distance = glm::dot(glm::vec3(planes[i]), node.centerPos) + planes[i].w;
-        if (distance < -node.boundsRadius) {
-            isVisible = false;
-            break;
-        }
-    }
-    
-    // Se il nodo è fuori dal Frustum, interrompiamo solo l'aggiornamento e la suddivisione senza distruggere la mesh (il rendering GPU eseguirà già il culling a run-time senza perdite)
-    if (!isVisible) {
-        return; // Interrompiamo l'aggiornamento per questo ramo
-    }
-
     float distance = glm::length(node.centerPos - playerPos);
     
     // Genera la mesh se non esiste e non stiamo già generando
-    if (node.targetEntity == entt::null && !node.isGenerating && !node.isSplit) {
+    if (node.targetEntity == entt::null && !node.isGenerating && node.state == LODState::Stable) {
         RequestMeshGeneration(&node, world, jobs, assets, activeRegions, blockReg);
     }
     
     // Siamo vicini e possiamo ancora dividere? Dividiamo.
     if (distance < GetThresholdForLOD(node.lodLevel, node.boundsRadius) && node.lodLevel > 0) {
-        if (!node.isSplit) {
+        if (node.state == LODState::Stable) {
             SplitNode(node, world, jobs, assets, activeRegions, blockReg);
-            // Non distruggiamo subito il nodo genitore per evitare buchi, lo nasconderemo quando i figli sono pronti.
+            // Non nascondiamo subito il nodo genitore per evitare buchi.
         }
-        // Aggiorna ricorsivamente i figli
+        
+        if (node.state == LODState::Splitting) {
+            // Verifica se tutti i figli sono pronti per nascondere il genitore (Seamless Transition)
+            bool allChildrenReady = true;
+            for (int i = 0; i < 4; ++i) {
+                if (node.children[i] && node.children[i]->targetEntity != entt::null) {
+                    if (auto* mesh = world->GetRegistry().try_get<fw::MeshComponent>(node.children[i]->targetEntity)) {
+                        if (!mesh->vramAlloc.valid) allChildrenReady = false;
+                    } else {
+                        allChildrenReady = false;
+                    }
+                } else {
+                    allChildrenReady = false;
+                }
+            }
+            
+            if (allChildrenReady && node.targetEntity != entt::null) {
+                // Transizione atomica da Splitting a Split
+                if (auto* parentVis = world->GetRegistry().try_get<fw::VisibilityComponent>(node.targetEntity)) {
+                    parentVis->enabled = false;
+                } else {
+                    // Se per qualche motivo manca (non dovrebbe), glielo mettiamo disabilitato
+                    world->GetRegistry().emplace<fw::VisibilityComponent>(node.targetEntity).enabled = false;
+                }
+                
+                // Assicuriamoci che i figli siano visibili
+                for (int i = 0; i < 4; ++i) {
+                    if (node.children[i] && node.children[i]->targetEntity != entt::null) {
+                        if (auto* childVis = world->GetRegistry().try_get<fw::VisibilityComponent>(node.children[i]->targetEntity)) {
+                            childVis->enabled = true;
+                        }
+                    }
+                }
+                node.state = LODState::Split;
+            }
+        }
+
+        // Aggiorna ricorsivamente i figli solo se la generazione non sta collassando
         for (auto& child : node.children) {
             if (child) UpdateLODTree(*child, playerPos, world, jobs, assets, activeRegions, viewProj, blockReg);
         }
     } 
     // Ci siamo allontanati? Uniamo i figli e puliamo la memoria.
-    else if (node.isSplit && distance >= GetThresholdForLOD(node.lodLevel, node.boundsRadius)) {
-        MergeNode(node, world);
-        // Richiediamo la generazione del nodo genitore
+    else if ((node.state == LODState::Split || node.state == LODState::Splitting) && distance >= GetThresholdForLOD(node.lodLevel, node.boundsRadius)) {
+        node.state = LODState::Merging;
+        
+        // Richiediamo la generazione del nodo genitore se non esiste (ad es. se è andato perso o era Splitting)
         if (node.targetEntity == entt::null && !node.isGenerating) {
             RequestMeshGeneration(&node, world, jobs, assets, activeRegions, blockReg);
+        } else {
+            // Se c'è già, lo riattiviamo subito per evitare buchi
+            if (auto* parentVis = world->GetRegistry().try_get<fw::VisibilityComponent>(node.targetEntity)) {
+                parentVis->enabled = true;
+            }
+            MergeNode(node, world);
         }
     }
 }
 
 void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg) {
-    node.isSplit = true;
+    node.state = LODState::Splitting;
     
     glm::vec3 m0 = glm::normalize(node.p00 + node.p10) * m_planetRadius;
     glm::vec3 m1 = glm::normalize(node.p01 + node.p11) * m_planetRadius;
@@ -88,7 +103,6 @@ void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem*
 }
 
 void SphericalLODSystem::MergeNode(ChunkNode& node, GameWorld* world) {
-    node.isSplit = false;
     for (int i = 0; i < 4; ++i) {
         if (node.children[i]) {
             if (node.children[i]->targetEntity != entt::null) {
@@ -97,6 +111,7 @@ void SphericalLODSystem::MergeNode(ChunkNode& node, GameWorld* world) {
             node.children[i].reset();
         }
     }
+    node.state = LODState::Stable;
 }
 
 void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg) {

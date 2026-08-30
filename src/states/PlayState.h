@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include "Systems.h"
+#include "SphericalLOD.h"
 
 struct SharedContext;
 
@@ -36,4 +37,9 @@ private:
     SharedContext* m_context;
     entt::registry m_registry;
     std::vector<std::unique_ptr<System>> m_systems;
+    
+    // --- LOD System (Pianeta a distanza) ---
+    fw::SphericalLODSystem m_lodSystem;
+    std::vector<fw::ChunkNode> m_planetRootNodes;
+    void RebuildPlanetRoots(const class fw::MapDocument& doc, int activePlanetIndex);
 };

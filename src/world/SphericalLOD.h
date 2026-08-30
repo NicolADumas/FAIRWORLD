@@ -13,11 +13,18 @@ class JobSystem;
 class GameWorld;
 class ForgeWorld;
 
+enum class LODState {
+    Stable,
+    Splitting,
+    Split,
+    Merging
+};
+
 struct ChunkNode {
     glm::vec3 centerPos;
     float boundsRadius;
     int lodLevel; // 0 = Massima risoluzione, N = Radice
-    bool isSplit = false;
+    LODState state = LODState::Stable;
     
     // Cube-sphere face patch
     glm::vec3 p00, p10, p01, p11;

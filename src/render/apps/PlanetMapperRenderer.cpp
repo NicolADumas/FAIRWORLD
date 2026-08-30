@@ -123,7 +123,9 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
         // drawCount è numChunks, usiamo 1 per ora o leggiamo da un buffer
         // L'assunzione temporanea è 100 chunk generati
         uint32_t numChunks = 100; // Da passare dinamicamente
-        vkCmdDrawIndexedIndirect(cmd, m_terrainPipeline->getIndirectBuffer(), 0, numChunks, sizeof(VkDrawIndexedIndirectCommand));
+        for (uint32_t i = 0; i < numChunks; ++i) {
+            vkCmdDrawIndexedIndirect(cmd, m_terrainPipeline->getIndirectBuffer(), i * sizeof(VkDrawIndexedIndirectCommand), 1, sizeof(VkDrawIndexedIndirectCommand));
+        }
     }
 }
 

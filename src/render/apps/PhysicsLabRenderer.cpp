@@ -6,6 +6,8 @@
 #include <iostream>
 #include <cmath>
 
+#include "VisibilityPolicy.h"
+
 namespace fw {
 
 struct PhysicsLabPushConstantData {
@@ -50,6 +52,8 @@ void PhysicsLabRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
+    
+    WorldVisibilityPolicy visibilityPolicy(viewProjMatrix);
 
     PhysicsLabPushConstantData pcData{};
     VkDeviceSize offsets[] = { 0 };
@@ -61,7 +65,7 @@ void PhysicsLabRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
         const auto& mesh = view.get<fw::MeshComponent>(entity);
         const auto& trans = view.get<fw::TransformComponent>(entity);
 
-        if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+        if (!visibilityPolicy.IsVisible(registry, entity, mesh, trans)) continue;
 
         fw::Mat4 fwModel = trans.worldMatrix();
         glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));

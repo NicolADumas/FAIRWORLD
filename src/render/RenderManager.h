@@ -44,6 +44,33 @@ struct VulkanTextureArray {
 
 
 
+struct GLBVertex {
+    glm::vec3 pos;
+    glm::vec3 normal;
+    glm::vec2 uv;
+    glm::vec4 tangent;
+    glm::vec4 color;
+};
+
+struct GLBModel {
+    std::vector<GLBVertex> vertices;
+    std::vector<uint32_t> indices;
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VmaAllocation vertexAlloc = VK_NULL_HANDLE;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VmaAllocation indexAlloc = VK_NULL_HANDLE;
+    uint32_t indexCount = 0;
+};
+
+struct GLBPushConstantData {
+    glm::mat4 mvp;
+    glm::mat4 model;
+    glm::vec4 baseColorFactor;
+    float roughnessFactor;
+    float metallicFactor;
+    glm::vec2 padding;
+};
+
 struct ForgePushConstantData {
     glm::mat4 mvp;
     glm::vec4 colorOverride;
@@ -80,6 +107,13 @@ public:
     uint64_t GetStagingBufferSize() const { return STAGING_BUFFER_SIZE; }
     VkBuffer GetGlobalVramBuffer() const { return m_memory ? m_memory->GetGlobalVramBuffer() : VK_NULL_HANDLE; }
     std::mutex* GetQueueMutex() { return m_core ? m_core->GetQueueMutex() : nullptr; }
+
+    VkPipeline GetGLBPipeline() const { return m_glbPipeline; }
+    VkPipelineLayout GetGLBPipelineLayout() const { return m_glbPipelineLayout; }
+    GLBModel* GetGLBModel(const std::string& path) {
+        if (m_glbModels.find(path) != m_glbModels.end()) return &m_glbModels[path];
+        return nullptr;
+    }
 
     // Notifica che la finestra è stata ridimensionata: ricrea la Swapchain
     // Ignorato se l'init non è ancora completato
@@ -158,6 +192,10 @@ private:
     // --- FORGE PIPELINE ---
     VkPipelineLayout m_forgePipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_forgePipeline{ VK_NULL_HANDLE };
+
+    // --- GLB PIPELINE ---
+    VkPipelineLayout m_glbPipelineLayout{ VK_NULL_HANDLE };
+    VkPipeline m_glbPipeline{ VK_NULL_HANDLE };
 
     // --- RENDERERS ---
     std::unique_ptr<fw::BlockMakerRenderer> m_blockMakerRenderer;
@@ -266,9 +304,11 @@ public:
         uint32_t indexCount{ 0 };
     };
     std::map<std::string, VoxelMesh> m_mobMeshes;
+    std::map<std::string, GLBModel> m_glbModels;
     
     void LoadAllMobMeshes(class AssetManager& assets);
     void LoadMobMesh(const std::string& filepath);
+    void LoadGLBMesh(const std::string& filepath);
 
     VkCommandPool m_commandPool{ VK_NULL_HANDLE };
     // --- Variabili per il VMA Staging Ring Buffer ---
@@ -326,6 +366,7 @@ public:
     bool CreateDescriptorSetLayout();
     bool CreateGraphicsPipeline();
     bool CreateForgePipeline();
+    bool CreateGLBPipeline();
     bool CreateFramebuffers();
     bool CreateCommandPoolAndBuffer();
     

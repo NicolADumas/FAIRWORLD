@@ -28,6 +28,8 @@ bool MapDocument::SaveJSON(const std::string& path) {
             tj["basePerlinFrequency"] = t.basePerlinFrequency;
             tj["baseGravityModifier"] = t.baseGravityModifier;
             tj["baseAngularRadius"] = t.baseAngularRadius;
+            tj["baseSurfaceBlockId"] = t.baseSurfaceBlockId;
+            tj["baseSubsurfaceBlockId"] = t.baseSubsurfaceBlockId;
             tj["seed"] = t.seed;
             tj["subRegions"] = json::array();
             for (const auto& r : t.subRegions) {
@@ -142,6 +144,8 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 t.basePerlinFrequency = tj.value("basePerlinFrequency", 0.03f);
                 t.baseGravityModifier = tj.value("baseGravityModifier", 1.0f);
                 t.baseAngularRadius = tj.value("baseAngularRadius", 0.2f);
+                t.baseSurfaceBlockId = tj.value("baseSurfaceBlockId", 1);
+                t.baseSubsurfaceBlockId = tj.value("baseSubsurfaceBlockId", 3);
                 t.seed = tj.value("seed", 0U);
                 if (tj.contains("subRegions") && tj["subRegions"].is_array()) {
                     for (const auto& rj : tj["subRegions"]) {

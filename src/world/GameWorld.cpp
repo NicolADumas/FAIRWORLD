@@ -140,6 +140,19 @@ void GameWorld::ClearWorld(bool saveToDisk) {
     m_forgeBlocks.clear();
     
     if (m_frameAllocator) m_frameAllocator->Reset();
+    
+    // Re-inizializza l'entità singleton del pianeta dopo il clear
+    m_planetEntity = m_registry.create();
+    m_registry.emplace<PlanetTag>(m_planetEntity);
+    m_registry.emplace<PlanetTimeComponent>(m_planetEntity);
+    m_registry.emplace<PlanetAstronomyComponent>(m_planetEntity);
+    m_registry.emplace<PlanetGeometryComponent>(m_planetEntity);
+    m_registry.emplace<PlanetEnvironmentComponent>(m_planetEntity);
+    m_registry.emplace<PlanetAtmosphereComponent>(m_planetEntity);
+    m_registry.emplace<PlanetClimateComponent>(m_planetEntity);
+    m_registry.emplace<PlanetOceanComponent>(m_planetEntity);
+    m_registry.emplace<PlanetGeologyComponent>(m_planetEntity);
+    m_registry.emplace<PlanetEcologyComponent>(m_planetEntity);
 }
 
 void GameWorld::Update(float dt) {
@@ -147,6 +160,11 @@ void GameWorld::Update(float dt) {
     if (m_registry.valid(m_planetEntity)) {
         fw::PlanetTimeSystem::Update(m_registry, dt);
         fw::AstronomySystem::Update(m_registry, dt);
+        
+        // Sincronizziamo la luce di shading dei blocchi con il Sole dinamico calcolato dall'Astronomia!
+        if (m_context && m_registry.all_of<PlanetEnvironmentComponent>(m_planetEntity)) {
+            m_context->previewLightDir = m_registry.get<PlanetEnvironmentComponent>(m_planetEntity).sunDirection;
+        }
     }
 
     // 1. Processa la coda delle mesh differite da Worker Threads
@@ -549,26 +567,68 @@ entt::entity GameWorld::CreateEmptyEntity(const std::string& name) {
 }
 
 BlockType GameWorld::GetBlock(int x, int y, int z) const {
-    if (y < 0 || y >= 128) return BlockType::OutOfBounds;
+    if (y < 0) return BlockType::OutOfBounds;
+    
     int cx = x >= 0 ? x / 16 : (x - 15) / 16;
     int cz = z >= 0 ? z / 16 : (z - 15) / 16;
-    int lx = x - (cx * 16);
-    int lz = z - (cz * 16);
+    
+    bool isSpherical = false;
+    float planetRadius = 50.0f;
+    if (m_registry.valid(m_planetEntity) && m_registry.all_of<fw::PlanetGeometryComponent>(m_planetEntity)) {
+        const auto& geom = m_registry.get<fw::PlanetGeometryComponent>(m_planetEntity);
+        isSpherical = geom.isLogicalSphere;
+        planetRadius = geom.planetRadius;
+    }
+
+    if (isSpherical) {
+        fw::MapWorldGenerator::GetChunkCoordFromPosition(planetRadius, glm::vec3(x, y, z), cx, cz);
+    }
     
     entt::entity chunkEnt = m_chunkManager.GetChunkEntity(cx, cz);
     if (chunkEnt != entt::null && m_registry.valid(chunkEnt)) {
+        int lx = x - (cx * 16);
+        int lz = z - (cz * 16);
+        int ly = y;
+
+        if (isSpherical && m_registry.all_of<fw::TransformComponent>(chunkEnt)) {
+            const auto& trans = m_registry.get<fw::TransformComponent>(chunkEnt);
+            fw::Mat4 fwMat = trans.worldMatrix();
+            glm::mat4 mat = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwMat));
+            glm::mat4 invMat = glm::inverse(mat);
+            glm::vec4 localPos = invMat * glm::vec4(x, y, z, 1.0f);
+            lx = (int)std::floor(localPos.x);
+            ly = (int)std::floor(localPos.y);
+            lz = (int)std::floor(localPos.z);
+        }
+
+        if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || ly < 0 || ly >= 128) {
+            return BlockType::OutOfBounds;
+        }
+
         const auto& chunk = m_registry.get<VoxelChunkComponent>(chunkEnt);
-        return static_cast<BlockType>(chunk.blocks[lx][y][lz]);
+        if (!chunk.isGenerated) return BlockType::OutOfBounds; // Tratta i chunk in generazione come limiti del mondo per bloccare la fisica
+        return static_cast<BlockType>(chunk.blocks[lx][ly][lz]);
     }
     return BlockType::OutOfBounds;
 }
 
 void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
-    if (y < 0 || y >= 128) return;
+    if (y < 0) return;
+    
     int cx = x >= 0 ? x / 16 : (x - 15) / 16;
     int cz = z >= 0 ? z / 16 : (z - 15) / 16;
-    int lx = x - (cx * 16);
-    int lz = z - (cz * 16);
+
+    bool isSpherical = false;
+    float planetRadius = 50.0f;
+    if (m_registry.valid(m_planetEntity) && m_registry.all_of<fw::PlanetGeometryComponent>(m_planetEntity)) {
+        const auto& geom = m_registry.get<fw::PlanetGeometryComponent>(m_planetEntity);
+        isSpherical = geom.isLogicalSphere;
+        planetRadius = geom.planetRadius;
+    }
+
+    if (isSpherical) {
+        fw::MapWorldGenerator::GetChunkCoordFromPosition(planetRadius, glm::vec3(x, y, z), cx, cz);
+    }
 
     entt::entity chunkEnt = m_chunkManager.GetChunkEntity(cx, cz);
     if (chunkEnt == entt::null || !m_registry.valid(chunkEnt)) {
@@ -576,10 +636,29 @@ void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
     }
 
     if (m_registry.valid(chunkEnt)) {
+        int lx = x - (cx * 16);
+        int lz = z - (cz * 16);
+        int ly = y;
+
+        if (isSpherical && m_registry.all_of<fw::TransformComponent>(chunkEnt)) {
+            const auto& trans = m_registry.get<fw::TransformComponent>(chunkEnt);
+            fw::Mat4 fwMat = trans.worldMatrix();
+            glm::mat4 mat = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwMat));
+            glm::mat4 invMat = glm::inverse(mat);
+            glm::vec4 localPos = invMat * glm::vec4(x, y, z, 1.0f);
+            lx = (int)std::floor(localPos.x);
+            ly = (int)std::floor(localPos.y);
+            lz = (int)std::floor(localPos.z);
+        }
+
+        if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || ly < 0 || ly >= 128) {
+            return;
+        }
+
         auto& chunk = m_registry.get<VoxelChunkComponent>(chunkEnt);
-        uint8_t oldType = chunk.blocks[lx][y][lz];
+        uint8_t oldType = chunk.blocks[lx][ly][lz];
         if (oldType != static_cast<uint8_t>(type)) {
-            chunk.blocks[lx][y][lz] = static_cast<uint8_t>(type);
+            chunk.blocks[lx][ly][lz] = static_cast<uint8_t>(type);
             MarkChunkDirty(chunkEnt);
 
             EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y, z)));

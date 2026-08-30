@@ -379,6 +379,63 @@ void PlanetMapperState::DrawBuilderUI() {
                         ImGui::Text("Faccia %d - Risoluzione Griglia: %d x %d Cella (Ogni cella rappresenta una porzione del globo)", f, N_lato, N_lato);
                         ImGui::TextDisabled("Seleziona un modello chunk a sinistra nel catalogo e clicca su una cella vuota (---) per piazzare il chunk.");
                         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Clicca su una cella verde (occupata) per rimuovere quel chunk dalla sfera.");
+                        
+                        if (ImGui::Button("Riempi Tutti i Vuoti", ImVec2(150, 25))) {
+                            if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < (int)doc.terrainLibrary.size()) {
+                                for (int row = 0; row < N_lato; ++row) {
+                                    for (int col = 0; col < N_lato; ++col) {
+                                        int key = f * 1000000 + row * 1000 + col;
+                                        if (gridLookup.find(key) == gridLookup.end()) {
+                                            fw::PlanetChunkInstance addInst;
+                                            addInst.name = "Chunk_" + std::to_string(f) + "_" + std::to_string(col) + "_" + std::to_string(row);
+                                            addInst.templateId = doc.terrainLibrary[m_activeTemplateIndex].id;
+                                            addInst.isGridAligned = true;
+                                            addInst.faceIndex = f;
+                                            addInst.gridX = col;
+                                            addInst.gridY = row;
+                                            float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
+                                            float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
+                                            glm::vec3 dir(0.0f);
+                                            switch(f) {
+                                                case 0: dir = glm::vec3(cx, cy, 1.0f); break;
+                                                case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
+                                                case 2: dir = glm::vec3(1.0f, cy, -cx); break;
+                                                case 3: dir = glm::vec3(-1.0f, cy, cx); break;
+                                                case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
+                                                case 5: dir = glm::vec3(cx, -1.0f, cy); break;
+                                            }
+                                            dir = glm::normalize(dir);
+                                            addInst.eulerAngles.x = glm::degrees(asin(dir.y));
+                                            addInst.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
+                                            addInst.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 1.5f;
+                                            currentPlanet.chunkInstances.push_back(addInst);
+                                            wantsAdd = true; // Trigger rebuild
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Svuota Tutta la Faccia", ImVec2(180, 25))) {
+                            for (int row = 0; row < N_lato; ++row) {
+                                for (int col = 0; col < N_lato; ++col) {
+                                    int key = f * 1000000 + row * 1000 + col;
+                                    auto it = gridLookup.find(key);
+                                    if (it != gridLookup.end()) {
+                                        // Segna per l'eliminazione (richiede un po' di attenzione con gli indici, ma lo facciamo ricreando l'array)
+                                        toDeleteIndex = it->second;
+                                    }
+                                }
+                            }
+                            // Metodo più sicuro: rimuovere tutti gli elementi di questa faccia
+                            auto newEnd = std::remove_if(currentPlanet.chunkInstances.begin(), currentPlanet.chunkInstances.end(), [f](const fw::PlanetChunkInstance& inst) {
+                                return inst.isGridAligned && inst.faceIndex == f;
+                            });
+                            if (newEnd != currentPlanet.chunkInstances.end()) {
+                                currentPlanet.chunkInstances.erase(newEnd, currentPlanet.chunkInstances.end());
+                                wantsAdd = true; // Uso wantsAdd solo per forzare il RebuildPlanetRoots alla fine
+                            }
+                        }
                         ImGui::Spacing();
                         
                         ImGui::BeginChild(std::string("GridScroll_" + std::to_string(f)).c_str(), ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);

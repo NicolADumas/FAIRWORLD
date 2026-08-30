@@ -232,6 +232,27 @@ void ChunkEditorState::DrawUI() {
         ImGui::End();
         return;
     }
+    auto drawBlockCombo = [&](const char* label, auto& blockId) {
+        int idInt = static_cast<int>(blockId);
+        std::string comboPreview = "ID: " + std::to_string(idInt);
+        if (m_context && m_context->blockRegistry) {
+            const auto& def = m_context->blockRegistry->GetBlock((uint8_t)idInt);
+            comboPreview = def.displayName + " (" + def.stringId + ")";
+        }
+        if (ImGui::BeginCombo(label, comboPreview.c_str())) {
+            if (m_context && m_context->blockRegistry) {
+                for (const auto& b : m_context->blockRegistry->GetAllBlocks()) {
+                    bool isSelected = (idInt == b.id);
+                    if (ImGui::Selectable((b.displayName + " [" + b.stringId + "]").c_str(), isSelected)) {
+                        blockId = static_cast<std::decay_t<decltype(blockId)>>(b.id);
+                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    }
+                    if (isSelected) ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+    };
 
     ImGui::BeginChild("EditorContent", ImVec2(0, -90.0f), true);
 
@@ -350,7 +371,7 @@ void ChunkEditorState::DrawUI() {
             }
             
             if (canvasHovered) {
-                if (io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                if (m_isBrushModeActive && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                     // Crea nuova istanza (pennello continuo)
                     int halfB = m_brushSize / 2;
                     glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
@@ -383,7 +404,7 @@ void ChunkEditorState::DrawUI() {
                         m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
                         if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                     }
-                } else if (!io.KeyShift && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                } else if (!m_isBrushModeActive && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     // Seleziona istanza
                     m_selectedSubRegionIndex = hoveredInstance;
                 }
@@ -391,7 +412,7 @@ void ChunkEditorState::DrawUI() {
             
             // Dragging dell'istanza selezionata
             if (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size()) {
-                if (canvasActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !io.KeyShift && !io.KeyCtrl) {
+                if (canvasActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !m_isBrushModeActive && !io.KeyCtrl) {
                     ImVec2 prevMousePos = ImVec2(io.MousePos.x - io.MouseDelta.x, io.MousePos.y - io.MouseDelta.y);
                     glm::ivec2 deltaChunk = ScreenToChunk(io.MousePos) - ScreenToChunk(prevMousePos);
                     if (deltaChunk.x != 0 || deltaChunk.y != 0) {
@@ -417,11 +438,13 @@ void ChunkEditorState::DrawUI() {
                     case fw::MapRegionType::Desert:  fillColor = IM_COL32(220, 200, 60,  235); break;
                     case fw::MapRegionType::Volcano: fillColor = IM_COL32(220, 50,  20,  235); break;
                     case fw::MapRegionType::Tundra:  fillColor = IM_COL32(200, 240, 255, 235); break;
+                    case fw::MapRegionType::Flat:    fillColor = IM_COL32(255, 255, 255, 255); break;
                     default: break;
                 }
                 
                 ImU32 outlineColor = (i == m_selectedSubRegionIndex) ? IM_COL32(255, 255, 0, 255) : 
                                      (i == hoveredInstance) ? IM_COL32(200, 200, 200, 255) : IM_COL32(0,0,0,0);
+                                     
                                      
                 if (r.shape == fw::RegionShape::Circle) {
                     ImVec2 center((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
@@ -440,20 +463,61 @@ void ChunkEditorState::DrawUI() {
                     drawList->AddRectFilled(pMin, pMax, fillColor);
                     if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddRect(pMin, pMax, outlineColor, 0.0f, 0, 2.0f);
                 }
-            }
+            } // fine for subRegions
+            
             drawList->PopClipRect();
             
+            bool isRightClicked = ImGui::IsItemClicked(1);
+            if (isRightClicked && hoveredInstance >= 0) {
+                activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + hoveredInstance);
+                if (m_selectedSubRegionIndex == hoveredInstance) m_selectedSubRegionIndex = -1;
+                else if (m_selectedSubRegionIndex > hoveredInstance) m_selectedSubRegionIndex--;
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.5f; }
+            }
+
             if (canvasHovered && io.KeyShift) {
                 int halfB = m_brushSize / 2;
                 int bMinX = cMouseCoord.x - halfB;
                 int bMinZ = cMouseCoord.y - halfB;
                 int bMaxX = cMouseCoord.x - halfB + m_brushSize;
                 int bMaxZ = cMouseCoord.y - halfB + m_brushSize;
-                drawList->AddRect(ChunkToScreen(bMinX, bMinZ), ChunkToScreen(bMaxX, bMaxZ), IM_COL32(255, 255, 0, 150), 0, 0, 2.0f);
+                
+                ImVec2 sMin = ChunkToScreen(bMinX, bMinZ);
+                ImVec2 sMax = ChunkToScreen(bMaxX, bMaxZ);
+                drawList->AddRect(sMin, sMax, IM_COL32(255, 255, 0, 255));
             }
             
             ImGui::TextDisabled("Click sx: Seleziona | Shift+Click sx: Crea Istanza | Trascina: Sposta");
             ImGui::EndChild();
+        }
+
+        if (ImGui::CollapsingHeader("Strumenti Disegno (Pennello)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const char* shapeNames[] = { "Rettangolo", "Cerchio", "Rombo", "Stella" };
+            ImGui::Combo("Forma Strumento", &m_paintBrushShape, shapeNames, IM_ARRAYSIZE(shapeNames));
+            
+            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
+            ImGui::Combo("Tipo Sotto-Regione", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
+
+            drawBlockCombo("Blocco Superficie Pennello", m_paintSurfaceBlock);
+            drawBlockCombo("Blocco Sottosuolo Pennello", m_paintSubsurfaceBlock);
+            ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, 10);
+            
+            ImGui::Spacing();
+            if (m_isBrushModeActive) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                if (ImGui::Button("MODALITÀ PENNELLO: ON (Clicca per Uscire)", ImVec2(-1, 35))) m_isBrushModeActive = false;
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+                if (ImGui::Button("MODALITÀ PENNELLO: OFF (Clicca per Dipingere)", ImVec2(-1, 35))) m_isBrushModeActive = true;
+                ImGui::PopStyleColor();
+            }
+            ImGui::Spacing();
+
+            if (ImGui::Button("PULISCI SOTTO-REGIONI", ImVec2(-1, 25))) {
+                activeTemplate.subRegions.clear();
+                m_needsRebuild = true; m_rebuildTimer = 0.2f;
+            }
         }
 
         if (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size()) {
@@ -467,12 +531,15 @@ void ChunkEditorState::DrawUI() {
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                 }
                 
-                const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+                const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
                 int typeIdx = static_cast<int>(inst.type);
                 if (ImGui::Combo("Bioma Istanza", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
                     inst.type = static_cast<fw::MapRegionType>(typeIdx);
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                 }
+                
+                drawBlockCombo("Blocco Sup. Istanza", inst.surfaceBlockId);
+                drawBlockCombo("Blocco Sottosup. Istanza", inst.subsurfaceBlockId);
                 
                 if (ImGui::SliderFloat("Frequenza Perlin", &inst.perlinFrequency, 0.001f, 0.1f, "%.4f")) {
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
@@ -483,7 +550,7 @@ void ChunkEditorState::DrawUI() {
                 }
                 
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-                if (ImGui::Button("Elimina Istanza", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                if (ImGui::Button("Elimina Istanza", ImVec2(-1, 0))) {
                     activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + m_selectedSubRegionIndex);
                     m_selectedSubRegionIndex = -1;
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
@@ -499,12 +566,15 @@ void ChunkEditorState::DrawUI() {
                 activeTemplate.name = labelBuf;
             }
 
-            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
+            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
             int typeIdx = static_cast<int>(activeTemplate.baseType);
             if (ImGui::Combo("Bioma Base", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
                 activeTemplate.baseType = static_cast<fw::MapRegionType>(typeIdx);
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
+            
+            drawBlockCombo("Blocco Superficie Base", activeTemplate.baseSurfaceBlockId);
+            drawBlockCombo("Blocco Sottosuolo Base", activeTemplate.baseSubsurfaceBlockId);
 
             if (ImGui::SliderFloat("Frequenza Perlin (Rugosità)", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f")) {
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
@@ -520,69 +590,11 @@ void ChunkEditorState::DrawUI() {
             if (ImGui::SliderFloat("Estensione Base (Raggio Angolare)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f")) {
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
-
-            ImGui::Spacing();
-            if (ImGui::Button("Genera Livello Acqua (Oceano)", ImVec2(-1, 25))) {
-                activeTemplate.subRegions.clear();
-                fw::MapRegion oceanBase;
-                oceanBase.type = fw::MapRegionType::Ocean;
-                oceanBase.shape = fw::RegionShape::Rectangle;
-                oceanBase.rectMin = glm::ivec2(-16, -16);
-                oceanBase.rectMax = glm::ivec2(16, 16);
-                uint8_t idWater = 255;
-                uint8_t idSand = 255;
-                if (m_context && m_context->blockRegistry) {
-                    idWater = m_context->blockRegistry->GetBlock("fairworld:water").id;
-                    idSand = m_context->blockRegistry->GetBlock("fairworld:sand").id;
-                }
-                oceanBase.surfaceBlockId = idWater;
-                oceanBase.subsurfaceBlockId = idSand;
-                activeTemplate.subRegions.push_back(oceanBase);
-                m_needsRebuild = true; m_rebuildTimer = 0.2f;
-            }
         }
 
-        if (ImGui::CollapsingHeader("Strumenti Disegno e Sincronizzazione Blocchi (PBR/Lookdev)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const char* shapeNames[] = { "Rettangolo", "Cerchio", "Rombo", "Stella" };
-            ImGui::Combo("Forma Strumento", &m_paintBrushShape, shapeNames, IM_ARRAYSIZE(shapeNames));
-            
-            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal" };
-            ImGui::Combo("Tipo Sotto-Regione", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
-
-            auto drawBlockCombo = [&](const char* label, int& blockId) {
-                std::string comboPreview = "ID: " + std::to_string(blockId);
-                if (m_context && m_context->blockRegistry) {
-                    const auto& def = m_context->blockRegistry->GetBlock((uint8_t)blockId);
-                    comboPreview = def.displayName + " (" + def.stringId + ")";
-                }
-                if (ImGui::BeginCombo(label, comboPreview.c_str())) {
-                    if (m_context && m_context->blockRegistry) {
-                        for (const auto& b : m_context->blockRegistry->GetAllBlocks()) {
-                            bool isSelected = (blockId == b.id);
-                            if (ImGui::Selectable((b.displayName + " [" + b.stringId + "]").c_str(), isSelected)) {
-                                blockId = b.id;
-                            }
-                            if (isSelected) ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            };
-
-            drawBlockCombo("Blocco Superficie", m_paintSurfaceBlock);
-            drawBlockCombo("Blocco Sottosuolo", m_paintSubsurfaceBlock);
-            ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, 10);
-            if (ImGui::Button("PULISCI SOTTO-REGIONI", ImVec2(-1, 25))) {
-                activeTemplate.subRegions.clear();
-                m_needsRebuild = true; m_rebuildTimer = 0.2f;
-            }
-        }
     } else {
         ImGui::TextDisabled("Nessun Modello Chunk selezionato.");
     }
-    ImGui::EndChild();
-
-    ImGui::BeginChild("EditorBottomBar", ImVec2(0, 85.0f), true);
     ImGui::Checkbox("Rigenera Voxel al volo ad ogni modifica", &m_autoRebuildPreview);
     if (!m_autoRebuildPreview) {
         if (ImGui::Button("🔄 RIGENERA ANTEPRIMA VOXEL 3D ORA", ImVec2(-1, 25))) {

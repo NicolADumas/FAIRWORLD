@@ -152,6 +152,23 @@ void main() {
         finalColor += inVertexColor.rgb * inEmissive * 1.5; // Additive glow
     }
 
+    // --- ATMOSPHERIC FOG ---
+    float dist = distance(push.cameraPos.xyz, inWorldPos);
+    vec3 viewDir = normalize(inWorldPos - push.cameraPos.xyz);
+    float sunScattering = max(dot(viewDir, normalize(push.lightDir.xyz)), 0.0);
+    
+    // Colore base atmosfera (azzurro orizzonte) sfumato con il sole (arancio) se guardiamo verso di esso
+    vec3 fogColor = mix(vec3(0.4, 0.6, 0.9), vec3(1.0, 0.8, 0.5), pow(sunScattering, 8.0));
+    
+    // Nebbia esponenziale
+    float fogDensity = 0.001; 
+    float fogFactor = 1.0 - exp(-pow(dist * fogDensity, 2.5));
+    
+    // Per i pianeti piccoli, limitiamo l'effetto per non coprire tutto, oppure attiviamo nebbia solo lontano
+    if (dist > 100.0) {
+        finalColor = mix(finalColor, fogColor, clamp(fogFactor, 0.0, 1.0));
+    }
+
     // Tonemapping HDR e Gamma Correction
     finalColor = finalColor / (finalColor + vec3(1.0));
     finalColor = pow(finalColor, vec3(1.0 / 2.2));

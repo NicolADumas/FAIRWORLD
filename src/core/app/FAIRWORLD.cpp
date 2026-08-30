@@ -633,7 +633,8 @@ bool FairWorldEngine::Update(float deltaTime) {
             m_hasTarget     = (hitBlock.x >= 0);
             m_targetedBlock = hitBlock;
 
-            if (m_gameMode == GameMode::Dev) {
+            bool isCreative = (m_gameMode == GameMode::Dev || m_player.isCreativeMode);
+            if (isCreative) {
                 bool worldChanged = false;
                 
                 if (breakBlock && hitGhost) {
@@ -933,7 +934,7 @@ void FairWorldEngine::Render() {
         dl->AddCircleFilled(center, 1.0f, IM_COL32(255,255,255,255));
 
         // Info blocco puntato (sopra il mirino)
-        if (m_hasTarget && m_gameMode == GameMode::Dev) {
+        if (m_hasTarget && (m_gameMode == GameMode::Dev || m_player.isCreativeMode)) {
             char blockInfo[64];
             snprintf(blockInfo, sizeof(blockInfo), "[%d, %d, %d]", m_targetedBlock.x, m_targetedBlock.y, m_targetedBlock.z);
             ImVec2 textSize = ImGui::CalcTextSize(blockInfo);
@@ -1324,7 +1325,7 @@ void FairWorldEngine::Render() {
         ImGui::End();
         ImGui::PopStyleColor(2);
         
-        if (m_gameMode == GameMode::Play) {
+        if (m_gameMode == GameMode::Play && !m_player.isCreativeMode) {
             // Disegna l'HUD del Player (HP, MP, Stamina, EXP) in basso a sinistra
             ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetMainViewport()->Size.y - 140), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(350, 130), ImGuiCond_Always);
@@ -1562,7 +1563,7 @@ void FairWorldEngine::Render() {
             ImGui::End();
         }
 
-    if (m_gameMode == GameMode::Dev && m_editor.isOpen) {
+    if ((m_gameMode == GameMode::Dev || m_player.isCreativeMode) && m_editor.isOpen) {
         m_editor.Draw(m_assets, m_world, m_renderManager.get(), &m_mobManager, &m_player, m_sharedContext->activeCameraView, m_sharedContext);
     }
         

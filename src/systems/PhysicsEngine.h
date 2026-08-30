@@ -38,6 +38,7 @@ struct RigidBody {
     bool isInWater    = false;
     bool isAgainstWall = false;
     bool touchedStargate = false;
+    bool isFlying = false;
     
     // Timer per platforming responsivo
     float coyoteTimer = 0.0f;

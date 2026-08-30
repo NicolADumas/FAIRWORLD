@@ -5,6 +5,7 @@
 #include "ForgeComponents.h"
 
 #include "RenderManager.h"
+#include "VisibilityPolicy.h"
 
 namespace fw {
 
@@ -47,17 +48,18 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
         }
     }
 
+    glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
+    EditorVisibilityPolicy visibilityPolicy(viewProjMatrix);
+
     // --- 4. Disegna le entità ECS ---
     auto& registry = context->forgeWorld->GetRegistry();
     auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
-
-    glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
 
     for (auto entity : view) {
         const auto& mesh = view.get<fw::MeshComponent>(entity);
         const auto& trans = view.get<fw::TransformComponent>(entity);
 
-        if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+        if (!visibilityPolicy.IsVisible(registry, entity, mesh, trans)) continue;
 
         // Renderizza solo blocchi di tipo Chunk o Editor
         if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Editor) {

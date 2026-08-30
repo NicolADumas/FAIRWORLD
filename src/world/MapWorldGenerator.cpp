@@ -5,6 +5,7 @@
 #include "BlockRegistry.h"
 #include <iostream>
 #include "BiomeComponents.h"
+#include <unordered_map>
 
 #include "PerlinNoise.h"
 
@@ -80,15 +81,24 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                     biomeData.baseRegion = *it;
                     biomeData.isCustomMapped = true;
                 }
-            } else if (planet.planetRadius > 0.0f && it->angularRadius > 0.0f) {
+            } else if (it->angularRadius > 0.0f) {
                 // Free-floating Spherical region
-                float rRadius = it->angularRadius * planet.planetRadius;
+                float R = planet.planetRadius > 0.0f ? planet.planetRadius : 50.0f; // Fallback radius se forzato piatto
+                float rRadius = it->angularRadius * R;
                 float pitch = glm::radians(it->eulerAngles.x);
                 float yaw = glm::radians(it->eulerAngles.y);
-                glm::vec3 rCenter = glm::vec3(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw)) * planet.planetRadius;
+                glm::vec3 rCenter = glm::vec3(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw)) * R;
+                
+                // Mappa la posizione (piatta o sferica) sulla sfera logica per calcolare la distanza
+                glm::vec3 checkPos = pos;
+                if (planet.planetRadius <= 0.0f) {
+                    float pyaw = pos.x / R;
+                    float ppitch = pos.z / R;
+                    checkPos = glm::vec3(cos(ppitch) * cos(pyaw), sin(ppitch), cos(ppitch) * sin(pyaw)) * R;
+                }
                 
                 float chunkRadius = 32.0f; // Safe margin
-                if (glm::distance(pos, rCenter) - chunkRadius <= rRadius) {
+                if (glm::distance(checkPos, rCenter) - chunkRadius <= rRadius) {
                     biomeData.overlappingRegions.push_back(*it);
                     biomeData.isCustomMapped = true;
                 }
@@ -109,15 +119,21 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 
         if (!biomeData.hasBaseRegion) {
             biomeData.baseRegion.type = fw::MapRegionType::Forest; 
-            uint8_t idGrass = 255, idDirt = 255;
-            if (auto reg = targetWorld.GetBlockRegistry()) {
-                idGrass = reg->GetBlock("fairworld:grass").id;
-                idDirt = reg->GetBlock("fairworld:dirt").id;
+            uint8_t idGrass = 1;
+            uint8_t idDirt = 3;
+            float grav = 1.0f;
+            float perlin = 0.03f;
+            if (!doc.terrainLibrary.empty()) {
+                const auto& defaultTmpl = doc.terrainLibrary[0];
+                idGrass = defaultTmpl.baseSurfaceBlockId;
+                idDirt = defaultTmpl.baseSubsurfaceBlockId;
+                grav = defaultTmpl.baseGravityModifier;
+                perlin = defaultTmpl.basePerlinFrequency;
             }
             biomeData.baseRegion.surfaceBlockId = idGrass;
             biomeData.baseRegion.subsurfaceBlockId = idDirt;
-            biomeData.baseRegion.gravityModifier = 1.0f;
-            biomeData.baseRegion.perlinFrequency = 0.005f;
+            biomeData.baseRegion.gravityModifier = grav;
+            biomeData.baseRegion.perlinFrequency = perlin;
             biomeData.surfaceBlockId = idGrass;
             biomeData.subsurfaceBlockId = idDirt;
         } else {
@@ -127,6 +143,18 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         
         targetWorld.GetRegistry().emplace_or_replace<fw::BiomeDataComponent>(chunkEnt, biomeData);
         targetWorld.GetRegistry().emplace_or_replace<fw::TerrainGenTag>(chunkEnt);
+        
+        switch (biomeData.baseRegion.type) {
+            case fw::MapRegionType::Forest:  targetWorld.GetRegistry().emplace_or_replace<fw::ForestBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Desert:  targetWorld.GetRegistry().emplace_or_replace<fw::DesertBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Tundra:  targetWorld.GetRegistry().emplace_or_replace<fw::TundraBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Ocean:   targetWorld.GetRegistry().emplace_or_replace<fw::OceanBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Volcano: targetWorld.GetRegistry().emplace_or_replace<fw::VolcanoBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::City:    targetWorld.GetRegistry().emplace_or_replace<fw::CityBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Dungeon: targetWorld.GetRegistry().emplace_or_replace<fw::DungeonBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Portal:  targetWorld.GetRegistry().emplace_or_replace<fw::PortalBiomeTag>(chunkEnt); break;
+            case fw::MapRegionType::Flat:    targetWorld.GetRegistry().emplace_or_replace<fw::FlatBiomeTag>(chunkEnt); break;
+        }
     };
 
     if (planet.planetRadius > 0.0f) {
@@ -266,7 +294,11 @@ void MapWorldGenerator::GetChunkCoordFromPosition(float planetRadius, const glm:
 }
 
 float MapWorldGenerator::SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, float frequency) {
-    ::PerlinNoise noiseGen(regionInfo.seed);
+    thread_local std::unordered_map<uint32_t, ::PerlinNoise> noiseCache;
+    if (noiseCache.find(regionInfo.seed) == noiseCache.end()) {
+        noiseCache.emplace(regionInfo.seed, ::PerlinNoise(regionInfo.seed));
+    }
+    const ::PerlinNoise& noiseGen = noiseCache[regionInfo.seed];
     
     // Parametri base ereditati dal template
     float noiseScale = frequency * 100.0f; 

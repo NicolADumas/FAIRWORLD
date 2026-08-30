@@ -8,6 +8,7 @@
 #include <set>
 #include <fstream>
 #include "json.hpp"
+#include "../core/utils/cgltf.h"
 #include "MobManager.h"
 #include "SharedContext.h"
 #include "TimeManager.h"
@@ -95,6 +96,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
 
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateForgePipeline()) return false;
+    if (!CreateGLBPipeline()) return false;
     
     // Inizializza la pipeline del terreno (Compute Shader)
     m_terrainPipeline = std::make_unique<TerrainPipelineSystem>(GetDevice(), GetPhysicalDevice());
@@ -1029,6 +1031,18 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
                 pcData.seasonProgress = seasonalUboValue;
+                
+                // --- LUCE DINAMICA ASTRONOMICA E POSIZIONE CAMERA ---
+                pcData.lightDir = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f); // Fallback
+                if (context && context->forgeWorld) {
+                    auto& reg = context->forgeWorld->GetRegistry();
+                    entt::entity planetEntity = context->forgeWorld->GetPlanetEntity();
+                    if (reg.valid(planetEntity) && reg.all_of<fw::PlanetEnvironmentComponent>(planetEntity)) {
+                        pcData.lightDir = glm::vec4(reg.get<fw::PlanetEnvironmentComponent>(planetEntity).sunDirection, 0.0f);
+                    }
+                }
+                glm::mat4 invView = glm::inverse(viewMatrix);
+                pcData.cameraPos = glm::vec4(invView[3].x, invView[3].y, invView[3].z, 1.0f);
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
@@ -1237,8 +1251,8 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
             else if (mode == GameMode::Play && m_playRenderer) {
                 m_playRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
                 m_playRenderer->SetCurrentFrame(m_currentFrame);
-                m_playRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
                 RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+                m_playRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
             }
             else {
                 RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
@@ -1657,6 +1671,115 @@ void RenderManager::LoadMobMesh(const std::string& filepath) {
     std::cout << "[VULKAN] Generata mesh per mob da '" << filepath << "' con " << newMesh.indexCount / 3 << " triangoli." << std::endl;
 }
 
+void RenderManager::LoadGLBMesh(const std::string& filepath) {
+    if (m_glbModels.find(filepath) != m_glbModels.end()) return;
+
+    cgltf_options options = {};
+    cgltf_data* data = NULL;
+    cgltf_result result = cgltf_parse_file(&options, filepath.c_str(), &data);
+
+    if (result != cgltf_result_success) {
+        std::cout << "[VULKAN] Failed to parse GLB: " << filepath << std::endl;
+        m_glbModels[filepath] = GLBModel(); // fail gracefully
+        return;
+    }
+
+    result = cgltf_load_buffers(&options, data, filepath.c_str());
+    if (result != cgltf_result_success) {
+        std::cout << "[VULKAN] Failed to load GLB buffers: " << filepath << std::endl;
+        cgltf_free(data);
+        m_glbModels[filepath] = GLBModel();
+        return;
+    }
+
+    std::vector<GLBVertex> vertices;
+    std::vector<uint32_t> indices;
+
+    for (cgltf_size i = 0; i < data->meshes_count; ++i) {
+        const cgltf_mesh& mesh = data->meshes[i];
+        for (cgltf_size j = 0; j < mesh.primitives_count; ++j) {
+            const cgltf_primitive& prim = mesh.primitives[j];
+            uint32_t vertexOffset = (uint32_t)vertices.size();
+
+            cgltf_size vertexCount = 0;
+            if (prim.attributes_count > 0) vertexCount = prim.attributes[0].data->count;
+
+            size_t oldSize = vertices.size();
+            vertices.resize(oldSize + vertexCount);
+            for(size_t v=oldSize; v<vertices.size(); ++v) {
+                vertices[v].color = glm::vec4(1.0f); // Default white
+            }
+
+            for (cgltf_size k = 0; k < prim.attributes_count; ++k) {
+                const cgltf_attribute& attr = prim.attributes[k];
+                if (attr.type == cgltf_attribute_type_position) {
+                    for (cgltf_size v = 0; v < attr.data->count; ++v) {
+                        cgltf_accessor_read_float(attr.data, v, &vertices[oldSize + v].pos.x, 3);
+                    }
+                } else if (attr.type == cgltf_attribute_type_normal) {
+                    for (cgltf_size v = 0; v < attr.data->count; ++v) {
+                        cgltf_accessor_read_float(attr.data, v, &vertices[oldSize + v].normal.x, 3);
+                    }
+                } else if (attr.type == cgltf_attribute_type_texcoord) {
+                    for (cgltf_size v = 0; v < attr.data->count; ++v) {
+                        cgltf_accessor_read_float(attr.data, v, &vertices[oldSize + v].uv.x, 2);
+                    }
+                }
+            }
+
+            if (prim.indices) {
+                for (cgltf_size k = 0; k < prim.indices->count; ++k) {
+                    uint32_t idx = (uint32_t)cgltf_accessor_read_index(prim.indices, k);
+                    indices.push_back(vertexOffset + idx);
+                }
+            } else {
+                for (cgltf_size k = 0; k < vertexCount; ++k) {
+                    indices.push_back(vertexOffset + (uint32_t)k);
+                }
+            }
+        }
+    }
+
+    cgltf_free(data);
+
+    GLBModel newModel;
+    if (vertices.empty()) {
+        m_glbModels[filepath] = newModel;
+        return;
+    }
+
+    // Upload vertices to VRAM
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingBufferMemory;
+    m_memory->CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    
+    void* mappedData;
+    vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &mappedData);
+    memcpy(mappedData, vertices.data(), (size_t)(sizeof(vertices[0]) * vertices.size()));
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
+
+    m_memory->CreateBuffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newModel.vertexBuffer, newModel.vertexAlloc);
+    CopyBuffer(stagingBuffer, newModel.vertexBuffer, sizeof(vertices[0]) * vertices.size());
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
+
+    // Upload indices to VRAM
+    m_memory->CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory);
+    vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &mappedData);
+    memcpy(mappedData, indices.data(), (size_t)(sizeof(indices[0]) * indices.size()));
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
+
+    m_memory->CreateBuffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, newModel.indexBuffer, newModel.indexAlloc);
+    CopyBuffer(stagingBuffer, newModel.indexBuffer, sizeof(indices[0]) * indices.size());
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
+
+    newModel.indexCount = (uint32_t)indices.size();
+    newModel.vertices = std::move(vertices);
+    newModel.indices = std::move(indices);
+    
+    m_glbModels[filepath] = newModel;
+    std::cout << "[VULKAN] Successfully loaded GLB to VRAM: " << filepath << " (" << newModel.indexCount/3 << " tris)" << std::endl;
+}
+
 void RenderManager::Shutdown() {
     m_isFullyInitialized = false; // Blocca RecreateSwapchain durante lo shutdown
     if (m_core->GetDevice() != VK_NULL_HANDLE) {
@@ -1706,6 +1829,14 @@ void RenderManager::Shutdown() {
         if (m_forgePipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_core->GetDevice(), m_forgePipelineLayout, nullptr);
             m_forgePipelineLayout = VK_NULL_HANDLE;
+        }
+        if (m_glbPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_core->GetDevice(), m_glbPipeline, nullptr);
+            m_glbPipeline = VK_NULL_HANDLE;
+        }
+        if (m_glbPipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_core->GetDevice(), m_glbPipelineLayout, nullptr);
+            m_glbPipelineLayout = VK_NULL_HANDLE;
         }
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -2414,8 +2545,17 @@ void RenderManager::RecreateSwapchain() {
         vkDestroyPipelineLayout(m_core->GetDevice(), m_forgePipelineLayout, nullptr);
         m_forgePipelineLayout = VK_NULL_HANDLE;
     }
+    if (m_glbPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_core->GetDevice(), m_glbPipeline, nullptr);
+        m_glbPipeline = VK_NULL_HANDLE;
+    }
+    if (m_glbPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_core->GetDevice(), m_glbPipelineLayout, nullptr);
+        m_glbPipelineLayout = VK_NULL_HANDLE;
+    }
     CreateGraphicsPipeline();
     CreateForgePipeline(); // Aggiorna anche il BlockMakerRenderer con extent aggiornato
+    CreateGLBPipeline();
 
     std::cout << "[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (" << width << "x" << height << ")" << std::endl;
 }
@@ -2616,6 +2756,147 @@ bool RenderManager::CreateForgePipeline() {
     }
     initSubRenderer(m_solarSystemRenderer);
 
+    return true;
+}
+
+bool RenderManager::CreateGLBPipeline() {
+    auto vertShaderCode = ReadFile("glb_vert.spv");
+    auto fragShaderCode = ReadFile("glb_frag.spv");
+
+    VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding   = 0;
+    bindingDesc.stride    = sizeof(GLBVertex);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 5> attrDescs{};
+    attrDescs[0].binding  = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(GLBVertex, pos);
+    attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[1].offset = offsetof(GLBVertex, normal);
+    attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(GLBVertex, uv);
+    attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32G32B32A32_SFLOAT; attrDescs[3].offset = offsetof(GLBVertex, tangent);
+    attrDescs[4].binding  = 0; attrDescs[4].location = 4; attrDescs[4].format = VK_FORMAT_R32G32B32A32_SFLOAT; attrDescs[4].offset = offsetof(GLBVertex, color);
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attrDescs.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(GLBPushConstantData);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    // TODO: Add descriptor set layouts for textures (albedo, normal, etc) if needed
+    // For now we use the basic transform/color push constants.
+    pipelineLayoutInfo.setLayoutCount = 0; 
+    pipelineLayoutInfo.pSetLayouts = nullptr;
+
+    if (vkCreatePipelineLayout(m_core->GetDevice(), &pipelineLayoutInfo, nullptr, &m_glbPipelineLayout) != VK_SUCCESS) {
+        std::cerr << "[VULKAN] Errore creazione GLB Pipeline Layout!\n";
+        return false;
+    }
+
+    std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_glbPipelineLayout;
+    pipelineInfo.renderPass = m_renderPass;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(m_core->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_glbPipeline) != VK_SUCCESS) {
+        std::cerr << "[VULKAN] Errore creazione GLB Graphics Pipeline!\n";
+        return false;
+    }
+
+    vkDestroyShaderModule(m_core->GetDevice(), fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_core->GetDevice(), vertShaderModule, nullptr);
+
+    std::cout << "[VULKAN] GLB Graphics Pipeline creata con successo!\n";
     return true;
 }
 

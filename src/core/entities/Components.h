@@ -71,6 +71,8 @@ struct NameComponent {
     std::string name;
 };
 
+
+
 // Componente che indica che l'entità è un giocatore controllabile
 struct PlayerControllerComponent {
     float walkSpeed = 5.0f;
