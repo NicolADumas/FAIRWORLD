@@ -22,6 +22,14 @@ PlanetMapperState::PlanetMapperState(SharedContext* context) : AppBaseState(cont
     std::cout << "[PlanetMapperState] Costruito come estensione di AppBaseState.\n";
 }
 
+// Helper centralizzato: salva e avvia il flash visivo di conferma
+static void PMS_DoSave(fw::WorldProjectManager* pm, float& flashTimer, std::string& flashMsg) {
+    if (!pm) return;
+    bool ok = pm->SaveProject();
+    flashTimer = 2.5f; // mostra il messaggio per 2.5 secondi
+    flashMsg = ok ? "✅ SALVATO!" : "❌ ERRORE SALVATAGGIO";
+}
+
 PlanetMapperState::~PlanetMapperState() {
     if (m_context) {
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
@@ -108,6 +116,9 @@ void PlanetMapperState::UpdateApp(float dt) {
     if (!m_context || !m_context->projectManager) return;
     auto& doc = m_context->projectManager->GetDocument();
 
+    // Decrementa timer feedback salvataggio
+    if (m_saveFlashTimer > 0.0f) m_saveFlashTimer -= dt;
+
     if (m_context) {
         m_context->isMapBuilderMode = m_isBuilderMode;
         m_context->isForgeMode = false;
@@ -137,14 +148,41 @@ void PlanetMapperState::UpdateApp(float dt) {
     }
 
     if (allowCameraControl) {
+        // --- Orbita con drag mouse ---
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             m_orbitYaw -= io.MouseDelta.x * 0.5f;
             m_orbitPitch += io.MouseDelta.y * 0.5f;
             m_orbitPitch = std::clamp(m_orbitPitch, -89.0f, 89.0f);
         }
+        // --- Zoom con rotellina (più aggressivo vicino al pianeta) ---
         if (io.MouseWheel != 0.0f) {
-            m_orbitDistance -= io.MouseWheel * 15.0f;
-            m_orbitDistance = std::max(m_orbitDistance, 10.0f);
+            float scrollSpeed = std::max(m_orbitDistance * 0.1f, 5.0f);
+            m_orbitDistance -= io.MouseWheel * scrollSpeed;
+            m_orbitDistance = std::max(m_orbitDistance, 2.0f);
+        }
+        // --- Free-fly WASD: modifica la posizione orbitale "avanzando" ---
+        // W/S = avvicina/allontana  (come zoom ma da tastiera)
+        // A/D = ruota yaw orbitale  (come drag orizzontale)
+        // R/F = ruota pitch orbitale (salire/scendere sull'orbita)
+        float flySpeed = std::max(m_orbitDistance * 0.03f, 1.5f) * dt * 60.0f;
+        if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
+            m_orbitDistance -= flySpeed;
+            m_orbitDistance = std::max(m_orbitDistance, 2.0f);
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
+            m_orbitDistance += flySpeed;
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
+            m_orbitYaw -= flySpeed * 0.5f;
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
+            m_orbitYaw += flySpeed * 0.5f;
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_R) || ImGui::IsKeyDown(ImGuiKey_PageUp)) {
+            m_orbitPitch = std::min(m_orbitPitch + flySpeed * 0.4f, 89.0f);
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_F) || ImGui::IsKeyDown(ImGuiKey_PageDown)) {
+            m_orbitPitch = std::max(m_orbitPitch - flySpeed * 0.4f, -89.0f);
         }
     }
 
@@ -449,8 +487,8 @@ void PlanetMapperState::DrawBuilderUI() {
                 }
                 
                 p.spawnPoints.push_back(sp);
-                // Salvataggio immediato senza aspettare il "Save" completo
-                m_context->projectManager->SaveProject();
+                // Salvataggio immediato con feedback visivo
+                PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
             }
             ImGui::Spacing();
             
@@ -479,7 +517,7 @@ void PlanetMapperState::DrawBuilderUI() {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.1f, 1.0f));
                 if (ImGui::Button("Rimuovi", ImVec2(80, 20))) {
                     p.spawnPoints.erase(p.spawnPoints.begin() + i);
-                    m_context->projectManager->SaveProject();
+                    PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
                     ImGui::PopStyleColor();
                     ImGui::PopID();
                     break;
@@ -487,8 +525,8 @@ void PlanetMapperState::DrawBuilderUI() {
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.5f, 0.2f, 1.0f));
-                if (ImGui::Button("💾 Salva", ImVec2(-1, 20))) {
-                    m_context->projectManager->SaveProject();
+                if (ImGui::Button("\xF0\x9F\x92\xBE Salva", ImVec2(-1, 20))) {
+                    PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
                 }
                 ImGui::PopStyleColor();
                 
@@ -501,8 +539,19 @@ void PlanetMapperState::DrawBuilderUI() {
     ImGui::EndChild();
 
     ImGui::BeginChild("BottomBar", ImVec2(0, 130.0f), true);
-    if (ImGui::Button("💾 SALVA MONDO E MAPPA 3D (WORLD PROJECT)", ImVec2(-1, 30))) {
-        m_context->projectManager->SaveProject();
+    
+    // --- Flash di conferma salvataggio ---
+    if (m_saveFlashTimer > 0.0f) {
+        ImVec4 flashColor = (m_saveFlashMsg[0] == '\xE2') // UTF-8 ✅
+            ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f)
+            : ImVec4(1.0f, 0.3f, 0.2f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, flashColor);
+        ImGui::Text("%s  (saves/map/world_map.json)", m_saveFlashMsg.c_str());
+        ImGui::PopStyleColor();
+    }
+    
+    if (ImGui::Button("\xF0\x9F\x92\xBE SALVA MONDO E MAPPA 3D (WORLD PROJECT)", ImVec2(-1, 30))) {
+        PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
         m_showSaveConfirmPopup = true;
     }
     if (ImGui::Button("🚀 ESPLORA MAPPA IN PRIMA PERSONA (VOXEL TEST)", ImVec2(-1, 30))) {
@@ -521,9 +570,58 @@ void PlanetMapperState::DrawBuilderUI() {
     ImGui::End();
 
     ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + leftWidth + 20.0f, viewport->Pos.y + 20.0f));
-    ImGui::Begin("OverlayGlobe", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBackground);
+    ImGui::SetNextWindowBgAlpha(0.7f);
+    ImGui::Begin("OverlayGlobe", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove);
     ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), ">>> GLOBO SFERICO LOD 3D (ANTEPRIMA PIANETA IN TEMPO REALE) <<<");
-    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 0.8f), "Trascina col mouse per ruotare la sfera | Rotellina per Zoom Orbitale");
+    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 0.8f), "Drag mouse: ruota  |  Rotellina: zoom  |  W/S: avvicina/allontana  |  A/D: ruota  |  R/F: su/giu");
+    
+    ImGui::Separator();
+    
+    // --- TOOL POSIZIONE CAMERA ---
+    // Calcola lat/lon dal yaw/pitch orbitale
+    float pitch = m_orbitPitch;
+    float yaw   = m_orbitYaw;
+    
+    // La camera guarda verso il centro del pianeta, quindi la direzione "al suolo" è l'opposto della camera
+    float pitchRad = glm::radians(pitch);
+    float yawRad   = glm::radians(yaw);
+    glm::vec3 camNorm;
+    camNorm.x = cos(pitchRad) * sin(yawRad);
+    camNorm.y = sin(pitchRad);
+    camNorm.z = cos(pitchRad) * cos(yawRad);
+    // camNorm è la direzione dalla camera verso il pianeta (già normalizzata)
+    
+    // Latitudine e Longitudine geografiche
+    float latDeg = glm::degrees(asin(std::clamp(camNorm.y, -1.0f, 1.0f)));
+    float lonDeg = glm::degrees(atan2(camNorm.x, camNorm.z));
+    
+    // Faccia del cubo sferico
+    float camAx = std::abs(camNorm.x), camAy = std::abs(camNorm.y), camAz = std::abs(camNorm.z);
+    const char* faceName = "";
+    if      (camAz >= camAx && camAz >= camAy) faceName = camNorm.z > 0 ? "NORD (+Z)" : "SUD (-Z)";
+    else if (camAx >= camAy && camAx >= camAz) faceName = camNorm.x > 0 ? "EST (+X)"  : "OVEST (-X)";
+    else                                        faceName = camNorm.y > 0 ? "POLO NORD (+Y)" : "POLO SUD (-Y)";
+    
+    // Distanza dalla superficie (se c'è un pianeta caricato)
+    float surfaceDist = m_orbitDistance;
+    if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
+        surfaceDist = m_orbitDistance - doc.planets[m_activePlanetIndex].planetRadius;
+    }
+    
+    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.2f, 1.0f), "POSIZIONE CAMERA:");
+    ImGui::Text("  Latitudine: %.1f deg  |  Longitudine: %.1f deg", latDeg, lonDeg);
+    ImGui::Text("  Faccia:     %s", faceName);
+    ImGui::Text("  Dist. dalla superficie: %.1f m  |  Orbita: %.1f m", surfaceDist, m_orbitDistance);
+    
+    // --- SLIDER LOD DISTANCE ---
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f), "LOD (distanza divisione chunk):");
+    float lodMul = m_lodSystem.GetDistanceMultiplier();
+    if (ImGui::SliderFloat("Moltiplicatore LOD", &lodMul, 1.0f, 8.0f, "%.1fx")) {
+        m_lodSystem.SetDistanceMultiplier(lodMul);
+    }
+    ImGui::TextDisabled("Basso = chunk vicini e dettagliati  |  Alto = chunk piu' distanti");
+    
     ImGui::End();
 
     if (m_showSaveConfirmPopup) {

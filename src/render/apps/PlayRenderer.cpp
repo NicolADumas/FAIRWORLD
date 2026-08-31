@@ -74,9 +74,7 @@ void PlayRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 v
 
             if (!visibilityPolicy.IsVisible(registry, entity, mesh, trans)) continue;
 
-            if (mesh.type != fw::MeshType::Chunk && mesh.type != fw::MeshType::Prefab && mesh.type != fw::MeshType::Standard) continue;
-
-            fw::Mat4 fwModel = trans.worldMatrix();
+            fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
             glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
             pcData.mvp = viewProjMatrix * model;

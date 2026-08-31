@@ -1012,7 +1012,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
             // Renderizziamo Chunk e Prefab (escludiamo griglia e sfere di preview dell'editor)
             if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Prefab) {
-                fw::Mat4 fwModel = trans.worldMatrix();
+                fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
                 fw::AABB bounds = mesh.bounds();
@@ -2975,7 +2975,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
             }
 
             if (mesh.type == fw::MeshType::Editor || mesh.type == fw::MeshType::Chunk) {
-                fw::Mat4 fwModel = trans.worldMatrix();
+                fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
                 fw::AABB bounds = mesh.bounds();
@@ -3022,7 +3022,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
             if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
 
             if (mesh.name != "GridBox" && mesh.type != fw::MeshType::Chunk) {
-                fw::Mat4 fwModel = trans.worldMatrix();
+                fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
 

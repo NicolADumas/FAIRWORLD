@@ -320,7 +320,7 @@ void ChunkEditorState::DrawUI() {
             ImDrawList* drawList = ImGui::GetWindowDrawList();
             ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
             ImVec2 canvasSize = ImGui::GetContentRegionAvail();
-            ImGui::InvisibleButton("CanvasHitArea", canvasSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+            ImGui::InvisibleButton("CanvasHitArea", canvasSize);
             bool canvasHovered = ImGui::IsItemHovered();
             bool canvasActive = ImGui::IsItemActive();
             
@@ -411,13 +411,24 @@ void ChunkEditorState::DrawUI() {
             }
             
             // Dragging dell'istanza selezionata
+            static glm::ivec2 s_dragStartChunk;
+            static glm::ivec2 s_dragStartRectMin;
+            static glm::ivec2 s_dragStartRectMax;
+            
             if (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size()) {
+                if (canvasHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !m_isBrushModeActive && !io.KeyCtrl) {
+                    s_dragStartChunk = ScreenToChunk(io.MousePos);
+                    s_dragStartRectMin = activeTemplate.subRegions[m_selectedSubRegionIndex].rectMin;
+                    s_dragStartRectMax = activeTemplate.subRegions[m_selectedSubRegionIndex].rectMax;
+                }
+                
                 if (canvasActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !m_isBrushModeActive && !io.KeyCtrl) {
-                    ImVec2 prevMousePos = ImVec2(io.MousePos.x - io.MouseDelta.x, io.MousePos.y - io.MouseDelta.y);
-                    glm::ivec2 deltaChunk = ScreenToChunk(io.MousePos) - ScreenToChunk(prevMousePos);
+                    glm::ivec2 currentChunk = ScreenToChunk(io.MousePos);
+                    glm::ivec2 deltaChunk = currentChunk - s_dragStartChunk;
+                    
                     if (deltaChunk.x != 0 || deltaChunk.y != 0) {
-                        activeTemplate.subRegions[m_selectedSubRegionIndex].rectMin += deltaChunk;
-                        activeTemplate.subRegions[m_selectedSubRegionIndex].rectMax += deltaChunk;
+                        activeTemplate.subRegions[m_selectedSubRegionIndex].rectMin = s_dragStartRectMin + deltaChunk;
+                        activeTemplate.subRegions[m_selectedSubRegionIndex].rectMax = s_dragStartRectMax + deltaChunk;
                         if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.5f; }
                     }
                 }

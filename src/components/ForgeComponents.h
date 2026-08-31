@@ -15,11 +15,29 @@ struct TransformComponent {
     Vec3 location = {0.0f, 0.0f, 0.0f};
     Quat rotation = {0.0f, 0.0f, 0.0f, 1.0f}; // Quaternion
     Vec3 scale    = {1.0f, 1.0f, 1.0f};
+    
+    entt::entity parent = entt::null; // Nodo gerarchico padre
 
-    Mat4 worldMatrix() const {
+    Mat4 localMatrix() const {
         return Mat4::translate(location)
              * Mat4::fromQuat(rotation)
              * Mat4::scale(scale);
+    }
+
+    Mat4 computeGlobalMatrix(const entt::registry& registry) const {
+        Mat4 mat = localMatrix();
+        entt::entity currParent = parent;
+        while (currParent != entt::null && registry.valid(currParent) && registry.all_of<fw::TransformComponent>(currParent)) {
+            const auto& pTrans = registry.get<fw::TransformComponent>(currParent);
+            mat = pTrans.localMatrix() * mat;
+            currParent = pTrans.parent;
+        }
+        return mat;
+    }
+
+    // Deprecato: usa computeGlobalMatrix nei renderer o localMatrix() se sicuro non ci siano parent.
+    Mat4 worldMatrix() const {
+        return localMatrix();
     }
 };
 

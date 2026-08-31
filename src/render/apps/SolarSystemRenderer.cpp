@@ -77,8 +77,9 @@ void SolarSystemRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm:
 
         if (mesh.type != fw::MeshType::Chunk && mesh.type != fw::MeshType::Prefab && mesh.type != fw::MeshType::Standard) continue;
 
-        // I moti di rivoluzione e rotazione planetaria calcolati in PlanetSystems si riflettono in trans.worldMatrix()!
-        fw::Mat4 fwModel = trans.worldMatrix();
+        // I moti di rivoluzione e rotazione planetaria calcolati in PlanetSystems si riflettono in trans.localMatrix()!
+        fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
+
         glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
         pcData.mvp = viewProjMatrix * model;

@@ -18,8 +18,13 @@ namespace fw {
         // Restituisce false se il chunk si trova al di fuori dell'area di superficie sferica (pianeta finito).
         static bool GetSphericalChunkTransform(float planetRadius, int global_cx, int global_cz, glm::vec3& outPos, glm::quat& outRot);
         
-        // Trova la coordinata chunk 2D (global_cx, global_cz) partendo da una posizione sferica 3D (utile per il giocatore)
+        // Trova la coordinata chunk 2D partendo da una posizione 3D
         static void GetChunkCoordFromPosition(float planetRadius, const glm::vec3& worldPos, int& out_cx, int& out_cz);
+        
+        // Mappa esattamente una posizione globale nel mondo sferico alle coordinate flat del mesher
+        static void WorldToVoxelCoord(float planetRadius, const glm::vec3& worldPos, float& out_flatX, float& out_localY, float& out_flatZ);
+        
+        static bool GetTrueSphericalPosition(float planetRadius, int global_cx, int global_cz, float local_x, float local_y, float local_z, glm::vec3& outWorldPos);
         
         // Cerca il bioma più adatto date le variabili ambientali attuali
         static const ::BiomeDef* EvaluateBiome(float temp, float humidity, float height, AssetManager* assets);

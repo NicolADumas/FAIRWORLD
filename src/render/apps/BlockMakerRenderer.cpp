@@ -63,7 +63,7 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
 
         // Renderizza solo blocchi di tipo Chunk o Editor
         if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Editor) {
-            fw::Mat4 fwModel = trans.worldMatrix();
+            fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
             glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
             ForgePushConstantData pcData{};

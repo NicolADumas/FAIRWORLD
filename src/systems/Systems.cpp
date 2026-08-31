@@ -113,8 +113,6 @@ namespace fw {
             
             if (canMove) {
                 if (rbComp.body.isFlying) {
-                    // In volo, si muove lungo la vista 3D completa (ma approssimata qui con la camera)
-                    // Per semplificare in volo libero usiamo i vettori surface + up
                     if (input.moveForward != 0.0f) targetVelocity += surfaceFront * input.moveForward * moveSpeed;
                     if (input.moveRight != 0.0f) targetVelocity += surfaceRight * input.moveRight * moveSpeed;
                     if (input.isJumping) targetVelocity += up * moveSpeed;

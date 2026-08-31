@@ -87,7 +87,7 @@ public:
 
         // 3. Culling (Frustum) disabilitato temporaneamente per debug
         if (false && m_useFrustumCulling) {
-            fw::Mat4 fwModel = transform.worldMatrix();
+            fw::Mat4 fwModel = transform.computeGlobalMatrix(registry);
             glm::mat4 model = glm::transpose(*reinterpret_cast<const glm::mat4*>(&fwModel));
 
             fw::AABB bounds = mesh.bounds();
@@ -131,7 +131,7 @@ public:
 
         // Frustum culling temporaneamente disabilitato
         if (false) {
-            fw::Mat4 fwModel = transform.worldMatrix();
+            fw::Mat4 fwModel = transform.computeGlobalMatrix(registry);
             glm::mat4 model = glm::transpose(*reinterpret_cast<const glm::mat4*>(&fwModel));
             fw::AABB bounds = mesh.bounds();
             glm::vec3 center((bounds.min.x + bounds.max.x) * 0.5f, (bounds.min.y + bounds.max.y) * 0.5f, (bounds.min.z + bounds.max.z) * 0.5f);

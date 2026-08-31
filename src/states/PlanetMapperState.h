@@ -45,4 +45,8 @@ private:
     std::vector<entt::entity> m_spawnPointMarkers;
     entt::entity m_cursorMarker = entt::null;
     fw::SphericalLODSystem m_lodSystem;
+    
+    // Feedback visivo salvataggio
+    float m_saveFlashTimer = 0.0f; // secondi rimasti per mostrare il messaggio
+    std::string m_saveFlashMsg;
 };

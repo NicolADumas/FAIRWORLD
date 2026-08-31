@@ -43,7 +43,7 @@ struct ChunkNode {
 
 class SphericalLODSystem {
 private:
-    const float DISTANCE_MULTIPLIER = 2.0f;
+    float DISTANCE_MULTIPLIER = 3.5f; // Distanza (in multipli del raggio del chunk) oltre cui il LOD si suddivide
     float m_planetRadius = 50.0f;
 
     float GetThresholdForLOD(int lodLevel, float chunkRadius) {
@@ -56,6 +56,8 @@ private:
 
 public:
     void SetPlanetRadius(float radius) { m_planetRadius = radius; }
+    void SetDistanceMultiplier(float m) { DISTANCE_MULTIPLIER = m; }
+    float GetDistanceMultiplier() const { return DISTANCE_MULTIPLIER; }
     void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg);
 };
 

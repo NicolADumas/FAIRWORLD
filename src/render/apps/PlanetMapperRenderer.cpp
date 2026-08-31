@@ -127,6 +127,37 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
             vkCmdDrawIndexedIndirect(cmd, m_terrainPipeline->getIndirectBuffer(), i * sizeof(VkDrawIndexedIndirectCommand), 1, sizeof(VkDrawIndexedIndirectCommand));
         }
     }
+
+    // --- DISEGNO ENTITÀ STANDARD (Es. Marker, Spawn Points) ---
+    if (m_globalVramBuffer != VK_NULL_HANDLE) {
+        auto& registry = context->forgeWorld->GetRegistry();
+        auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
+        VkDeviceSize offsets[] = { 0 };
+        for (auto entity : view) {
+            const auto& mesh = view.get<fw::MeshComponent>(entity);
+            const auto& trans = view.get<fw::TransformComponent>(entity);
+
+            fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
+            glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
+
+            pcData.mvp = viewProjMatrix * model;
+            if (mesh.colorOverride[3] > 0.5f) {
+                pcData.useColorOverride = 1;
+                pcData.colorOverride = glm::vec4(mesh.colorOverride[0], mesh.colorOverride[1], mesh.colorOverride[2], mesh.colorOverride[3]);
+            } else {
+                pcData.useColorOverride = 0;
+                pcData.colorOverride = glm::vec4(0.0f);
+            }
+
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PlanetMapperPushConstants), &pcData);
+
+            offsets[0] = mesh.vramAlloc.offset;
+            VkBuffer vertexBuffers[] = { m_globalVramBuffer };
+            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+
+            vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+        }
+    }
 }
 
 void PlanetMapperRenderer::Cleanup(VkDevice device) {

@@ -356,6 +356,32 @@ void GameWorld::Update(float dt) {
                     return false;
                 };
 
+                bool isSpherical = false;
+                float pRadius = 50.0f;
+                glm::vec3 chunkPos(0.0f);
+                glm::quat chunkRot(1.0f, 0.0f, 0.0f, 0.0f);
+
+                if (ctx && ctx->activeRegistry) {
+                    auto planetView = ctx->activeRegistry->view<fw::PlanetGeometryComponent>();
+                    if (!planetView.empty()) {
+                        isSpherical = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).isLogicalSphere;
+                        pRadius = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).planetRadius;
+                    }
+                }
+                if (isSpherical) {
+                    fw::MapWorldGenerator::GetSphericalChunkTransform(pRadius, chunkData->cx, chunkData->cz, chunkPos, chunkRot);
+                }
+
+                auto getVertexPos = [&](float vx, float vy, float vz) -> fw::Vec3 {
+                    if (!isSpherical) return {vx, vy, vz};
+                    glm::vec3 trueWorldPos;
+                    if (fw::MapWorldGenerator::GetTrueSphericalPosition(pRadius, chunkData->cx, chunkData->cz, vx, vy, vz, trueWorldPos)) {
+                        glm::vec3 local = glm::inverse(chunkRot) * (trueWorldPos - chunkPos);
+                        return {local.x, local.y, local.z};
+                    }
+                    return {vx, vy, vz};
+                };
+
                 for (int x = 0; x < CHUNK_SIZE; x++) {
                     for (int y = 0; y < CHUNK_HEIGHT; y++) {
                         for (int z = 0; z < CHUNK_SIZE; z++) {
@@ -378,62 +404,62 @@ void GameWorld::Update(float dt) {
                                 float ao10 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z-1), getBlock(x+1, y+1, z-1));
                                 float ao11 = calcAO(getBlock(x+1, y+1, z), getBlock(x, y+1, z+1), getBlock(x+1, y+1, z+1));
                                 float ao01 = calcAO(getBlock(x-1, y+1, z), getBlock(x, y+1, z+1), getBlock(x-1, y+1, z+1));
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao00, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao10, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao11, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao00, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao11, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,1,0}, ao01, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,1,0}, ao00, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,1,0}, ao10, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,1,0}, ao11, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,1,0}, ao00, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,1,0}, ao11, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,1,0}, ao01, light, emissive});
                             }
                             // Bottom (-Y)
                             if (shouldDrawFace(block, getBlock(x, y - 1, z))) {
                                 float light = getLight(x, y - 1, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,-1,0}, 1.0f, light, emissive});
                             }
                             // Left (-X)
                             if (shouldDrawFace(block, getBlock(x - 1, y, z))) {
                                 float light = getLight(x - 1, y, z);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {-1,0,0}, 1.0f, light, emissive});
                             }
                             // Right (+X)
                             if (shouldDrawFace(block, getBlock(x + 1, y, z))) {
                                 float light = getLight(x + 1, y, z);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {1,0,0}, 1.0f, light, emissive});
                             }
                             // Front (+Z)
                             if (shouldDrawFace(block, getBlock(x, y, z + 1))) {
                                 float light = getLight(x, y, z + 1);
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz+0.5f}, color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz+0.5f), color, {rough, metal}, materialID, {0,0,1}, 1.0f, light, emissive});
                             }
                             // Back (-Z)
                             if (shouldDrawFace(block, getBlock(x, y, z - 1))) {
                                 float light = getLight(x, y, z - 1);
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py-0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
-                                vertices.push_back({{px-0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
-                                vertices.push_back({{px+0.5f, py+0.5f, pz-0.5f}, color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py-0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px-0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
+                                vertices.push_back({getVertexPos(px+0.5f, py+0.5f, pz-0.5f), color, {rough, metal}, materialID, {0,0,-1}, 1.0f, light, emissive});
                             }
                         }
                     }
@@ -502,6 +528,10 @@ entt::entity GameWorld::CreateChunkEntity(const std::string& name, const Vec3& p
     trans.scale = {1.0f, 1.0f, 1.0f};
     int cx = (int)position.x / 16;
     int cz = (int)position.z / 16;
+
+    if (m_registry.valid(m_planetEntity)) {
+        trans.parent = m_planetEntity;
+    }
 
     if (m_registry.valid(m_planetEntity) && m_registry.all_of<PlanetGeometryComponent>(m_planetEntity)) {
         auto& geom = m_registry.get<PlanetGeometryComponent>(m_planetEntity);
@@ -595,7 +625,10 @@ BlockType GameWorld::GetBlock(int x, int y, int z) const {
     }
 
     if (isSpherical) {
-        fw::MapWorldGenerator::GetChunkCoordFromPosition(planetRadius, glm::vec3(x, y, z), cx, cz);
+        float flatX, localY, flatZ;
+        // Mappa il punto centrale del blocco nello spazio sferico
+        fw::MapWorldGenerator::WorldToVoxelCoord(planetRadius, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), flatX, localY, flatZ);
+        return GetBlockFlat((int)std::floor(flatX), (int)std::floor(localY), (int)std::floor(flatZ));
     }
     
     entt::entity chunkEnt = m_chunkManager.GetChunkEntity(cx, cz);
@@ -603,17 +636,6 @@ BlockType GameWorld::GetBlock(int x, int y, int z) const {
         int lx = x - (cx * 16);
         int lz = z - (cz * 16);
         int ly = y;
-
-        if (isSpherical && m_registry.all_of<fw::TransformComponent>(chunkEnt)) {
-            const auto& trans = m_registry.get<fw::TransformComponent>(chunkEnt);
-            fw::Mat4 fwMat = trans.worldMatrix();
-            glm::mat4 mat = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwMat));
-            glm::mat4 invMat = glm::inverse(mat);
-            glm::vec4 localPos = invMat * glm::vec4(x, y, z, 1.0f);
-            lx = (int)std::floor(localPos.x);
-            ly = (int)std::floor(localPos.y);
-            lz = (int)std::floor(localPos.z);
-        }
 
         if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || ly < 0 || ly >= 128) {
             return BlockType::OutOfBounds;
@@ -624,6 +646,66 @@ BlockType GameWorld::GetBlock(int x, int y, int z) const {
         return static_cast<BlockType>(chunk.blocks[lx][ly][lz]);
     }
     return BlockType::OutOfBounds;
+}
+
+BlockType GameWorld::GetBlockFlat(int flatX, int y, int flatZ) const {
+    if (y < 0 || y >= 128) return BlockType::OutOfBounds;
+    
+    int cx = (int)std::floor(flatX / 16.0f);
+    int cz = (int)std::floor(flatZ / 16.0f);
+    
+    entt::entity chunkEnt = m_chunkManager.GetChunkEntity(cx, cz);
+    if (chunkEnt != entt::null && m_registry.valid(chunkEnt)) {
+        int lx = flatX - (cx * 16);
+        int lz = flatZ - (cz * 16);
+
+        if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || y < 0 || y >= 128) {
+            return BlockType::OutOfBounds;
+        }
+
+        const auto& chunk = m_registry.get<VoxelChunkComponent>(chunkEnt);
+        if (!chunk.isGenerated) return BlockType::OutOfBounds;
+        return static_cast<BlockType>(chunk.blocks[lx][y][lz]);
+    }
+    return BlockType::OutOfBounds;
+}
+
+void GameWorld::SetBlockFlat(int flatX, int y, int flatZ, BlockType type) {
+    if (y < 0) return;
+    
+    int cx = (int)std::floor(flatX / 16.0f);
+    int cz = (int)std::floor(flatZ / 16.0f);
+
+    entt::entity chunkEnt = m_chunkManager.GetChunkEntity(cx, cz);
+    if (chunkEnt == entt::null || !m_registry.valid(chunkEnt)) {
+        chunkEnt = const_cast<GameWorld*>(this)->CreateChunkEntity("Chunk_" + std::to_string(cx) + "_" + std::to_string(cz), {(float)cx * 16.0f, 0.0f, (float)cz * 16.0f});
+    }
+
+    if (m_registry.valid(chunkEnt)) {
+        int lx = flatX - (cx * 16);
+        int lz = flatZ - (cz * 16);
+        int ly = y;
+
+        if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || ly < 0 || ly >= 128) {
+            return;
+        }
+
+        auto& chunk = m_registry.get<VoxelChunkComponent>(chunkEnt);
+        uint8_t oldType = chunk.blocks[lx][ly][lz];
+        if (oldType != static_cast<uint8_t>(type)) {
+            chunk.blocks[lx][ly][lz] = static_cast<uint8_t>(type);
+            MarkChunkDirty(chunkEnt);
+
+            // Per ora usiamo posizioni flat per gli aggiornamenti fluido
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX, y, flatZ)));
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX+1, y, flatZ)));
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX-1, y, flatZ)));
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX, y+1, flatZ)));
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX, y-1, flatZ)));
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX, y, flatZ+1)));
+            EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX, y, flatZ-1)));
+        }
+    }
 }
 
 void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
@@ -641,7 +723,10 @@ void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
     }
 
     if (isSpherical) {
-        fw::MapWorldGenerator::GetChunkCoordFromPosition(planetRadius, glm::vec3(x, y, z), cx, cz);
+        float flatX, localY, flatZ;
+        fw::MapWorldGenerator::WorldToVoxelCoord(planetRadius, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), flatX, localY, flatZ);
+        SetBlockFlat((int)std::floor(flatX), (int)std::floor(localY), (int)std::floor(flatZ), type);
+        return;
     }
 
     entt::entity chunkEnt = m_chunkManager.GetChunkEntity(cx, cz);
@@ -653,17 +738,6 @@ void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
         int lx = x - (cx * 16);
         int lz = z - (cz * 16);
         int ly = y;
-
-        if (isSpherical && m_registry.all_of<fw::TransformComponent>(chunkEnt)) {
-            const auto& trans = m_registry.get<fw::TransformComponent>(chunkEnt);
-            fw::Mat4 fwMat = trans.worldMatrix();
-            glm::mat4 mat = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwMat));
-            glm::mat4 invMat = glm::inverse(mat);
-            glm::vec4 localPos = invMat * glm::vec4(x, y, z, 1.0f);
-            lx = (int)std::floor(localPos.x);
-            ly = (int)std::floor(localPos.y);
-            lz = (int)std::floor(localPos.z);
-        }
 
         if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || ly < 0 || ly >= 128) {
             return;

@@ -4,6 +4,7 @@
 #include "PlanetComponents.h"
 #include "MapWorldGenerator.h"
 #include <algorithm>
+#include <glm/gtx/quaternion.hpp>
 
 void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world) {
     // 1. Azzera la forza netta del frame precedente
@@ -14,8 +15,12 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld&
     fw::BlockType feetBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y + 0.1f), (int)floor(rb.position.z + 0.5f));
     fw::BlockType centerBlock = world.GetBlock((int)floor(rb.position.x + 0.5f), (int)floor(rb.position.y + (rb.height * 0.5f)), (int)floor(rb.position.z + 0.5f));
     
-    // Se ci troviamo in un chunk non caricato, freeziamo la fisica!
-    if (feetBlock == fw::BlockType::OutOfBounds || centerBlock == fw::BlockType::OutOfBounds) {
+    bool isSpherical = false;
+    auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
+    if (!planetView.empty()) isSpherical = true;
+
+    // Se ci troviamo in un chunk non caricato e non siamo su un pianeta sferico di base, freeziamo la fisica!
+    if (!isSpherical && (feetBlock == fw::BlockType::OutOfBounds || centerBlock == fw::BlockType::OutOfBounds)) {
         rb.velocity = glm::vec3(0.0f);
         return; // Mettiamo in pausa la caduta finché il chunk non appare
     }
@@ -131,35 +136,55 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         isSpherical = true;
     }
 
-    glm::quat chunkRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    glm::vec3 chunkPos = glm::vec3(0.0f);
-    int cx = 0, cz = 0;
+    glm::vec3 voxPos = rb.position;
+    glm::quat localRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    glm::vec3 localVel = rb.velocity;
+    glm::vec3 preCollisionGlobalPos = rb.position;
+    
+    glm::mat4 planetGlobalMatrix = glm::mat4(1.0f);
+    glm::mat4 invPlanetMatrix = glm::mat4(1.0f);
+    if (isSpherical && const_cast<fw::GameWorld&>(world).GetRegistry().all_of<fw::TransformComponent>(*planetView.begin())) {
+        auto& pt = const_cast<fw::GameWorld&>(world).GetRegistry().get<fw::TransformComponent>(*planetView.begin());
+        fw::Mat4 ptMat = pt.computeGlobalMatrix(const_cast<fw::GameWorld&>(world).GetRegistry());
+        planetGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&ptMat));
+        invPlanetMatrix = glm::inverse(planetGlobalMatrix);
+    }
+    
+    float oldVelY = localVel.y;
 
     if (isSpherical) {
-        fw::MapWorldGenerator::GetChunkCoordFromPosition(planetRadius, rb.position, cx, cz);
-        if (fw::MapWorldGenerator::GetSphericalChunkTransform(planetRadius, cx, cz, chunkPos, chunkRot)) {
-            // Trasforma in Spazio Locale del Chunk per operare con la gravità (0, -1, 0)
-            rb.position = glm::inverse(chunkRot) * (rb.position - chunkPos);
-            rb.velocity = glm::inverse(chunkRot) * rb.velocity;
-        } else {
-            isSpherical = false; 
-        }
+        // Mappa la posizione globale in locale al pianeta, poi nello spazio continuo dei voxel piatti
+        glm::vec3 localPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
+        fw::MapWorldGenerator::WorldToVoxelCoord(planetRadius, localPos, voxPos.x, voxPos.y, voxPos.z);
+        
+        // Calcola una rotazione locale approssimata basata sulla normale per la velocità
+        glm::vec3 normal = glm::normalize(localPos);
+        localRot = glm::rotation(glm::vec3(0, 1, 0), normal);
+        localVel = glm::inverse(localRot) * glm::vec3(invPlanetMatrix * glm::vec4(rb.velocity, 0.0f));
     }
 
     // Helper per verificare se un blocco è solido
     auto isSolid = [&](int x, int y, int z) {
         if (y < 0 || y >= 128) return false;
         
-        // Mappa le coordinate locali (x,y,z) del chunk alle coordinate flat globali di GameWorld
         int flatX = x;
         int flatZ = z;
-        if (isSpherical) {
-            flatX = (cx * 16) + x;
-            flatZ = (cz * 16) + z;
-        }
 
-        fw::BlockType b = world.GetBlock(flatX, y, flatZ);
-        if (b == fw::BlockType::OutOfBounds) return true; // Blocca il player in aria se il chunk sta caricando!
+        fw::BlockType b;
+        if (isSpherical) {
+            b = world.GetBlockFlat(flatX, y, flatZ);
+        } else {
+            b = world.GetBlock(flatX, y, flatZ);
+        }
+        
+        if (b == fw::BlockType::OutOfBounds) {
+            if (isSpherical) {
+                return (y < 25); // Il pianeta matematico è solido sotto Y=25 (superficie base)
+            } else {
+                return true; // Mondo piatto: blocca in aria se non caricato
+            }
+        }
+        
         return (b != fw::BlockType::Air && b != fw::BlockType::Water && 
                 b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal);
     };
@@ -193,23 +218,21 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     float eps = 0.01f;
     auto getAABB = [&]() -> AABB {
         return {
-            rb.position.x - rb.radius + eps,
-            rb.position.y + eps,
-            rb.position.z - rb.radius + eps,
-            rb.position.x + rb.radius - eps,
-            rb.position.y + rb.height - eps,
-            rb.position.z + rb.radius - eps
+            voxPos.x - rb.radius + eps,
+            voxPos.y + eps,
+            voxPos.z - rb.radius + eps,
+            voxPos.x + rb.radius - eps,
+            voxPos.y + rb.height - eps,
+            voxPos.z + rb.radius - eps
         };
     };
 
     // DEPENETRATION SOLVER
-    // Controlla se siamo già dentro un blocco solido e ci spinge fuori dalla via più breve
     bool anyPenetration = true;
     int maxIters = 4;
     while (anyPenetration && maxIters-- > 0) {
         anyPenetration = false;
         AABB box = getAABB();
-        // Margine per non triggerare la depenetration solo sfiorando i blocchi
         float margin = 0.05f;
         int minX = (int)floor(box.minX + margin);
         int maxX = (int)floor(box.maxX - margin);
@@ -224,7 +247,6 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                     if (isSolid(x, y, z)) {
                         anyPenetration = true;
                         
-                        // Calcola le distanze di spinta per uscire dal blocco (6 facce)
                         float pushUp    = (y + 1.0f) - box.minY;
                         float pushDown  = box.maxY - y;
                         float pushRight = (x + 1.0f) - box.minX;
@@ -232,7 +254,6 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                         float pushFront = (z + 1.0f) - box.minZ;
                         float pushBack  = box.maxZ - z;
 
-                        // Trova la minima distanza per uscire
                         float minPush = pushUp;
                         if (pushDown < minPush) minPush = pushDown;
                         if (pushRight < minPush) minPush = pushRight;
@@ -240,38 +261,33 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                         if (pushFront < minPush) minPush = pushFront;
                         if (pushBack < minPush) minPush = pushBack;
                         
-                        // Spinge fuori! (con un piccolo margine)
-                        if (minPush == pushUp) rb.position.y += pushUp + eps;
-                        else if (minPush == pushDown) rb.position.y -= pushDown + eps;
-                        else if (minPush == pushRight) rb.position.x += pushRight + eps;
-                        else if (minPush == pushLeft) rb.position.x -= pushLeft + eps;
-                        else if (minPush == pushFront) rb.position.z += pushFront + eps;
-                        else if (minPush == pushBack) rb.position.z -= pushBack + eps;
+                        if (minPush == pushUp) { voxPos.y += pushUp + eps; localVel.y = std::max(localVel.y, 0.0f); rb.isGrounded = true; }
+                        else if (minPush == pushDown) { voxPos.y -= pushDown + eps; localVel.y = std::min(localVel.y, 0.0f); }
+                        else if (minPush == pushRight) { voxPos.x += pushRight + eps; localVel.x = 0.0f; rb.isAgainstWall = true; }
+                        else if (minPush == pushLeft) { voxPos.x -= pushLeft + eps; localVel.x = 0.0f; rb.isAgainstWall = true; }
+                        else if (minPush == pushFront) { voxPos.z += pushFront + eps; localVel.z = 0.0f; rb.isAgainstWall = true; }
+                        else if (minPush == pushBack) { voxPos.z -= pushBack + eps; localVel.z = 0.0f; rb.isAgainstWall = true; }
                         
-                        break; // esce dal loop z e riparte con la nuova AABB
+                        break; 
                     }
                 }
-                if (anyPenetration) break; // esce dal loop y
+                if (anyPenetration) break; 
             }
-            if (anyPenetration) break; // esce dal loop x
+            if (anyPenetration) break; 
         }
     }
 
-    // VOXEL AABB SWEEP: Movimento perfetto asse per asse
-    AABB box = getAABB(); // Ricalcola dopo depenetration
+    AABB box = getAABB(); 
     
-    float dx = rb.velocity.x * dt;
-    float dy = rb.velocity.y * dt;
-    float dz = rb.velocity.z * dt;
+    float dx = localVel.x * dt;
+    float dy = localVel.y * dt;
+    float dz = localVel.z * dt;
     
     float moveX = dx;
     float moveY = dy;
     float moveZ = dz;
     
     bool hasSteppedUp = false;
-
-    float oldVelY = rb.velocity.y;
-    glm::vec3 preCollisionPos = rb.position;
 
     // 1. Spostamento Y (Gravità / Salto)
     if (dy != 0.0f) {
@@ -310,7 +326,7 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         
         box.minY += moveY;
         box.maxY += moveY;
-        rb.position.y += moveY;
+        voxPos.y += moveY;
 
         if (moveY != dy) {
             if (dy < 0.0f) rb.isGrounded = true;
@@ -352,15 +368,12 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
             }
         }
 
-        // --- STEP-UP AUTOMATICO X E WALL CLIMB ---
         if (moveX != dx) {
             rb.isAgainstWall = true;
         }
 
         if (moveX != dx && rb.isGrounded) {
             const float MAX_STEP_HEIGHT = 0.6f;
-            
-            // Sweep Y upwards per vedere quanto possiamo salire
             float stepUpAmount = MAX_STEP_HEIGHT;
             int minY_Y = (int)floor(box.maxY);
             int testMaxY_Y = (int)floor(box.maxY + stepUpAmount);
@@ -376,11 +389,9 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
             }
             
             if (stepUpAmount > 0.01f) {
-                // Testa sweep X nella nuova posizione Y sollevata
                 AABB liftedBox = box;
                 liftedBox.minY += stepUpAmount;
                 liftedBox.maxY += stepUpAmount;
-                
                 float liftedMoveX = dx;
                 int lMinY = (int)floor(liftedBox.minY);
                 int lMaxY = (int)floor(liftedBox.maxY);
@@ -413,11 +424,8 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                     }
                 }
                 
-                // Se la nuova posizione ci fa avanzare di più, applichiamo lo step-up
                 if (abs(liftedMoveX) > abs(moveX) + 0.001f) {
                     moveX = liftedMoveX;
-                    
-                    // Snap down per trovare l'esatta altezza del gradino
                     float moveDown = -stepUpAmount;
                     int dMinX = (int)floor(liftedBox.minX);
                     int dMaxX = (int)floor(liftedBox.maxX);
@@ -436,21 +444,18 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                             }
                         }
                     }
-                    
                     float finalLift = stepUpAmount + moveDown;
                     moveY += finalLift;
                     box.minY += finalLift;
                     box.maxY += finalLift;
-                    rb.position.y += finalLift;
+                    voxPos.y += finalLift;
                     hasSteppedUp = true;
                 }
             }
         }
-        // ----------------------------
-
         box.minX += moveX;
         box.maxX += moveX;
-        rb.position.x += moveX;
+        voxPos.x += moveX;
     }
 
     // 3. Spostamento Z
@@ -488,15 +493,12 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
             }
         }
 
-        // --- STEP-UP AUTOMATICO Z E WALL CLIMB ---
         if (moveZ != dz) {
             rb.isAgainstWall = true;
         }
 
         if (moveZ != dz && rb.isGrounded && !hasSteppedUp) {
             const float MAX_STEP_HEIGHT = 0.6f;
-            
-            // Sweep Y upwards
             float stepUpAmount = MAX_STEP_HEIGHT;
             int minY_Y = (int)floor(box.maxY);
             int testMaxY_Y = (int)floor(box.maxY + stepUpAmount);
@@ -512,11 +514,9 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
             }
             
             if (stepUpAmount > 0.01f) {
-                // Testa sweep Z nella nuova posizione Y sollevata
                 AABB liftedBox = box;
                 liftedBox.minY += stepUpAmount;
                 liftedBox.maxY += stepUpAmount;
-                
                 float liftedMoveZ = dz;
                 int lMinY = (int)floor(liftedBox.minY);
                 int lMaxY = (int)floor(liftedBox.maxY);
@@ -551,8 +551,6 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                 
                 if (abs(liftedMoveZ) > abs(moveZ) + 0.001f) {
                     moveZ = liftedMoveZ;
-                    
-                    // Snap down
                     float moveDown = -stepUpAmount;
                     int dMinX = (int)floor(liftedBox.minX);
                     int dMaxX = (int)floor(liftedBox.maxX);
@@ -571,39 +569,65 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
                             }
                         }
                     }
-                    
                     float finalLift = stepUpAmount + moveDown;
                     moveY += finalLift;
                     box.minY += finalLift;
                     box.maxY += finalLift;
-                    rb.position.y += finalLift;
+                    voxPos.y += finalLift;
                 }
             }
         }
-        // ----------------------------
-
         box.minZ += moveZ;
         box.maxZ += moveZ;
-        rb.position.z += moveZ;
+        voxPos.z += moveZ;
+    }
+
+    // Ritorna in coordinate globali
+    if (isSpherical) {
+        int gcx = (int)std::floor(voxPos.x / 16.0f);
+        int gcz = (int)std::floor(voxPos.z / 16.0f);
+        float local_x = voxPos.x - (gcx * 16.0f);
+        float local_z = voxPos.z - (gcz * 16.0f);
+        glm::vec3 localSpherePos;
+        fw::MapWorldGenerator::GetTrueSphericalPosition(planetRadius, gcx, gcz, local_x, voxPos.y, local_z, localSpherePos);
+        rb.position = glm::vec3(planetGlobalMatrix * glm::vec4(localSpherePos, 1.0f));
+    } else {
+        rb.position = voxPos;
     }
 
     // Ricalcolo velocità effettiva (Post-Collisione)
     if (dt > 0.0f) {
-        glm::vec3 actualVelocity = (rb.position - preCollisionPos) / dt;
+        glm::vec3 actualGlobalVelocity = (rb.position - preCollisionGlobalPos) / dt;
+        glm::vec3 actualLocalVelocity = actualGlobalVelocity;
         
-        // Applica restitution (rimbalzo) se ci siamo fermati su un asse
-        if (moveX != dx) actualVelocity.x = -rb.velocity.x * rb.restitution;
-        if (moveY != dy) actualVelocity.y = -rb.velocity.y * rb.restitution;
-        if (moveZ != dz) actualVelocity.z = -rb.velocity.z * rb.restitution;
+        if (isSpherical) {
+            glm::vec3 localCurrentPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
+            glm::vec3 newNormal = glm::normalize(localCurrentPos);
+            glm::quat newLocalRot = glm::rotation(glm::vec3(0, 1, 0), newNormal);
+            actualLocalVelocity = glm::inverse(newLocalRot) * glm::vec3(invPlanetMatrix * glm::vec4(actualGlobalVelocity, 0.0f));
+        }
         
-        rb.velocity = actualVelocity;
+        if (moveX != dx) actualLocalVelocity.x = -localVel.x * rb.restitution;
+        if (moveY != dy) actualLocalVelocity.y = -localVel.y * rb.restitution;
+        if (moveZ != dz) actualLocalVelocity.z = -localVel.z * rb.restitution;
+        
+        localVel = actualLocalVelocity;
+    }
+
+    if (isSpherical) {
+        glm::vec3 localCurrentPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
+        glm::vec3 finalNormal = glm::normalize(localCurrentPos);
+        glm::quat finalRot = glm::rotation(glm::vec3(0, 1, 0), finalNormal);
+        glm::vec3 localPlanetVel = finalRot * localVel;
+        rb.velocity = glm::vec3(planetGlobalMatrix * glm::vec4(localPlanetVel, 0.0f));
+    } else {
+        rb.velocity = localVel;
     }
 
     // Danno da caduta (Energia Cinetica persa improvvisamente)
-    // Soglia: 7.7 m/s corrisponde a ~3m di caduta (v = sqrt(2*g*h))
     // Cadute più basse di ~3m non causano danni
     if (rb.isGrounded && oldVelY < -7.7f) {
-        float deltaV = abs(oldVelY - rb.velocity.y);
+        float deltaV = std::abs(oldVelY - localVel.y);
         float damage = ComputeFallDamage(deltaV, rb.mass);
         if (damage > 0.0f) {
             PhysicsEvent ev;
@@ -611,12 +635,6 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
             ev.value = damage;
             rb.pendingEvents.push_back(ev);
         }
-    }
-
-    // --- Ritorno a Spazio Globale ---
-    if (isSpherical) {
-        rb.position = chunkPos + (chunkRot * rb.position);
-        rb.velocity = chunkRot * rb.velocity;
     }
 }
 

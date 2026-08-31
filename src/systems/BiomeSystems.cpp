@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "BlockRegistry.h"
+#include "MapWorldGenerator.h"
 
 namespace fw {
 
@@ -18,8 +19,9 @@ namespace {
         fw::MapRegionType dominantBiome;
     };
 
-    SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, const PerlinNoise& terrainNoiseGen) {
-        float terrainVal = terrainNoiseGen.octaveNoise(worldX * biome.baseRegion.perlinFrequency, 0.0, worldZ * biome.baseRegion.perlinFrequency, 4, 0.5);
+    SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, glm::vec3 noisePos, const PerlinNoise& terrainNoiseGen) {
+        float freq = biome.baseRegion.perlinFrequency;
+        float terrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
         float baseHeight = 25.0f + (terrainVal * 25.0f * biome.baseRegion.gravityModifier);
         
         if (biome.baseRegion.type == fw::MapRegionType::Ocean) {
@@ -70,7 +72,8 @@ namespace {
             }
             
             if (sdf < blendDistance) {
-                float rTerrainVal = terrainNoiseGen.octaveNoise(worldX * r.perlinFrequency, 0.0, worldZ * r.perlinFrequency, 4, 0.5);
+                float freq = r.perlinFrequency;
+                float rTerrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
                 float rHeight = 25.0f + (rTerrainVal * 25.0f * r.gravityModifier);
                 
                 if (r.type == fw::MapRegionType::Ocean) {
@@ -137,7 +140,12 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                 float worldX = cx * 16.0f + x;
                 float worldZ = cz * 16.0f + z;
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, terrainNoiseGen);
+                glm::vec3 noisePos(worldX, 0.0f, worldZ);
+                if (biome.planetRadius > 0.0f) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, cx, cz, (float)x, 0.0f, (float)z, noisePos);
+                }
+                
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
@@ -145,7 +153,7 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     
                     if (y > 4 && y < height - 4) {
                         float caveFreq = 0.05f; 
-                        float caveDensity = caveNoiseGen.octaveNoise(worldX * caveFreq, y * caveFreq * 1.5f, worldZ * caveFreq, 3, 0.5f);
+                        float caveDensity = caveNoiseGen.octaveNoise(noisePos.x * caveFreq, (noisePos.y + y) * caveFreq * 1.5f, noisePos.z * caveFreq, 3, 0.5f);
                         if (caveDensity > 0.55f) {
                             isCave = true;
                         }
@@ -206,7 +214,12 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                 float worldX = cx * 16.0f + x;
                 float worldZ = cz * 16.0f + z;
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, terrainNoiseGen);
+                glm::vec3 noisePos(worldX, 0.0f, worldZ);
+                if (biome.planetRadius > 0.0f) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, cx, cz, (float)x, 0.0f, (float)z, noisePos);
+                }
+                
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
@@ -214,7 +227,7 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     
                     if (y > 4 && y < height - 6) {
                         float caveFreq = 0.04f; // Caverne più larghe nel deserto
-                        float caveDensity = caveNoiseGen.octaveNoise(worldX * caveFreq, y * caveFreq * 1.5f, worldZ * caveFreq, 3, 0.5f);
+                        float caveDensity = caveNoiseGen.octaveNoise(noisePos.x * caveFreq, (noisePos.y + y) * caveFreq * 1.5f, noisePos.z * caveFreq, 3, 0.5f);
                         if (caveDensity > 0.60f) {
                             isCave = true;
                         }
@@ -269,7 +282,12 @@ void OceanTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
                 float worldX = chunk.cx * 16.0f + x;
                 float worldZ = chunk.cz * 16.0f + z;
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, terrainNoiseGen);
+                glm::vec3 noisePos(worldX, 0.0f, worldZ);
+                if (biome.planetRadius > 0.0f) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
+                }
+                
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
@@ -319,7 +337,12 @@ void TundraTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                 float worldX = chunk.cx * 16.0f + x;
                 float worldZ = chunk.cz * 16.0f + z;
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, terrainNoiseGen);
+                glm::vec3 noisePos(worldX, 0.0f, worldZ);
+                if (biome.planetRadius > 0.0f) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
+                }
+                
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
@@ -368,7 +391,12 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
                 float worldX = chunk.cx * 16.0f + x;
                 float worldZ = chunk.cz * 16.0f + z;
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, terrainNoiseGen);
+                glm::vec3 noisePos(worldX, 0.0f, worldZ);
+                if (biome.planetRadius > 0.0f) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
+                }
+                
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
@@ -376,7 +404,7 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
                     
                     if (y > 4 && y < height - 2) {
                         float caveFreq = 0.08f; 
-                        float caveDensity = lavaTubeNoise.octaveNoise(worldX * caveFreq, y * caveFreq * 2.0f, worldZ * caveFreq, 3, 0.5f);
+                        float caveDensity = lavaTubeNoise.octaveNoise(noisePos.x * caveFreq, (noisePos.y + y) * caveFreq * 2.0f, noisePos.z * caveFreq, 3, 0.5f);
                         if (caveDensity > 0.60f) {
                             isLavaTube = true;
                         }

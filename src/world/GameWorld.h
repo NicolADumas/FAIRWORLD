@@ -71,6 +71,8 @@ public:
     entt::entity CreateEmptyEntity(const std::string& name);
 
     BlockType GetBlock(int x, int y, int z) const;
+    BlockType GetBlockFlat(int flatX, int y, int flatZ) const;
+    void SetBlockFlat(int flatX, int y, int flatZ, BlockType type);
     void SetBlock(int x, int y, int z, BlockType type);
     bool IsChunkReady(int cx, int cz) const;
 
