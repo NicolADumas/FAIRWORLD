@@ -226,7 +226,10 @@ void GameWorld::Update(float dt) {
                 }
             }
         } else {
-            auto newEntity = m_registry.create();
+            entt::entity newEntity = def.targetEntity;
+            if (newEntity == entt::null || !m_registry.valid(newEntity)) {
+                newEntity = m_registry.create();
+            }
             if (!def.mesh.vramAlloc.valid && !def.mesh.vertices.empty() && m_context && m_context->vramAllocator && m_context->dmaManager) {
                 uint32_t meshSizeBytes = (uint32_t)(def.mesh.vertices.size() * sizeof(fw::Vertex));
                 def.mesh.vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
@@ -235,15 +238,22 @@ void GameWorld::Update(float dt) {
                 }
             }
 
-            m_registry.emplace<MetadataComponent>(newEntity, def.name, true, false);
-            m_registry.emplace<MeshComponent>(newEntity, std::move(def.mesh));
+            m_registry.emplace_or_replace<MetadataComponent>(newEntity, def.name, true, false);
+            
+            if (m_registry.all_of<MeshComponent>(newEntity)) {
+                auto& oldMesh = m_registry.get<MeshComponent>(newEntity);
+                if (oldMesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+                    m_context->vramAllocator->Free(oldMesh.vramAlloc);
+                }
+            }
+            m_registry.emplace_or_replace<MeshComponent>(newEntity, std::move(def.mesh));
 
             fw::TransformComponent trans;
             trans.location = {def.position.x, def.position.y, def.position.z};
             trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
             trans.scale = {1.0f, 1.0f, 1.0f};
-            m_registry.emplace<TransformComponent>(newEntity, trans);
-            m_registry.emplace<PBRMaterialComponent>(newEntity);
+            m_registry.emplace_or_replace<TransformComponent>(newEntity, trans);
+            m_registry.emplace_or_replace<PBRMaterialComponent>(newEntity);
         }
     }
 
@@ -265,6 +275,7 @@ void GameWorld::Update(float dt) {
             if (dirty.pendingJob) continue;
 
             dirty.pendingJob = true;
+            jobsDispatchedThisFrame++;
             auto& chunk = dirtyChunks.get<VoxelChunkComponent>(entity);
             std::string chunkName = "Chunk_" + std::to_string(chunk.cx) + "_" + std::to_string(chunk.cz);
             auto chunkData = std::shared_ptr<VoxelChunkComponent>(new VoxelChunkComponent());

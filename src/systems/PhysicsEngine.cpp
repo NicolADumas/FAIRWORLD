@@ -169,20 +169,11 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         
         int flatX = x;
         int flatZ = z;
-
-        fw::BlockType b;
-        if (isSpherical) {
-            b = world.GetBlockFlat(flatX, y, flatZ);
-        } else {
-            b = world.GetBlock(flatX, y, flatZ);
-        }
+        fw::BlockType b = world.GetBlock(flatX, y, flatZ);
         
+        // Trattiamo OutOfBounds come solido sotto Y=25, oppure ovunque per evitare di cadere nel vuoto
         if (b == fw::BlockType::OutOfBounds) {
-            if (isSpherical) {
-                return (y < 25); // Il pianeta matematico è solido sotto Y=25 (superficie base)
-            } else {
-                return true; // Mondo piatto: blocca in aria se non caricato
-            }
+            return (y < 25);
         }
         
         return (b != fw::BlockType::Air && b != fw::BlockType::Water && 

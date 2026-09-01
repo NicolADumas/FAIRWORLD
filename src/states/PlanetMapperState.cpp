@@ -271,6 +271,8 @@ void PlanetMapperState::UpdateApp(float dt) {
             fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
         }
         
+        m_previewWorld->Update(dt);
+        
         // --- Sincronizzazione Marker Spawn Point ---
         if (m_isBuilderMode && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
             auto& p = doc.planets[m_activePlanetIndex];
@@ -653,7 +655,8 @@ void PlanetMapperState::DrawBuilderUI() {
             }
 
             int toDeleteIndex = -1;
-            bool wantsAdd = false;
+            bool shouldPushToAdd = false;
+            bool needsRebuild = false;
             fw::PlanetChunkInstance toAdd;
 
             if (ImGui::BeginTabBar("FacesTabBar")) {
@@ -693,7 +696,7 @@ void PlanetMapperState::DrawBuilderUI() {
                                             addInst.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
                                             addInst.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 1.5f;
                                             currentPlanet.chunkInstances.push_back(addInst);
-                                            wantsAdd = true; // Trigger rebuild
+                                            needsRebuild = true;
                                         }
                                     }
                                 }
@@ -717,7 +720,7 @@ void PlanetMapperState::DrawBuilderUI() {
                             });
                             if (newEnd != currentPlanet.chunkInstances.end()) {
                                 currentPlanet.chunkInstances.erase(newEnd, currentPlanet.chunkInstances.end());
-                                wantsAdd = true; // Uso wantsAdd solo per forzare il RebuildPlanetRoots alla fine
+                                needsRebuild = true;
                             }
                         }
                         ImGui::Spacing();
@@ -770,7 +773,8 @@ void PlanetMapperState::DrawBuilderUI() {
                                                 toAdd.eulerAngles.x = glm::degrees(asin(dir.y));
                                                 toAdd.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
                                                 toAdd.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 1.5f;
-                                                wantsAdd = true;
+                                                shouldPushToAdd = true;
+                                                needsRebuild = true;
                                             }
                                         }
                                     }
@@ -787,10 +791,13 @@ void PlanetMapperState::DrawBuilderUI() {
 
             if (toDeleteIndex >= 0) {
                 currentPlanet.chunkInstances.erase(currentPlanet.chunkInstances.begin() + toDeleteIndex);
-                RebuildPlanetRoots();
+                needsRebuild = true;
             }
-            if (wantsAdd) {
+            if (shouldPushToAdd) {
                 currentPlanet.chunkInstances.push_back(toAdd);
+                needsRebuild = true;
+            }
+            if (needsRebuild) {
                 RebuildPlanetRoots();
             }
         }

@@ -178,8 +178,10 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         for (int face = 0; face < 6; ++face) {
             for (int cy = -N; cy <= N; ++cy) {
                 for (int cx = -N; cx <= N; ++cx) {
-                    int global_cx = face * stride + (cx + N);
-                    int global_cz = (cy + N);
+                    int face_col = face % 3;
+                    int face_row = face / 3;
+                    int global_cx = face_col * stride + (cx + N);
+                    int global_cz = face_row * stride + (cy + N);
                     
                     glm::vec3 spherePos;
                     glm::quat q;
@@ -217,14 +219,14 @@ bool MapWorldGenerator::GetSphericalChunkTransform(float planetRadius, int globa
 
     int stride = N * 2 + 1;
     
-    // Reverse mapping
-    int face_col = (int)std::floor((float)(global_cx + N) / stride);
-    int face_row = (int)std::floor((float)(global_cz + N) / stride);
+    // Reverse mapping using 3x2 grid
+    int face_col = global_cx / stride;
+    int face_row = global_cz / stride;
 
     if (face_col >= 0 && face_col < 3 && face_row >= 0 && face_row < 2) {
         int face = face_col + face_row * 3;
-        int cx = global_cx - face_col * stride;
-        int cy = global_cz - face_row * stride;
+        int cx = (global_cx % stride) - N;
+        int cy = (global_cz % stride) - N;
 
         glm::vec3 localPos(0.0f);
         if (face == 0) localPos = glm::vec3(cx * S, cy * S, planetRadius);         // +Z
@@ -237,12 +239,20 @@ bool MapWorldGenerator::GetSphericalChunkTransform(float planetRadius, int globa
         glm::vec3 normal = glm::normalize(localPos);
         outPos = normal * planetRadius;
 
-        glm::vec3 up(0, 1, 0);
-        if (glm::dot(up, normal) < -0.999f) {
-            outRot = glm::angleAxis(glm::radians(180.0f), glm::vec3(1, 0, 0));
-        } else {
-            outRot = glm::rotation(up, normal);
+        glm::vec3 forwardBase;
+        if (face == 0 || face == 1 || face == 2 || face == 3) {
+            forwardBase = glm::vec3(0, 1, 0);
+        } else if (face == 4) {
+            forwardBase = glm::vec3(0, 0, -1);
+        } else if (face == 5) {
+            forwardBase = glm::vec3(0, 0, 1);
         }
+
+        glm::vec3 forward = glm::normalize(forwardBase - normal * glm::dot(forwardBase, normal));
+        glm::vec3 right = glm::normalize(glm::cross(forward, normal));
+
+        glm::mat3 rotMat(right, normal, forward);
+        outRot = glm::quat_cast(rotMat);
         return true;
     }
     return false; // Fuori dalla sfera
@@ -264,13 +274,13 @@ bool MapWorldGenerator::GetTrueSphericalPosition(float planetRadius, int global_
 
     int stride = N * 2 + 1;
     
-    int face_col = (int)std::floor((float)(global_cx + N) / stride);
-    int face_row = (int)std::floor((float)(global_cz + N) / stride);
+    int face_col = global_cx / stride;
+    int face_row = global_cz / stride;
 
     if (face_col >= 0 && face_col < 3 && face_row >= 0 && face_row < 2) {
         int face = face_col + face_row * 3;
-        int cx = global_cx - face_col * stride;
-        int cy = global_cz - face_row * stride;
+        int cx = (global_cx % stride) - N;
+        int cy = (global_cz % stride) - N;
 
         // Offset dal centro del chunk. Nota: il centro del chunk per il greedy mesher è a (8, 0, 8),
         // ma noi assumiamo che il mesher generi i vertici nell'intervallo [0, 16].

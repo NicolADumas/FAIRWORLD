@@ -30,6 +30,8 @@
 #include "SharedContext.h"
 #include "ForgeWorld.h"
 #include "JobSystem.h"
+#include "MapWorldGenerator.h"
+#include "RaycastSystem.h"
 
 using namespace entt::literals;
 using json = nlohmann::json;
@@ -185,7 +187,7 @@ FairWorldEngine::FairWorldEngine()
       m_windowManager(std::make_unique<WindowManager>()) {
     
     // ForgeWorld Init
-    m_forgeWorld = std::make_unique<fw::GameWorld>();
+    m_forgeMaster = std::make_unique<fw::GameWorld>();
 
     // TimeManager Init
     m_timeManager = std::make_unique<fw::TimeManager>();
@@ -276,10 +278,10 @@ bool FairWorldEngine::Init() {
     // --- Sottoscrizione Eventi (Event-Driven Input System) ---
     EventManager::Get().Subscribe<Event_BlockMined>([this](const Event_BlockMined& e) {
         // Logica eseguita UNA SOLA VOLTA quando l'evento viene triggerato
-        fw::BlockType brokenType = m_forgeWorld->GetBlock(e.position.x, e.position.y, e.position.z);
+        fw::BlockType brokenType = m_forgeMaster->GetBlock(e.position.x, e.position.y, e.position.z);
         
         if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
-            m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, fw::BlockType::Air);
+            m_forgeMaster->SetBlock(e.position.x, e.position.y, e.position.z, fw::BlockType::Air);
             
             // Gestione Drop (Loot)
             BlockType legacyType = static_cast<BlockType>((uint8_t)brokenType);
@@ -307,7 +309,7 @@ bool FairWorldEngine::Init() {
     });
 
     EventManager::Get().Subscribe<Event_BlockPlaced>([this](const Event_BlockPlaced& e) {
-        m_forgeWorld->SetBlock(e.position.x, e.position.y, e.position.z, static_cast<fw::BlockType>((uint8_t)e.type));
+        m_forgeMaster->SetBlock(e.position.x, e.position.y, e.position.z, static_cast<fw::BlockType>((uint8_t)e.type));
         std::cout << "[EVENT] Blocco piazzato in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
     });
 
@@ -318,12 +320,12 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
     m_sharedContext = ctx;
     if (ctx && m_windowManager) {
         ctx->window = (WindowHandle)m_windowManager->GetWindowHandle();
-        ctx->gameWorld = m_forgeWorld.get();
-        ctx->forgeWorld = m_forgeWorld.get();
+        ctx->gameWorld = m_forgeMaster.get();
+        ctx->forgeWorld = m_forgeMaster.get();
         ctx->assetManager = &m_assets; // BUG FIX: AssetManager was NULL!
         
         // Inizializza i sistemi col context appena disponibile
-        m_forgeWorld->Initialize(ctx);
+        m_forgeMaster->Initialize(ctx);
         m_timeManager->Initialize();
 
         // CARICAMENTO TEXTURE PBR (TexturePacker + RenderManager)
@@ -399,7 +401,7 @@ bool FairWorldEngine::Update(float deltaTime) {
     static bool f5WasDown = false;
     bool f5Down = (GetAsyncKeyState(VK_F5) & 0x8000) != 0;
     if (f5Down && !f5WasDown) {
-        if (m_forgeWorld) m_forgeWorld->SaveAllChunks();
+        if (m_forgeMaster) m_forgeMaster->SaveAllChunks();
     }
     f5WasDown = f5Down;
     
@@ -549,86 +551,23 @@ bool FairWorldEngine::Update(float deltaTime) {
 
         // Raycast SEMPRE attivo ogni frame (aggiorna il mirino HUD)
         {
-            // Aggiungiamo 0.5f perché le mesh procedurali dei chunk centrano i blocchi sull'intero (es. [-0.5, 0.5])
-            // ma l'algoritmo DDA assume che i blocchi inizino dall'intero (es. [0.0, 1.0]).
-            glm::vec3 rayPos = m_sharedContext->activeCameraView.cameraPosition + glm::vec3(0.5f, 0.5f, 0.5f);
+            glm::vec3 rayPos = m_sharedContext->activeCameraView.cameraPosition;
             glm::vec3 rayDir = glm::normalize(m_sharedContext->activeCameraView.cameraFront);
             const float MAX_DIST = 8.0f;
+
+            fw::VoxelHit hit = fw::RaycastSystem::Cast(*m_sharedContext->forgeWorld, rayPos, rayDir, MAX_DIST);
 
             glm::ivec3 hitBlock(-1, -1, -1);
             glm::ivec3 prevBlock(-1, -1, -1);
             bool hitGhost = false;
-
-            // Algoritmo DDA (Fast Voxel Traversal - Amanatides & Woo)
-            glm::ivec3 currentPos(floor(rayPos.x), floor(rayPos.y), floor(rayPos.z));
-            glm::ivec3 step(
-                (rayDir.x > 0) ? 1 : ((rayDir.x < 0) ? -1 : 0),
-                (rayDir.y > 0) ? 1 : ((rayDir.y < 0) ? -1 : 0),
-                (rayDir.z > 0) ? 1 : ((rayDir.z < 0) ? -1 : 0)
-            );
             
-            glm::vec3 tDelta(
-                (rayDir.x != 0) ? std::abs(1.0f / rayDir.x) : std::numeric_limits<float>::max(),
-                (rayDir.y != 0) ? std::abs(1.0f / rayDir.y) : std::numeric_limits<float>::max(),
-                (rayDir.z != 0) ? std::abs(1.0f / rayDir.z) : std::numeric_limits<float>::max()
-            );
-            
-            glm::vec3 tMax(
-                (rayDir.x > 0) ? (currentPos.x + 1.0f - rayPos.x) * tDelta.x : (rayDir.x < 0 ? (rayPos.x - currentPos.x) * tDelta.x : std::numeric_limits<float>::max()),
-                (rayDir.y > 0) ? (currentPos.y + 1.0f - rayPos.y) * tDelta.y : (rayDir.y < 0 ? (rayPos.y - currentPos.y) * tDelta.y : std::numeric_limits<float>::max()),
-                (rayDir.z > 0) ? (currentPos.z + 1.0f - rayPos.z) * tDelta.z : (rayDir.z < 0 ? (rayPos.z - currentPos.z) * tDelta.z : std::numeric_limits<float>::max())
-            );
-
-            float t = 0.0f;
-            glm::ivec3 lastPos = currentPos;
-            
-            while (t < MAX_DIST) {
-                // 1. Controlla collisione con ologrammi se in attesa di approvazione
-                if (m_aiAssistant.GetState() == AIState::WaitingForApproval) {
-                    for (const auto& ghost : m_aiAssistant.GetPreviewBlocks()) {
-                        if (ghost.pos == currentPos) {
-                            hitBlock = currentPos;
-                            prevBlock = lastPos;
-                            hitGhost = true;
-                            break;
-                        }
-                    }
-                    if (hitGhost) break;
-                }
-
-                // 2. Controlla collisione col mondo (utilizzando ForgeWorld!)
-                fw::BlockType bType = m_forgeWorld->GetBlock(currentPos.x, currentPos.y, currentPos.z);
-                if (bType != fw::BlockType::Air && bType != fw::BlockType::OutOfBounds) {
-                    hitBlock = currentPos;
-                    prevBlock = lastPos;
-                    break;
-                }
-
-                lastPos = currentPos;
-
-                // 3. Avanza al prossimo voxel (DDA Step)
-                if (tMax.x < tMax.y) {
-                    if (tMax.x < tMax.z) {
-                        currentPos.x += step.x;
-                        t = tMax.x;
-                        tMax.x += tDelta.x;
-                    } else {
-                        currentPos.z += step.z;
-                        t = tMax.z;
-                        tMax.z += tDelta.z;
-                    }
-                } else {
-                    if (tMax.y < tMax.z) {
-                        currentPos.y += step.y;
-                        t = tMax.y;
-                        tMax.y += tDelta.y;
-                    } else {
-                        currentPos.z += step.z;
-                        t = tMax.z;
-                        tMax.z += tDelta.z;
-                    }
-                }
+            if (hit.hit) {
+                hitBlock = hit.voxelPosition;
+                prevBlock = hit.voxelPosition + hit.faceNormal;
             }
+
+            // TODO: Ghost block collision integration with Hybrid DDA
+            // (Currently ghost blocks are skipped by the optimized raycast)
 
             m_hasTarget     = (hitBlock.x >= 0);
             m_targetedBlock = hitBlock;
@@ -656,8 +595,7 @@ bool FairWorldEngine::Update(float deltaTime) {
                                   << prevBlock.x << "," << prevBlock.y << "," << prevBlock.z << ")" << std::endl;
                     }
                 } else if (breakBlock && hitBlock.x >= 0 && !hitGhost) {
-                    // DevMode: scavo ISTANTANEO (nessun timer)
-                    fw::BlockType brokenType = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    fw::BlockType brokenType = m_sharedContext->forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
                     if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
                         EventManager::Get().Dispatch(Event_BlockMined(hitBlock, (BlockType)brokenType));
                         worldChanged = true;
@@ -671,12 +609,12 @@ bool FairWorldEngine::Update(float deltaTime) {
                             m_player.inventory.RemoveItem(m_selectedSlot, 1);
                         } else if (activeItem.type == ItemType::Structure) {
                             std::filesystem::path p(activeItem.stringId);
-                            m_forgeWorld->LoadStructureAsVoxels(p.stem().string(), prevBlock.x, prevBlock.y, prevBlock.z);
+                            m_sharedContext->forgeWorld->LoadStructureAsVoxels(p.stem().string(), prevBlock.x, prevBlock.y, prevBlock.z);
                             worldChanged = true;
                             m_player.inventory.RemoveItem(m_selectedSlot, 1);
                         } else if (activeItem.type == ItemType::MiniVoxel) {
                             std::filesystem::path p(activeItem.stringId);
-                            m_forgeWorld->LoadStructureAsPrefab(p.stem().string(), fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
+                            m_sharedContext->forgeWorld->LoadStructureAsPrefab(p.stem().string(), fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
                             worldChanged = true;
                             m_player.inventory.RemoveItem(m_selectedSlot, 1);
                         }
@@ -693,7 +631,7 @@ bool FairWorldEngine::Update(float deltaTime) {
                 // ============================================================
                 
                 if (holdingBreak && hitBlock.x >= 0 && !hitGhost) {
-                    fw::BlockType targetFW = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                    fw::BlockType targetFW = m_sharedContext->forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
                     BlockType targetType = static_cast<BlockType>((uint8_t)targetFW);
                     const auto& mat = GetBlockMaterial(targetType);
                     
@@ -717,7 +655,7 @@ bool FairWorldEngine::Update(float deltaTime) {
                         
                         // Blocco rotto!
                         if (m_miningProgress >= 1.0f) {
-                            fw::BlockType brokenType = m_forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
+                            fw::BlockType brokenType = m_sharedContext->forgeWorld->GetBlock(hitBlock.x, hitBlock.y, hitBlock.z);
                             if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
                                 BlockType brokenLegacy = static_cast<BlockType>((uint8_t)brokenType);
                                 EventManager::Get().Dispatch(Event_BlockMined(hitBlock, brokenLegacy));
@@ -767,11 +705,11 @@ bool FairWorldEngine::Update(float deltaTime) {
                                 m_player.inventory.RemoveItem(m_selectedSlot, 1);
                             } else if (activeItem.type == ItemType::Structure) {
                                 std::filesystem::path p(activeItem.stringId);
-                                m_forgeWorld->LoadStructureAsVoxels(p.stem().string(), prevBlock.x, prevBlock.y, prevBlock.z);
+                                m_sharedContext->forgeWorld->LoadStructureAsVoxels(p.stem().string(), prevBlock.x, prevBlock.y, prevBlock.z);
                                 m_player.inventory.RemoveItem(m_selectedSlot, 1);
                             } else if (activeItem.type == ItemType::MiniVoxel) {
                                 std::filesystem::path p(activeItem.stringId);
-                                m_forgeWorld->LoadStructureAsPrefab(p.stem().string(), fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
+                                m_sharedContext->forgeWorld->LoadStructureAsPrefab(p.stem().string(), fw::Vec3((float)prevBlock.x, (float)prevBlock.y, (float)prevBlock.z));
                                 m_player.inventory.RemoveItem(m_selectedSlot, 1);
                             }
                         }
@@ -968,7 +906,7 @@ void FairWorldEngine::Render() {
 
         // --- INFO MATERIALE blocco puntato (PlayMode) ---
         if (m_hasTarget && m_gameMode == GameMode::Play) {
-            fw::BlockType targetType = m_forgeWorld->GetBlock(m_targetedBlock.x, m_targetedBlock.y, m_targetedBlock.z);
+            fw::BlockType targetType = m_forgeMaster->GetBlock(m_targetedBlock.x, m_targetedBlock.y, m_targetedBlock.z);
             if (targetType != fw::BlockType::Air && targetType != fw::BlockType::OutOfBounds) {
                 const auto& mat = GetBlockMaterial((BlockType)targetType);
                 char matInfo[128];
@@ -1727,9 +1665,9 @@ void FairWorldEngine::EndUIFrame() {
         ImGui::Render();
         
         glm::vec3 skyColor = {0.2f, 0.4f, 0.8f}; // Fallback sky color
-        if (m_forgeWorld && m_forgeWorld->GetRegistry().valid(m_forgeWorld->GetPlanetEntity())) {
-            auto& reg = m_forgeWorld->GetRegistry();
-            auto entity = m_forgeWorld->GetPlanetEntity();
+        if (m_forgeMaster && m_forgeMaster->GetRegistry().valid(m_forgeMaster->GetPlanetEntity())) {
+            auto& reg = m_forgeMaster->GetRegistry();
+            auto entity = m_forgeMaster->GetPlanetEntity();
             if (reg.all_of<fw::PlanetAtmosphereComponent>(entity)) {
                 skyColor = reg.get<fw::PlanetAtmosphereComponent>(entity).skyBaseColor;
             }
@@ -1915,8 +1853,8 @@ void FairWorldEngine::Shutdown() {
     if (m_hasShutdown) return;
     m_hasShutdown = true;
 
-    if (m_forgeWorld) {
-        m_forgeWorld->SaveAllChunks();
+    if (m_forgeMaster) {
+        m_forgeMaster->SaveAllChunks();
     }
 
     if (m_sharedContext && m_sharedContext->jobSystem) {

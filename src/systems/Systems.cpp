@@ -27,22 +27,35 @@ namespace fw {
             if (!cam.isMain) continue;
             
             glm::vec3 up(0.0f, 1.0f, 0.0f);
+            glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
             if (isSpherical) {
                 float dist = glm::length(glm::vec3(transform.x, transform.y, transform.z));
                 if (dist > 0.01f) {
                     up = glm::normalize(glm::vec3(transform.x, transform.y, transform.z));
                 }
+                
+                if (context && context->forgeWorld) {
+                    auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent, fw::TransformComponent>();
+                    for (auto pEnt : planetView) {
+                        auto& planetTrans = planetView.get<fw::TransformComponent>(pEnt);
+                        fw::Mat4 pGlobal = planetTrans.computeGlobalMatrix(context->forgeWorld->GetRegistry());
+                        glm::mat4 planetGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&pGlobal));
+                        planetNorth = glm::normalize(glm::vec3(planetGlobalMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
+                        break;
+                    }
+                }
             }
 
             // Calcolo del Front basato su Yaw (rotazione attorno a UP) e Pitch (rotazione locale X)
-            // Se usiamo semplicemente angoli di Eulero classici, il polo nord funziona, ma all'equatore lo yaw ruoterebbe attorno all'asse sbagliato.
-            // Soluzione Quaternion:
-            glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up); // Invertito per convenzione
+            glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up); 
             
-            // Front base "nord" fittizio (tangente alla sfera)
-            glm::vec3 baseForward = (std::abs(up.y) < 0.99f) ? glm::normalize(glm::cross(up, glm::vec3(0,1,0))) : glm::vec3(1,0,0);
-            if (up.y > 0.99f) baseForward = glm::vec3(0,0,-1);
-            else if (up.y < -0.99f) baseForward = glm::vec3(0,0,1);
+            // Front base "nord" fittizio (tangente alla sfera rispetto al polo nord del pianeta)
+            glm::vec3 baseForward;
+            if (std::abs(glm::dot(up, planetNorth)) < 0.99f) {
+                baseForward = glm::normalize(glm::cross(up, planetNorth));
+            } else {
+                baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0,0,-1) : glm::vec3(0,0,1);
+            }
             
             glm::vec3 front = qYaw * baseForward;
             glm::vec3 right = glm::normalize(glm::cross(front, up));
@@ -87,16 +100,32 @@ namespace fw {
             float moveSpeed = input.isRunning ? player.runSpeed : player.walkSpeed;
 
             glm::vec3 up(0.0f, 1.0f, 0.0f);
+            glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
             if (isSpherical) {
                 float dist = glm::length(rbComp.body.position);
                 if (dist > 0.01f) up = glm::normalize(rbComp.body.position);
+
+                if (context && context->forgeWorld) {
+                    auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent, fw::TransformComponent>();
+                    for (auto pEnt : planetView) {
+                        auto& planetTrans = planetView.get<fw::TransformComponent>(pEnt);
+                        fw::Mat4 pGlobal = planetTrans.computeGlobalMatrix(context->forgeWorld->GetRegistry());
+                        glm::mat4 planetGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&pGlobal));
+                        planetNorth = glm::normalize(glm::vec3(planetGlobalMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
+                        break;
+                    }
+                }
             }
 
             // Stessa logica della camera per trovare "avanti" e "destra" sulla superficie
             glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up);
-            glm::vec3 baseForward = (std::abs(up.y) < 0.99f) ? glm::normalize(glm::cross(up, glm::vec3(0,1,0))) : glm::vec3(1,0,0);
-            if (up.y > 0.99f) baseForward = glm::vec3(0,0,-1);
-            else if (up.y < -0.99f) baseForward = glm::vec3(0,0,1);
+            
+            glm::vec3 baseForward;
+            if (std::abs(glm::dot(up, planetNorth)) < 0.99f) {
+                baseForward = glm::normalize(glm::cross(up, planetNorth));
+            } else {
+                baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0,0,-1) : glm::vec3(0,0,1);
+            }
             
             glm::vec3 surfaceFront = qYaw * baseForward;
             glm::vec3 surfaceRight = glm::normalize(glm::cross(surfaceFront, up));

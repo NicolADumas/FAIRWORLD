@@ -145,16 +145,11 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
         mesh.name = meshName;
         mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
         
-        std::unordered_map<uint64_t, MapRegion> gridRegions;
+        std::vector<MapRegion> gridAlignedRegions;
         std::vector<MapRegion> intersectingFreeRegions;
         for (const auto& r : safeRegions) {
             if (r.isGridAligned) {
-                for (int cy = r.rectMin.y; cy <= r.rectMax.y; ++cy) {
-                    for (int cx = r.rectMin.x; cx <= r.rectMax.x; ++cx) {
-                        uint64_t key = ((uint64_t)r.faceIndex << 32) | ((uint64_t)cy << 16) | (uint64_t)cx;
-                        gridRegions[key] = r;
-                    }
-                }
+                gridAlignedRegions.push_back(r);
             } else {
                 float pitch = glm::radians(r.eulerAngles.x);
                 float yaw = glm::radians(r.eulerAngles.y);
@@ -224,12 +219,15 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 int gridRow = std::clamp((int)std::floor((1.0f - cy) * 0.5f * N_lato), 0, N_lato - 1);
                 
                 bool foundGridAligned = false;
-                uint64_t cellKey = ((uint64_t)face << 32) | ((uint64_t)gridRow << 16) | (uint64_t)gridCol;
                 
-                auto gridIt = gridRegions.find(cellKey);
-                if (gridIt != gridRegions.end()) {
-                    activeRegion = gridIt->second;
-                    foundGridAligned = true;
+                for (auto it = gridAlignedRegions.rbegin(); it != gridAlignedRegions.rend(); ++it) {
+                    if (it->faceIndex == face &&
+                        gridCol >= it->rectMin.x && gridCol <= it->rectMax.x &&
+                        gridRow >= it->rectMin.y && gridRow <= it->rectMax.y) {
+                        activeRegion = *it;
+                        foundGridAligned = true;
+                        break;
+                    }
                 }
                 
                 MapRegion baseRegion;
