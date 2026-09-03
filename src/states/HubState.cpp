@@ -11,6 +11,7 @@
 #include "PlanetMapperState.h"
 #include "BlockMakerState.h"
 #include "SolarSystemState.h"
+#include "RuntimeManager.h"
 #include <iostream>
 #include "imgui.h"
 
@@ -24,6 +25,9 @@ HubState::~HubState() {
 
 bool HubState::Init() {
     std::cout << "[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.\n";
+    if (m_context && m_context->runtimeManager) {
+        m_context->runtimeManager->RequireFeaturesAsync(fw::RuntimeFeature::None);
+    }
     m_context->deviceManager->InitDefaultBindings();
     return true;
 }
@@ -99,32 +103,32 @@ void HubState::Render() {
                         m_context->targetGameJsonPath = "saves/map/world_map.json";
                         m_context->engine->SetGameMode(GameMode::Play);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<PlayState>(m_context));
                         break;
                     case 1: // LA FORGE
                         m_context->engine->SetGameMode(GameMode::Dev);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<ForgeState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<ForgeState>(m_context));
                         break;
                     case 2: // PHYSICS LAB
                         m_context->engine->SetGameMode(GameMode::PhysicsLab);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<PhysicsLabState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<PhysicsLabState>(m_context));
                         break;
                     case 3: // CHUNK EDITOR
                         m_context->engine->SetGameMode(GameMode::ChunkEditor);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<ChunkEditorState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<ChunkEditorState>(m_context));
                         break;
                     case 4: // PLANET MAPPER
                         m_context->engine->SetGameMode(GameMode::PlanetMapper);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<PlanetMapperState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<PlanetMapperState>(m_context));
                         break;
                     case 5: // BLOCK MAKER
                         m_context->engine->SetGameMode(GameMode::BlockMaker);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<BlockMakerState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<BlockMakerState>(m_context));
                         break;
                     case 6: // CONNESSIONE DISPOSITIVI
                         showDeviceManager = true;
@@ -132,7 +136,7 @@ void HubState::Render() {
                     case 7: // MAPPA SOLARE
                         m_context->engine->SetGameMode(GameMode::SolarSystem);
                         m_context->engine->ForceGameState(GameState::PLAYING);
-                        m_context->stateManager->ChangeState(std::make_unique<SolarSystemState>(m_context));
+                        m_context->stateManager->PushState(std::make_unique<SolarSystemState>(m_context));
                         break;
                 }
             }

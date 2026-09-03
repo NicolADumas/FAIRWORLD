@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "FAIRWORLD.h"
 #include "BlockMakerRenderer.h"
 #include "SharedContext.h"
 #include "ForgeWorld.h"
@@ -77,11 +78,13 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 0, sizeof(ForgePushConstantData), &pcData);
 
-            VkDeviceSize offsets[] = { mesh.vramAlloc.offset };
-            VkBuffer vertexBuffers[] = { m_globalVramBuffer };
-            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-            
-            vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+            if (allocInfo.valid && allocInfo.compartmentIdx < context->engine->GetRenderManager()->GetVramCompartments().size()) {
+                VkBuffer buf = context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                VkDeviceSize offsets[] = { allocInfo.offset };
+                vkCmdBindVertexBuffers(cmd, 0, 1, &buf, offsets);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            }
         }
     }
 }

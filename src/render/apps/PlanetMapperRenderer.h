@@ -42,6 +42,7 @@ public:
     }
 
     void SetTerrainPipeline(TerrainPipelineSystem* tps) { m_terrainPipeline = tps; }
+    void SetTerrainNumChunks(uint32_t n) { m_terrainNumChunks = n; }
     
 private:
     VkPipeline m_pipeline{ VK_NULL_HANDLE };
@@ -52,6 +53,7 @@ private:
     uint32_t m_currentFrame{ 0 };
     TerrainPipelineSystem* m_terrainPipeline{ nullptr };
     bool m_terrainPipelineInitialized{ false };
+    uint32_t m_terrainNumChunks{ 0 };
 };
 
 } // namespace fw

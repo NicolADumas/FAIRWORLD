@@ -4,6 +4,9 @@
 #include "Components.h"
 #include "SharedContext.h"
 #include "StateManager.h"
+#include "AIAssistant.h"
+#include "RuntimeManager.h"
+#include "PhysicsEngine.h"
 #include "DeviceManager.h"
 #include "TimeManager.h"
 #include "DiagnosticsManager.h"
@@ -324,17 +327,13 @@ void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
         ctx->forgeWorld = m_forgeMaster.get();
         ctx->assetManager = &m_assets; // BUG FIX: AssetManager was NULL!
         
+        // Inizializza il RuntimeManager globale per le risorse On-Demand
+        m_runtimeManager = std::make_unique<fw::RuntimeManager>(ctx);
+        ctx->runtimeManager = m_runtimeManager.get();
+        
         // Inizializza i sistemi col context appena disponibile
         m_forgeMaster->Initialize(ctx);
         m_timeManager->Initialize();
-
-        // CARICAMENTO TEXTURE PBR (TexturePacker + RenderManager)
-        fw::TexturePacker packer(512);
-        if (ctx->materialRegistry) {
-            auto pbrData = packer.PackMaterials(ctx->materialRegistry->GetAllMaterials());
-            m_renderManager->CreatePBRTextures(pbrData);
-            std::cout << "[FAIRWORLD] Texture PBR caricate e impacchettate con successo in Vulkan." << std::endl;
-        }
     }
 }
 

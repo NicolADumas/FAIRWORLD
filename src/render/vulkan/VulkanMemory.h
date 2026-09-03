@@ -17,13 +17,16 @@ public:
 
     bool Initialize();
     void Cleanup();
-
+    void AddVramCompartment();
+    
     VmaAllocator GetAllocator() const { return m_vmaAllocator; }
     VkBuffer& GetStagingRingBuffer() { return m_stagingRingBuffer; }
     void* GetMappedStagingData() { return m_mappedStagingData; }
     VkDeviceMemory GetStagingDeviceMemory() const;
     VmaPool GetChunkVmaPool() const { return m_chunkVmaPool; }
-    VkBuffer GetGlobalVramBuffer() const { return m_globalVramBuffer; }
+    
+    const std::vector<VkBuffer>& GetVramCompartments() const { return m_vramCompartments; }
+    VkBuffer GetVramCompartment(uint32_t idx) const { return idx < m_vramCompartments.size() ? m_vramCompartments[idx] : VK_NULL_HANDLE; }
     
     const std::vector<VkBuffer>& GetUniformBuffers() const { return m_uniformBuffers; }
     const std::vector<void*>& GetUniformBuffersMapped() const { return m_uniformBuffersMapped; }
@@ -52,8 +55,8 @@ private:
 
     VmaPool m_chunkVmaPool{ VK_NULL_HANDLE };
 
-    VkBuffer m_globalVramBuffer{ VK_NULL_HANDLE };
-    VmaAllocation m_globalVramAllocation{ VK_NULL_HANDLE };
+    std::vector<VkBuffer> m_vramCompartments;
+    std::vector<VmaAllocation> m_vramCompartmentAllocations;
 
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VmaAllocation> m_uniformBuffersAllocation;

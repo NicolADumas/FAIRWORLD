@@ -4,17 +4,9 @@
 
 namespace fw {
 
-VramSlabAllocator::VramSlabAllocator(uint32_t totalMemoryBytes, uint32_t pageSizeBytes)
-    : m_totalMemory(totalMemoryBytes), m_pageSize(pageSizeBytes) {
+VramSlabAllocator::VramSlabAllocator(uint32_t maxMemoryBytes, uint32_t compartmentSizeBytes, uint32_t pageSizeBytes)
+    : m_maxMemory(maxMemoryBytes), m_compartmentSize(compartmentSizeBytes), m_pageSize(pageSizeBytes) {
     
-    // Inizializza le "Pagine" libere
-    uint32_t numPages = m_totalMemory / m_pageSize;
-    m_freePagesOffsets.reserve(numPages);
-    for (uint32_t i = 0; i < numPages; ++i) {
-        // Le mettiamo in ordine inverso così il pop_back() ci darà l'offset più basso
-        m_freePagesOffsets.push_back((numPages - 1 - i) * m_pageSize);
-    }
-
     // Inizializza le classi di Bucket (Potenze di 2 partendo da 8KB fino a 4MB)
     uint32_t sizes[] = { 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304 };
     for (uint32_t size : sizes) {
@@ -25,7 +17,7 @@ VramSlabAllocator::VramSlabAllocator(uint32_t totalMemoryBytes, uint32_t pageSiz
 }
 
 VramSlabAllocator::~VramSlabAllocator() {
-    std::cout << "[VramSlabAllocator] Distrutto. " << m_statAllocated << " bytes rimasti allocati (leak possibili se non liberati).\n";
+    std::cout << "[VramSlabAllocator] Distrutto. " << m_statAllocated << " bytes rimasti allocati.\n";
 }
 
 int VramSlabAllocator::GetBucketIndex(uint32_t size) const {
@@ -37,68 +29,137 @@ int VramSlabAllocator::GetBucketIndex(uint32_t size) const {
     return -1; // Troppo grande per l'allocatore a bucket!
 }
 
-bool VramSlabAllocator::ExpandBucket(int bucketIdx) {
-    if (m_freePagesOffsets.empty()) {
-        std::cerr << "[VRAM] ERROR: Out of VRAM Pages! Impossibile espandere il bucket " << m_buckets[bucketIdx].slotSize << " bytes.\n";
+bool VramSlabAllocator::AllocateNewCompartment() {
+    uint32_t maxCompartments = m_maxMemory / m_compartmentSize;
+    if (m_allocatedCompartments >= maxCompartments) {
+        std::cerr << "[VRAM] ERROR: Raggiunto il limite massimo di " << (m_maxMemory / (1024*1024)) << " MB!\n";
         return false;
     }
 
-    uint32_t pageOffset = m_freePagesOffsets.back();
-    m_freePagesOffsets.pop_back();
+    uint32_t newCompartmentIdx = m_allocatedCompartments;
+    m_allocatedCompartments++;
+
+    std::cout << "[VRAM] Allocazione dinamica nuovo compartimento: " << newCompartmentIdx << " (256MB)\n";
+
+    // Chiama il VulkanMemory per creare il VkBuffer fisico
+    if (m_allocateCompartmentCallback) {
+        m_allocateCompartmentCallback(newCompartmentIdx);
+    }
+
+    // Aggiungi le nuove pagine logiche (da 4MB) per questo compartimento
+    uint32_t pagesPerCompartment = m_compartmentSize / m_pageSize;
+    for (uint32_t i = 0; i < pagesPerCompartment; ++i) {
+        VramAllocationInfo pageInfo;
+        pageInfo.compartmentIdx = newCompartmentIdx;
+        // Le mettiamo in ordine inverso così il pop_back() ci darà l'offset più basso
+        pageInfo.offset = (pagesPerCompartment - 1 - i) * m_pageSize;
+        pageInfo.size = m_pageSize;
+        pageInfo.valid = true;
+        m_freePages.push_back(pageInfo);
+    }
+
+    return true;
+}
+
+bool VramSlabAllocator::ExpandBucket(int bucketIdx) {
+    if (m_freePages.empty()) {
+        if (!AllocateNewCompartment()) {
+            return false;
+        }
+    }
+
+    VramAllocationInfo pageInfo = m_freePages.back();
+    m_freePages.pop_back();
 
     Bucket& b = m_buckets[bucketIdx];
     uint32_t slotsInPage = m_pageSize / b.slotSize;
     
     // Affettiamo la pagina di 4MB in N slot della taglia richiesta dal bucket
     for (uint32_t i = 0; i < slotsInPage; ++i) {
-        b.freeOffsets.push_back(pageOffset + (slotsInPage - 1 - i) * b.slotSize);
+        VramAllocationInfo slotInfo;
+        slotInfo.compartmentIdx = pageInfo.compartmentIdx;
+        slotInfo.offset = pageInfo.offset + (slotsInPage - 1 - i) * b.slotSize;
+        slotInfo.size = b.slotSize;
+        slotInfo.bucketIdx = bucketIdx;
+        slotInfo.valid = true;
+        b.freeSlots.push_back(slotInfo);
     }
 
     return true;
 }
 
-VramAllocation VramSlabAllocator::Allocate(uint32_t requestedSize) {
+VramAllocationHandle VramSlabAllocator::CreateHandle(const VramAllocationInfo& info) {
+    if (!m_freeHandles.empty()) {
+        VramAllocationHandle handle = m_freeHandles.back();
+        m_freeHandles.pop_back();
+        m_allocations[handle] = info;
+        return handle;
+    }
+    
+    VramAllocationHandle handle = static_cast<VramAllocationHandle>(m_allocations.size());
+    m_allocations.push_back(info);
+    return handle;
+}
+
+VramAllocationHandle VramSlabAllocator::Allocate(uint32_t requestedSize) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     int bIdx = GetBucketIndex(requestedSize);
     if (bIdx == -1) {
         std::cerr << "[VRAM] Richiesta (" << requestedSize << " byte) superiore al bucket massimo!\n";
-        return {0, 0, 0, false};
+        return INVALID_VRAM_HANDLE;
     }
 
     Bucket& b = m_buckets[bIdx];
 
-    // Se il bucket è vuoto, affettiamo una nuova pagina
-    if (b.freeOffsets.empty()) {
+    // Se il bucket è vuoto, espandiamolo con una nuova pagina (potrebbe allocare un nuovo compartimento fisico)
+    if (b.freeSlots.empty()) {
         if (!ExpandBucket(bIdx)) {
-            return {0, 0, 0, false}; // Out of memory
+            return INVALID_VRAM_HANDLE; // Out of memory
         }
     }
 
-    uint32_t offset = b.freeOffsets.back();
-    b.freeOffsets.pop_back();
+    VramAllocationInfo slotInfo = b.freeSlots.back();
+    b.freeSlots.pop_back();
 
     m_statAllocated += requestedSize;
     m_statWasted += (b.slotSize - requestedSize);
 
-    return { offset, b.slotSize, (uint32_t)bIdx, true };
+    return CreateHandle(slotInfo);
 }
 
-void VramSlabAllocator::Free(const VramAllocation& alloc) {
-    if (!alloc.valid) return;
+void VramSlabAllocator::Free(VramAllocationHandle handle) {
+    if (handle == INVALID_VRAM_HANDLE) return;
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    assert(alloc.bucketIdx < m_buckets.size());
-    Bucket& b = m_buckets[alloc.bucketIdx];
-    
-    // Reinseriamo l'offset in O(1)
-    b.freeOffsets.push_back(alloc.offset);
+    if (handle >= m_allocations.size() || !m_allocations[handle].valid) {
+        std::cerr << "[VRAM ERROR] Tentativo di liberare un handle non valido: " << handle << "\n";
+        return;
+    }
 
-    // N.B: Non stiamo tenendo traccia dell'uso esatto della richiesta passata,
-    // quindi le statistiche globali (m_statAllocated) sono difficili da decrementare 
-    // precisamente senza salvare la "requestedSize" nell'alloc. 
-    // Per un allocator VRAM reale di solito le statistiche siricalcolano o si salva la size.
+    VramAllocationInfo& info = m_allocations[handle];
+    
+    assert(info.bucketIdx < m_buckets.size());
+    Bucket& b = m_buckets[info.bucketIdx];
+    
+    // Reinseriamo lo slot in O(1)
+    b.freeSlots.push_back(info);
+    
+    // Invalida l'handle e riciclalo
+    info.valid = false;
+    m_freeHandles.push_back(handle);
+}
+
+VramAllocationInfo VramSlabAllocator::GetAllocation(VramAllocationHandle handle) const {
+    if (handle != INVALID_VRAM_HANDLE && handle < m_allocations.size()) {
+        return m_allocations[handle];
+    }
+    return VramAllocationInfo{};
+}
+
+void VramSlabAllocator::AddCompartment(uint32_t compartmentIdx) {
+    // Usato se VulkanMemory pre-alloca, ma ora usiamo il callback AllocateNewCompartment
 }
 
 uint32_t VramSlabAllocator::GetAllocatedBytes() const { return m_statAllocated; }

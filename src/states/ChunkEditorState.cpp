@@ -53,6 +53,7 @@ bool ChunkEditorState::InitApp() {
 
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
+    m_previewWorld->InitializePhysics();
 
     if (m_context && m_context->engine) {
         m_context->engine->SetGameMode(GameMode::ChunkEditor);

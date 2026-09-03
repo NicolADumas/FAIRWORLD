@@ -314,3 +314,329 @@ bool MapDocument::LoadJSON(const std::string& path) {
 }
 
 } // namespace fw
+
+// =============================================================
+// IMPLEMENTAZIONE FORMATO BINARIO FWB (FairWorld Binary)
+// =============================================================
+
+namespace {
+
+// Helpers di scrittura/lettura raw
+inline void writeU32(std::ostream& s, uint32_t v) { s.write(reinterpret_cast<const char*>(&v), 4); }
+inline void writeF32(std::ostream& s, float v)    { s.write(reinterpret_cast<const char*>(&v), 4); }
+inline void writeI32(std::ostream& s, int32_t v)  { s.write(reinterpret_cast<const char*>(&v), 4); }
+inline void writeU8 (std::ostream& s, uint8_t v)  { s.write(reinterpret_cast<const char*>(&v), 1); }
+inline void writeBool(std::ostream& s, bool v)    { uint8_t b = v ? 1 : 0; s.write(reinterpret_cast<const char*>(&b), 1); }
+inline void writeStr (std::ostream& s, const std::string& str) {
+    uint32_t len = (uint32_t)str.size();
+    writeU32(s, len);
+    if (len > 0) s.write(str.data(), len);
+}
+inline void writeVec3(std::ostream& s, const glm::vec3& v) { writeF32(s,v.x); writeF32(s,v.y); writeF32(s,v.z); }
+inline void writeVec4(std::ostream& s, const glm::vec4& v) { writeF32(s,v.x); writeF32(s,v.y); writeF32(s,v.z); writeF32(s,v.w); }
+inline void writeIVec2(std::ostream& s, const glm::ivec2& v) { writeI32(s,v.x); writeI32(s,v.y); }
+
+inline uint32_t readU32(std::istream& s) { uint32_t v; s.read(reinterpret_cast<char*>(&v), 4); return v; }
+inline float    readF32(std::istream& s) { float v;    s.read(reinterpret_cast<char*>(&v), 4); return v; }
+inline int32_t  readI32(std::istream& s) { int32_t v;  s.read(reinterpret_cast<char*>(&v), 4); return v; }
+inline uint8_t  readU8 (std::istream& s) { uint8_t v;  s.read(reinterpret_cast<char*>(&v), 1); return v; }
+inline bool     readBool(std::istream& s){ return readU8(s) != 0; }
+inline std::string readStr(std::istream& s) {
+    uint32_t len = readU32(s);
+    if (len == 0) return {};
+    std::string str(len, '\0');
+    s.read(&str[0], len);
+    return str;
+}
+inline glm::vec3  readVec3(std::istream& s)  { float x=readF32(s),y=readF32(s),z=readF32(s); return {x,y,z}; }
+inline glm::vec4  readVec4(std::istream& s)  { float x=readF32(s),y=readF32(s),z=readF32(s),w=readF32(s); return {x,y,z,w}; }
+inline glm::ivec2 readIVec2(std::istream& s) { int x=readI32(s),y=readI32(s); return {x,y}; }
+
+// Scrive un MapRegion
+void writeRegion(std::ostream& s, const fw::MapRegion& r) {
+    writeVec3(s, r.eulerAngles);
+    writeF32(s, r.angularRadius);
+    writeIVec2(s, r.rectMin);
+    writeIVec2(s, r.rectMax);
+    writeI32(s, (int32_t)r.type);
+    writeI32(s, (int32_t)r.shape);
+    writeStr(s, r.label);
+    writeU32(s, r.seed);
+    writeF32(s, r.gravityModifier);
+    writeF32(s, r.perlinFrequency);
+    writeF32(s, r.treeDensity);
+    writeU8(s, r.surfaceBlockId);
+    writeU8(s, r.subsurfaceBlockId);
+    writeBool(s, r.isGridAligned);
+    writeI32(s, r.faceIndex);
+    writeI32(s, r.gridX);
+    writeI32(s, r.gridY);
+}
+
+fw::MapRegion readRegion(std::istream& s) {
+    fw::MapRegion r;
+    r.eulerAngles      = readVec3(s);
+    r.angularRadius    = readF32(s);
+    r.rectMin          = readIVec2(s);
+    r.rectMax          = readIVec2(s);
+    r.type             = (fw::MapRegionType)readI32(s);
+    r.shape            = (fw::RegionShape)readI32(s);
+    r.label            = readStr(s);
+    r.seed             = readU32(s);
+    r.gravityModifier  = readF32(s);
+    r.perlinFrequency  = readF32(s);
+    r.treeDensity      = readF32(s);
+    r.surfaceBlockId   = readU8(s);
+    r.subsurfaceBlockId= readU8(s);
+    r.isGridAligned    = readBool(s);
+    r.faceIndex        = readI32(s);
+    r.gridX            = readI32(s);
+    r.gridY            = readI32(s);
+    return r;
+}
+
+} // anonymous namespace
+
+namespace fw {
+
+// Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
+static constexpr uint32_t FWB_MAGIC   = 0x46574231; // 'FWB1'
+static constexpr uint32_t FWB_VERSION = 3;
+
+bool MapDocument::SaveBinary(const std::string& path) const {
+    try {
+        std::filesystem::path fsPath(path);
+        if (fsPath.has_parent_path())
+            std::filesystem::create_directories(fsPath.parent_path());
+
+        std::ofstream f(path, std::ios::binary);
+        if (!f.is_open()) return false;
+
+        writeU32(f, FWB_MAGIC);
+        writeU32(f, FWB_VERSION);
+        writeBool(f, isCompiled);
+
+        // TerrainLibrary
+        writeU32(f, (uint32_t)terrainLibrary.size());
+        for (const auto& t : terrainLibrary) {
+            writeStr(f, t.id);
+            writeStr(f, t.name);
+            writeI32(f, (int32_t)t.baseType);
+            writeF32(f, t.basePerlinFrequency);
+            writeF32(f, t.baseGravityModifier);
+            writeF32(f, t.baseAngularRadius);
+            writeU8(f,  t.baseSurfaceBlockId);
+            writeU8(f,  t.baseSubsurfaceBlockId);
+            writeU32(f, t.seed);
+            writeU32(f, (uint32_t)t.subRegions.size());
+            for (const auto& r : t.subRegions) writeRegion(f, r);
+        }
+
+        // Planets
+        writeU32(f, (uint32_t)planets.size());
+        for (const auto& p : planets) {
+            writeI32(f, (int32_t)p.type);
+            writeStr(f, p.name);
+            writeF32(f, p.planetRadius);
+            writeF32(f, p.axialTilt);
+            writeF32(f, p.yearLength);
+            writeI32(f, p.minX); writeI32(f, p.maxX);
+            writeI32(f, p.minY); writeI32(f, p.maxY);
+            writeI32(f, p.minZ); writeI32(f, p.maxZ);
+
+            // Regions
+            writeU32(f, (uint32_t)p.regions.size());
+            for (const auto& r : p.regions) writeRegion(f, r);
+
+            // ChunkInstances
+            writeU32(f, (uint32_t)p.chunkInstances.size());
+            for (const auto& ci : p.chunkInstances) {
+                writeStr(f, ci.name);
+                writeStr(f, ci.templateId);
+                writeVec3(f, ci.eulerAngles);
+                writeF32(f, ci.angularRadius);
+                writeBool(f, ci.isGridAligned);
+                writeI32(f, ci.faceIndex);
+                writeI32(f, ci.gridX);
+                writeI32(f, ci.gridY);
+            }
+
+            // ChunkOverrides
+            writeU32(f, (uint32_t)p.chunkOverrides.size());
+            for (const auto& co : p.chunkOverrides) {
+                writeI32(f, co.coord.x);
+                writeI32(f, co.coord.z);
+                writeI32(f, (int32_t)co.meta.type);
+                writeI32(f, co.meta.biomeID);
+                writeBool(f, co.meta.canSpawnMobs);
+                writeBool(f, co.meta.isDestructible);
+            }
+
+            // SpawnPoints
+            writeU32(f, (uint32_t)p.spawnPoints.size());
+            for (const auto& sp : p.spawnPoints) {
+                writeStr(f, sp.name);
+                writeI32(f, sp.faceIndex);
+                writeF32(f, sp.localX);
+                writeF32(f, sp.localZ);
+                writeF32(f, sp.heightOffset);
+                writeVec4(f, sp.color);
+            }
+        }
+
+        f.close();
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[MapDocument] Errore salvataggio binario: " << e.what() << "\n";
+        return false;
+    }
+}
+
+bool MapDocument::LoadBinary(const std::string& path) {
+    try {
+        std::ifstream f(path, std::ios::binary);
+        if (!f.is_open()) return false;
+
+        uint32_t magic   = readU32(f);
+        uint32_t version = readU32(f);
+        if (magic != FWB_MAGIC || version != FWB_VERSION) {
+            std::cerr << "[MapDocument] Binario .fwb obsoleto (magic=" << magic
+                      << " ver=" << version << "). Rigenerazione da JSON...\n";
+            return false; // triggera il fallback a LoadJSON
+        }
+
+        isCompiled = readBool(f);
+
+        // TerrainLibrary
+        terrainLibrary.clear();
+        uint32_t numTemplates = readU32(f);
+        terrainLibrary.reserve(numTemplates);
+        for (uint32_t i = 0; i < numTemplates; ++i) {
+            TerrainTemplate t;
+            t.id                   = readStr(f);
+            t.name                 = readStr(f);
+            t.baseType             = (MapRegionType)readI32(f);
+            t.basePerlinFrequency  = readF32(f);
+            t.baseGravityModifier  = readF32(f);
+            t.baseAngularRadius    = readF32(f);
+            t.baseSurfaceBlockId   = readU8(f);
+            t.baseSubsurfaceBlockId= readU8(f);
+            t.seed                 = readU32(f);
+            uint32_t numSubs       = readU32(f);
+            t.subRegions.reserve(numSubs);
+            for (uint32_t s = 0; s < numSubs; ++s) t.subRegions.push_back(readRegion(f));
+            terrainLibrary.push_back(std::move(t));
+        }
+
+        // Planets
+        planets.clear();
+        uint32_t numPlanets = readU32(f);
+        planets.reserve(numPlanets);
+        for (uint32_t i = 0; i < numPlanets; ++i) {
+            PlanetMap p;
+            p.type         = (PlanetType)readI32(f);
+            p.name         = readStr(f);
+            p.planetRadius = readF32(f);
+            p.axialTilt    = readF32(f);
+            p.yearLength   = readF32(f);
+            p.minX = readI32(f); p.maxX = readI32(f);
+            p.minY = readI32(f); p.maxY = readI32(f);
+            p.minZ = readI32(f); p.maxZ = readI32(f);
+
+            uint32_t numRegions = readU32(f);
+            p.regions.reserve(numRegions);
+            for (uint32_t r = 0; r < numRegions; ++r) p.regions.push_back(readRegion(f));
+
+            uint32_t numInst = readU32(f);
+            p.chunkInstances.reserve(numInst);
+            for (uint32_t c = 0; c < numInst; ++c) {
+                PlanetChunkInstance ci;
+                ci.name          = readStr(f);
+                ci.templateId    = readStr(f);
+                ci.eulerAngles   = readVec3(f);
+                ci.angularRadius = readF32(f);
+                ci.isGridAligned = readBool(f);
+                ci.faceIndex     = readI32(f);
+                ci.gridX         = readI32(f);
+                ci.gridY         = readI32(f);
+                p.chunkInstances.push_back(std::move(ci));
+            }
+
+            uint32_t numOverrides = readU32(f);
+            p.chunkOverrides.reserve(numOverrides);
+            for (uint32_t c = 0; c < numOverrides; ++c) {
+                ChunkDataExport co;
+                co.coord.x              = readI32(f);
+                co.coord.z              = readI32(f);
+                co.meta.type            = (ChunkType)readI32(f);
+                co.meta.biomeID         = readI32(f);
+                co.meta.canSpawnMobs    = readBool(f);
+                co.meta.isDestructible  = readBool(f);
+                p.chunkOverrides.push_back(co);
+            }
+
+            uint32_t numSpawns = readU32(f);
+            p.spawnPoints.reserve(numSpawns);
+            for (uint32_t s = 0; s < numSpawns; ++s) {
+                SpawnPoint sp;
+                sp.name         = readStr(f);
+                sp.faceIndex    = readI32(f);
+                sp.localX       = readF32(f);
+                sp.localZ       = readF32(f);
+                sp.heightOffset = readF32(f);
+                sp.color        = readVec4(f);
+                p.spawnPoints.push_back(std::move(sp));
+            }
+            planets.push_back(std::move(p));
+        }
+
+        if (!f.good()) {
+            std::cerr << "[MapDocument] Binario .fwb troncato o corrotto.\n";
+            return false;
+        }
+
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[MapDocument] Errore caricamento binario: " << e.what() << "\n";
+        return false;
+    }
+}
+
+bool MapDocument::LoadSmart(const std::string& jsonPath) {
+    namespace fs = std::filesystem;
+    std::string binPath = jsonPath;
+    // Sostituisce .json con .fwb (o aggiunge .fwb se non termina con .json)
+    auto ext = fs::path(jsonPath).extension().string();
+    if (ext == ".json") {
+        binPath = jsonPath.substr(0, jsonPath.size() - 5) + ".fwb";
+    } else {
+        binPath = jsonPath + ".fwb";
+    }
+
+    bool useBinary = false;
+    if (fs::exists(binPath) && fs::exists(jsonPath)) {
+        auto binTime  = fs::last_write_time(binPath);
+        auto jsonTime = fs::last_write_time(jsonPath);
+        useBinary = (binTime >= jsonTime); // il binario è aggiornato quanto o più del JSON
+    } else if (fs::exists(binPath)) {
+        useBinary = true;
+    }
+
+    if (useBinary) {
+        std::cout << "[MapDocument] Caricamento rapido da: " << binPath << "\n";
+        if (LoadBinary(binPath)) return true;
+        std::cerr << "[MapDocument] Binario non valido, fallback a JSON...\n";
+    }
+
+    // Carica da JSON e genera il binario per la prossima volta
+    std::cout << "[MapDocument] Caricamento da JSON: " << jsonPath << "\n";
+    if (!LoadJSON(jsonPath)) return false;
+
+    std::cout << "[MapDocument] Generazione cache binaria: " << binPath << "\n";
+    SaveBinary(binPath);
+    return true;
+}
+
+} // namespace fw (binario)

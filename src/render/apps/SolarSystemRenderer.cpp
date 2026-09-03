@@ -1,4 +1,6 @@
 #include "pch.h"
+#include "FAIRWORLD.h"
+#include "RenderManager.h"
 #include "SolarSystemRenderer.h"
 #include "SharedContext.h"
 #include "ForgeWorld.h"
@@ -30,7 +32,7 @@ bool SolarSystemRenderer::Initialize(VkDevice device, VkRenderPass renderPass, V
 void SolarSystemRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 viewMatrix, glm::mat4 projMatrix) {
     if (!context || !context->forgeWorld) return;
     if (m_pipeline == VK_NULL_HANDLE || m_pipelineLayout == VK_NULL_HANDLE) return;
-    if (m_globalVramBuffer == VK_NULL_HANDLE) return;
+    
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
@@ -90,11 +92,13 @@ void SolarSystemRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm:
 
         vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SolarSystemPushConstants), &pcData);
 
-        offsets[0] = mesh.vramAlloc.offset;
-        VkBuffer vertexBuffers[] = { m_globalVramBuffer };
-        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-
-        vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+        auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+            if (allocInfo.valid && allocInfo.compartmentIdx < context->engine->GetRenderManager()->GetVramCompartments().size()) {
+                VkBuffer buf = context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                VkDeviceSize newOffsets[] = { 0 };
+                vkCmdBindVertexBuffers(cmd, 0, 1, &buf, newOffsets);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, allocInfo.offset / sizeof(fw::Vertex), 0);
+            }
     }
 }
 

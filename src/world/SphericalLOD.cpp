@@ -32,7 +32,7 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
             for (int i = 0; i < 4; ++i) {
                 if (node.children[i] && node.children[i]->targetEntity != entt::null) {
                     if (auto* mesh = world->GetRegistry().try_get<fw::MeshComponent>(node.children[i]->targetEntity)) {
-                        if (!mesh->vramAlloc.valid) allChildrenReady = false;
+                        if (mesh->vramAlloc == fw::INVALID_VRAM_HANDLE) allChildrenReady = false;
                     } else {
                         allChildrenReady = false;
                     }

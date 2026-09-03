@@ -83,7 +83,7 @@ public:
         }
 
         // 2. Resource Validation (Rimosso check su mesh.vertices.empty() per permettere il clear VRAM post-upload)
-        if (!mesh.vramAlloc.valid) return false;
+        if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE) return false;
 
         // 3. Culling (Frustum) disabilitato temporaneamente per debug
         if (false && m_useFrustumCulling) {
@@ -127,7 +127,7 @@ public:
             if (!vis->enabled) return false;
         }
         
-        if (!mesh.vramAlloc.valid) return false;
+        if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE) return false;
 
         // Frustum culling temporaneamente disabilitato
         if (false) {

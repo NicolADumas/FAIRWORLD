@@ -8,6 +8,7 @@
 #include "VramSlabAllocator.h"
 #include "VulkanDmaManager.h"
 #include "JobSystem.h"
+#include "RuntimeManager.h"
 #include "WorldProjectManager.h"
 #include "RenderManager.h"
 #include "imgui.h"
@@ -25,29 +26,24 @@ AppBaseState::~AppBaseState() {
 }
 
 bool AppBaseState::Init() {
-    if (m_context) {
-        if (!m_context->vramAllocator) {
-            m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
-        }
-        if (!m_context->dmaManager) {
-            m_context->dmaManager = new fw::VulkanDmaManager();
-            if (auto* rm = m_context->engine->GetRenderManager()) {
-                m_context->dmaManager->Initialize(
-                    rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
-                    rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
-                    rm->GetStagingBufferSize(), rm->GetGlobalVramBuffer(), rm->GetQueueMutex()
-                );
-            }
-        }
-        if (!m_context->jobSystem) {
-            m_context->jobSystem = new fw::JobSystem();
-            m_context->jobSystem->Initialize();
-        }
+    m_appInitialized = false;
+    m_loadingSpinnerAngle = 0.0f;
+    if (m_context && m_context->runtimeManager) {
+        m_context->runtimeManager->RequireFeaturesAsync(GetRequiredFeatures());
     }
-    return InitApp();
+    return true; // Ritorna subito per evitare freeze UI
 }
 
 void AppBaseState::Update(float dt) {
+    if (!m_appInitialized) {
+        if (m_context && m_context->runtimeManager && m_context->runtimeManager->IsReady()) {
+            m_appInitialized = InitApp();
+        } else {
+            m_loadingSpinnerAngle += dt * 5.0f;
+        }
+        return;
+    }
+
     if (m_context && m_context->deviceManager) {
         m_context->deviceManager->requireFreeCursor = true;
     }
@@ -55,6 +51,31 @@ void AppBaseState::Update(float dt) {
 }
 
 void AppBaseState::Render() {
+    if (!m_appInitialized) {
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.08f, 1.0f));
+        if (ImGui::Begin("LoadingScreen", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs)) {
+            ImVec2 center(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y * 0.5f);
+            ImGui::SetCursorPos(ImVec2(viewport->Size.x * 0.5f - 200.0f, viewport->Size.y * 0.5f - 80.0f));
+            ImGui::SetWindowFontScale(2.0f);
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "ATTENDERE... ALLOCAZIONE CORE 3D");
+            ImGui::SetWindowFontScale(1.0f);
+            
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            float radius = 40.0f;
+            drawList->PathClear();
+            for (int i = 0; i < 30; i++) {
+                float a = m_loadingSpinnerAngle + (i / 30.0f) * 3.14159f * 1.5f;
+                drawList->PathLineTo(ImVec2(center.x + cosf(a) * radius, center.y + sinf(a) * radius));
+            }
+            drawList->PathStroke(ImColor(100, 200, 255, 255), false, 6.0f);
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        return;
+    }
     RenderApp();
 }
 
@@ -80,7 +101,7 @@ void AppBaseState::ReturnToHub() {
             m_context->engine->SetGameMode(GameMode::Hub);
         }
         if (m_context->stateManager) {
-            m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
+            m_context->stateManager->PopState();
         }
     }
 }

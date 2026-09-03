@@ -11,12 +11,16 @@
 struct alignas(16) ChunkData {
     glm::vec3 center;
     float     radius;
+    glm::vec4 p00;
+    glm::vec4 p10;
+    glm::vec4 p01;
+    glm::vec4 p11;
     uint32_t  chunkID;
     uint32_t  _pad0 = 0;
     uint32_t  _pad1 = 0;
     uint32_t  _pad2 = 0;
 };
-static_assert(sizeof(ChunkData) == 32, "ChunkData deve essere 32 byte per matchare lo shader");
+static_assert(sizeof(ChunkData) == 96, "ChunkData deve essere 96 byte per matchare lo shader");
 
 enum class ChunkState : uint32_t {
     Outside      = 0,

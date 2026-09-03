@@ -122,6 +122,13 @@ struct MapDocument {
     // Dichiarazione dei metodi di I/O
     bool SaveJSON(const std::string& path);
     bool LoadJSON(const std::string& path);
+
+    // Formato binario rapido (.fwb - FairWorld Binary)
+    bool SaveBinary(const std::string& path) const;
+    bool LoadBinary(const std::string& path);
+
+    // Helper: carica il binario se esiste e aggiornato, altrimenti JSON (e genera binario)
+    bool LoadSmart(const std::string& jsonPath);
 };
 
 } // namespace fw

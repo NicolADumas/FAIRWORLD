@@ -3,7 +3,10 @@
 #include <entt/entt.hpp>
 #include <string>
 #include <vector>
+#include <array>
+#include <memory>
 #include "VramSlabAllocator.h"
+#include <glm/glm.hpp>
 
 namespace fw {
 
@@ -79,7 +82,7 @@ struct MeshComponent {
     MeshType type = MeshType::Standard;
     std::vector<Vertex> vertices;
     std::vector<Face> faces;
-    VramAllocation vramAlloc;
+    fw::VramAllocationHandle vramAlloc = fw::INVALID_VRAM_HANDLE;
     float colorOverride[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // RGBA, se A > 0.5f il vertex shader ignora il colore del vertice
     
     mutable AABB cachedBounds;

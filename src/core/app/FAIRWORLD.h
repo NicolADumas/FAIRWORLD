@@ -50,6 +50,7 @@ namespace fw {
     class GameWorld;
     class ForgeWorld;
     class TimeManager;
+    class RuntimeManager;
 }
 struct SharedContext;
 
@@ -189,6 +190,7 @@ private:
     std::unique_ptr<XrManager>     m_xrManager;
     std::unique_ptr<RenderManager> m_renderManager;
     std::unique_ptr<WindowManager> m_windowManager;
+    std::unique_ptr<fw::RuntimeManager> m_runtimeManager;
 
     // Puntatore al Bus Dati dell'OS (non owning, vita gestita da main)
     SharedContext* m_sharedContext = nullptr;

@@ -18,8 +18,8 @@ VulkanDmaManager::~VulkanDmaManager() {
 }
 
 void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool, 
-                                  VkBuffer stagingBuffer, VkDeviceMemory stagingDeviceMemory, void* mappedStaging, uint32_t stagingSize,
-                                  VkBuffer globalVramBuffer, std::mutex* queueMutex) {
+                                  VkBuffer stagingBuffer, VkDeviceMemory stagingDeviceMemory, void* mappedStaging, uint64_t stagingSize,
+                                  VkBuffer deprecatedGlobalVramBuffer, std::mutex* queueMutex) {
     m_device = device;
     m_transferQueue = transferQueue;
     m_transferPool = transferPool;
@@ -27,8 +27,9 @@ void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkComm
     m_stagingVkDeviceMemory = stagingDeviceMemory;
     m_mappedStagingBuffer = mappedStaging;
     m_stagingBufferSize = stagingSize;
-    m_globalVramBuffer = globalVramBuffer;
     m_queueMutex = queueMutex;
+    
+    // m_globalVramBuffer non più usato qui, passato per parametro
 
     std::cout << "[Vulkan DMA] Inizializzazione Macro Staging Buffer e Timeline Semaphore...\n";
     
@@ -67,7 +68,7 @@ uint32_t VulkanDmaManager::AllocateStagingSpace(uint32_t size) {
     return allocOffset;
 }
 
-uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeInBytes, const VramAllocation& destination) {
+uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeInBytes, const VramAllocationInfo& destination, VkBuffer destBuffer) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // 0. Garbage Collection dei Command Buffer completati
@@ -132,12 +133,12 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
     copyRegion.dstOffset = destination.offset;
     copyRegion.size = sizeInBytes;
     
-    if (m_globalVramBuffer == VK_NULL_HANDLE) {
-        std::cerr << "[VulkanDmaManager] ERROR: m_globalVramBuffer IS NULL! Cannot copy buffer.\n";
+    if (destBuffer == VK_NULL_HANDLE) {
+        std::cerr << "[VulkanDmaManager] ERROR: destBuffer IS NULL! Cannot copy buffer.\n";
     } else if (m_stagingVkBuffer == VK_NULL_HANDLE) {
         std::cerr << "[VulkanDmaManager] ERROR: m_stagingVkBuffer IS NULL! Cannot copy buffer.\n";
     } else {
-        vkCmdCopyBuffer(cmd, m_stagingVkBuffer, m_globalVramBuffer, 1, &copyRegion);
+        vkCmdCopyBuffer(cmd, m_stagingVkBuffer, destBuffer, 1, &copyRegion);
     }
     
     vkEndCommandBuffer(cmd);

@@ -39,29 +39,42 @@ bool VulkanMemory::Initialize() {
         return false;
     }
 
-    // --- 3. CREATE RING BUFFER (STAGING PERSISTENTE) ---
-    VkBufferCreateInfo stagingBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    stagingBufInfo.size = 128 * 1024 * 1024; // 128 MB (Assumendo STAGING_BUFFER_SIZE)
-    stagingBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    
-    VmaAllocationCreateInfo stagingAllocInfo = {};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    
-    if (vmaCreateBuffer(m_vmaAllocator, &stagingBufInfo, &stagingAllocInfo, &m_stagingRingBuffer, &m_stagingAllocation, nullptr) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare lo Staging Ring Buffer!\n";
-        return false;
-    }
-    
-    VmaAllocationInfo vmaRingInfo;
-    vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
-    m_mappedStagingData = vmaRingInfo.pMappedData;
+    m_vramCompartments.reserve(16);
+    m_vramCompartmentAllocations.reserve(16);
 
-    // --- 4. CREATE GLOBAL VRAM BUFFER (2048 MB per i chunk) ---
-    VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    vramBufInfo.size = 2048ULL * 1024ULL * 1024ULL; // 2048 MB (2 GB)
-    vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    std::cout << "[VMA] VmaAllocator inizializzato con successo." << std::endl;
+    return true;
+}
+
+void VulkanMemory::AddVramCompartment() {
+    std::cout << "[VulkanMemory] AddVramCompartment: Allocazione Compartimento da 256MB...\n";
     
+    // Assicurati che lo staging buffer esista al primo compartimento
+    if (m_stagingRingBuffer == VK_NULL_HANDLE) {
+        VkBufferCreateInfo stagingBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+        stagingBufInfo.size = 128 * 1024 * 1024; // 128 MB Staging Ring
+        stagingBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        
+        VmaAllocationCreateInfo stagingAllocInfo = {};
+        stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        
+        if (vmaCreateBuffer(m_vmaAllocator, &stagingBufInfo, &stagingAllocInfo, &m_stagingRingBuffer, &m_stagingAllocation, nullptr) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] Impossibile creare lo Staging Ring Buffer!\n";
+            return;
+        }
+        
+        VmaAllocationInfo vmaRingInfo;
+        vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
+        m_mappedStagingData = vmaRingInfo.pMappedData;
+        std::cout << "[VulkanMemory] Staging Buffer 128MB allocato.\n";
+    }
+
+    VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    vramBufInfo.size = 256ULL * 1024ULL * 1024ULL; // 256 MB
+    vramBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    
+    QueueFamilyIndices indices = m_core->FindQueueFamilies(m_core->GetPhysicalDevice());
     std::vector<uint32_t> uniqueQueueFamilies;
     if (indices.graphicsFamily.has_value()) {
         uniqueQueueFamilies.push_back(indices.graphicsFamily.value());
@@ -81,14 +94,19 @@ bool VulkanMemory::Initialize() {
     VmaAllocationCreateInfo vramAllocInfo = {};
     vramAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     
-    if (vmaCreateBuffer(m_vmaAllocator, &vramBufInfo, &vramAllocInfo, &m_globalVramBuffer, &m_globalVramAllocation, nullptr) != VK_SUCCESS) {
-        std::cerr << "[VULKAN ERROR] Impossibile creare il Global VRAM Buffer da 2048MB!\n";
-        return false;
+    VkBuffer newCompartment = VK_NULL_HANDLE;
+    VmaAllocation newAllocation = VK_NULL_HANDLE;
+    if (vmaCreateBuffer(m_vmaAllocator, &vramBufInfo, &vramAllocInfo, &newCompartment, &newAllocation, nullptr) != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] Impossibile creare il VRAM Compartment da 256MB!\n";
+        return;
     }
+    
+    m_vramCompartments.push_back(newCompartment);
+    m_vramCompartmentAllocations.push_back(newAllocation);
 
-    std::cout << "[VMA] VmaAllocator e Global VRAM Buffer (2048MB) inizializzati con successo." << std::endl;
-    return true;
+    std::cout << "[VulkanMemory] Compartimento VRAM " << (m_vramCompartments.size() - 1) << " da 256MB allocato.\n";
 }
+
 
 void VulkanMemory::Cleanup() {
     if (m_stagingRingBuffer != VK_NULL_HANDLE) {
@@ -96,10 +114,13 @@ void VulkanMemory::Cleanup() {
         m_stagingRingBuffer = VK_NULL_HANDLE;
     }
     
-    if (m_globalVramBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(m_vmaAllocator, m_globalVramBuffer, m_globalVramAllocation);
-        m_globalVramBuffer = VK_NULL_HANDLE;
+    for (size_t i = 0; i < m_vramCompartments.size(); i++) {
+        if (m_vramCompartments[i] != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_vmaAllocator, m_vramCompartments[i], m_vramCompartmentAllocations[i]);
+        }
     }
+    m_vramCompartments.clear();
+    m_vramCompartmentAllocations.clear();
 
     for (size_t i = 0; i < m_uniformBuffers.size(); i++) {
         if (m_uniformBuffers[i] != VK_NULL_HANDLE) {

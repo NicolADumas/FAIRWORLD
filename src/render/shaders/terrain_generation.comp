@@ -7,10 +7,14 @@ layout(local_size_x = 17, local_size_y = 17) in;
 struct ChunkData {
     vec3 center;
     float radius;
+    vec4 p00;
+    vec4 p10;
+    vec4 p01;
+    vec4 p11;
     uint chunkID;
-    uint faceIndex;
-    uint gridX;
-    uint gridY;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
 };
 
 struct MapRegionGPU {
@@ -158,9 +162,13 @@ void main() {
     float u = float(lx) / 16.0;
     float v = float(ly) / 16.0;
     
-    // Calcoliamo la posizione sferica del vertice (Semplificato)
-    // Nella realtà bisogna usare p00, p10, p01, p11 dal chunk o sferizzare un cubo.
-    vec3 normal = normalize(chunk.center + vec3((u-0.5)*chunk.radius, (v-0.5)*chunk.radius, 0.0));
+    // Interpolazione bilineare dei quattro angoli del patch sulla faccia del cubo sferico
+    vec3 posOnFace = mix(
+        mix(chunk.p00.xyz, chunk.p10.xyz, u),
+        mix(chunk.p01.xyz, chunk.p11.xyz, u),
+        v
+    );
+    vec3 normal = normalize(posOnFace);
     
     float baseHeight = pc.planetRadius;
     float finalHeight = baseHeight;

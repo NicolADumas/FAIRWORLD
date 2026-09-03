@@ -46,6 +46,18 @@ bool ForgeState::Init() {
     if (!m_context->vramAllocator) {
         // Alloca un "VRAM monolite" logico da 512MB per i Chunk
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
+        m_context->vramAllocator->SetAllocateCompartmentCallback([ctx = m_context](uint32_t compIdx) {
+            if (ctx && ctx->engine && ctx->engine->GetRenderManager()) {
+                ctx->engine->GetRenderManager()->AddVramCompartment();
+                if (ctx->dmaManager) {
+                    ctx->dmaManager->UpdateStagingBuffer(
+                        ctx->engine->GetRenderManager()->GetStagingRingBuffer(),
+                        ctx->engine->GetRenderManager()->GetStagingDeviceMemory(),
+                        ctx->engine->GetRenderManager()->GetMappedStagingData()
+                    );
+                }
+            }
+        });
     }
     
     if (!m_context->dmaManager) {
@@ -59,7 +71,7 @@ bool ForgeState::Init() {
                     rm->GetStagingDeviceMemory(),
                     rm->GetMappedStagingData(),
                     rm->GetStagingBufferSize(),
-                    rm->GetGlobalVramBuffer(),
+                    VK_NULL_HANDLE,
                     rm->GetQueueMutex()
                 );
         }
@@ -87,6 +99,7 @@ bool ForgeState::Init() {
     
     // Assicuriamoci che il mondo sia pulito da altri stati (es. PlayState)
     if (m_context && m_context->forgeWorld) {
+        m_context->forgeWorld->InitializePhysics();
         // La Forge usa la sua directory separata — le sculture non sovrascrivono mai il mondo di gioco!
         m_context->forgeWorld->SetSaveDirectory("saves/forge");
         m_context->forgeWorld->ClearWorld(true); // Salva le sculture precedenti prima di pulire

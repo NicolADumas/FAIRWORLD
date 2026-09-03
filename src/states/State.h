@@ -15,6 +15,12 @@ public:
     virtual bool Init() = 0;
     virtual void Update(float dt) = 0;
     virtual void Render() = 0;
+
+    // Lifecycle hooks for multitasking (Stack StateManager)
+    virtual void OnEnter() {}
+    virtual void OnSuspend() {}
+    virtual void OnResume() {}
+    virtual void OnExit() {}
     
     virtual entt::registry* GetRegistry() { return nullptr; }
 };

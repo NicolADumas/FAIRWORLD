@@ -1,4 +1,6 @@
 #include "pch.h"
+#include "FAIRWORLD.h"
+#include "RenderManager.h"
 #include "PlayRenderer.h"
 #include "SharedContext.h"
 #include "ForgeWorld.h"
@@ -92,11 +94,13 @@ void PlayRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 v
 
             vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PlayForgePushConstantData), &pcData);
 
-            offsets[0] = mesh.vramAlloc.offset;
-            VkBuffer vertexBuffers[] = { m_globalVramBuffer };
-            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-
-            vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+            if (allocInfo.valid && allocInfo.compartmentIdx < context->engine->GetRenderManager()->GetVramCompartments().size()) {
+                VkBuffer buf = context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                VkDeviceSize newOffsets[] = { 0 };
+                vkCmdBindVertexBuffers(cmd, 0, 1, &buf, newOffsets);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, allocInfo.offset / sizeof(fw::Vertex), 0);
+            }
         }
     }
 }

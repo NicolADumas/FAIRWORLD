@@ -29,6 +29,11 @@ namespace fw {
 
 GameWorld::GameWorld() {
     m_cancelToken = std::make_shared<std::atomic<bool>>(false);
+}
+
+void GameWorld::InitializePhysics() {
+    if (m_masterMemoryBlock) return;
+    
     size_t totalMemorySize = 128 * 1024 * 1024; // 128MB Arena
     m_masterMemoryBlock = malloc(totalMemorySize);
     
@@ -118,9 +123,9 @@ void GameWorld::ClearWorld(bool saveToDisk) {
     {
         std::lock_guard<std::mutex> lock(m_deferredMutex);
         for (auto& def : m_deferredMeshes) {
-            if (def.mesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+            if (def.mesh.vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
                 m_context->vramAllocator->Free(def.mesh.vramAlloc);
-                def.mesh.vramAlloc.valid = false;
+                def.mesh.vramAlloc = fw::INVALID_VRAM_HANDLE;
             }
         }
         m_deferredMeshes.clear();
@@ -129,9 +134,9 @@ void GameWorld::ClearWorld(bool saveToDisk) {
     auto view = m_registry.view<MeshComponent>();
     for (auto entity : view) {
         auto& mesh = view.get<MeshComponent>(entity);
-        if (mesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+        if (mesh.vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
             m_context->vramAllocator->Free(mesh.vramAlloc);
-            mesh.vramAlloc.valid = false;
+            mesh.vramAlloc = fw::INVALID_VRAM_HANDLE;
         }
     }
     
@@ -176,7 +181,7 @@ void GameWorld::Update(float dt) {
     
     for (auto& def : meshBatch) {
         if (def.targetEntity != entt::null && !m_registry.valid(def.targetEntity)) {
-            if (def.mesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+            if (def.mesh.vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
                 m_context->vramAllocator->Free(def.mesh.vramAlloc);
             }
             continue;
@@ -199,17 +204,19 @@ void GameWorld::Update(float dt) {
                 m_registry.emplace<fw::TransformComponent>(def.targetEntity, tc);
             }
             if (!def.mesh.vertices.empty()) {
-                if (!def.mesh.vramAlloc.valid && m_context && m_context->vramAllocator && m_context->dmaManager) {
+                if (def.mesh.vramAlloc == fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator && m_context->dmaManager) {
                     uint32_t meshSizeBytes = (uint32_t)(def.mesh.vertices.size() * sizeof(fw::Vertex));
                     def.mesh.vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
-                    if (def.mesh.vramAlloc.valid) {
-                        m_context->dmaManager->UploadMeshAsync(def.mesh.vertices.data(), meshSizeBytes, def.mesh.vramAlloc);
+                    if (def.mesh.vramAlloc != fw::INVALID_VRAM_HANDLE) {
+                        auto allocInfo = m_context->vramAllocator->GetAllocation(def.mesh.vramAlloc);
+                        VkBuffer destBuffer = m_context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                        m_context->dmaManager->UploadMeshAsync(def.mesh.vertices.data(), meshSizeBytes, allocInfo, destBuffer);
                     }
                 }
 
                 if (m_registry.all_of<MeshComponent>(def.targetEntity)) {
                     auto& oldMesh = m_registry.get<MeshComponent>(def.targetEntity);
-                    if (oldMesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+                    if (oldMesh.vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
                         m_context->vramAllocator->Free(oldMesh.vramAlloc);
                     }
                 }
@@ -230,11 +237,13 @@ void GameWorld::Update(float dt) {
             if (newEntity == entt::null || !m_registry.valid(newEntity)) {
                 newEntity = m_registry.create();
             }
-            if (!def.mesh.vramAlloc.valid && !def.mesh.vertices.empty() && m_context && m_context->vramAllocator && m_context->dmaManager) {
+            if (def.mesh.vramAlloc == fw::INVALID_VRAM_HANDLE && !def.mesh.vertices.empty() && m_context && m_context->vramAllocator && m_context->dmaManager) {
                 uint32_t meshSizeBytes = (uint32_t)(def.mesh.vertices.size() * sizeof(fw::Vertex));
                 def.mesh.vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
-                if (def.mesh.vramAlloc.valid) {
-                    m_context->dmaManager->UploadMeshAsync(def.mesh.vertices.data(), meshSizeBytes, def.mesh.vramAlloc);
+                if (def.mesh.vramAlloc != fw::INVALID_VRAM_HANDLE) {
+                    auto allocInfo = m_context->vramAllocator->GetAllocation(def.mesh.vramAlloc);
+                    VkBuffer destBuffer = m_context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                    m_context->dmaManager->UploadMeshAsync(def.mesh.vertices.data(), meshSizeBytes, allocInfo, destBuffer);
                 }
             }
 
@@ -242,7 +251,7 @@ void GameWorld::Update(float dt) {
             
             if (m_registry.all_of<MeshComponent>(newEntity)) {
                 auto& oldMesh = m_registry.get<MeshComponent>(newEntity);
-                if (oldMesh.vramAlloc.valid && m_context && m_context->vramAllocator) {
+                if (oldMesh.vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
                     m_context->vramAllocator->Free(oldMesh.vramAlloc);
                 }
             }
@@ -493,14 +502,16 @@ void GameWorld::Update(float dt) {
 
                 uint32_t meshSizeBytes = (uint32_t)(vertices.size() * sizeof(Vertex));
                 auto vramAlloc = ctx->vramAllocator->Allocate(meshSizeBytes);
-                if (!vramAlloc.valid) return;
+                if (vramAlloc == fw::INVALID_VRAM_HANDLE) return;
 
                 if (*cancelToken) {
                     ctx->vramAllocator->Free(vramAlloc);
                     return;
                 }
 
-                ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, vramAlloc);
+                auto allocInfo = ctx->vramAllocator->GetAllocation(vramAlloc);
+                VkBuffer destBuffer = ctx->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, allocInfo, destBuffer);
 
                 MeshComponent newMesh;
                 newMesh.name = chunkName + "_Mesh";
@@ -611,11 +622,13 @@ entt::entity GameWorld::CreateEmptyEntity(const std::string& name) {
 
 void GameWorld::UploadMeshToVram(entt::entity e) {
     if (auto* mesh = m_registry.try_get<MeshComponent>(e)) {
-        if (!mesh->vramAlloc.valid && m_context && m_context->vramAllocator && m_context->dmaManager) {
+        if (mesh->vramAlloc == fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator && m_context->dmaManager) {
             uint32_t meshSizeBytes = (uint32_t)(mesh->vertices.size() * sizeof(fw::Vertex));
             mesh->vramAlloc = m_context->vramAllocator->Allocate(meshSizeBytes);
-            if (mesh->vramAlloc.valid) {
-                m_context->dmaManager->UploadMeshAsync(mesh->vertices.data(), meshSizeBytes, mesh->vramAlloc);
+            if (mesh->vramAlloc != fw::INVALID_VRAM_HANDLE) {
+                auto allocInfo = m_context->vramAllocator->GetAllocation(mesh->vramAlloc);
+                VkBuffer destBuffer = m_context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                m_context->dmaManager->UploadMeshAsync(mesh->vertices.data(), meshSizeBytes, allocInfo, destBuffer);
             }
         }
     }
@@ -832,7 +845,7 @@ void GameWorld::EnqueueDeferredMesh(const std::string& name, glm::vec3 position,
 void GameWorld::DestroyEntity(entt::entity e) {
     if (m_registry.valid(e)) {
         if (auto* mesh = m_registry.try_get<MeshComponent>(e)) {
-            if (mesh->vramAlloc.valid && m_context && m_context->vramAllocator) {
+            if (mesh->vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
                 m_context->vramAllocator->Free(mesh->vramAlloc);
             }
         }

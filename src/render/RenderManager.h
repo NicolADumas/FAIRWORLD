@@ -22,6 +22,7 @@
 #include "apps/PlanetMapperRenderer.h"
 #include "apps/SolarSystemRenderer.h"
 #include "vulkan/TerrainPipelineSystem.h"
+#include "vulkan/TerrainGPUTypes.h"
 
 class XrManager;
 struct BlockDef;
@@ -105,8 +106,13 @@ public:
     VkDeviceMemory GetStagingDeviceMemory() const;
     void* GetMappedStagingData() const { return m_memory ? m_memory->GetMappedStagingData() : nullptr; }
     uint64_t GetStagingBufferSize() const { return STAGING_BUFFER_SIZE; }
-    VkBuffer GetGlobalVramBuffer() const { return m_memory ? m_memory->GetGlobalVramBuffer() : VK_NULL_HANDLE; }
+    const std::vector<VkBuffer>& GetVramCompartments() const { 
+        static std::vector<VkBuffer> empty; 
+        return m_memory ? m_memory->GetVramCompartments() : empty; 
+    }
     std::mutex* GetQueueMutex() { return m_core ? m_core->GetQueueMutex() : nullptr; }
+
+    void AddVramCompartment() { if (m_memory) m_memory->AddVramCompartment(); }
 
     VkPipeline GetGLBPipeline() const { return m_glbPipeline; }
     VkPipelineLayout GetGLBPipelineLayout() const { return m_glbPipelineLayout; }
@@ -208,6 +214,16 @@ private:
     std::unique_ptr<fw::SolarSystemRenderer> m_solarSystemRenderer;
     std::unique_ptr<TerrainPipelineSystem> m_terrainPipeline;
 
+    // --- TERRAIN COMPUTE STATE ---
+    VkBuffer       m_terrainStagingBuffer{ VK_NULL_HANDLE };
+    VkDeviceMemory m_terrainStagingMemory{ VK_NULL_HANDLE };
+    void*          m_terrainStagingMapped{ nullptr };
+    uint32_t       m_terrainStagingCapacityBytes{ 0 };
+    uint32_t       m_terrainNumChunks{ 0 };
+    uint32_t       m_terrainNumRegions{ 0 };
+    float          m_terrainPlanetRadius{ 50.0f };
+    bool           m_terrainDataDirty{ false };
+
     // --- FORGE DESCRIPTOR SETS ---
     VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };
     
@@ -237,10 +253,10 @@ private:
     VkFormat FindDepthFormat();
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-    VkCommandBuffer BeginSingleTimeCommands();
-    void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
-    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount);
-    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
+    VkCommandBuffer BeginSingleTimeCommands(VkCommandPool customPool = VK_NULL_HANDLE);
+    void EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool customPool = VK_NULL_HANDLE, VkQueue customQueue = VK_NULL_HANDLE);
+    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, VkCommandPool customPool = VK_NULL_HANDLE, VkQueue customQueue = VK_NULL_HANDLE);
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount, VkCommandPool customPool = VK_NULL_HANDLE, VkQueue customQueue = VK_NULL_HANDLE);
     void CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage vmaUsage, VkImage& image, VmaAllocation& imageAllocation);
     
     // --- FASE 9: CREAZIONE TEXTURE ARRAY DA MEGA-BUFFER CPU ---
@@ -307,6 +323,11 @@ public:
     std::map<std::string, GLBModel> m_glbModels;
     
     void LoadAllMobMeshes(class AssetManager& assets);
+
+    // Chiamato da PlanetMapperState quando cambiano regioni/chunk: prepara i dati per il Compute Shader
+    void UploadTerrainData(const std::vector<ChunkData>& chunks,
+                           const std::vector<fw::MapRegionGPU>& regions,
+                           float planetRadius);
     void LoadMobMesh(const std::string& filepath);
     void LoadGLBMesh(const std::string& filepath);
 
@@ -405,6 +426,8 @@ public:
 private:
     
     void RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player, fw::ForgeWorld* overrideWorld = nullptr);
+    void DispatchTerrainComputeIfDirty(VkCommandBuffer cmd);
+    bool CreateTerrainStagingBuffer(uint32_t totalBytes);
 
 public:
     // Metodo da chiamare nel Game Loop

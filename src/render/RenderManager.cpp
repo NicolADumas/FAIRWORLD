@@ -287,8 +287,9 @@ bool RenderManager::CreateFramebuffers() {
     }
 
     char debugMsg[256];
-    sprintf_s(debugMsg, "[DEBUG] CreateFramebuffers chiamato! m_renderPass = %p\n", (void*)m_renderPass);
+    sprintf_s(debugMsg, "[DEBUG] CreateFramebuffers chiamato! m_renderPass (RAW) = 0x%llx\n", (unsigned long long)(uintptr_t)m_renderPass);
     OutputDebugStringA(debugMsg);
+    std::cout << debugMsg;
 
     m_framebuffers.resize(m_core->GetSwapchainImageViews().size());
     for (size_t i = 0; i < m_core->GetSwapchainImageViews().size(); i++) {
@@ -306,6 +307,16 @@ bool RenderManager::CreateFramebuffers() {
         framebufferInfo.width           = m_core->GetSwapchainExtent().width;
         framebufferInfo.height          = m_core->GetSwapchainExtent().height;
         framebufferInfo.layers          = 1;
+        
+        sprintf_s(debugMsg, "[DEBUG] vkCreateFramebuffer loop %zu, framebufferInfo.renderPass (RAW) = 0x%llx\n", i, (unsigned long long)(uintptr_t)framebufferInfo.renderPass);
+        OutputDebugStringA(debugMsg);
+        std::cout << debugMsg;
+
+        if (framebufferInfo.renderPass == VK_NULL_HANDLE) {
+            OutputDebugStringA("[CRITICAL ERROR] framebufferInfo.renderPass IS NULL RIGHT BEFORE CALL!\n");
+            std::cout << "[CRITICAL ERROR] framebufferInfo.renderPass IS NULL RIGHT BEFORE CALL!\n";
+            return false;
+        }
 
         if (vkCreateFramebuffer(m_core->GetDevice(), &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) return false;
     }
@@ -1004,14 +1015,34 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         CameraFrustum frustum;
         frustum.extract(cullProj * viewMatrix);
 
+        // Raggruppa entità per compartimento VRAM
+        std::map<uint32_t, std::vector<entt::entity>> compartmentBatches;
         for (auto entity : view) {
             const auto& mesh = view.get<fw::MeshComponent>(entity);
-            const auto& trans = view.get<fw::TransformComponent>(entity);
-
-            if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
-
-            // Renderizziamo Chunk e Prefab (escludiamo griglia e sfere di preview dell'editor)
+            if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE || mesh.vertices.empty()) continue;
             if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Prefab) {
+                if (context && context->vramAllocator) {
+                    auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+                    if (allocInfo.valid) {
+                        compartmentBatches[allocInfo.compartmentIdx].push_back(entity);
+                    }
+                }
+            }
+        }
+
+        for (const auto& [compIdx, entities] : compartmentBatches) {
+            if (compIdx >= m_memory->GetVramCompartments().size()) continue;
+            
+            // BIND del compartimento una volta sola!
+            VkBuffer compBuffer = m_memory->GetVramCompartments()[compIdx];
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, &compBuffer, offsets);
+
+            for (auto entity : entities) {
+                const auto& mesh = view.get<fw::MeshComponent>(entity);
+                const auto& trans = view.get<fw::TransformComponent>(entity);
+                auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+
                 fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
@@ -1032,13 +1063,11 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 pcData.useColorOverride = 0;
                 pcData.seasonProgress = seasonalUboValue;
                 
-                // --- LUCE DINAMICA ASTRONOMICA E POSIZIONE CAMERA ---
-                pcData.lightDir = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f); // Fallback
+                pcData.lightDir = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
                 if (context && context->forgeWorld) {
-                    auto& reg = context->forgeWorld->GetRegistry();
                     entt::entity planetEntity = context->forgeWorld->GetPlanetEntity();
-                    if (reg.valid(planetEntity) && reg.all_of<fw::PlanetEnvironmentComponent>(planetEntity)) {
-                        pcData.lightDir = glm::vec4(reg.get<fw::PlanetEnvironmentComponent>(planetEntity).sunDirection, 0.0f);
+                    if (registry.valid(planetEntity) && registry.all_of<fw::PlanetEnvironmentComponent>(planetEntity)) {
+                        pcData.lightDir = glm::vec4(registry.get<fw::PlanetEnvironmentComponent>(planetEntity).sunDirection, 0.0f);
                     }
                 }
                 glm::mat4 invView = glm::inverse(viewMatrix);
@@ -1046,11 +1075,9 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
-                offsets[0] = mesh.vramAlloc.offset;
-                VkBuffer vertexBuffers[] = { m_memory->GetGlobalVramBuffer() };
-                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-                
-                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+                // Usa firstVertex al posto di ri-bindare il buffer
+                uint32_t firstVertex = allocInfo.offset / sizeof(fw::Vertex);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, firstVertex, 0);
             }
         }
         
@@ -1173,6 +1200,12 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(m_commandBuffers[m_currentFrame], &beginInfo);
 
+    // === TERRAIN COMPUTE DISPATCH (deve stare FUORI dal Render Pass) ===
+    // Carica i dati sulla GPU e lancia il Compute Shader solo quando i dati sono dirty.
+    if (context && context->engine && context->engine->GetGameMode() == GameMode::PlanetMapper) {
+        DispatchTerrainComputeIfDirty(m_commandBuffers[m_currentFrame]);
+    }
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_renderPass;
@@ -1180,10 +1213,9 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = m_core->GetSwapchainExtent();
 
-    // Svuota sia il colore che il depth ogni frame
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color        = {{ skyColor.x, skyColor.y, skyColor.z, 1.0f }}; // colore dinamico cielo
-    clearValues[1].depthStencil = { 1.0f, 0 };                     // depth = 1.0 (massimo)
+    clearValues[0].color        = {{ skyColor.x, skyColor.y, skyColor.z, 1.0f }};
+    clearValues[1].depthStencil = { 1.0f, 0 };
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues    = clearValues.data();
 
@@ -2010,6 +2042,17 @@ void RenderManager::InitImGui(void* hwnd) {
 void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
     if (data.layerCount == 0 || data.albedoData.empty()) return;
 
+    VkCommandPoolCreateInfo cmdPoolInfo{};
+    cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cmdPoolInfo.queueFamilyIndex = m_core->FindQueueFamilies(m_core->GetPhysicalDevice()).graphicsFamily.value();
+    cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    
+    VkCommandPool tempPool;
+    if (vkCreateCommandPool(m_core->GetDevice(), &cmdPoolInfo, nullptr, &tempPool) != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] Impossibile creare pool temporaneo in CreatePBRTextures!" << std::endl;
+        return;
+    }
+
     VkDeviceSize imageSize = data.width * data.height * 4 * data.layerCount;
 
     auto createTextureArray = [&](const std::vector<uint8_t>& pixels, VkImage& image, VmaAllocation& alloc, VkImageView& view) {
@@ -2033,9 +2076,9 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         CreateImage(data.width, data.height, data.layerCount, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, 
                     VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VMA_MEMORY_USAGE_GPU_ONLY, image, alloc);
 
-        TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, data.layerCount);
-        CopyBufferToImage(stagingBuffer, image, data.width, data.height, data.layerCount);
-        TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, data.layerCount);
+        TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, data.layerCount, tempPool, m_core->GetGraphicsQueue());
+        CopyBufferToImage(stagingBuffer, image, data.width, data.height, data.layerCount, tempPool, m_core->GetGraphicsQueue());
+        TransitionImageLayout(image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, data.layerCount, tempPool, m_core->GetGraphicsQueue());
 
         vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
 
@@ -2292,11 +2335,11 @@ void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerC
     }
 }
 
-VkCommandBuffer RenderManager::BeginSingleTimeCommands() {
+VkCommandBuffer RenderManager::BeginSingleTimeCommands(VkCommandPool customPool) {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = m_commandPool;
+    allocInfo.commandPool = customPool != VK_NULL_HANDLE ? customPool : m_commandPool;
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
@@ -2310,7 +2353,7 @@ VkCommandBuffer RenderManager::BeginSingleTimeCommands() {
     return commandBuffer;
 }
 
-void RenderManager::EndSingleTimeCommands(VkCommandBuffer commandBuffer) {
+void RenderManager::EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool customPool, VkQueue customQueue) {
     vkEndCommandBuffer(commandBuffer);
 
     VkSubmitInfo submitInfo{};
@@ -2318,14 +2361,20 @@ void RenderManager::EndSingleTimeCommands(VkCommandBuffer commandBuffer) {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_core->GetGraphicsQueue());
+    VkQueue queueToUse = customQueue != VK_NULL_HANDLE ? customQueue : m_core->GetGraphicsQueue();
+    VkCommandPool poolToUse = customPool != VK_NULL_HANDLE ? customPool : m_commandPool;
 
-    vkFreeCommandBuffers(m_core->GetDevice(), m_commandPool, 1, &commandBuffer);
+    {
+        std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+        vkQueueSubmit(queueToUse, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(queueToUse);
+    }
+
+    vkFreeCommandBuffers(m_core->GetDevice(), poolToUse, 1, &commandBuffer);
 }
 
-void RenderManager::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount) {
-    VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+void RenderManager::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, VkCommandPool customPool, VkQueue customQueue) {
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands(customPool);
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2363,11 +2412,11 @@ void RenderManager::TransitionImageLayout(VkImage image, VkFormat format, VkImag
     }
 
     vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    EndSingleTimeCommands(commandBuffer);
+    EndSingleTimeCommands(commandBuffer, customPool, customQueue);
 }
 
-void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount) {
-    VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount, VkCommandPool customPool, VkQueue customQueue) {
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands(customPool);
 
     std::vector<VkBufferImageCopy> regions;
     VkDeviceSize layerSize = width * height * 4; // 4 bytes per pixel (RGBA)
@@ -2389,7 +2438,7 @@ void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w
     }
 
     vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(regions.size()), regions.data());
-    EndSingleTimeCommands(commandBuffer);
+    EndSingleTimeCommands(commandBuffer, customPool, customQueue);
 }
 
 void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height, PBRTextureType type) {
@@ -2735,7 +2784,6 @@ bool RenderManager::CreateForgePipeline() {
     auto initSubRenderer = [&](auto& renderer) {
         if (renderer) {
             renderer->SetPipeline(m_forgePipeline, m_forgePipelineLayout);
-            renderer->SetGlobalBuffer(m_memory->GetGlobalVramBuffer());
             renderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
             renderer->SetDescriptorSets(&m_memory->GetForgeDescriptorSets());
             
@@ -2949,18 +2997,19 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
     scissor.extent = m_core->GetSwapchainExtent();
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    if (m_memory->GetGlobalVramBuffer() != VK_NULL_HANDLE) {
+    if (context && context->vramAllocator) {
         auto& registry = forgeWorld->GetRegistry();
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
         CameraFrustum frustum;
         frustum.extract(viewProjMatrix);
 
+        std::map<uint32_t, std::vector<entt::entity>> compartmentBatches;
         for (auto entity : view) {
             const auto& mesh = view.get<fw::MeshComponent>(entity);
             const auto& trans = view.get<fw::TransformComponent>(entity);
 
-            if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+            if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE || mesh.vertices.empty()) continue;
 
             if (context->isBlockMakerMode) {
                 // In BlockMakerMode, disegna solo l'entità PreviewBlock e l'ambiente BlockMakerEnv. Controlliamo i metadati
@@ -2975,6 +3024,27 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
             }
 
             if (mesh.type == fw::MeshType::Editor || mesh.type == fw::MeshType::Chunk) {
+                if (context && context->vramAllocator) {
+                    auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+                    if (allocInfo.valid) {
+                        compartmentBatches[allocInfo.compartmentIdx].push_back(entity);
+                    }
+                }
+            }
+        }
+
+        for (const auto& [compIdx, entities] : compartmentBatches) {
+            if (compIdx >= m_memory->GetVramCompartments().size()) continue;
+            
+            VkBuffer compBuffer = m_memory->GetVramCompartments()[compIdx];
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, &compBuffer, offsets);
+
+            for (auto entity : entities) {
+                const auto& mesh = view.get<fw::MeshComponent>(entity);
+                const auto& trans = view.get<fw::TransformComponent>(entity);
+                auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+
                 fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
@@ -2993,7 +3063,7 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
-                pcData.colorOverride = glm::vec4(0.0f); // FIX: Reset override to prevent state leaking!
+                pcData.colorOverride = glm::vec4(0.0f);
                 pcData.seasonProgress = seasonalUboValue;
                 
                 if (mesh.colorOverride[3] > 0.0f) {
@@ -3003,11 +3073,8 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
-                offsets[0] = mesh.vramAlloc.offset;
-                VkBuffer vertexBuffers[] = { m_memory->GetGlobalVramBuffer() };
-                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-                
-                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+                uint32_t firstVertex = allocInfo.offset / sizeof(fw::Vertex);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, firstVertex, 0);
             }
         }
 
@@ -3015,27 +3082,44 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
         // 3. FASE DINAMICA / TRASPARENTE: Elementi di Selezione
         // ==========================================
         pcData.useColorOverride = 1;
+        
+        std::map<uint32_t, std::vector<entt::entity>> dynamicBatches;
         for (auto entity : view) {
             const auto& mesh = view.get<fw::MeshComponent>(entity);
-            const auto& trans = view.get<fw::TransformComponent>(entity);
-
-            if (!mesh.vramAlloc.valid || mesh.vertices.empty()) continue;
+            if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE || mesh.vertices.empty()) continue;
 
             if (mesh.name != "GridBox" && mesh.type != fw::MeshType::Chunk) {
+                if (context && context->vramAllocator) {
+                    auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+                    if (allocInfo.valid) {
+                        dynamicBatches[allocInfo.compartmentIdx].push_back(entity);
+                    }
+                }
+            }
+        }
+
+        for (const auto& [compIdx, entities] : dynamicBatches) {
+            if (compIdx >= m_memory->GetVramCompartments().size()) continue;
+            
+            VkBuffer compBuffer = m_memory->GetVramCompartments()[compIdx];
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, &compBuffer, offsets);
+
+            for (auto entity : entities) {
+                const auto& mesh = view.get<fw::MeshComponent>(entity);
+                const auto& trans = view.get<fw::TransformComponent>(entity);
+                auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+
                 fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
-
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.colorOverride = glm::vec4(mesh.colorOverride[0], mesh.colorOverride[1], mesh.colorOverride[2], mesh.colorOverride[3] > 0.0f ? mesh.colorOverride[3] : 1.0f);
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
-                offsets[0] = mesh.vramAlloc.offset;
-                VkBuffer vertexBuffers[] = { m_memory->GetGlobalVramBuffer() };
-                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-                
-                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+                uint32_t firstVertex = allocInfo.offset / sizeof(fw::Vertex);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, firstVertex, 0);
             }
         }
     }
@@ -3178,4 +3262,194 @@ VulkanTextureArray RenderManager::CreateTextureArray(
     result.stagingAllocation = stagingAllocation;
 
     return result;
+}
+
+// ============================================================
+// TERRAIN COMPUTE PIPELINE - CPU-Side Implementation
+// ============================================================
+
+bool RenderManager::CreateTerrainStagingBuffer(uint32_t totalBytes) {
+    VkDevice device = m_core->GetDevice();
+    if (!device) return false;
+
+    if (m_terrainStagingBuffer != VK_NULL_HANDLE) {
+        if (m_terrainStagingMapped) {
+            vkUnmapMemory(device, m_terrainStagingMemory);
+            m_terrainStagingMapped = nullptr;
+        }
+        vkDestroyBuffer(device, m_terrainStagingBuffer, nullptr);
+        vkFreeMemory(device, m_terrainStagingMemory, nullptr);
+        m_terrainStagingBuffer = VK_NULL_HANDLE;
+        m_terrainStagingMemory = VK_NULL_HANDLE;
+    }
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size        = totalBytes;
+    bufferInfo.usage       = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &m_terrainStagingBuffer) != VK_SUCCESS) {
+        std::cerr << "[TerrainCompute] Impossibile creare staging buffer.\n";
+        return false;
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, m_terrainStagingBuffer, &memReqs);
+
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(m_core->GetPhysicalDevice(), &memProps);
+
+    uint32_t memTypeIdx = UINT32_MAX;
+    VkMemoryPropertyFlags desired = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        if ((memReqs.memoryTypeBits & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & desired) == desired) {
+            memTypeIdx = i;
+            break;
+        }
+    }
+    if (memTypeIdx == UINT32_MAX) {
+        std::cerr << "[TerrainCompute] Nessun memory type host-visible trovato.\n";
+        return false;
+    }
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize  = memReqs.size;
+    allocInfo.memoryTypeIndex = memTypeIdx;
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_terrainStagingMemory) != VK_SUCCESS) return false;
+    vkBindBufferMemory(device, m_terrainStagingBuffer, m_terrainStagingMemory, 0);
+    vkMapMemory(device, m_terrainStagingMemory, 0, totalBytes, 0, &m_terrainStagingMapped);
+
+    m_terrainStagingCapacityBytes = totalBytes;
+    return true;
+}
+
+void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
+                                       const std::vector<fw::MapRegionGPU>& regions,
+                                       float planetRadius) {
+    if (!m_terrainPipeline) return;
+
+    uint32_t chunkBytes  = (uint32_t)(sizeof(ChunkData)        * chunks.size());
+    uint32_t regionBytes = (uint32_t)(sizeof(fw::MapRegionGPU) * regions.size());
+    // Riserviamo anche spazio per l'indirect buffer (calcolato in base al numero di chunk)
+    uint32_t indirectBytes = (uint32_t)(sizeof(VkDrawIndexedIndirectCommand) * chunks.size());
+    uint32_t totalBytes  = chunkBytes + regionBytes + indirectBytes;
+    if (totalBytes == 0) return;
+
+    if (totalBytes > m_terrainStagingCapacityBytes || m_terrainStagingBuffer == VK_NULL_HANDLE) {
+        if (!CreateTerrainStagingBuffer(totalBytes)) return;
+    }
+
+    // Copia in RAM mappata: chunk, poi regioni
+    if (m_terrainStagingMapped) {
+        if (chunkBytes > 0)
+            memcpy(m_terrainStagingMapped, chunks.data(), chunkBytes);
+        if (regionBytes > 0)
+            memcpy(static_cast<uint8_t*>(m_terrainStagingMapped) + chunkBytes, regions.data(), regionBytes);
+    }
+
+    m_terrainNumChunks    = (uint32_t)chunks.size();
+    m_terrainNumRegions   = (uint32_t)regions.size();
+    m_terrainPlanetRadius = planetRadius;
+    m_terrainDataDirty    = true;
+
+    // Aggiorna anche il renderer in modo che usi il conteggio corretto nel draw indiretto
+    if (m_planetMapperRenderer) {
+        m_planetMapperRenderer->SetTerrainNumChunks(m_terrainNumChunks);
+    }
+
+    std::cout << "[TerrainCompute] Dati pronti: " << m_terrainNumChunks << " chunk, "
+              << m_terrainNumRegions << " regioni. Radius=" << planetRadius << "\n";
+}
+
+void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
+    if (!m_terrainDataDirty) return;
+    if (!m_terrainPipeline) return;
+    if (m_terrainNumChunks == 0) return;
+    if (m_terrainStagingBuffer == VK_NULL_HANDLE) return;
+
+    uint32_t chunkBytes  = sizeof(ChunkData)        * m_terrainNumChunks;
+    uint32_t regionBytes = sizeof(fw::MapRegionGPU) * m_terrainNumRegions;
+
+    // 1. Copy staging -> device-local chunk buffer
+    if (chunkBytes > 0) {
+        VkBufferCopy copyChunk{};
+        copyChunk.srcOffset = 0;
+        copyChunk.dstOffset = 0;
+        copyChunk.size      = chunkBytes;
+        vkCmdCopyBuffer(cmd, m_terrainStagingBuffer, m_terrainPipeline->getChunkBuffer(), 1, &copyChunk);
+    }
+    // 2. Copy staging -> device-local region buffer
+    if (regionBytes > 0) {
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = chunkBytes;
+        copyRegion.dstOffset = 0;
+        copyRegion.size      = regionBytes;
+        vkCmdCopyBuffer(cmd, m_terrainStagingBuffer, m_terrainPipeline->getRegionBuffer(), 1, &copyRegion);
+    }
+
+    // Barrier: aspetta transfer prima del compute
+    VkBufferMemoryBarrier barriers[2]{};
+    barriers[0].sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barriers[0].srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barriers[0].dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+    barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].buffer              = m_terrainPipeline->getChunkBuffer();
+    barriers[0].offset              = 0;
+    barriers[0].size                = VK_WHOLE_SIZE;
+    barriers[1]                     = barriers[0];
+    barriers[1].buffer              = m_terrainPipeline->getRegionBuffer();
+    int numBarriers = (regionBytes > 0) ? 2 : 1;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 0, nullptr, numBarriers, barriers, 0, nullptr);
+
+    // 3. Dispatch del Compute Shader
+    TerrainGenPushConstants pc{};
+    pc.numChunks    = m_terrainNumChunks;
+    pc.numRegions   = m_terrainNumRegions;
+    pc.planetRadius = m_terrainPlanetRadius;
+    pc._pad         = 0.0f;
+    m_terrainPipeline->dispatch(cmd, pc);
+
+    // 4. Prepara i comandi di draw indirect con valori validi
+    {
+        uint32_t offsetForIndirect = chunkBytes + regionBytes;
+        uint32_t indirectBytes = sizeof(VkDrawIndexedIndirectCommand) * m_terrainNumChunks;
+
+        if ((offsetForIndirect + indirectBytes) <= m_terrainStagingCapacityBytes && m_terrainStagingMapped) {
+            auto* cmdsPtr = reinterpret_cast<VkDrawIndexedIndirectCommand*>(
+                static_cast<uint8_t*>(m_terrainStagingMapped) + offsetForIndirect);
+            for (uint32_t i = 0; i < m_terrainNumChunks; ++i) {
+                cmdsPtr[i].indexCount    = 1536; // 16*16*6
+                cmdsPtr[i].instanceCount = 1;
+                cmdsPtr[i].firstIndex    = 0;
+                cmdsPtr[i].vertexOffset  = (int32_t)(i * 289); // 17*17 vertici per chunk
+                cmdsPtr[i].firstInstance = i;
+            }
+
+            VkBufferCopy indirectCopy{};
+            indirectCopy.srcOffset = offsetForIndirect;
+            indirectCopy.dstOffset = 0;
+            indirectCopy.size      = indirectBytes;
+            vkCmdCopyBuffer(cmd, m_terrainStagingBuffer, m_terrainPipeline->getIndirectBuffer(), 1, &indirectCopy);
+
+            VkBufferMemoryBarrier indBar{};
+            indBar.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            indBar.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+            indBar.dstAccessMask       = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+            indBar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            indBar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            indBar.buffer              = m_terrainPipeline->getIndirectBuffer();
+            indBar.offset              = 0;
+            indBar.size                = VK_WHOLE_SIZE;
+            vkCmdPipelineBarrier(cmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                0, 0, nullptr, 1, &indBar, 0, nullptr);
+        }
+    }
+
+    m_terrainDataDirty = false;
 }

@@ -11,6 +11,7 @@
 #include "BiomeSystems.h"
 #include "JobSystem.h"
 #include "RenderManager.h"
+#include "vulkan/ChunkCullingTypes.h"
 #include "CacheManager.h"
 #include "imgui.h"
 #include "PlayState.h"
@@ -834,6 +835,7 @@ void PlanetMapperState::CompileAndGenerate() {
     }
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
+    m_previewWorld->InitializePhysics();
 
     m_context->activeRegistry = &m_previewWorld->GetRegistry();
     m_context->forgeWorld = m_previewWorld.get();
@@ -907,6 +909,54 @@ void PlanetMapperState::CompileAndGenerate() {
     }
 
     fw::MapWorldGenerator::Generate(doc, m_activePlanetIndex, *m_previewWorld, m_context->jobSystem);
+
+    // === UPLOAD DATI AL GPU COMPUTE SHADER ===
+    // Costruisce i ChunkData e le MapRegionGPU per il pipeline del terreno e li carica sulla VRAM.
+    if (m_context->engine && m_context->engine->GetRenderManager()) {
+        auto* rm = m_context->engine->GetRenderManager();
+        const auto& planet = currentPlanet;
+
+        // Raccoglie le regioni in formato GPU
+        std::vector<fw::MapRegionGPU> gpuRegions;
+        gpuRegions.reserve(planet.regions.size());
+        for (const auto& r : planet.regions) {
+            fw::MapRegionGPU gr{};
+            float pitch = glm::radians(r.eulerAngles.x);
+            float yaw   = glm::radians(r.eulerAngles.y);
+            gr.centerNormal   = glm::vec3(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
+            gr.angularRadius  = r.angularRadius;
+            gr.rectMinMax     = glm::vec4((float)r.rectMin.x, (float)r.rectMin.y, (float)r.rectMax.x, (float)r.rectMax.y);
+            gr.shapeType      = (uint32_t)r.shape;
+            gr.biomeType      = (uint32_t)r.type;
+            gr.perlinFreq     = r.perlinFrequency;
+            gr.gravityMod     = r.gravityModifier;
+            gr.isGridAligned  = r.isGridAligned ? 1u : 0u;
+            gr.surfaceBlock   = r.surfaceBlockId;
+            gr.subsurfaceBlock = r.subsurfaceBlockId;
+            gr._pad           = 0;
+            gpuRegions.push_back(gr);
+        }
+
+        // Raccoglie i chunk dalle radici LOD della faccia sfericale
+        // Usiamo i root nodes della griglia 3x2 come chunk di base (LOD0)
+        std::vector<ChunkData> gpuChunks;
+        gpuChunks.reserve(m_planetRootNodes.size());
+        for (int i = 0; i < (int)m_planetRootNodes.size(); ++i) {
+            const auto& node = m_planetRootNodes[i];
+            ChunkData cd{};
+            cd.center  = node.centerPos;
+            cd.radius  = node.boundsRadius;
+            cd.p00     = glm::vec4(node.p00, 0.0f);
+            cd.p10     = glm::vec4(node.p10, 0.0f);
+            cd.p01     = glm::vec4(node.p01, 0.0f);
+            cd.p11     = glm::vec4(node.p11, 0.0f);
+            cd.chunkID = (uint32_t)i;
+            cd._pad0 = 0; cd._pad1 = 0; cd._pad2 = 0;
+            gpuChunks.push_back(cd);
+        }
+
+        rm->UploadTerrainData(gpuChunks, gpuRegions, planet.planetRadius);
+    }
 
     m_isBuilderMode = false;
     

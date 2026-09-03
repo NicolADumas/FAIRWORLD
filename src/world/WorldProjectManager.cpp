@@ -80,7 +80,8 @@ namespace fw {
         std::string targetPath = path.empty() ? m_defaultPath : path;
         m_currentPath = targetPath;
 
-        bool success = m_document.LoadJSON(targetPath);
+        // Usa LoadSmart: carica il binario .fwb se esiste e aggiornato, altrimenti JSON + genera .fwb
+        bool success = m_document.LoadSmart(targetPath);
         if (success) {
             std::cout << "[WorldProjectManager] Progetto caricato correttamente da: " << targetPath << "\n";
         } else {
@@ -102,6 +103,15 @@ namespace fw {
 
         bool success = m_document.SaveJSON(targetPath);
         if (success) {
+            // Salva anche il binario per accelerare il prossimo avvio
+            m_document.SaveBinary([&]() {
+                std::string bp = targetPath;
+                if (bp.size() > 5 && bp.substr(bp.size()-5) == ".json")
+                    bp = bp.substr(0, bp.size()-5) + ".fwb";
+                else
+                    bp += ".fwb";
+                return bp;
+            }());
             std::cout << "[WorldProjectManager] Progetto salvato con successo su: " << targetPath << "\n";
             m_currentPath = targetPath;
             m_isDirty = false;

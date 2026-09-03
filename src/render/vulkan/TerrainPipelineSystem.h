@@ -137,8 +137,9 @@ public:
         vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
                             0, sizeof(TerrainGenPushConstants), &pc);
 
-        // local_size_x = 64 nello shader -> ceil(numChunks / 64) workgroup
-        uint32_t groupCount = (pc.numChunks + 63) / 64;
+        // Ogni workgroup calcola un intero chunk 17x17.
+        // Quindi lanciamo esattamente pc.numChunks workgroup!
+        uint32_t groupCount = pc.numChunks;
         vkCmdDispatch(cmd, groupCount, 1, 1);
 
         // Barrier: l'output vertex buffer deve essere visibile prima di essere letto
@@ -162,6 +163,8 @@ public:
     VkBuffer getVertexBuffer() const { return m_vertexBuffer; }
     VkBuffer getIndexBuffer() const { return m_indexBuffer; }
     VkBuffer getIndirectBuffer() const { return m_indirectBuffer; }
+    VkBuffer getChunkBuffer() const { return m_chunkBuffer; }
+    VkBuffer getRegionBuffer() const { return m_regionBuffer; }
     uint32_t getIndexCount() const { return m_indexCount; }
 
     void destroy() {

@@ -22,15 +22,31 @@ public:
     ~VulkanDmaManager();
 
     // Inizializza il Dma Manager con gli handle di Vulkan generati da RenderManager
-    void Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool, 
-                    VkBuffer stagingBuffer, VkDeviceMemory stagingDeviceMemory, void* mappedStaging, uint32_t stagingSize,
-                    VkBuffer globalVramBuffer, std::mutex* queueMutex);
+    void Initialize(
+        VkDevice device, 
+        VkQueue transferQueue, 
+        VkCommandPool commandPool,
+        VkBuffer stagingBuffer, 
+        VkDeviceMemory stagingMemory, 
+        void* mappedData, 
+        uint64_t stagingSize,
+        VkBuffer deprecatedGlobalVramBuffer,
+        std::mutex* queueMutex
+    );
+    
+    void UpdateStagingBuffer(VkBuffer stagingBuffer, VkDeviceMemory stagingMemory, void* mappedData) {
+        m_stagingVkBuffer = stagingBuffer;
+        m_stagingVkDeviceMemory = stagingMemory;
+        m_mappedStagingBuffer = mappedData;
+    }
+
+    void Cleanup();
 
     // Funzione chiamata dal Worker Thread (Job System).
     // Esegue una copia Zero-Copy in RAM (Write-Combine burst) verso lo Staging Buffer,
     // e accoda un Job di trasferimento DMA sulla Transfer Queue di Vulkan.
     // Ritorna il valore del Timeline Semaphore a cui la Graphics Queue dovrà attendere.
-    uint64_t UploadMeshAsync(const void* meshData, uint32_t sizeInBytes, const VramAllocation& destination);
+    uint64_t UploadMeshAsync(const void* meshData, uint32_t sizeInBytes, const VramAllocationInfo& destination, VkBuffer destBuffer);
 
     // Ritorna il Timeline Semaphore da passare al vkQueueSubmit grafico
     VkSemaphore GetTimelineSemaphore() const { return m_transferTimeline; }

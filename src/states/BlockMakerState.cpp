@@ -100,6 +100,18 @@ bool BlockMakerState::Init() {
     }
     if (!m_context->vramAllocator) {
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
+        m_context->vramAllocator->SetAllocateCompartmentCallback([ctx = m_context](uint32_t compIdx) {
+            if (ctx && ctx->engine && ctx->engine->GetRenderManager()) {
+                ctx->engine->GetRenderManager()->AddVramCompartment();
+                if (ctx->dmaManager) {
+                    ctx->dmaManager->UpdateStagingBuffer(
+                        ctx->engine->GetRenderManager()->GetStagingRingBuffer(),
+                        ctx->engine->GetRenderManager()->GetStagingDeviceMemory(),
+                        ctx->engine->GetRenderManager()->GetMappedStagingData()
+                    );
+                }
+            }
+        });
     }
     if (!m_context->dmaManager) {
         m_context->dmaManager = new fw::VulkanDmaManager();
@@ -107,7 +119,7 @@ bool BlockMakerState::Init() {
             m_context->dmaManager->Initialize(
                 rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
                 rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
-                rm->GetStagingBufferSize(), rm->GetGlobalVramBuffer(), rm->GetQueueMutex()
+                rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex()
             );
         }
     }
@@ -115,6 +127,7 @@ bool BlockMakerState::Init() {
     // Inizializziamo l'istanza isolata di GameWorld per il Block Maker
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
+    m_previewWorld->InitializePhysics();
 
     m_context->forgeWorld = m_previewWorld.get();
     m_context->activeRegistry = &m_previewWorld->GetRegistry();

@@ -71,6 +71,18 @@ bool PlayState::Init() {
 
     if (!m_context->vramAllocator) {
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
+        m_context->vramAllocator->SetAllocateCompartmentCallback([ctx = m_context](uint32_t compIdx) {
+            if (ctx && ctx->engine && ctx->engine->GetRenderManager()) {
+                ctx->engine->GetRenderManager()->AddVramCompartment();
+                if (ctx->dmaManager) {
+                    ctx->dmaManager->UpdateStagingBuffer(
+                        ctx->engine->GetRenderManager()->GetStagingRingBuffer(),
+                        ctx->engine->GetRenderManager()->GetStagingDeviceMemory(),
+                        ctx->engine->GetRenderManager()->GetMappedStagingData()
+                    );
+                }
+            }
+        });
     }
     if (!m_context->dmaManager) {
         m_context->dmaManager = new fw::VulkanDmaManager();
@@ -78,7 +90,7 @@ bool PlayState::Init() {
             m_context->dmaManager->Initialize(
                 rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
                 rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
-                rm->GetStagingBufferSize(), rm->GetGlobalVramBuffer(), rm->GetQueueMutex()
+                rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex()
             );
         }
     }
@@ -194,11 +206,12 @@ bool PlayState::Init() {
 
     if (!m_context->forgeWorld) {
         if (m_context->gameWorld) {
+            m_context->gameWorld->InitializePhysics();
             m_context->forgeWorld = m_context->gameWorld;
         } else {
-            std::cout << "[PlayState] WARNING: forgeWorld e gameWorld non trovati nel contesto! Utilizzo di un nuovo GameWorld.\n";
             static auto fallbackWorld = std::make_unique<fw::GameWorld>();
             fallbackWorld->Initialize(m_context);
+            fallbackWorld->InitializePhysics();
             m_context->forgeWorld = fallbackWorld.get();
             m_context->gameWorld = fallbackWorld.get();
         }
@@ -242,7 +255,8 @@ bool PlayState::Init() {
             std::cerr << "[PlayState] ERRORE: Impossibile leggere world_map.json. Fallback attivato.\n";
             hasCustomMap = false;
         }
-    }    // --- IMPOSTAZIONE GAME MODE PER L'HUD ---
+    }
+    // --- IMPOSTAZIONE GAME MODE PER L'HUD ---
     if (m_context && m_context->engine) {
         m_context->engine->SetGameMode(GameMode::Play);
     }

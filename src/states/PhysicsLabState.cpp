@@ -47,6 +47,7 @@ bool PhysicsLabState::Init() {
     std::cout << "[PhysicsLabState] Init\n";
     m_originalWorld = m_context->forgeWorld;
     m_labWorld = new fw::GameWorld();
+    m_labWorld->InitializePhysics();
     m_context->forgeWorld = m_labWorld;
 
     m_joltSystem = new fw::JoltPhysicsSystem();

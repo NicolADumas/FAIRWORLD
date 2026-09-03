@@ -53,6 +53,7 @@ public:
     ~GameWorld();
 
     void Initialize(SharedContext* context);
+    void InitializePhysics();
     void SetSaveDirectory(const std::string& dir) { m_chunkManager.SetSaveDirectory(dir); }
     const std::string& GetSaveDirectory() const { return m_chunkManager.GetSaveDirectory(); }
 

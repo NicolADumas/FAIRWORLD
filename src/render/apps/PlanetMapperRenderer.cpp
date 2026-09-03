@@ -1,4 +1,6 @@
 #include "pch.h"
+#include "FAIRWORLD.h"
+#include "RenderManager.h"
 #include "PlanetMapperRenderer.h"
 #include "SharedContext.h"
 #include "ForgeWorld.h"
@@ -113,23 +115,26 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
 
     vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PlanetMapperPushConstants), &pcData);
 
-    // --- DISEGNO INDIRETTO VIA GPU ---
-    if (m_terrainPipeline && m_terrainPipeline->getVertexBuffer() && m_terrainPipeline->getIndirectBuffer()) {
+    // --- DISEGNO INDIRETTO VIA GPU (Terrain Compute Pipeline) ---
+    // Il Compute Shader ha già generato i vertici e l'Indirect Buffer è stato
+    // inizializzato con comandi validi da DispatchTerrainComputeIfDirty() (chiamata prima del Render Pass).
+    if (m_terrainPipeline && m_terrainNumChunks > 0 &&
+        m_terrainPipeline->getVertexBuffer() != VK_NULL_HANDLE &&
+        m_terrainPipeline->getIndirectBuffer() != VK_NULL_HANDLE) {
+
         VkDeviceSize offsets[] = { 0 };
         VkBuffer vertexBuffers[] = { m_terrainPipeline->getVertexBuffer() };
         vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmd, m_terrainPipeline->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-        // drawCount è numChunks, usiamo 1 per ora o leggiamo da un buffer
-        // L'assunzione temporanea è 100 chunk generati
-        uint32_t numChunks = 100; // Da passare dinamicamente
-        for (uint32_t i = 0; i < numChunks; ++i) {
-            vkCmdDrawIndexedIndirect(cmd, m_terrainPipeline->getIndirectBuffer(), i * sizeof(VkDrawIndexedIndirectCommand), 1, sizeof(VkDrawIndexedIndirectCommand));
+        for (uint32_t i = 0; i < m_terrainNumChunks; ++i) {
+            vkCmdDrawIndexedIndirect(cmd, m_terrainPipeline->getIndirectBuffer(),
+                i * sizeof(VkDrawIndexedIndirectCommand), 1, sizeof(VkDrawIndexedIndirectCommand));
         }
     }
 
     // --- DISEGNO ENTITÀ STANDARD (Es. Marker, Spawn Points) ---
-    if (m_globalVramBuffer != VK_NULL_HANDLE) {
+    if (context->forgeWorld) {
         auto& registry = context->forgeWorld->GetRegistry();
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
         VkDeviceSize offsets[] = { 0 };
@@ -151,11 +156,13 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
 
             vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PlanetMapperPushConstants), &pcData);
 
-            offsets[0] = mesh.vramAlloc.offset;
-            VkBuffer vertexBuffers[] = { m_globalVramBuffer };
-            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-
-            vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
+            if (allocInfo.valid && allocInfo.compartmentIdx < context->engine->GetRenderManager()->GetVramCompartments().size()) {
+                VkBuffer buf = context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
+                VkDeviceSize newOffsets[] = { allocInfo.offset };
+                vkCmdBindVertexBuffers(cmd, 0, 1, &buf, newOffsets);
+                vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+            }
         }
     }
 }

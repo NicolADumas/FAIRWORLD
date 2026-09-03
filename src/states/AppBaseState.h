@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 
+#include "RuntimeManager.h"
+
 // Architettura Madre: classe base universale per tutte le App dell'OS FAIRWORLD
 class AppBaseState : public State {
 public:
@@ -21,6 +23,11 @@ protected:
     bool DrawMotherHeader(const char* appTitle);
     void ReturnToHub();
 
+    // Specifica le feature necessarie per l'app (es. VRAM, Physics, ecc.)
+    virtual fw::RuntimeFeature GetRequiredFeatures() const {
+        return fw::RuntimeFeature::GlobalVRAM | fw::RuntimeFeature::JobSystem | fw::RuntimeFeature::PBRTextures;
+    }
+
     // --- ARCHITETTURA SPECIFICA (Da implementare nella singola App) ---
     virtual bool InitApp() = 0;
     virtual void UpdateApp(float dt) = 0;
@@ -28,4 +35,6 @@ protected:
 
     SharedContext* m_context;
     std::unique_ptr<fw::GameWorld> m_previewWorld;
+    bool m_appInitialized = false;
+    float m_loadingSpinnerAngle = 0.0f;
 };
