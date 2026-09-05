@@ -5,6 +5,7 @@
 #include <string>
 #include <glm/glm.hpp>
 #include "SphericalLOD.h"
+#include "RaycastSystem.h"
 
 struct SharedContext;
 
@@ -45,6 +46,8 @@ private:
     std::vector<entt::entity> m_spawnPointMarkers;
     entt::entity m_cursorMarker = entt::null;
     fw::SphericalLODSystem m_lodSystem;
+    
+    fw::RaycastHit m_lastRayHit;
     
     // Feedback visivo salvataggio
     float m_saveFlashTimer = 0.0f; // secondi rimasti per mostrare il messaggio

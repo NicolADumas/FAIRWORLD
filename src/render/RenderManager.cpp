@@ -2776,7 +2776,6 @@ bool RenderManager::CreateForgePipeline() {
         std::cerr << "[VULKAN] Errore creazione Forge Graphics Pipeline!\n";
         return false;
     }
-
     vkDestroyShaderModule(m_core->GetDevice(), fragShaderModule, nullptr);
     vkDestroyShaderModule(m_core->GetDevice(), vertShaderModule, nullptr);
 

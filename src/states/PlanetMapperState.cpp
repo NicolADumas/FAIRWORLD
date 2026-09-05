@@ -15,6 +15,8 @@
 #include "CacheManager.h"
 #include "imgui.h"
 #include "PlayState.h"
+#include "RaycastSystem.h"
+#include "CubeSphereMapping.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -65,6 +67,7 @@ bool PlanetMapperState::InitApp() {
     }
 
     RebuildPlanetRoots();
+
 
     m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     m_orbitDistance = 250.0f;
@@ -202,10 +205,68 @@ void PlanetMapperState::UpdateApp(float dt) {
         
         float aspect = 16.0f / 9.0f; 
         if (h > 0) {
-            aspect = m_isBuilderMode ? (w * 0.55f) / (float)h : (float)w / (float)h;
+            aspect = m_isBuilderMode ? (w * 0.65f) / (float)h : (float)w / (float)h;
         }
         m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1;
+    }
+
+    // ------------------------------------------------------------------
+    // Sfera Raycast dal cursore (Hover & Selection)
+    // ------------------------------------------------------------------
+    if (allowCameraControl && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && m_context) {
+        
+        float viewX = m_isBuilderMode ? (w * 0.35f) : 0.0f;
+        float viewW = m_isBuilderMode ? (w * 0.65f) : (float)w;
+        float viewY = 0.0f;
+        float viewH = (float)h;
+        
+        float mouseX_inView = io.MousePos.x - viewX;
+        float mouseY_inView = io.MousePos.y - viewY;
+        
+        float mouseX_NDC = (2.0f * mouseX_inView) / viewW - 1.0f;
+        float mouseY_NDC = 1.0f - (2.0f * mouseY_inView) / viewH;
+        
+        glm::vec4 rayClip = glm::vec4(mouseX_NDC, mouseY_NDC, -1.0f, 1.0f);
+        glm::vec4 rayEye = glm::inverse(m_context->activeCameraView.projectionMatrix) * rayClip;
+        rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
+        
+        glm::vec3 rayWorld = glm::normalize(glm::vec3(glm::inverse(m_context->activeCameraView.viewMatrix) * rayEye));
+        
+        fw::RaycastQuery query;
+        query.ray.origin = m_context->activeCameraView.cameraPosition;
+        query.ray.direction = rayWorld;
+        query.mode = fw::RaycastMode::Sphere;
+        query.maxDistance = 10000.0f;
+        
+        fw::RaycastHit hit = fw::RaycastSystem::Cast(m_context, query);
+        m_lastRayHit = hit;
+        
+        if (hit.hit && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
+            float pRadius = doc.planets[m_activePlanetIndex].planetRadius;
+            int resolution = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 16.0f));
+            if (resolution < 1) resolution = 1;
+            
+            int col = 0, row = 0;
+            fw::CubeSphereMapping::FaceUVToCell(hit.uv, resolution, col, row);
+            
+            // Middle Click -> Change Orbit Target
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+                glm::vec3 hitPoint = fw::CubeSphereMapping::CellToDirection(hit.faceIndex, col, row, resolution) * pRadius;
+                m_orbitTarget = hitPoint;
+            }
+            
+            // Left Click -> Add Spawn Point Shortcut
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                if (m_isBuilderMode) {
+                    // Logic to place spawn point quickly or select region
+                }
+            }
+        } else {
+            m_lastRayHit.hit = false;
+        }
+    } else {
+        m_lastRayHit.hit = false;
     }
 
     if (m_isBuilderMode && m_context->jobSystem && m_context->assetManager) {
@@ -271,7 +332,6 @@ void PlanetMapperState::UpdateApp(float dt) {
             fw::BiomeTerrainSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
             fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
         }
-        
         m_previewWorld->Update(dt);
         
         // --- Sincronizzazione Marker Spawn Point ---
@@ -346,33 +406,40 @@ void PlanetMapperState::UpdateApp(float dt) {
             }
             
             if (m_previewWorld->GetRegistry().valid(m_cursorMarker)) {
-                glm::vec3 cdir = glm::normalize(m_context->activeCameraView.cameraPosition);
-                glm::vec3 cpos = cdir * (p.planetRadius + 10.0f); // Leggermente sopra la superficie
-                
                 auto& ctrans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(m_cursorMarker);
-                ctrans.location = fw::Vec3(cpos.x, cpos.y, cpos.z);
-                
-                glm::vec3 cup(0.0f, 1.0f, 0.0f);
-                if (glm::abs(glm::dot(cdir, cup)) > 0.999f) cup = glm::vec3(1.0f, 0.0f, 0.0f);
-                glm::mat4 clookAt = glm::lookAt(glm::vec3(0.0f), cdir, cup);
-                glm::quat cq = glm::conjugate(glm::quat_cast(clookAt));
-                ctrans.rotation = fw::Quat(cq.x, cq.y, cq.z, cq.w);
-                
-                // Cursor pi piccolo e sottile degli spawn point, per indicare precisione
-                ctrans.scale = fw::Vec3(1.0f, 4.0f, 1.0f);
-                
                 auto& cmesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(m_cursorMarker);
-                cmesh.colorOverride[0] = 0.0f; // Ciano brillante
-                cmesh.colorOverride[1] = 1.0f;
-                cmesh.colorOverride[2] = 1.0f;
-                cmesh.colorOverride[3] = 1.0f;
+                
+                if (m_lastRayHit.hit) {
+                    glm::vec3 cpos = m_lastRayHit.worldPosition + m_lastRayHit.faceNormal * 0.5f; // Leggermente sopra la superficie
+                    
+                    ctrans.location = fw::Vec3(cpos.x, cpos.y, cpos.z);
+                    
+                    glm::vec3 worldUp = m_lastRayHit.faceNormal;
+                    glm::vec3 forward(1.0f, 0.0f, 0.0f);
+                    if (glm::abs(glm::dot(worldUp, forward)) > 0.99f) forward = glm::vec3(0.0f, 0.0f, 1.0f);
+                    glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
+                    forward = glm::normalize(glm::cross(right, worldUp));
+                    glm::mat3 rotMat(right, worldUp, forward);
+                    glm::quat cq = glm::quat_cast(rotMat);
+                    
+                    ctrans.rotation = fw::Quat(cq.x, cq.y, cq.z, cq.w);
+                    
+                    // Cursor più piccolo e sottile degli spawn point, per indicare precisione
+                    ctrans.scale = fw::Vec3(1.0f, 4.0f, 1.0f);
+                    
+                    cmesh.colorOverride[0] = 0.0f; // Ciano brillante
+                    cmesh.colorOverride[1] = 1.0f;
+                    cmesh.colorOverride[2] = 1.0f;
+                    cmesh.colorOverride[3] = 1.0f; // Opaco
+                } else {
+                    // Nascondi se non colpiamo nulla
+                    cmesh.colorOverride[3] = 0.0f;
+                }
             }
             // --- FINE GESTIONE CURSORE ---
             
         }
         // --- Fine Sincronizzazione ---
-        
-        m_previewWorld->Update(dt);
     }
 }
 
@@ -389,7 +456,7 @@ void PlanetMapperState::DrawBuilderUI() {
     auto& doc = m_context->projectManager->GetDocumentMutable();
 
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    float leftWidth = viewport->Size.x * 0.45f;
+    float leftWidth = viewport->Size.x * 0.35f; // Riduciamo la UI al 35% per dare respiro al 3D!
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(ImVec2(leftWidth, viewport->Size.y));
     ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | 
@@ -404,6 +471,38 @@ void PlanetMapperState::DrawBuilderUI() {
     }
 
     ImGui::BeginChild("PlanetControls", ImVec2(0, -135.0f), true);
+
+    if (ImGui::Button("➕ Nuovo Pianeta", ImVec2(-1, 30))) {
+        fw::PlanetMap newPlanet;
+        newPlanet.name = "Pianeta " + std::to_string(doc.planets.size() + 1);
+        newPlanet.planetRadius = 500.0f; // Raggio di default
+        newPlanet.axialTilt = 0.0f;
+        newPlanet.yearLength = 365.0f;
+        doc.planets.push_back(newPlanet);
+        m_activePlanetIndex = (int)doc.planets.size() - 1;
+        m_lodSystem.SetPlanetRadius(newPlanet.planetRadius);
+        RebuildPlanetRoots();
+        PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
+    }
+    ImGui::Spacing();
+
+    if (!doc.planets.empty()) {
+        if (ImGui::BeginCombo("Pianeta Attivo", doc.planets[m_activePlanetIndex].name.c_str())) {
+            for (int i = 0; i < (int)doc.planets.size(); ++i) {
+                bool isSelected = (m_activePlanetIndex == i);
+                if (ImGui::Selectable(doc.planets[i].name.c_str(), isSelected)) {
+                    m_activePlanetIndex = i;
+                    m_lodSystem.SetPlanetRadius(doc.planets[i].planetRadius);
+                    RebuildPlanetRoots();
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::Separator();
+    }
 
     if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
         auto& p = doc.planets[m_activePlanetIndex];
@@ -466,27 +565,18 @@ void PlanetMapperState::DrawBuilderUI() {
                 fw::SpawnPoint sp;
                 sp.name = "Spawn " + std::to_string(p.spawnPoints.size() + 1);
                 
-                // --- CALCOLA LA POSIZIONE DAL PUNTATORE (CAMERA) ---
-                if (m_context) {
-                    glm::vec3 pos = glm::normalize(m_context->activeCameraView.cameraPosition);
-                    float ax = std::abs(pos.x);
-                    float ay = std::abs(pos.y);
-                    float az = std::abs(pos.z);
-                    int faceIndex = 0;
-                    float u = 0.0f, v = 0.0f;
-                    if (az >= ax && az >= ay) {
-                        if (pos.z > 0) { faceIndex = 0; u = pos.x / az; v = pos.y / az; }
-                        else           { faceIndex = 1; u = -pos.x / az; v = pos.y / az; }
-                    } else if (ax >= ay && ax >= az) {
-                        if (pos.x > 0) { faceIndex = 2; u = -pos.z / ax; v = pos.y / ax; }
-                        else           { faceIndex = 3; u = pos.z / ax; v = pos.y / ax; }
-                    } else {
-                        if (pos.y > 0) { faceIndex = 4; u = pos.x / ay; v = -pos.z / ay; }
-                        else           { faceIndex = 5; u = pos.x / ay; v = pos.z / ay; }
-                    }
-                    sp.faceIndex = faceIndex;
-                    sp.localX = u * p.planetRadius;
-                    sp.localZ = v * p.planetRadius;
+                // --- CALCOLA LA POSIZIONE DAL PUNTATORE (RAYCAST 3D) ---
+                if (m_lastRayHit.hit) {
+                    sp.faceIndex = m_lastRayHit.faceIndex;
+                    float localU = (m_lastRayHit.uv.x * 2.0f) - 1.0f;
+                    float localV = (m_lastRayHit.uv.y * 2.0f) - 1.0f;
+                    sp.localX = localU * p.planetRadius;
+                    sp.localZ = localV * p.planetRadius;
+                } else {
+                    // Fallback se si clicca nel vuoto
+                    sp.faceIndex = 0;
+                    sp.localX = 0.0f;
+                    sp.localZ = 0.0f;
                 }
                 
                 p.spawnPoints.push_back(sp);

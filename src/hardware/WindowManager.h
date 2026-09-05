@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <string>
+#include <functional>
 
 class WindowManager {
 public:
@@ -17,9 +18,13 @@ public:
     void ResetResizeFlag() { m_framebufferResized = false; }
     void SetResizeFlag() { m_framebufferResized = true; }
 
+    void SetRenderCallback(std::function<void()> callback) { m_renderCallback = callback; }
+    void InvokeRenderCallback() { if (m_renderCallback) m_renderCallback(); }
+
 private:
     HWND m_hwnd;
     HINSTANCE m_hInstance;
     bool m_framebufferResized = false;
+    std::function<void()> m_renderCallback;
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 };

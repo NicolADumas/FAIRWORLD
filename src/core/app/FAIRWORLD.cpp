@@ -352,6 +352,20 @@ void FairWorldEngine::PollHardwareEvents() {
 void FairWorldEngine::Run() {
     auto lastTime = std::chrono::high_resolution_clock::now();
 
+    if (m_windowManager && !m_isVrMode) {
+        m_windowManager->SetRenderCallback([this, &lastTime]() {
+            if (!m_isRunning) return;
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+            // Evita spike enormi di delta time se la finestra era bloccata
+            if (deltaTime > 0.1f) deltaTime = 0.1f;
+            lastTime = currentTime;
+            
+            Update(deltaTime);
+            Render();
+        });
+    }
+
     while (m_isRunning) {
         PollHardwareEvents();
         if (!m_isRunning) break;
@@ -359,6 +373,8 @@ void FairWorldEngine::Run() {
         // Calcola il Delta Time
         auto currentTime = std::chrono::high_resolution_clock::now();
         float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+        // Cap del delta time per evitare salti spaziotemporali se l'engine lagga
+        if (deltaTime > 0.1f) deltaTime = 0.1f;
         lastTime = currentTime;
 
         // Logica di gioco
@@ -366,6 +382,10 @@ void FairWorldEngine::Run() {
 
         // Rendering
         Render();
+    }
+    
+    if (m_windowManager && !m_isVrMode) {
+        m_windowManager->SetRenderCallback(nullptr);
     }
 }
 
@@ -554,7 +574,13 @@ bool FairWorldEngine::Update(float deltaTime) {
             glm::vec3 rayDir = glm::normalize(m_sharedContext->activeCameraView.cameraFront);
             const float MAX_DIST = 8.0f;
 
-            fw::VoxelHit hit = fw::RaycastSystem::Cast(*m_sharedContext->forgeWorld, rayPos, rayDir, MAX_DIST);
+            fw::RaycastQuery query;
+            query.ray.origin = rayPos;
+            query.ray.direction = rayDir;
+            query.maxDistance = MAX_DIST;
+            query.mode = fw::RaycastMode::Voxel;
+            
+            fw::RaycastHit hit = fw::RaycastSystem::Cast(m_sharedContext, query);
 
             glm::ivec3 hitBlock(-1, -1, -1);
             glm::ivec3 prevBlock(-1, -1, -1);
@@ -562,7 +588,7 @@ bool FairWorldEngine::Update(float deltaTime) {
             
             if (hit.hit) {
                 hitBlock = hit.voxelPosition;
-                prevBlock = hit.voxelPosition + hit.faceNormal;
+                prevBlock = hit.voxelPosition + glm::ivec3(std::round(hit.faceNormal.x), std::round(hit.faceNormal.y), std::round(hit.faceNormal.z));
             }
 
             // TODO: Ghost block collision integration with Hybrid DDA

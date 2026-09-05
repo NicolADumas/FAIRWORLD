@@ -13,9 +13,21 @@ LRESULT CALLBACK WindowManager::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
     WindowManager* wm = reinterpret_cast<WindowManager*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 
     switch (uMsg) {
+        case WM_ENTERSIZEMOVE:
+            SetTimer(hwnd, 1, 16, NULL); // Timer a ~60fps
+            return 0;
+        case WM_EXITSIZEMOVE:
+            KillTimer(hwnd, 1);
+            return 0;
+        case WM_TIMER:
+            if (wParam == 1 && wm) {
+                wm->InvokeRenderCallback();
+            }
+            return 0;
         case WM_SIZE:
             if (wParam != SIZE_MINIMIZED && wm) {
                 wm->SetResizeFlag();
+                wm->InvokeRenderCallback();
             }
             return 0;
         case WM_DESTROY:

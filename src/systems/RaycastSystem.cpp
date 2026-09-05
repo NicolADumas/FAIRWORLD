@@ -1,7 +1,13 @@
+#include "pch.h"
 #include "RaycastSystem.h"
+#include "SharedContext.h"
 #include "GameWorld.h"
 #include "ForgeComponents.h"
+#include "FAIRWORLD.h"
+#include "CubeSphereMapping.h"
+#include "WorldProjectManager.h"
 #include <algorithm>
+#include <iostream>
 
 namespace fw {
 
@@ -19,33 +25,61 @@ bool RaycastSystem::IntersectAABB(const glm::vec3& rayOrigin, const glm::vec3& r
     return tMax >= tMin && tMax >= 0.0f;
 }
 
-VoxelHit RaycastSystem::Cast(GameWorld& world, const glm::vec3& rayOrigin, const glm::vec3& rayDirection, float maxDistance) {
-    VoxelHit bestHit;
-    bestHit.distance = maxDistance;
+RaycastHit RaycastSystem::Cast(SharedContext* context, const RaycastQuery& query) {
+    if (!context) return RaycastHit{};
 
-    auto& registry = world.GetRegistry();
+    RaycastMode mode = query.mode;
+    if (mode == RaycastMode::Auto) {
+        if (context->engine) {
+            GameMode engineMode = context->engine->GetGameMode();
+            if (engineMode == GameMode::Play || engineMode == GameMode::ChunkEditor) {
+                mode = RaycastMode::Voxel;
+            } else if (engineMode == GameMode::PlanetMapper) {
+                mode = RaycastMode::Sphere;
+            } else {
+                mode = RaycastMode::Physics;
+            }
+        } else {
+            mode = RaycastMode::Voxel; // Fallback
+        }
+    }
+
+    switch (mode) {
+        case RaycastMode::Voxel:   return CastVoxel(context, query);
+        case RaycastMode::Sphere:  return CastSphere(context, query);
+        case RaycastMode::Physics: return CastPhysics(context, query);
+        default:                   return RaycastHit{};
+    }
+}
+
+RaycastHit RaycastSystem::CastVoxel(SharedContext* context, const RaycastQuery& query) {
+    RaycastHit bestHit;
+    bestHit.distance = query.maxDistance;
+    bestHit.type = RaycastHitType::Voxel;
+
+    if (!context->forgeWorld) return bestHit;
+
+    auto& registry = context->forgeWorld->GetRegistry();
     auto chunkView = registry.view<VoxelChunkComponent, TransformComponent>();
 
     for (auto chunkEnt : chunkView) {
+        if (chunkEnt == query.ignoreEntity) continue;
+        
         auto& transform = chunkView.get<TransformComponent>(chunkEnt);
         auto& chunkData = chunkView.get<VoxelChunkComponent>(chunkEnt);
 
-        // OTTIMIZZAZIONE: Scarta i chunk visibilmente troppo lontani prima di fare calcoli matriciali!
-        // (16x128x16 = diagonale max di ~130 blocchi)
         glm::vec3 chunkLoc(transform.location.x, transform.location.y, transform.location.z);
-        if (glm::distance(rayOrigin, chunkLoc) > maxDistance + 150.0f) {
+        if (glm::distance(query.ray.origin, chunkLoc) > query.maxDistance + 150.0f) {
             continue;
         }
 
-        // Transform global ray to chunk's local space
         fw::Mat4 cGlobal = transform.computeGlobalMatrix(registry);
         glm::mat4 chunkGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&cGlobal));
         glm::mat4 invTransform = glm::inverse(chunkGlobalMatrix);
 
-        glm::vec3 localOrigin = glm::vec3(invTransform * glm::vec4(rayOrigin, 1.0f));
-        glm::vec3 localDir = glm::normalize(glm::vec3(invTransform * glm::vec4(rayDirection, 0.0f)));
+        glm::vec3 localOrigin = glm::vec3(invTransform * glm::vec4(query.ray.origin, 1.0f));
+        glm::vec3 localDir = glm::normalize(glm::vec3(invTransform * glm::vec4(query.ray.direction, 0.0f)));
 
-        // Voxel procedural meshes are centered on integers. Block 0,0,0 spans [-0.5, 0.5].
         glm::vec3 aabbMin(-0.5f, -0.5f, -0.5f);
         glm::vec3 aabbMax(CHUNK_SIZE - 0.5f, CHUNK_HEIGHT - 0.5f, CHUNK_SIZE - 0.5f);
 
@@ -59,13 +93,10 @@ VoxelHit RaycastSystem::Cast(GameWorld& world, const glm::vec3& rayOrigin, const
             continue;
         }
 
-        // Setup Amanatides & Woo DDA inside the local grid
-        // Offset by +0.5 so that voxel boundaries align with integers (0.0 to 1.0 for block 0)
         glm::vec3 ddaOrigin = localOrigin + glm::vec3(0.5f, 0.5f, 0.5f);
         
         glm::ivec3 currentPos(std::floor(ddaOrigin.x), std::floor(ddaOrigin.y), std::floor(ddaOrigin.z));
         
-        // Clamp to ensure we don't start outside due to float precision
         currentPos.x = std::clamp(currentPos.x, 0, CHUNK_SIZE - 1);
         currentPos.y = std::clamp(currentPos.y, 0, CHUNK_HEIGHT - 1);
         currentPos.z = std::clamp(currentPos.z, 0, CHUNK_SIZE - 1);
@@ -92,12 +123,11 @@ VoxelHit RaycastSystem::Cast(GameWorld& world, const glm::vec3& rayOrigin, const
         glm::ivec3 lastPos = currentPos;
         bool found = false;
 
-        // Traverse chunk locally
         while (currentDist < bestHit.distance) {
             if (currentPos.x < 0 || currentPos.x >= CHUNK_SIZE ||
                 currentPos.y < 0 || currentPos.y >= CHUNK_HEIGHT ||
                 currentPos.z < 0 || currentPos.z >= CHUNK_SIZE) {
-                break; // Exited chunk bounds
+                break;
             }
 
             if (currentPos.x >= 0 && currentPos.x < CHUNK_SIZE &&
@@ -139,7 +169,7 @@ VoxelHit RaycastSystem::Cast(GameWorld& world, const glm::vec3& rayOrigin, const
         if (found && currentDist < bestHit.distance) {
             bestHit.hit = true;
             bestHit.distance = currentDist;
-            bestHit.chunkID = chunkEnt;
+            bestHit.targetEntity = chunkEnt;
             bestHit.voxelPosition = glm::ivec3(chunkData.cx * CHUNK_SIZE + currentPos.x, currentPos.y, chunkData.cz * CHUNK_SIZE + currentPos.z);
             
             glm::ivec3 normal = lastPos - currentPos;
@@ -151,6 +181,50 @@ VoxelHit RaycastSystem::Cast(GameWorld& world, const glm::vec3& rayOrigin, const
     }
 
     return bestHit;
+}
+
+RaycastHit RaycastSystem::CastSphere(SharedContext* context, const RaycastQuery& query) {
+    RaycastHit result;
+    result.type = RaycastHitType::Sphere;
+    
+    // Fallback if not injected properly, though usually it should be set via PlanetMapper context
+    glm::vec3 sphereCenter{0.0f};
+    float sphereRadius = 50.0f; // Default R
+    if (context && context->projectManager) {
+        const auto& doc = context->projectManager->GetDocument();
+        // Just grab the first planet for now
+        if (!doc.planets.empty()) {
+            sphereRadius = doc.planets[0].planetRadius;
+        }
+    }
+    
+    glm::vec3 oc = query.ray.origin - sphereCenter;
+    float b = glm::dot(oc, query.ray.direction);
+    float c = glm::dot(oc, oc) - sphereRadius * sphereRadius;
+    float h = b * b - c;
+    
+    if (h < 0.0f) return result; 
+    
+    h = glm::sqrt(h);
+    float t = -b - h; 
+    
+    if (t < 0.0f || t > query.maxDistance) return result; 
+    
+    result.hit = true;
+    result.distance = t;
+    result.worldPosition = query.ray.origin + query.ray.direction * t;
+    result.faceNormal = glm::normalize(result.worldPosition - sphereCenter);
+    
+    CubeSphereMapping::DirectionToFaceUV(result.faceNormal, result.faceIndex, result.uv);
+    
+    return result;
+}
+
+RaycastHit RaycastSystem::CastPhysics(SharedContext* context, const RaycastQuery& query) {
+    RaycastHit result;
+    result.type = RaycastHitType::Physics;
+    // Jolt physics raycast integration placeholder
+    return result;
 }
 
 } // namespace fw

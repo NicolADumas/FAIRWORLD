@@ -86,9 +86,9 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
 
     VkViewport viewport{};
     if (context->isMapBuilderMode) {
-        viewport.x = m_extent.width * 0.45f;
+        viewport.x = m_extent.width * 0.35f;
         viewport.y = 0.0f;
-        viewport.width = m_extent.width * 0.55f;
+        viewport.width = m_extent.width * 0.65f;
     } else {
         viewport.x = 0.0f;
         viewport.y = 0.0f;
@@ -139,6 +139,10 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
         VkDeviceSize offsets[] = { 0 };
         for (auto entity : view) {
+            if (registry.all_of<fw::VisibilityComponent>(entity)) {
+                if (!registry.get<fw::VisibilityComponent>(entity).enabled) continue;
+            }
+            
             const auto& mesh = view.get<fw::MeshComponent>(entity);
             const auto& trans = view.get<fw::TransformComponent>(entity);
 
