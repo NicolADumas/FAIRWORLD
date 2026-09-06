@@ -66,11 +66,20 @@ bool PlanetMapperState::InitApp() {
         m_context->forgeWorld = m_previewWorld.get();
     }
 
-    RebuildPlanetRoots();
-
+    RebuildPlanetRoots(); // Crea i nodi radice (facce sferiche) per la GPU
+    CompileAndGenerate(); // Genera subito il Voxel Planet ad alta definizione!
 
     m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     m_orbitDistance = 250.0f;
+    m_orbitPitch = 20.0f;
+    m_orbitYaw = -45.0f;
+    m_lastRayHit.hit = false;
+    
+    // Assegna il nome dell'applicazione per la schermata di caricamento
+    m_appName = "PLANET MAPPER";
+    
+    std::cout << "[SYSTEM] " << m_appName << " caricato con successo e pronto all'uso!\n";
+
     if (m_context) {
         m_context->activeCameraView.cameraPosition = glm::vec3(0.0f, 0.0f, m_orbitDistance);
         m_context->activeCameraView.cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -124,7 +133,7 @@ void PlanetMapperState::UpdateApp(float dt) {
     if (m_saveFlashTimer > 0.0f) m_saveFlashTimer -= dt;
 
     if (m_context) {
-        m_context->isMapBuilderMode = m_isBuilderMode;
+        m_context->isMapBuilderMode = true;
         m_context->isForgeMode = false;
         if (m_previewWorld) {
             m_context->forgeWorld = m_previewWorld.get();
@@ -144,11 +153,7 @@ void PlanetMapperState::UpdateApp(float dt) {
 
     bool allowCameraControl = false;
     if (!io.WantCaptureMouse) {
-        if (m_isBuilderMode) {
-            if (io.MousePos.x >= w * 0.45f) allowCameraControl = true;
-        } else {
-            allowCameraControl = true;
-        }
+        if (io.MousePos.x >= w * 0.45f) allowCameraControl = true;
     }
 
     if (allowCameraControl) {
@@ -205,7 +210,7 @@ void PlanetMapperState::UpdateApp(float dt) {
         
         float aspect = 16.0f / 9.0f; 
         if (h > 0) {
-            aspect = m_isBuilderMode ? (w * 0.65f) / (float)h : (float)w / (float)h;
+            aspect = (w * 0.65f) / (float)h;
         }
         m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1;
@@ -216,8 +221,8 @@ void PlanetMapperState::UpdateApp(float dt) {
     // ------------------------------------------------------------------
     if (allowCameraControl && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && m_context) {
         
-        float viewX = m_isBuilderMode ? (w * 0.35f) : 0.0f;
-        float viewW = m_isBuilderMode ? (w * 0.65f) : (float)w;
+        float viewX = (w * 0.35f);
+        float viewW = (w * 0.65f);
         float viewY = 0.0f;
         float viewH = (float)h;
         
@@ -236,10 +241,15 @@ void PlanetMapperState::UpdateApp(float dt) {
         fw::RaycastQuery query;
         query.ray.origin = m_context->activeCameraView.cameraPosition;
         query.ray.direction = rayWorld;
-        query.mode = fw::RaycastMode::Sphere;
+        query.mode = fw::RaycastMode::Voxel;
         query.maxDistance = 10000.0f;
         
         fw::RaycastHit hit = fw::RaycastSystem::Cast(m_context, query);
+        if (hit.hit && hit.type == fw::RaycastHitType::Voxel) {
+            // Calcola la mappatura UV sferica dal punto di impatto Voxel
+            glm::vec3 dir = glm::normalize(hit.worldPosition);
+            fw::CubeSphereMapping::DirectionToFaceUV(dir, hit.faceIndex, hit.uv);
+        }
         m_lastRayHit = hit;
         
         if (hit.hit && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
@@ -258,18 +268,17 @@ void PlanetMapperState::UpdateApp(float dt) {
             
             // Left Click -> Add Spawn Point Shortcut
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                if (m_isBuilderMode) {
-                    // Logic to place spawn point quickly or select region
-                }
+                // Logic to place spawn point quickly or select region
             }
         } else {
             m_lastRayHit.hit = false;
         }
     } else {
         m_lastRayHit.hit = false;
+        if (m_selectedChunkInstanceIndex >= 0) {}
     }
 
-    if (m_isBuilderMode && m_context->jobSystem && m_context->assetManager) {
+    if (m_context && m_context->jobSystem && m_context->assetManager) {
         const fw::PlanetMap* pMap = nullptr;
         std::vector<fw::MapRegion> activeRegions;
         if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
@@ -322,9 +331,6 @@ void PlanetMapperState::UpdateApp(float dt) {
         if (pMap) {
             m_lodSystem.SetPlanetRadius(pMap->planetRadius);
         }
-        for (auto& root : m_planetRootNodes) {
-            m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry);
-        }
     }
 
     if (m_previewWorld) {
@@ -334,8 +340,11 @@ void PlanetMapperState::UpdateApp(float dt) {
         }
         m_previewWorld->Update(dt);
         
+        // Se abbiamo selezionato una regione, proviamo a dipingerci sopra
+        if (m_selectedChunkInstanceIndex >= 0 && m_selectedChunkInstanceIndex < (int)doc.planets[m_activePlanetIndex].chunkInstances.size()) {}
+        
         // --- Sincronizzazione Marker Spawn Point ---
-        if (m_isBuilderMode && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
+        if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
             auto& p = doc.planets[m_activePlanetIndex];
             // Se ci sono più marker che punti, elimina i marker in eccesso
             while (m_spawnPointMarkers.size() > p.spawnPoints.size()) {
@@ -444,11 +453,7 @@ void PlanetMapperState::UpdateApp(float dt) {
 }
 
 void PlanetMapperState::RenderApp() {
-    if (m_isBuilderMode) {
-        DrawBuilderUI();
-    } else {
-        DrawRuntimeUI();
-    }
+    DrawBuilderUI();
 }
 
 void PlanetMapperState::DrawBuilderUI() {
@@ -645,6 +650,7 @@ void PlanetMapperState::DrawBuilderUI() {
     
     if (ImGui::Button("\xF0\x9F\x92\xBE SALVA MONDO E MAPPA 3D (WORLD PROJECT)", ImVec2(-1, 30))) {
         PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
+        if (m_previewWorld) m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin che sovrascrivono la mappa!
         m_showSaveConfirmPopup = true;
     }
     if (ImGui::Button("🚀 ESPLORA MAPPA IN PRIMA PERSONA (VOXEL TEST)", ImVec2(-1, 30))) {
@@ -653,6 +659,7 @@ void PlanetMapperState::DrawBuilderUI() {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 1.0f));
     if (ImGui::Button("🌍 CARICA MAPPA COME PRINCIPALE E APRI IN FAIRWORLD PLAY", ImVec2(-1, 30))) {
         m_context->projectManager->SaveProject();
+        if (m_previewWorld) m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin prima di giocare!
         m_context->targetGameJsonPath = "saves/map/world_map.json";
         m_context->engine->SetGameMode(GameMode::Play);
         m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
@@ -889,27 +896,14 @@ void PlanetMapperState::DrawBuilderUI() {
                 needsRebuild = true;
             }
             if (needsRebuild) {
-                RebuildPlanetRoots();
+                CompileAndGenerate();
             }
         }
         ImGui::End();
     }
 }
 
-void PlanetMapperState::DrawRuntimeUI() {
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + 20, viewport->Pos.y + 20));
-    ImGui::Begin("RuntimeControls", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBackground);
-    if (ImGui::Button("<< TORNA ALL'EDITOR GLOBO 3D", ImVec2(250, 35))) {
-        m_isBuilderMode = true;
-        RebuildPlanetRoots();
-        m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-        m_orbitDistance = 250.0f;
-    }
-    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "ESPLORAZIONE VOXEL 3D ATTIVA (Collaudo Pianeta Unificato)");
-    ImGui::Text("Camera Orbitale a Distanza: %.1f", m_orbitDistance);
-    ImGui::End();
-}
+// DrawRuntimeUI removed
 
 void PlanetMapperState::CompileAndGenerate() {
     if (!m_context || !m_context->projectManager) return;
@@ -998,7 +992,10 @@ void PlanetMapperState::CompileAndGenerate() {
         }
     }
 
-    fw::MapWorldGenerator::Generate(doc, m_activePlanetIndex, *m_previewWorld, m_context->jobSystem);
+    // PLANET MAPPER: La CPU non ha bisogno di chunk fisici — il Compute Shader GPU gestisce
+    // tutto il rendering visivo tramite UploadTerrainData qui sotto.
+    // MapWorldGenerator::Generate() verrebbe eseguita sincronamente su migliaia di chunk
+    // causando un freeze. La saltiamo completamente.
 
     // === UPLOAD DATI AL GPU COMPUTE SHADER ===
     // Costruisce i ChunkData e le MapRegionGPU per il pipeline del terreno e li carica sulla VRAM.
@@ -1006,10 +1003,56 @@ void PlanetMapperState::CompileAndGenerate() {
         auto* rm = m_context->engine->GetRenderManager();
         const auto& planet = currentPlanet;
 
+        // Combina regions "fisse" (planet.regions) con quelle piazzate tramite chunkInstances
+        std::vector<fw::MapRegion> allRegions = planet.regions;
+        if (m_context && m_context->projectManager) {
+            auto& doc = m_context->projectManager->GetDocument();
+            for (const auto& inst : planet.chunkInstances) {
+                for (const auto& tpl : doc.terrainLibrary) {
+                    if (tpl.id == inst.templateId) {
+                        int baseX = inst.gridX;
+                        int baseZ = inst.gridY;
+                        
+                        // Push base region
+                        fw::MapRegion baseR;
+                        baseR.eulerAngles = inst.eulerAngles;
+                        baseR.angularRadius = inst.angularRadius;
+                        baseR.isGridAligned = inst.isGridAligned;
+                        baseR.faceIndex = inst.faceIndex;
+                        baseR.gridX = baseX;
+                        baseR.gridY = baseZ;
+                        baseR.rectMin = glm::ivec2(baseX, baseZ);
+                        baseR.rectMax = glm::ivec2(baseX, baseZ);
+                        baseR.type = tpl.baseType;
+                        baseR.gravityModifier = tpl.baseGravityModifier;
+                        baseR.perlinFrequency = tpl.basePerlinFrequency;
+                        if (m_context->blockRegistry) {
+                            baseR.surfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:grass").id;
+                            baseR.subsurfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
+                        }
+                        allRegions.push_back(baseR);
+                        
+                        // Push subregions (painter's algorithm)
+                        for (const auto& sub : tpl.subRegions) {
+                            fw::MapRegion projected = sub;
+                            projected.faceIndex = inst.faceIndex;
+                            projected.isGridAligned = inst.isGridAligned;
+                            projected.gridX = baseX;
+                            projected.gridY = baseZ;
+                            projected.rectMin += glm::ivec2(baseX, baseZ);
+                            projected.rectMax += glm::ivec2(baseX, baseZ);
+                            allRegions.push_back(projected);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         // Raccoglie le regioni in formato GPU
         std::vector<fw::MapRegionGPU> gpuRegions;
-        gpuRegions.reserve(planet.regions.size());
-        for (const auto& r : planet.regions) {
+        gpuRegions.reserve(allRegions.size());
+        for (const auto& r : allRegions) {
             fw::MapRegionGPU gr{};
             float pitch = glm::radians(r.eulerAngles.x);
             float yaw   = glm::radians(r.eulerAngles.y);
@@ -1048,7 +1091,7 @@ void PlanetMapperState::CompileAndGenerate() {
         rm->UploadTerrainData(gpuChunks, gpuRegions, planet.planetRadius);
     }
 
-    m_isBuilderMode = false;
+    // m_isBuilderMode = false rimosso
     
     if (currentPlanet.planetRadius > 0.0f) {
         // Telecamera sferica

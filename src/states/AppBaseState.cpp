@@ -60,7 +60,8 @@ void AppBaseState::Render() {
             ImVec2 center(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y * 0.5f);
             ImGui::SetCursorPos(ImVec2(viewport->Size.x * 0.5f - 200.0f, viewport->Size.y * 0.5f - 80.0f));
             ImGui::SetWindowFontScale(2.0f);
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "ATTENDERE... ALLOCAZIONE CORE 3D");
+            std::string loadMsg = "CARICAMENTO " + m_appName + " IN CORSO...";
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), loadMsg.c_str());
             ImGui::SetWindowFontScale(1.0f);
             
             ImDrawList* drawList = ImGui::GetWindowDrawList();

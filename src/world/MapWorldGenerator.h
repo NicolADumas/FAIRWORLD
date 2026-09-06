@@ -12,7 +12,7 @@ namespace fw {
     public:
         // Prende il MapDocument e popola un'istanza GameWorld con i chunk
         // basati su campionamento spaziale 3D e rumore di Perlin.
-        static void Generate(const MapDocument& doc, int planetIndex, GameWorld& targetWorld, fw::JobSystem* jobs);
+        static void Generate(const MapDocument& doc, int planetIndex, GameWorld& targetWorld, fw::JobSystem* jobs, float limitRadius = -1.0f, glm::vec3 focusPos = glm::vec3(0.0f));
         
         // Calcola la trasformazione sferica (posizione e rotazione) per un chunk dato il raggio del pianeta e le coordinate globali.
         // Restituisce false se il chunk si trova al di fuori dell'area di superficie sferica (pianeta finito).

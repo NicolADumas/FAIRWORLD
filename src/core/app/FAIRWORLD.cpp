@@ -1896,3 +1896,8 @@ void FairWorldEngine::Shutdown() {
     m_isRunning = false;
 }
 
+void FairWorldEngine::SetRenderCallback(std::function<void()> callback) {
+    if (m_windowManager) {
+        m_windowManager->SetRenderCallback(callback);
+    }
+}

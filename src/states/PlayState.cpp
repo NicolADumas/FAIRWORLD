@@ -273,7 +273,8 @@ bool PlayState::Init() {
             originalRadius = docCopy.planets[0].planetRadius;
             // docCopy.planets[0].planetRadius viene mantenuto per la generazione sferica 3D
         }
-        fw::MapWorldGenerator::Generate(docCopy, 0, *m_context->forgeWorld, m_context->jobSystem);
+        // Limitiamo la generazione iniziale della fisica a 10 chunk di distanza (160 unità)
+        fw::MapWorldGenerator::Generate(docCopy, 0, *m_context->forgeWorld, m_context->jobSystem, 160.0f, spawnPos);
         RebuildPlanetRoots(docCopy, 0); // Creiamo la mesh LOD sferica per il rendering a distanza
     } else {
         // Fallback: Generiamo un pianeta standard se non c'è mappa custom
@@ -285,7 +286,8 @@ bool PlayState::Init() {
         baseReg.perlinFrequency = 0.005f;
         pm.regions.push_back(baseReg);
         dummyDoc.planets.push_back(pm);
-        fw::MapWorldGenerator::Generate(dummyDoc, 0, *m_context->forgeWorld, m_context->jobSystem);
+        // Limitiamo la generazione iniziale della fisica a 10 chunk di distanza
+        fw::MapWorldGenerator::Generate(dummyDoc, 0, *m_context->forgeWorld, m_context->jobSystem, 160.0f, spawnPos);
         RebuildPlanetRoots(dummyDoc, 0);
     }
     

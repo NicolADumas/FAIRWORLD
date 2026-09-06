@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <string>
 #include <cstdint>
+#include <filesystem>
 #include "ForgeComponents.h"
 
 namespace fw {
@@ -33,6 +34,17 @@ public:
 
     void Clear() {
         m_activeChunks.clear();
+    }
+
+    void ClearDiskCache() const {
+        try {
+            if (std::filesystem::exists(m_saveDir)) {
+                std::filesystem::remove_all(m_saveDir);
+                std::filesystem::create_directories(m_saveDir);
+            }
+        } catch (...) {
+            // Ignora eventuali errori di file system (es. permessi)
+        }
     }
 
 private:

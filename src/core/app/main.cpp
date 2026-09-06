@@ -172,6 +172,15 @@ auto lastTime = std::chrono::high_resolution_clock::now();
 const float FIXED_DT = 1.0f / 60.0f; // 60 updates per second
 float accumulator = 0.0f;
 
+context.engine->SetRenderCallback([&]() {
+    // Questo callback viene chiamato dal WindowManager durante il resize (WM_TIMER)
+    // Evitiamo di chiamare Update() complesso, renderizziamo solo per non freezare l'immagine
+    context.engine->BeginUIFrame();
+    stateManager.Render();
+    context.engine->EndUIFrame();
+});
+
+
 while (context.engine->IsRunning()) {
     // Poll hardware (window or VR)
     context.engine->PollHardwareEvents();

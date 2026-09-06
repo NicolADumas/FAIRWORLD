@@ -102,7 +102,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     m_terrainPipeline = std::make_unique<TerrainPipelineSystem>(GetDevice(), GetPhysicalDevice());
     auto genCode = ReadFile("terrain_generation.spv");
     VkShaderModule genModule = CreateShaderModule(genCode);
-    m_terrainPipeline->init(50000, 1000, genModule); 
+    m_terrainPipeline->init(50000, 65536, genModule); 
     vkDestroyShaderModule(GetDevice(), genModule, nullptr);
 
     // Depth buffer: creato DOPO la pipeline (ha bisogno del command pool per i layout)
@@ -1257,13 +1257,6 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
                 m_planetMapperRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
                 m_planetMapperRenderer->SetCurrentFrame(m_currentFrame);
                 m_planetMapperRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-                
-                // Fallback to also draw standard MapRenderer meshes (Spherical LODs)
-                if (m_mapRenderer) {
-                    m_mapRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                    m_mapRenderer->SetCurrentFrame(m_currentFrame);
-                    m_mapRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-                }
             }
             else if (mode == GameMode::SolarSystem && m_solarSystemRenderer) {
                 m_solarSystemRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
@@ -2544,14 +2537,12 @@ void RenderManager::RecreateSwapchain() {
 
     RECT rect;
     GetClientRect((HWND)m_hwnd, &rect);
-    int width = rect.right - rect.left;
+    int width  = rect.right  - rect.left;
     int height = rect.bottom - rect.top;
-    while (width == 0 || height == 0) {
-        GetClientRect((HWND)m_hwnd, &rect);
-        width = rect.right - rect.left;
-        height = rect.bottom - rect.top;
-        Sleep(10);
-    }
+
+    // Se la finestra è minimizzata o ha dimensione zero, non bloccare il thread principale.
+    // Il prossimo frame utile chiamerà NotifyResize() di nuovo automaticamente.
+    if (width == 0 || height == 0) return;
 
     vkDeviceWaitIdle(m_core->GetDevice());
 
@@ -3328,12 +3319,28 @@ void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
                                        float planetRadius) {
     if (!m_terrainPipeline) return;
 
-    uint32_t chunkBytes  = (uint32_t)(sizeof(ChunkData)        * chunks.size());
-    uint32_t regionBytes = (uint32_t)(sizeof(fw::MapRegionGPU) * regions.size());
-    // Riserviamo anche spazio per l'indirect buffer (calcolato in base al numero di chunk)
-    uint32_t indirectBytes = (uint32_t)(sizeof(VkDrawIndexedIndirectCommand) * chunks.size());
-    uint32_t totalBytes  = chunkBytes + regionBytes + indirectBytes;
-    if (totalBytes == 0) return;
+    // Clamp al limite del buffer GPU: non possiamo inviare più di quanto allocato
+    const uint32_t MAX_REGIONS = 65536;
+    const uint32_t MAX_CHUNKS  = 50000;
+    uint32_t numChunks  = (uint32_t)std::min((size_t)MAX_CHUNKS,  chunks.size());
+    uint32_t numRegions = (uint32_t)std::min((size_t)MAX_REGIONS, regions.size());
+
+    if (numRegions < regions.size()) {
+        std::cerr << "[TerrainCompute] WARN: Regioni troncate da " << regions.size()
+                  << " a " << numRegions << " (limite GPU).\n";
+    }
+
+    uint32_t chunkBytes    = (uint32_t)(sizeof(ChunkData)        * numChunks);
+    uint32_t regionBytes   = (uint32_t)(sizeof(fw::MapRegionGPU) * numRegions);
+    uint32_t indirectBytes = (uint32_t)(sizeof(VkDrawIndexedIndirectCommand) * numChunks);
+    uint32_t totalBytes    = chunkBytes + regionBytes + indirectBytes;
+    
+    if (totalBytes == 0) {
+        m_terrainNumChunks = 0;
+        m_terrainNumRegions = 0;
+        if (m_planetMapperRenderer) m_planetMapperRenderer->SetTerrainNumChunks(0);
+        return;
+    }
 
     if (totalBytes > m_terrainStagingCapacityBytes || m_terrainStagingBuffer == VK_NULL_HANDLE) {
         if (!CreateTerrainStagingBuffer(totalBytes)) return;
@@ -3347,8 +3354,8 @@ void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
             memcpy(static_cast<uint8_t*>(m_terrainStagingMapped) + chunkBytes, regions.data(), regionBytes);
     }
 
-    m_terrainNumChunks    = (uint32_t)chunks.size();
-    m_terrainNumRegions   = (uint32_t)regions.size();
+    m_terrainNumChunks    = numChunks;
+    m_terrainNumRegions   = numRegions;
     m_terrainPlanetRadius = planetRadius;
     m_terrainDataDirty    = true;
 

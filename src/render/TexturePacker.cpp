@@ -20,6 +20,50 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
     result.height = m_targetResolution;
     result.channels = 4;
     
+    std::string cacheFile = "assets/texture_cache.bin";
+    FILE* fCache = nullptr;
+    fopen_s(&fCache, cacheFile.c_str(), "rb");
+    if (fCache) {
+        // Read header
+        int cachedLayerCount = 0;
+        int cachedRes = 0;
+        fread(&cachedLayerCount, sizeof(int), 1, fCache);
+        fread(&cachedRes, sizeof(int), 1, fCache);
+        
+        if (cachedLayerCount == materials.size() && cachedRes == m_targetResolution) {
+            std::cout << "[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...\n";
+            size_t layerBytes = m_targetResolution * m_targetResolution * 4;
+            result.totalBytesPerArray = layerBytes * materials.size();
+            
+            result.albedoData.resize(result.totalBytesPerArray);
+            result.normalData.resize(result.totalBytesPerArray);
+            result.ormData.resize(result.totalBytesPerArray);
+            
+            fread(result.albedoData.data(), 1, result.totalBytesPerArray, fCache);
+            fread(result.normalData.data(), 1, result.totalBytesPerArray, fCache);
+            fread(result.ormData.data(), 1, result.totalBytesPerArray, fCache);
+            
+            fclose(fCache);
+            
+            // Pad array to 256 layers to avoid out-of-bounds reads during memcpy in RenderManager
+            size_t requiredSize = result.totalBytesPerArray;
+            std::vector<uint8_t> defaultAlbedo = { 255, 0, 255, 255 }; 
+            std::vector<uint8_t> fallbackNormal = { 128, 128, 255, 255 }; 
+            std::vector<uint8_t> fallbackOrm = { 255, 128, 0, 255 };      
+            if (result.albedoData.size() < requiredSize) {
+                while (result.albedoData.size() < requiredSize) LoadAndAppendTexture("", result.albedoData, defaultAlbedo);
+            }
+            if (result.normalData.size() < requiredSize) {
+                while (result.normalData.size() < requiredSize) LoadAndAppendTexture("", result.normalData, fallbackNormal);
+            }
+            if (result.ormData.size() < requiredSize) {
+                while (result.ormData.size() < requiredSize) LoadAndAppendTexture("", result.ormData, fallbackOrm);
+            }
+            return result;
+        }
+        fclose(fCache);
+    }
+    
     size_t layerBytes = m_targetResolution * m_targetResolution * 4;
     result.totalBytesPerArray = layerBytes * materials.size();
     
@@ -47,6 +91,21 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
         LoadAndAppendTexture(mat.albedoPath, result.albedoData, fallbackAlbedo);
         LoadAndAppendTexture(mat.normalPath, result.normalData, fallbackNormal);
         LoadAndAppendTexture(mat.ormPath, result.ormData, fallbackOrm);
+    }
+    
+    // SAVE CACHE BINARIA
+    fopen_s(&fCache, cacheFile.c_str(), "wb");
+    if (fCache) {
+        int cachedLayerCount = result.layerCount;
+        int cachedRes = m_targetResolution;
+        fwrite(&cachedLayerCount, sizeof(int), 1, fCache);
+        fwrite(&cachedRes, sizeof(int), 1, fCache);
+        
+        fwrite(result.albedoData.data(), 1, result.totalBytesPerArray, fCache);
+        fwrite(result.normalData.data(), 1, result.totalBytesPerArray, fCache);
+        fwrite(result.ormData.data(), 1, result.totalBytesPerArray, fCache);
+        fclose(fCache);
+        std::cout << "[TexturePacker] Cache Binaria salvata su disco.\n";
     }
     
     // Pad array to 256 layers to avoid out-of-bounds reads during memcpy in RenderManager

@@ -36,5 +36,6 @@ protected:
     SharedContext* m_context;
     std::unique_ptr<fw::GameWorld> m_previewWorld;
     bool m_appInitialized = false;
+    std::string m_appName = "APP";
     float m_loadingSpinnerAngle = 0.0f;
 };

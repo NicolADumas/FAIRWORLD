@@ -20,14 +20,11 @@ LRESULT CALLBACK WindowManager::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             KillTimer(hwnd, 1);
             return 0;
         case WM_TIMER:
-            if (wParam == 1 && wm) {
-                wm->InvokeRenderCallback();
-            }
             return 0;
         case WM_SIZE:
             if (wParam != SIZE_MINIMIZED && wm) {
                 wm->SetResizeFlag();
-                wm->InvokeRenderCallback();
+                // NON renderizzare durante WM_SIZE per evitare freeze del Swapchain
             }
             return 0;
         case WM_DESTROY:

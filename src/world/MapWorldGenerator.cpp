@@ -14,7 +14,7 @@
 
 namespace fw {
 
-void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWorld& targetWorld, fw::JobSystem* jobs) {
+void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWorld& targetWorld, fw::JobSystem* jobs, float limitRadius, glm::vec3 focusPos) {
     if (planetIndex < 0 || planetIndex >= (int)doc.planets.size()) return;
     
     const PlanetMap& planet = doc.planets[planetIndex];
@@ -186,6 +186,10 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                     glm::vec3 spherePos;
                     glm::quat q;
                     if (GetSphericalChunkTransform(planet.planetRadius, global_cx, global_cz, spherePos, q)) {
+                        if (limitRadius > 0.0f) {
+                            float dist = glm::distance(focusPos, spherePos);
+                            if (dist > limitRadius) continue;
+                        }
                         generateChunk(global_cx, global_cz, cx, cy, face, spherePos, q);
                     }
                 }

@@ -70,9 +70,29 @@ void ChunkEditorState::RebuildChunkPreview() {
     auto& doc = m_context->projectManager->GetDocument();
     
     if (doc.terrainLibrary.empty() || m_activeTemplateIndex < 0 || m_activeTemplateIndex >= (int)doc.terrainLibrary.size()) {
+        m_previewWorld = std::make_unique<fw::GameWorld>();
+        m_previewWorld->Initialize(m_context);
+        m_previewWorld->InitializePhysics();
+        if (m_context) {
+            m_context->activeRegistry = &m_previewWorld->GetRegistry();
+            m_context->forgeWorld = m_previewWorld.get();
+            if (m_context->cacheManager) {
+                m_context->cacheManager->FlushCpuTransientCaches(m_context);
+                m_context->cacheManager->FlushGpuRenderCaches(m_context);
+            }
+        }
+        return;
     }
 
     std::cout << "[ChunkEditorState] Rigenerazione asincrona anteprima 3D Voxel per chunk corrente...\n";
+    
+    if (m_previewWorld) {
+        m_previewWorld->GetRegistry().clear();
+        if (m_context && m_context->cacheManager) {
+            m_context->cacheManager->FlushCpuTransientCaches(m_context);
+            m_context->cacheManager->FlushGpuRenderCaches(m_context);
+        }
+    }
 
     const auto& tmpl = doc.terrainLibrary[m_activeTemplateIndex];
 
@@ -94,17 +114,16 @@ void ChunkEditorState::RebuildChunkPreview() {
             maxZ = std::max(maxZ, sub.rectMax.y);
         }
     } else {
-        minX = -2; maxX = 2; minZ = -2; maxZ = 2; // Default se vuoto
+        minX = 0; maxX = 0; minZ = 0; maxZ = 0; // Se vuoto, genera solo 1 chunk (0,0)
     }
     
-    // Aggiungi un margine di 1 chunk per vedere i bordi
-    minX -= 1; maxX += 1; minZ -= 1; maxZ += 1;
+    // NESSUN MARGINE AGGIUNTO! Se l'utente disegna 16 chunk, ne vedrà ESATTAMENTE 16!
     
-    // Clamp estremo per evitare che se disegni a -16, +16 freezi l'intero PC (max 21x21 chunks)
-    minX = std::max(minX, -10);
-    maxX = std::min(maxX, 10);
-    minZ = std::max(minZ, -10);
-    maxZ = std::min(maxZ, 10);
+    // Clamp estremo per sicurezza (evita freeze accidentali)
+    minX = std::max(minX, -16);
+    maxX = std::min(maxX, 16);
+    minZ = std::max(minZ, -16);
+    maxZ = std::min(maxZ, 16);
 
     tempPlanet.planetRadius = 0.0f; // DEVE essere 0.0f per forzare la generazione piana dell'anteprima
     tempPlanet.minX = minX;
@@ -115,6 +134,8 @@ void ChunkEditorState::RebuildChunkPreview() {
     fw::MapRegion baseRegion;
     baseRegion.eulerAngles = glm::vec3(0.0f);
     baseRegion.angularRadius = tmpl.baseAngularRadius;
+    baseRegion.rectMin = glm::ivec2(minX, minZ); // Allinea il background ESATTAMENTE ai chunk visibili
+    baseRegion.rectMax = glm::ivec2(maxX, maxZ);
     baseRegion.type = tmpl.baseType;
     baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
     baseRegion.gravityModifier = tmpl.baseGravityModifier;
@@ -353,6 +374,18 @@ void ChunkEditorState::DrawUI() {
             ImVec2 mapMin = ChunkToScreen(-16, -16);
             ImVec2 mapMax = ChunkToScreen(16, 16);
             drawList->AddRect(mapMin, mapMax, IM_COL32(100, 100, 100, 255), 0.0f, 0, 2.0f);
+            
+            // --- DISEGNA GLI ASSI E IL CENTRO (Origin 0,0) ---
+            ImVec2 centerTop = ChunkToScreen(0, -16);
+            ImVec2 centerBottom = ChunkToScreen(0, 16);
+            ImVec2 centerLeft = ChunkToScreen(-16, 0);
+            ImVec2 centerRight = ChunkToScreen(16, 0);
+            drawList->AddLine(centerTop, centerBottom, IM_COL32(150, 50, 50, 200), 2.0f); // Asse Z (Verticale)
+            drawList->AddLine(centerLeft, centerRight, IM_COL32(50, 50, 150, 200), 2.0f); // Asse X (Orizzontale)
+            
+            ImVec2 centerPoint = ChunkToScreen(0, 0);
+            drawList->AddCircleFilled(centerPoint, 5.0f, IM_COL32(255, 255, 50, 255)); // Punto centrale
+            // -------------------------------------------------
             
             drawList->PushClipRect(mapMin, mapMax, true);
             
@@ -615,6 +648,7 @@ void ChunkEditorState::DrawUI() {
     }
     if (ImGui::Button("💾 SALVA LIBRO CHUNK (WORLD PROJECT)", ImVec2(-1, 30))) {
         m_context->projectManager->SaveProject();
+        if (m_previewWorld) m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi su disco!
         m_showSaveConfirmPopup = true;
     }
     ImGui::EndChild();

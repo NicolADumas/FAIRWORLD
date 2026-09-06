@@ -22,12 +22,10 @@ protected:
 private:
     void RebuildPlanetRoots();
     void DrawBuilderUI();
-    void DrawRuntimeUI();
     void CompileAndGenerate();
     
     // Architettura Specifica (Planet Mapper State)
     int m_activePlanetIndex = 0;
-    bool m_isBuilderMode = true;
     
     bool m_showPlacementTable = false;
     bool m_showSaveConfirmPopup = false;

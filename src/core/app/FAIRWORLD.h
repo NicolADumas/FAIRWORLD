@@ -62,6 +62,7 @@ public:
     bool Init();
     void Run();
     void Shutdown();
+    void SetRenderCallback(std::function<void()> callback);
 
     // Nuovi metodi per la State Machine Data-Driven (Fase 1.3)
     GameState GetCurrentState() const { return m_current; }

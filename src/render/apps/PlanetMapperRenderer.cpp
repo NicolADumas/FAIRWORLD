@@ -143,6 +143,9 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
                 if (!registry.get<fw::VisibilityComponent>(entity).enabled) continue;
             }
             
+            // SKIP CPU CHUNK MESHES (Rendered by Terrain Compute Pipeline)
+            if (registry.all_of<fw::VoxelChunkComponent>(entity)) continue;
+            
             const auto& mesh = view.get<fw::MeshComponent>(entity);
             const auto& trans = view.get<fw::TransformComponent>(entity);
 

@@ -39,6 +39,8 @@ namespace {
             float sdf = 0.0f;
             float blendDistance = 0.0f;
             
+            float normalizedDist = 0.0f;
+            
             if (biome.planetRadius > 0.0f && r.angularRadius > 0.0f) {
                 float pitch = glm::radians(r.eulerAngles.x);
                 float yaw = glm::radians(r.eulerAngles.y);
@@ -50,6 +52,7 @@ namespace {
                 
                 sdf = angle - r.angularRadius;
                 blendDistance = 0.08f;
+                normalizedDist = (r.angularRadius > 0.0f) ? std::clamp(angle / r.angularRadius, 0.0f, 1.0f) : 0.0f;
             } else {
                 float rMinX = r.rectMin.x * 16.0f;
                 float rMinZ = r.rectMin.y * 16.0f;
@@ -64,9 +67,12 @@ namespace {
                 if (r.shape == fw::RegionShape::Circle) {
                     float dist = glm::distance(glm::vec2(worldX, worldZ), glm::vec2(centerX, centerZ));
                     sdf = dist - halfW;
+                    normalizedDist = (halfW > 0.0f) ? std::clamp(dist / halfW, 0.0f, 1.0f) : 0.0f;
                 } else {
                     glm::vec2 d = glm::abs(glm::vec2(worldX - centerX, worldZ - centerZ)) - glm::vec2(halfW, halfH);
                     sdf = glm::length(glm::max(d, glm::vec2(0.0f))) + std::min(std::max(d.x, d.y), 0.0f);
+                    float maxDepth = std::min(halfW, halfH);
+                    normalizedDist = (maxDepth > 0.0f) ? std::clamp(1.0f + (sdf / maxDepth), 0.0f, 1.0f) : 0.0f;
                 }
                 blendDistance = 12.0f;
             }
@@ -76,8 +82,25 @@ namespace {
                 float rTerrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
                 float rHeight = 25.0f + (rTerrainVal * 25.0f * r.gravityModifier);
                 
-                if (r.type == fw::MapRegionType::Ocean) {
-                    rHeight = 8.0f + (rTerrainVal * 5.0f);
+                // Macro-shaping in base alla distanza dal centro (normalizedDist va da 0 al centro a 1 sui bordi)
+                if (r.type == fw::MapRegionType::Volcano) {
+                    // Vulcano: Picco centrale con un cratere
+                    float distFromCenter = normalizedDist;
+                    if (distFromCenter < 0.2f) { // Cratere interno
+                        float craterDepth = distFromCenter / 0.2f; // 0 al centro, 1 al bordo del cratere
+                        rHeight += 30.0f + (craterDepth * 15.0f); // Va da +30 a +45
+                    } else { // Pendici del vulcano
+                        float slope = 1.0f - ((distFromCenter - 0.2f) / 0.8f); // 1 al bordo del cratere, 0 alla base
+                        rHeight += slope * slope * 45.0f;
+                    }
+                } else if (r.type == fw::MapRegionType::Ocean) {
+                    // Oceano: Conca profonda al centro che sale verso i bordi
+                    float basin = 1.0f - normalizedDist;
+                    rHeight = std::max(1.0f, 8.0f + (rTerrainVal * 5.0f) - (basin * basin * 15.0f));
+                } else if (r.type == fw::MapRegionType::Desert) {
+                    // Deserto: Una grossa duna (convessa)
+                    float dome = 1.0f - normalizedDist;
+                    rHeight += dome * dome * 15.0f;
                 }
                 
                 float influence = std::clamp(1.0f - (sdf / blendDistance), 0.0f, 1.0f);
@@ -88,6 +111,15 @@ namespace {
                     surfaceBlock = r.surfaceBlockId;
                     subsurfaceBlock = r.subsurfaceBlockId;
                     colBiome = r.type;
+                }
+                
+                if (std::abs(worldX - 8.0f) < 0.1f && std::abs(worldZ - 8.0f) < 0.1f) {
+                    std::cout << "[DEBUG-SDF] al centro del chunk (8,8) -> biomeType: " << (int)r.type 
+                              << ", normalizedDist: " << normalizedDist 
+                              << ", sdf: " << sdf
+                              << ", rHeight (post-shape): " << rHeight 
+                              << ", finalHeight: " << finalHeight 
+                              << ", influence: " << influence << "\n";
                 }
             }
         }

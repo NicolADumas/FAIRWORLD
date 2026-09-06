@@ -283,6 +283,13 @@ void GameWorld::Update(float dt) {
             auto& dirty = dirtyChunks.get<ChunkDirtyComponent>(entity);
             if (dirty.pendingJob) continue;
 
+            // In PlanetMapper mode, we only need CPU data for raycasting, NOT for rendering.
+            // So we remove ChunkDirtyComponent and skip mesh generation entirely to save VRAM and CPU time.
+            if (m_context && m_context->engine && m_context->engine->GetGameMode() == GameMode::PlanetMapper) {
+                m_registry.remove<ChunkDirtyComponent>(entity);
+                continue;
+            }
+
             dirty.pendingJob = true;
             jobsDispatchedThisFrame++;
             auto& chunk = dirtyChunks.get<VoxelChunkComponent>(entity);

@@ -171,6 +171,7 @@ RaycastHit RaycastSystem::CastVoxel(SharedContext* context, const RaycastQuery& 
             bestHit.distance = currentDist;
             bestHit.targetEntity = chunkEnt;
             bestHit.voxelPosition = glm::ivec3(chunkData.cx * CHUNK_SIZE + currentPos.x, currentPos.y, chunkData.cz * CHUNK_SIZE + currentPos.z);
+            bestHit.worldPosition = query.ray.origin + query.ray.direction * currentDist;
             
             glm::ivec3 normal = lastPos - currentPos;
             if (normal == glm::ivec3(0,0,0)) {
