@@ -41,7 +41,8 @@ namespace {
             
             float normalizedDist = 0.0f;
             
-            if (biome.planetRadius > 0.0f && r.angularRadius > 0.0f) {
+            if (!biome.isFlat && r.angularRadius > 0.0f) {
+                float R = fw::PlanetMath::GetPlanetRadius(biome.planetSize);
                 float pitch = glm::radians(r.eulerAngles.x);
                 float yaw = glm::radians(r.eulerAngles.y);
                 glm::vec3 rCenterNormal(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
@@ -173,8 +174,8 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                 float worldZ = cz * 16.0f + z;
                 
                 glm::vec3 noisePos(worldX, 0.0f, worldZ);
-                if (biome.planetRadius > 0.0f) {
-                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, cx, cz, (float)x, 0.0f, (float)z, noisePos);
+                if (!biome.isFlat) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, cx, cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
                 SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
@@ -247,8 +248,8 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                 float worldZ = cz * 16.0f + z;
                 
                 glm::vec3 noisePos(worldX, 0.0f, worldZ);
-                if (biome.planetRadius > 0.0f) {
-                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, cx, cz, (float)x, 0.0f, (float)z, noisePos);
+                if (!biome.isFlat) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, cx, cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
                 SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
@@ -315,8 +316,8 @@ void OceanTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
                 float worldZ = chunk.cz * 16.0f + z;
                 
                 glm::vec3 noisePos(worldX, 0.0f, worldZ);
-                if (biome.planetRadius > 0.0f) {
-                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
+                if (!biome.isFlat) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
                 SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
@@ -370,8 +371,8 @@ void TundraTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                 float worldZ = chunk.cz * 16.0f + z;
                 
                 glm::vec3 noisePos(worldX, 0.0f, worldZ);
-                if (biome.planetRadius > 0.0f) {
-                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
+                if (!biome.isFlat) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
                 SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
@@ -424,8 +425,8 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
                 float worldZ = chunk.cz * 16.0f + z;
                 
                 glm::vec3 noisePos(worldX, 0.0f, worldZ);
-                if (biome.planetRadius > 0.0f) {
-                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetRadius, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
+                if (!biome.isFlat) {
+                    fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
                 SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);

@@ -54,7 +54,8 @@ bool MapDocument::SaveJSON(const std::string& path) {
             json pj;
             pj["type"] = static_cast<int>(planet.type);
             pj["name"] = planet.name;
-            pj["planetRadius"] = planet.planetRadius;
+            pj["planetSize"] = (int)planet.planetSize;
+            pj["isFlat"] = planet.isFlat;
             pj["regions"] = json::array();
 
             // Nuovi campi per DimensionsManager
@@ -199,7 +200,9 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 PlanetMap planet;
                 planet.type = static_cast<PlanetType>(pj.value("type", 0));
                 planet.name = pj.value("name", "Unknown");
-                planet.planetRadius = pj.value("planetRadius", 50.0f);
+                int pSizeInt = pj.value("planetSize", (int)fw::PlanetSize::Medium);
+                planet.planetSize = (fw::PlanetSize)pSizeInt;
+                planet.isFlat = pj.value("isFlat", false);
 
                 planet.minX = pj.value("minX", -6);
                 planet.maxX = pj.value("maxX", 6);
@@ -401,7 +404,7 @@ namespace fw {
 
 // Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
 static constexpr uint32_t FWB_MAGIC   = 0x46574231; // 'FWB1'
-static constexpr uint32_t FWB_VERSION = 3;
+static constexpr uint32_t FWB_VERSION = 4;
 
 bool MapDocument::SaveBinary(const std::string& path) const {
     try {
@@ -437,7 +440,8 @@ bool MapDocument::SaveBinary(const std::string& path) const {
         for (const auto& p : planets) {
             writeI32(f, (int32_t)p.type);
             writeStr(f, p.name);
-            writeF32(f, p.planetRadius);
+            writeU32(f, (uint32_t)p.planetSize);
+            writeU32(f, p.isFlat ? 1 : 0);
             writeF32(f, p.axialTilt);
             writeF32(f, p.yearLength);
             writeI32(f, p.minX); writeI32(f, p.maxX);
@@ -537,7 +541,8 @@ bool MapDocument::LoadBinary(const std::string& path) {
             PlanetMap p;
             p.type         = (PlanetType)readI32(f);
             p.name         = readStr(f);
-            p.planetRadius = readF32(f);
+            p.planetSize = (fw::PlanetSize)readU32(f);
+            p.isFlat = (readU32(f) != 0);
             p.axialTilt    = readF32(f);
             p.yearLength   = readF32(f);
             p.minX = readI32(f); p.maxX = readI32(f);

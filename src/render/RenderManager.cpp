@@ -626,9 +626,15 @@ bool RenderManager::CreateGraphicsPipeline() {
 
     // Pipeline Layout (Dati uniformi)
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4) + sizeof(glm::vec4); // model + colorOffset
+    uint32_t maxPush = m_core->GetDeviceProperties().limits.maxPushConstantsSize;
+    uint32_t standardPushSize = sizeof(glm::mat4) + sizeof(glm::vec4);
+    // PlanetMapper and PlayRenderer might push up to 128 bytes (PlayForgePushConstantData / PlanetMapperPushConstants)
+    // We allocate 128 bytes if supported, as Vulkan spec guarantees at least 128 bytes.
+    uint32_t layoutPushSize = std::min(maxPush, 128u);
+    
+    pushConstantRange.size = layoutPushSize;
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -2727,7 +2733,12 @@ bool RenderManager::CreateForgePipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(ForgePushConstantData);
+    uint32_t forgePushSize = sizeof(fw::ForgePushConstantData);
+    if (forgePushSize > maxPush) {
+        std::cerr << "[WARNING] maxPushConstantsSize (" << maxPush << ") < ForgePushConstantData (" << forgePushSize << ")" << std::endl;
+        forgePushSize = maxPush;
+    }
+    pushConstantRange.size = forgePushSize;
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -2887,7 +2898,12 @@ bool RenderManager::CreateGLBPipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(GLBPushConstantData);
+    uint32_t glbPushSize = sizeof(GLBPushConstantData);
+    if (glbPushSize > maxPush) {
+        std::cerr << "[WARNING] maxPushConstantsSize (" << maxPush << ") < GLBPushConstantData (" << glbPushSize << ")" << std::endl;
+        glbPushSize = maxPush;
+    }
+    pushConstantRange.size = glbPushSize;
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

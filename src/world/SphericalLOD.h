@@ -4,6 +4,7 @@
 #include <vector>
 #include "entt/entt.hpp"
 #include "MapDocument.h"
+#include "../core/utils/PlanetMath.h"
 
 class AssetManager;
 
@@ -45,6 +46,8 @@ class SphericalLODSystem {
 private:
     float DISTANCE_MULTIPLIER = 3.5f; // Distanza (in multipli del raggio del chunk) oltre cui il LOD si suddivide
     float m_planetRadius = 50.0f;
+    fw::PlanetSize m_planetSize = fw::PlanetSize::Medium;
+    bool m_isFlat = false;
 
     float GetThresholdForLOD(int lodLevel, float chunkRadius) {
         return chunkRadius * DISTANCE_MULTIPLIER * (lodLevel + 1);
@@ -55,7 +58,11 @@ private:
     void RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg);
 
 public:
-    void SetPlanetRadius(float radius) { m_planetRadius = radius; }
+    void SetPlanetSize(fw::PlanetSize size, bool isFlat) { 
+        m_planetSize = size; 
+        m_isFlat = isFlat;
+        m_planetRadius = fw::PlanetMath::GetPlanetRadius(size); 
+    }
     void SetDistanceMultiplier(float m) { DISTANCE_MULTIPLIER = m; }
     float GetDistanceMultiplier() const { return DISTANCE_MULTIPLIER; }
     void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg);

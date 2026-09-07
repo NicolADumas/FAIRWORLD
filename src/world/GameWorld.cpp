@@ -384,7 +384,7 @@ void GameWorld::Update(float dt) {
                 };
 
                 bool isSpherical = false;
-                float pRadius = 50.0f;
+                fw::PlanetSize pSize = fw::PlanetSize::Medium;
                 glm::vec3 chunkPos(0.0f);
                 glm::quat chunkRot(1.0f, 0.0f, 0.0f, 0.0f);
 
@@ -392,17 +392,17 @@ void GameWorld::Update(float dt) {
                     auto planetView = ctx->activeRegistry->view<fw::PlanetGeometryComponent>();
                     if (!planetView.empty()) {
                         isSpherical = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).isLogicalSphere;
-                        pRadius = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).planetRadius;
+                        pSize = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).planetSize;
                     }
                 }
                 if (isSpherical) {
-                    fw::MapWorldGenerator::GetSphericalChunkTransform(pRadius, chunkData->cx, chunkData->cz, chunkPos, chunkRot);
+                    fw::MapWorldGenerator::GetSphericalChunkTransform(pSize, chunkData->cx, chunkData->cz, chunkPos, chunkRot);
                 }
 
                 auto getVertexPos = [&](float vx, float vy, float vz) -> fw::Vec3 {
                     if (!isSpherical) return {vx, vy, vz};
                     glm::vec3 trueWorldPos;
-                    if (fw::MapWorldGenerator::GetTrueSphericalPosition(pRadius, chunkData->cx, chunkData->cz, vx, vy, vz, trueWorldPos)) {
+                    if (fw::MapWorldGenerator::GetTrueSphericalPosition(pSize, !isSpherical, chunkData->cx, chunkData->cz, vx, vy, vz, trueWorldPos)) {
                         glm::vec3 local = glm::inverse(chunkRot) * (trueWorldPos - chunkPos);
                         return {local.x, local.y, local.z};
                     }
@@ -558,16 +558,14 @@ entt::entity GameWorld::CreateChunkEntity(const std::string& name, const Vec3& p
     int cx = (int)position.x / 16;
     int cz = (int)position.z / 16;
 
-    if (m_registry.valid(m_planetEntity)) {
-        trans.parent = m_planetEntity;
-    }
-
     if (m_registry.valid(m_planetEntity) && m_registry.all_of<PlanetGeometryComponent>(m_planetEntity)) {
         auto& geom = m_registry.get<PlanetGeometryComponent>(m_planetEntity);
-        if (geom.planetRadius > 0.0f) {
+        if (!geom.isLogicalSphere) {
+            // Flat mode non ancora supportato per render sferico
+        } else {
             glm::vec3 sphPos;
             glm::quat sphRot;
-            if (fw::MapWorldGenerator::GetSphericalChunkTransform(geom.planetRadius, cx, cz, sphPos, sphRot)) {
+            if (fw::MapWorldGenerator::GetSphericalChunkTransform(geom.planetSize, cx, cz, sphPos, sphRot)) {
                 trans.location = {sphPos.x, sphPos.y, sphPos.z};
                 trans.rotation = {sphRot.x, sphRot.y, sphRot.z, sphRot.w};
             } else {
@@ -647,18 +645,18 @@ BlockType GameWorld::GetBlock(int x, int y, int z) const {
     int cx = x >= 0 ? x / 16 : (x - 15) / 16;
     int cz = z >= 0 ? z / 16 : (z - 15) / 16;
     
+    fw::PlanetSize pSize = fw::PlanetSize::Medium;
     bool isSpherical = false;
-    float planetRadius = 50.0f;
     if (m_registry.valid(m_planetEntity) && m_registry.all_of<fw::PlanetGeometryComponent>(m_planetEntity)) {
         const auto& geom = m_registry.get<fw::PlanetGeometryComponent>(m_planetEntity);
         isSpherical = geom.isLogicalSphere;
-        planetRadius = geom.planetRadius;
+        pSize = geom.planetSize;
     }
 
     if (isSpherical) {
         float flatX, localY, flatZ;
         // Mappa il punto centrale del blocco nello spazio sferico
-        fw::MapWorldGenerator::WorldToVoxelCoord(planetRadius, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), flatX, localY, flatZ);
+        fw::MapWorldGenerator::WorldToVoxelCoord(pSize, false, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), flatX, localY, flatZ);
         return GetBlockFlat((int)std::floor(flatX), (int)std::floor(localY), (int)std::floor(flatZ));
     }
     
@@ -745,17 +743,17 @@ void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
     int cx = x >= 0 ? x / 16 : (x - 15) / 16;
     int cz = z >= 0 ? z / 16 : (z - 15) / 16;
 
+    fw::PlanetSize pSize = fw::PlanetSize::Medium;
     bool isSpherical = false;
-    float planetRadius = 50.0f;
     if (m_registry.valid(m_planetEntity) && m_registry.all_of<fw::PlanetGeometryComponent>(m_planetEntity)) {
         const auto& geom = m_registry.get<fw::PlanetGeometryComponent>(m_planetEntity);
         isSpherical = geom.isLogicalSphere;
-        planetRadius = geom.planetRadius;
+        pSize = geom.planetSize;
     }
 
     if (isSpherical) {
         float flatX, localY, flatZ;
-        fw::MapWorldGenerator::WorldToVoxelCoord(planetRadius, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), flatX, localY, flatZ);
+        fw::MapWorldGenerator::WorldToVoxelCoord(pSize, false, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), flatX, localY, flatZ);
         SetBlockFlat((int)std::floor(flatX), (int)std::floor(localY), (int)std::floor(flatZ), type);
         return;
     }

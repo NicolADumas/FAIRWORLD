@@ -8,6 +8,9 @@
 #include <iostream>
 #include <cmath>
 
+#include "../../systems/PhysicsEngine.h"
+#include "../../core/utils/PlanetMath.h"
+
 #include "VisibilityPolicy.h"
 
 namespace fw {
@@ -63,10 +66,11 @@ void PlayRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 v
         auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
         float curvatureRadius = 0.0f;
-        if (context->forgeWorld && context->forgeWorld->GetRegistry().valid(context->forgeWorld->GetPlanetEntity())) {
-            auto& geom = context->forgeWorld->GetRegistry().get<fw::PlanetGeometryComponent>(context->forgeWorld->GetPlanetEntity());
-            if (!geom.isLogicalSphere) {
-                curvatureRadius = geom.planetRadius;
+        auto planetEnt = context->forgeWorld->GetPlanetEntity();
+        if (context->forgeWorld && registry.valid(planetEnt)) {
+            if (registry.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
+                const auto& geom = registry.get<fw::PlanetGeometryComponent>(planetEnt);
+                curvatureRadius = geom.isLogicalSphere ? fw::PlanetMath::GetPlanetRadius(geom.planetSize) : 0.0f;
             }
         }
 

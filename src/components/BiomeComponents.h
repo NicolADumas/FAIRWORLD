@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
-
+#include <vector>
+#include <glm/glm.hpp>
 #include "MapDocument.h"
+#include "../core/utils/PlanetMath.h"
 
 namespace fw {
 
@@ -18,7 +20,8 @@ struct BiomeDataComponent {
     bool hasBaseRegion = false;
     MapRegion baseRegion;
     std::vector<MapRegion> overlappingRegions;
-    float planetRadius = 50.0f; // Raggio sferico (se > 0)
+    fw::PlanetSize planetSize = fw::PlanetSize::Medium;
+    bool isFlat = false;
     glm::vec3 chunkCenterWorld = glm::vec3(0.0f);
 };
 

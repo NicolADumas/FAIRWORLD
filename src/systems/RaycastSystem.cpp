@@ -195,7 +195,7 @@ RaycastHit RaycastSystem::CastSphere(SharedContext* context, const RaycastQuery&
         const auto& doc = context->projectManager->GetDocument();
         // Just grab the first planet for now
         if (!doc.planets.empty()) {
-            sphereRadius = doc.planets[0].planetRadius;
+            sphereRadius = fw::PlanetMath::GetPlanetRadius(doc.planets[0].planetSize);
         }
     }
     

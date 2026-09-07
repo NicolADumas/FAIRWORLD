@@ -93,12 +93,14 @@ bool PlanetMapperState::InitApp() {
 void PlanetMapperState::RebuildPlanetRoots() {
     if (!m_context || !m_context->projectManager) return;
     const auto& doc = m_context->projectManager->GetDocument();
-    float R = 50.0f;
+    fw::PlanetSize pSize = fw::PlanetSize::Small;
+    bool isFlat = false;
     if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-        R = doc.planets[m_activePlanetIndex].planetRadius;
+        pSize = doc.planets[m_activePlanetIndex].planetSize;
+        isFlat = doc.planets[m_activePlanetIndex].isFlat;
     }
-
-    m_lodSystem.SetPlanetRadius(R);
+    float R = fw::PlanetMath::GetPlanetRadius(pSize);
+    m_lodSystem.SetPlanetSize(pSize, isFlat);
 
     if (m_previewWorld) {
         std::function<void(fw::ChunkNode&)> destroyTree = [&](fw::ChunkNode& n) {
@@ -252,8 +254,8 @@ void PlanetMapperState::UpdateApp(float dt) {
         m_lastRayHit = hit;
         
         if (hit.hit && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-            float pRadius = doc.planets[m_activePlanetIndex].planetRadius;
-            int resolution = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 16.0f));
+            float pRadius = fw::PlanetMath::GetPlanetRadius(doc.planets[m_activePlanetIndex].planetSize);
+            int resolution = fw::PlanetMath::GetEditorCanvasExtents(doc.planets[m_activePlanetIndex].planetSize);
             if (resolution < 1) resolution = 1;
             
             int col = 0, row = 0;
@@ -328,7 +330,7 @@ void PlanetMapperState::UpdateApp(float dt) {
 
         glm::mat4 vpMatrix = m_context->activeCameraView.projectionMatrix * m_context->activeCameraView.viewMatrix;
         if (pMap) {
-            m_lodSystem.SetPlanetRadius(pMap->planetRadius);
+            m_lodSystem.SetPlanetSize(pMap->planetSize, pMap->isFlat);
         }
     }
 
@@ -368,8 +370,9 @@ void PlanetMapperState::UpdateApp(float dt) {
                 auto ent = m_spawnPointMarkers[i];
                 if (!m_previewWorld->GetRegistry().valid(ent)) continue;
                 
-                float cx = sp.localX / p.planetRadius;
-                float cy = sp.localZ / p.planetRadius;
+                float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
+                float cx = sp.localX / R;
+                float cy = sp.localZ / R;
                 glm::vec3 dir(0.0f);
                 switch (sp.faceIndex) {
                     case 0: dir = glm::vec3(cx, cy, 1.0f); break;
@@ -380,7 +383,7 @@ void PlanetMapperState::UpdateApp(float dt) {
                     case 5: dir = glm::vec3(cx, -1.0f, cy); break;
                 }
                 dir = glm::normalize(dir);
-                glm::vec3 pos = dir * (p.planetRadius + sp.heightOffset);
+                glm::vec3 pos = dir * (R + sp.heightOffset);
                 
                 auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(ent);
                 trans.location = fw::Vec3(pos.x, pos.y, pos.z);
@@ -479,12 +482,13 @@ void PlanetMapperState::DrawBuilderUI() {
     if (ImGui::Button("➕ Nuovo Pianeta", ImVec2(-1, 30))) {
         fw::PlanetMap newPlanet;
         newPlanet.name = "Pianeta " + std::to_string(doc.planets.size() + 1);
-        newPlanet.planetRadius = 500.0f; // Raggio di default
+        newPlanet.planetSize = fw::PlanetSize::Medium; // Raggio di default
+        newPlanet.isFlat = false;
         newPlanet.axialTilt = 0.0f;
         newPlanet.yearLength = 365.0f;
         doc.planets.push_back(newPlanet);
         m_activePlanetIndex = (int)doc.planets.size() - 1;
-        m_lodSystem.SetPlanetRadius(newPlanet.planetRadius);
+        m_lodSystem.SetPlanetSize(newPlanet.planetSize, newPlanet.isFlat);
         RebuildPlanetRoots();
         PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
     }
@@ -496,7 +500,7 @@ void PlanetMapperState::DrawBuilderUI() {
                 bool isSelected = (m_activePlanetIndex == i);
                 if (ImGui::Selectable(doc.planets[i].name.c_str(), isSelected)) {
                     m_activePlanetIndex = i;
-                    m_lodSystem.SetPlanetRadius(doc.planets[i].planetRadius);
+                    m_lodSystem.SetPlanetSize(doc.planets[i].planetSize, doc.planets[i].isFlat);
                     RebuildPlanetRoots();
                 }
                 if (isSelected) {
@@ -516,9 +520,11 @@ void PlanetMapperState::DrawBuilderUI() {
             p.name = nameBuf;
         }
 
-        // Limite della grandezza abbassato a 1000.0f per ragioni di performance e stabilità memoria
-        if (ImGui::SliderFloat("Raggio del Pianeta (m)", &p.planetRadius, 50.0f, 1000.0f, "%.1f")) {
-            m_lodSystem.SetPlanetRadius(p.planetRadius);
+        const char* sizeNames[] = { "Tiny", "Small", "Medium", "Large", "Huge", "Gigantic" };
+        int currentSizeIndex = (int)p.planetSize;
+        if (ImGui::Combo("Grandezza Pianeta", &currentSizeIndex, sizeNames, IM_ARRAYSIZE(sizeNames))) {
+            p.planetSize = (fw::PlanetSize)currentSizeIndex;
+            m_lodSystem.SetPlanetSize(p.planetSize, p.isFlat);
             RebuildPlanetRoots();
         }
         
@@ -528,8 +534,9 @@ void PlanetMapperState::DrawBuilderUI() {
         ImGui::SliderFloat("Durata Anno (Giorni)", &p.yearLength, 10.0f, 1000.0f, "%.0f");
         ImGui::Spacing();
 
+        int N_lato = fw::PlanetMath::GetEditorCanvasExtents(p.planetSize);
         float S = 16.0f;
-        float N_lato = std::ceil((glm::pi<float>() * p.planetRadius) / (2.0f * S));
+        float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
         int C_totale = 6 * (int)(N_lato * N_lato);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Legge della Superficie Sferica (C = 4*PI*R^2 / S^2)");
         ImGui::Text("Dimensione Chunk Base: %.1f m | Risoluzione Faccia: %d x %d", S, (int)N_lato, (int)N_lato);
@@ -574,8 +581,9 @@ void PlanetMapperState::DrawBuilderUI() {
                     sp.faceIndex = m_lastRayHit.faceIndex;
                     float localU = (m_lastRayHit.uv.x * 2.0f) - 1.0f;
                     float localV = (m_lastRayHit.uv.y * 2.0f) - 1.0f;
-                    sp.localX = localU * p.planetRadius;
-                    sp.localZ = localV * p.planetRadius;
+                    float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
+                    sp.localX = localU * R;
+                    sp.localZ = localV * R;
                 } else {
                     // Fallback se si clicca nel vuoto
                     sp.faceIndex = 0;
@@ -602,9 +610,10 @@ void PlanetMapperState::DrawBuilderUI() {
                 const char* faceNames[] = { "+Z (Nord)", "-Z (Sud)", "+X (Est)", "-X (Ovest)", "+Y (Top/Cielo)", "-Y (Bottom/Nucleo)" };
                 ImGui::Combo("Faccia Base", &sp.faceIndex, faceNames, IM_ARRAYSIZE(faceNames));
                 
-                ImGui::SliderFloat("Offset X", &sp.localX, -p.planetRadius, p.planetRadius, "%.1f");
-                ImGui::SliderFloat("Offset Z", &sp.localZ, -p.planetRadius, p.planetRadius, "%.1f");
-                ImGui::SliderFloat("Offset Y (Altezza)", &sp.heightOffset, 0.0f, p.planetRadius + 300.0f, "%.1f");
+                float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
+                ImGui::SliderFloat("Offset X", &sp.localX, -R, R, "%.1f");
+                ImGui::SliderFloat("Offset Z", &sp.localZ, -R, R, "%.1f");
+                ImGui::SliderFloat("Offset Y (Altezza)", &sp.heightOffset, 0.0f, R + 300.0f, "%.1f");
                 
                 float c[4] = { sp.color.r, sp.color.g, sp.color.b, sp.color.a };
                 if (ImGui::ColorEdit4("Colore Prisma", c)) {
@@ -712,7 +721,7 @@ void PlanetMapperState::DrawBuilderUI() {
     // Distanza dalla superficie (se c'è un pianeta caricato)
     float surfaceDist = m_orbitDistance;
     if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-        surfaceDist = m_orbitDistance - doc.planets[m_activePlanetIndex].planetRadius;
+        surfaceDist = m_orbitDistance - fw::PlanetMath::GetPlanetRadius(doc.planets[m_activePlanetIndex].planetSize);
     }
     
     ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.2f, 1.0f), "POSIZIONE CAMERA:");
@@ -745,7 +754,7 @@ void PlanetMapperState::DrawBuilderUI() {
 
     if (m_showPlacementTable && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
         auto& currentPlanet = doc.planets[m_activePlanetIndex];
-        float pRadius = currentPlanet.planetRadius;
+        float pRadius = fw::PlanetMath::GetPlanetRadius(currentPlanet.planetSize);
         int N_lato = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 16.0f));
         if (N_lato < 1) N_lato = 1;
 
@@ -1095,15 +1104,16 @@ void PlanetMapperState::CompileAndGenerate() {
             gpuChunks.push_back(cd);
         }
 
-        rm->UploadTerrainData(gpuChunks, gpuRegions, planet.planetRadius);
+        rm->UploadTerrainData(gpuChunks, gpuRegions, fw::PlanetMath::GetPlanetRadius(planet.planetSize));
     }
 
     // m_isBuilderMode = false rimosso
     
-    if (currentPlanet.planetRadius > 0.0f) {
+    if (!currentPlanet.isFlat) {
+        float R = fw::PlanetMath::GetPlanetRadius(currentPlanet.planetSize);
         // Telecamera sferica
         m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-        m_orbitDistance = currentPlanet.planetRadius + 100.0f;
+        m_orbitDistance = R + 100.0f;
         m_orbitPitch = 40.0f;
         m_orbitYaw = 45.0f;
         std::cout << "[PlanetMapperState] Anteprima Voxel sferica completata! Camera in orbita a raggio: " << m_orbitDistance << "\n";

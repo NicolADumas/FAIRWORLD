@@ -62,7 +62,7 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
 
     glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
     float surfaceGravity = 9.81f; // G_EARTH
-    float planetRadius = 50.0f;
+    fw::PlanetSize pSize = fw::PlanetSize::Medium;
     bool isSpherical = false;
 
     // Usiamo const_cast temporaneo perché GetRegistry() non è marcata const in GameWorld
@@ -71,7 +71,7 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
         auto entity = *planetView.begin();
         auto& planet = planetView.get<fw::PlanetGeometryComponent>(entity);
         surfaceGravity = 9.81f; // Valore base fisso per ora
-        planetRadius = planet.planetRadius;
+        pSize = planet.planetSize;
         isSpherical = planet.isLogicalSphere;
     }
 
@@ -82,8 +82,9 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
             float distance = std::sqrt(distSq);
             glm::vec3 normDir = dirToCenter / distance;
             
-            float r_clamped = std::max(distance, planetRadius * 0.1f);
-            float ratio = planetRadius / r_clamped;
+            float R = fw::PlanetMath::GetPlanetRadius(pSize);
+            float r_clamped = std::max(distance, R * 0.1f);
+            float ratio = R / r_clamped;
             float currentG = surfaceGravity * (ratio * ratio);
             
             glm::vec3 gravityForce = normDir * (currentG * rb.mass);
@@ -129,10 +130,13 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     rb.isAgainstWall = false;
     
     bool isSpherical = false;
-    float planetRadius = 50.0f;
+    fw::PlanetSize pSize = fw::PlanetSize::Medium;
+    bool isFlat = false;
     auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
     if (!planetView.empty()) {
-        planetRadius = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).planetRadius;
+        auto& geom = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin());
+        pSize = geom.planetSize;
+        isFlat = !geom.isLogicalSphere;
         isSpherical = true;
     }
 
@@ -155,7 +159,7 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     if (isSpherical) {
         // Mappa la posizione globale in locale al pianeta, poi nello spazio continuo dei voxel piatti
         glm::vec3 localPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
-        fw::MapWorldGenerator::WorldToVoxelCoord(planetRadius, localPos, voxPos.x, voxPos.y, voxPos.z);
+        fw::MapWorldGenerator::WorldToVoxelCoord(pSize, isFlat, localPos, voxPos.x, voxPos.y, voxPos.z);
         
         // Calcola una rotazione locale approssimata basata sulla normale per la velocità
         glm::vec3 normal = glm::normalize(localPos);
@@ -580,7 +584,7 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         float local_x = voxPos.x - (gcx * 16.0f);
         float local_z = voxPos.z - (gcz * 16.0f);
         glm::vec3 localSpherePos;
-        fw::MapWorldGenerator::GetTrueSphericalPosition(planetRadius, gcx, gcz, local_x, voxPos.y, local_z, localSpherePos);
+        fw::MapWorldGenerator::GetTrueSphericalPosition(pSize, false, gcx, gcz, local_x, voxPos.y, local_z, localSpherePos);
         rb.position = glm::vec3(planetGlobalMatrix * glm::vec4(localSpherePos, 1.0f));
     } else {
         rb.position = voxPos;

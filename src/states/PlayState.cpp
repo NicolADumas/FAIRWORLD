@@ -160,15 +160,16 @@ bool PlayState::Init() {
     
     if (mapDocLoaded && !mapDoc.planets.empty()) {
         auto& p = mapDoc.planets[0];
-        if (p.planetRadius > 0.0f) {
-            spawnY = p.planetRadius + 150.0f; // Default fallback su raggio
+        if (!p.isFlat) {
+            spawnY = fw::PlanetMath::GetPlanetRadius(p.planetSize) + 150.0f; // Default fallback su raggio
             spawnPos = glm::vec3(0.0f, spawnY, 0.0f);
         }
         
         if (!p.spawnPoints.empty()) {
             auto& sp = p.spawnPoints[0];
-            float cx = sp.localX / p.planetRadius;
-            float cy = sp.localZ / p.planetRadius;
+            float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
+            float cx = sp.localX / R;
+            float cy = sp.localZ / R;
             glm::vec3 dir(0.0f);
             switch (sp.faceIndex) {
                 case 0: dir = glm::vec3(cx, cy, 1.0f); break; // Nord
@@ -179,7 +180,7 @@ bool PlayState::Init() {
                 case 5: dir = glm::vec3(cx, -1.0f, cy); break; // Bottom
             }
             dir = glm::normalize(dir);
-            spawnPos = dir * (p.planetRadius + sp.heightOffset);
+            spawnPos = dir * (R + sp.heightOffset);
             spawnY = spawnPos.y; // Update for rigidity below
             std::cout << "[PlayState] Utilizzo Spawn Point custom '" << sp.name << "' a posizione: " << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << "\n";
         }
@@ -247,8 +248,9 @@ bool PlayState::Init() {
                 auto planetEnt = m_context->forgeWorld->GetPlanetEntity();
                 if (registry.valid(planetEnt)) {
                     auto& geom = registry.get_or_emplace<fw::PlanetGeometryComponent>(planetEnt);
-                    geom.planetRadius = doc.planets[0].planetRadius;
-                    std::cout << "[PlayState] Raggio pianeta impostato a: " << geom.planetRadius << "\n";
+                    geom.planetSize = doc.planets[0].planetSize;
+                    geom.isLogicalSphere = !doc.planets[0].isFlat;
+                    std::cout << "[PlayState] Raggio pianeta impostato a size: " << (int)geom.planetSize << "\n";
                 }
             }
         } else {
@@ -263,15 +265,17 @@ bool PlayState::Init() {
     
     std::cout << "[DEBUG] [PlayState] Generazione Terreno iniziale attorno al giocatore...\n";
     
-    float originalRadius = 50.0f;
+    fw::PlanetSize originalSize = fw::PlanetSize::Medium;
+    bool originalFlat = false;
 
     // Al posto di spawnare chunk fittizi, utilizziamo il MapWorldGenerator
     // per generare i voxel chunk partendo dal JSON del pianeta!
     if (hasCustomMap && m_context->projectManager && m_context->jobSystem) {
         auto docCopy = m_context->projectManager->GetDocumentMutable();
         if (!docCopy.planets.empty()) {
-            originalRadius = docCopy.planets[0].planetRadius;
-            // docCopy.planets[0].planetRadius viene mantenuto per la generazione sferica 3D
+            originalSize = docCopy.planets[0].planetSize;
+            originalFlat = docCopy.planets[0].isFlat;
+            // docCopy.planets[0].planetSize viene mantenuto per la generazione sferica 3D
         }
         // Limitiamo la generazione iniziale della fisica a 10 chunk di distanza (160 unità)
         fw::MapWorldGenerator::Generate(docCopy, 0, *m_context->forgeWorld, m_context->jobSystem, 160.0f, spawnPos);
@@ -280,7 +284,8 @@ bool PlayState::Init() {
         // Fallback: Generiamo un pianeta standard se non c'è mappa custom
         fw::MapDocument dummyDoc;
         fw::PlanetMap pm;
-        pm.planetRadius = 50.0f; // SFERA VERA DI DEFAULT
+        pm.planetSize = fw::PlanetSize::Medium; // SFERA VERA DI DEFAULT
+        pm.isFlat = false;
         fw::MapRegion baseReg;
         baseReg.type = fw::MapRegionType::Forest;
         baseReg.perlinFrequency = 0.005f;
@@ -293,7 +298,8 @@ bool PlayState::Init() {
     
     if (m_context->forgeWorld && m_context->forgeWorld->GetRegistry().valid(m_context->forgeWorld->GetPlanetEntity())) {
         auto& geom = m_context->forgeWorld->GetRegistry().get<fw::PlanetGeometryComponent>(m_context->forgeWorld->GetPlanetEntity());
-        geom.planetRadius = originalRadius;
+        geom.planetSize = originalSize;
+        geom.isLogicalSphere = !originalFlat;
         geom.isLogicalSphere = true; // Il mondo per la logica di gioco e' una VERA SFERA 3D
     }
     
@@ -517,8 +523,9 @@ void PlayState::Render() {
                     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)btnColor);
                     if (ImGui::Button(label.c_str(), ImVec2(200, 30))) {
                         // Calcola la posizione 3D globale partendo dalle coordinate sferiche locali
-                        float cx = sp.localX / planet.planetRadius;
-                        float cy = sp.localZ / planet.planetRadius;
+                        float R = fw::PlanetMath::GetPlanetRadius(planet.planetSize);
+                        float cx = sp.localX / R;
+                        float cy = sp.localZ / R;
                         glm::vec3 dir(0.0f);
                         switch (sp.faceIndex) {
                             case 0: dir = glm::vec3(cx, cy, 1.0f); break;
@@ -529,7 +536,7 @@ void PlayState::Render() {
                             case 5: dir = glm::vec3(cx, -1.0f, cy); break;
                         }
                         if (glm::length(dir) > 0.001f) dir = glm::normalize(dir);
-                        glm::vec3 worldPos = dir * (planet.planetRadius + sp.heightOffset);
+                        glm::vec3 worldPos = dir * (R + sp.heightOffset);
 
                         // Teletrasporta il giocatore!
                         auto playerView = m_registry.view<CameraComponent, TransformComponent, PlayerControllerComponent, RigidBodyComponent>();
@@ -582,12 +589,15 @@ void PlayState::Render() {
 }
 
 void PlayState::RebuildPlanetRoots(const fw::MapDocument& doc, int activePlanetIndex) {
+    fw::PlanetSize pSize = fw::PlanetSize::Medium;
+    bool isFlat = false;
     float R = 50.0f;
     if (!doc.planets.empty() && activePlanetIndex >= 0 && activePlanetIndex < (int)doc.planets.size()) {
-        R = doc.planets[activePlanetIndex].planetRadius;
+       pSize = doc.planets[activePlanetIndex].planetSize;
+       isFlat = doc.planets[activePlanetIndex].isFlat;
+       R = fw::PlanetMath::GetPlanetRadius(pSize);
     }
-
-    m_lodSystem.SetPlanetRadius(R);
+    m_lodSystem.SetPlanetSize(pSize, isFlat);
 
     std::function<void(fw::ChunkNode&)> destroyTree = [&](fw::ChunkNode& n) {
         if (n.targetEntity != entt::null && m_context->forgeWorld->GetRegistry().valid(n.targetEntity)) {

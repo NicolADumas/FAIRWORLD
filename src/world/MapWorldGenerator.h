@@ -16,15 +16,15 @@ namespace fw {
         
         // Calcola la trasformazione sferica (posizione e rotazione) per un chunk dato il raggio del pianeta e le coordinate globali.
         // Restituisce false se il chunk si trova al di fuori dell'area di superficie sferica (pianeta finito).
-        static bool GetSphericalChunkTransform(float planetRadius, int global_cx, int global_cz, glm::vec3& outPos, glm::quat& outRot);
+        static bool GetSphericalChunkTransform(PlanetSize pSize, int global_cx, int global_cz, glm::vec3& outPos, glm::quat& outRot);
         
         // Trova la coordinata chunk 2D partendo da una posizione 3D
-        static void GetChunkCoordFromPosition(float planetRadius, const glm::vec3& worldPos, int& out_cx, int& out_cz);
+        static void GetChunkCoordFromPosition(PlanetSize pSize, bool isFlat, const glm::vec3& worldPos, int& out_cx, int& out_cz);
         
         // Mappa esattamente una posizione globale nel mondo sferico alle coordinate flat del mesher
-        static void WorldToVoxelCoord(float planetRadius, const glm::vec3& worldPos, float& out_flatX, float& out_localY, float& out_flatZ);
+        static void WorldToVoxelCoord(PlanetSize pSize, bool isFlat, const glm::vec3& worldPos, float& out_flatX, float& out_localY, float& out_flatZ);
         
-        static bool GetTrueSphericalPosition(float planetRadius, int global_cx, int global_cz, float local_x, float local_y, float local_z, glm::vec3& outWorldPos);
+        static bool GetTrueSphericalPosition(PlanetSize pSize, bool isFlat, int global_cx, int global_cz, float local_x, float local_y, float local_z, glm::vec3& outWorldPos);
         
         // Cerca il bioma più adatto date le variabili ambientali attuali
         static const ::BiomeDef* EvaluateBiome(float temp, float humidity, float height, AssetManager* assets);

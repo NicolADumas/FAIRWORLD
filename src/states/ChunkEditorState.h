@@ -4,6 +4,12 @@
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
+#include <unordered_set>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+
+#include "../core/utils/PlanetMath.h"
 
 struct SharedContext;
 
@@ -45,4 +51,9 @@ private:
     
     bool m_needsRebuild = false;
     float m_rebuildTimer = 0.0f;
+
+    // Stroke tracking
+    std::unordered_set<glm::ivec2> m_strokeProcessedCells;
+    bool m_isStrokeActive = false;
+    fw::PlanetSize m_previewPlanetSize = fw::PlanetSize::Medium;
 };

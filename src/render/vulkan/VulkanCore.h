@@ -40,6 +40,8 @@ public:
     const std::vector<VkImage>& GetSwapchainImages() const { return m_swapchainImages; }
     const std::vector<VkImageView>& GetSwapchainImageViews() const { return m_swapchainImageViews; }
     
+    const VkPhysicalDeviceProperties& GetDeviceProperties() const { return m_deviceProperties; }
+    
     VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
     VkQueue GetPresentQueue() const { return m_presentQueue; }
     VkQueue GetTransferQueue() const { return m_transferQueue; }
@@ -52,6 +54,7 @@ private:
 
     VkInstance m_instance{ VK_NULL_HANDLE };
     VkPhysicalDevice m_physicalDevice{ VK_NULL_HANDLE };
+    VkPhysicalDeviceProperties m_deviceProperties{};
     VkDevice m_device{ VK_NULL_HANDLE };
 
     std::mutex m_queueMutex;

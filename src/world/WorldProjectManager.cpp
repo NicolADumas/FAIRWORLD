@@ -19,7 +19,8 @@ namespace fw {
             fw::PlanetMap megaPlanet;
             megaPlanet.type = ::PlanetType::EarthPrime;
             megaPlanet.name = "Fairworld Prime";
-            megaPlanet.planetRadius = 50.0f;
+            megaPlanet.planetSize = fw::PlanetSize::Large;
+            megaPlanet.isFlat = false;
             megaPlanet.minX = -16;
             megaPlanet.maxX = 16;
             megaPlanet.minZ = -16;

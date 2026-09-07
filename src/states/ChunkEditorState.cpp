@@ -119,12 +119,14 @@ void ChunkEditorState::RebuildChunkPreview() {
     // NESSUN MARGINE AGGIUNTO! Se l'utente disegna 16 chunk, ne vedrà ESATTAMENTE 16!
     
     // Clamp estremo per sicurezza (evita freeze accidentali)
-    minX = std::max(minX, -16);
-    maxX = std::min(maxX, 16);
-    minZ = std::max(minZ, -16);
-    maxZ = std::min(maxZ, 16);
+    int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
+    minX = std::max(minX, -extents);
+    maxX = std::min(maxX, extents);
+    minZ = std::max(minZ, -extents);
+    maxZ = std::min(maxZ, extents);
 
-    tempPlanet.planetRadius = 0.0f; // DEVE essere 0.0f per forzare la generazione piana dell'anteprima
+    tempPlanet.isFlat = true; // DEVE essere true per forzare la generazione piana dell'anteprima
+    tempPlanet.planetSize = m_previewPlanetSize;
     tempPlanet.minX = minX;
     tempPlanet.maxX = maxX;
     tempPlanet.minZ = minZ;
@@ -371,15 +373,16 @@ void ChunkEditorState::DrawUI() {
                                   (int)std::floor(sy / (BASE_CHUNK_SIZE * m_canvasZoom)));
             };
             
-            ImVec2 mapMin = ChunkToScreen(-16, -16);
-            ImVec2 mapMax = ChunkToScreen(16, 16);
+            int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
+            ImVec2 mapMin = ChunkToScreen(-extents, -extents);
+            ImVec2 mapMax = ChunkToScreen(extents, extents);
             drawList->AddRect(mapMin, mapMax, IM_COL32(100, 100, 100, 255), 0.0f, 0, 2.0f);
             
             // --- DISEGNA GLI ASSI E IL CENTRO (Origin 0,0) ---
-            ImVec2 centerTop = ChunkToScreen(0, -16);
-            ImVec2 centerBottom = ChunkToScreen(0, 16);
-            ImVec2 centerLeft = ChunkToScreen(-16, 0);
-            ImVec2 centerRight = ChunkToScreen(16, 0);
+            ImVec2 centerTop = ChunkToScreen(0, -extents);
+            ImVec2 centerBottom = ChunkToScreen(0, extents);
+            ImVec2 centerLeft = ChunkToScreen(-extents, 0);
+            ImVec2 centerRight = ChunkToScreen(extents, 0);
             drawList->AddLine(centerTop, centerBottom, IM_COL32(150, 50, 50, 200), 2.0f); // Asse Z (Verticale)
             drawList->AddLine(centerLeft, centerRight, IM_COL32(50, 50, 150, 200), 2.0f); // Asse X (Orizzontale)
             
@@ -404,39 +407,72 @@ void ChunkEditorState::DrawUI() {
                 }
             }
             
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+                m_isStrokeActive = false;
+                m_strokeProcessedCells.clear();
+            }
+
             if (canvasHovered) {
                 if (m_isBrushModeActive && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    m_isStrokeActive = true;
                     // Crea nuova istanza (pennello continuo)
                     int halfB = m_brushSize / 2;
                     glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
-                    
-                    bool canAdd = true;
                     glm::ivec2 targetMax = glm::ivec2(cMouseCoord.x - halfB + m_brushSize - 1, cMouseCoord.y - halfB + m_brushSize - 1);
-                    for (const auto& existing : activeTemplate.subRegions) {
-                        if (existing.rectMin == targetMin &&
-                            existing.rectMax == targetMax &&
-                            existing.type == static_cast<fw::MapRegionType>(m_paintRegionType) &&
-                            existing.shape == static_cast<fw::RegionShape>(m_paintBrushShape) &&
-                            existing.surfaceBlockId == m_paintSurfaceBlock &&
-                            existing.subsurfaceBlockId == m_paintSubsurfaceBlock) {
-                            canAdd = false;
-                            break;
+                    
+                    if (m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
+                        m_strokeProcessedCells.insert(targetMin);
+                        bool canAdd = true;
+                        for (const auto& existing : activeTemplate.subRegions) {
+                            if (existing.rectMin == targetMin &&
+                                existing.rectMax == targetMax &&
+                                existing.type == static_cast<fw::MapRegionType>(m_paintRegionType) &&
+                                existing.shape == static_cast<fw::RegionShape>(m_paintBrushShape) &&
+                                existing.surfaceBlockId == m_paintSurfaceBlock &&
+                                existing.subsurfaceBlockId == m_paintSubsurfaceBlock) {
+                                canAdd = false;
+                                break;
+                            }
+                        }
+
+                        if (canAdd) {
+                            fw::MapRegion nr;
+                            nr.rectMin = targetMin;
+                            nr.rectMax = targetMax;
+                            nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
+                            nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
+                            nr.surfaceBlockId = m_paintSurfaceBlock;
+                            nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
+                            nr.perlinFrequency = 0.005f;
+                            nr.gravityModifier = 1.0f;
+                            activeTemplate.subRegions.push_back(nr);
+                            m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
+                            if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                         }
                     }
-
-                    if (canAdd) {
-                        fw::MapRegion nr;
-                        nr.rectMin = targetMin;
-                        nr.rectMax = targetMax;
-                        nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
-                        nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
-                        nr.surfaceBlockId = m_paintSurfaceBlock;
-                        nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
-                        nr.perlinFrequency = 0.005f;
-                        nr.gravityModifier = 1.0f;
-                        activeTemplate.subRegions.push_back(nr);
-                        m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
-                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                } else if (m_isBrushModeActive && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+                    m_isStrokeActive = true;
+                    // Gomma: elimina i chunk (minichunk) sotto il pennello
+                    int halfB = m_brushSize / 2;
+                    glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
+                    glm::ivec2 targetMax = glm::ivec2(cMouseCoord.x - halfB + m_brushSize - 1, cMouseCoord.y - halfB + m_brushSize - 1);
+                    
+                    if (m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
+                        m_strokeProcessedCells.insert(targetMin);
+                        bool erased = false;
+                        for (auto it = activeTemplate.subRegions.begin(); it != activeTemplate.subRegions.end(); ) {
+                            if (std::max(it->rectMin.x, targetMin.x) <= std::min(it->rectMax.x, targetMax.x) &&
+                                std::max(it->rectMin.y, targetMin.y) <= std::min(it->rectMax.y, targetMax.y)) {
+                                it = activeTemplate.subRegions.erase(it);
+                                erased = true;
+                            } else {
+                                ++it;
+                            }
+                        }
+                        if (erased) {
+                            m_selectedSubRegionIndex = -1; // Deseleziona
+                            if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                        }
                     }
                 } else if (!m_isBrushModeActive && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     // Seleziona istanza
@@ -532,7 +568,11 @@ void ChunkEditorState::DrawUI() {
                 drawList->AddRect(sMin, sMax, IM_COL32(255, 255, 0, 255));
             }
             
-            ImGui::TextDisabled("Click sx: Seleziona | Shift+Click sx: Crea Istanza | Trascina: Sposta");
+            if (m_isBrushModeActive) {
+                ImGui::TextDisabled("Modalita' Pennello: [Click Sx] Disegna / [Click Dx] Gomma (Cancella)");
+            } else {
+                ImGui::TextDisabled("Modalita' Selezione: [Click Sx] Seleziona | [Trascina] Sposta | [Click Dx] Elimina singola");
+            }
             ImGui::EndChild();
         }
 
@@ -556,6 +596,14 @@ void ChunkEditorState::DrawUI() {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
                 if (ImGui::Button("MODALITÀ PENNELLO: OFF (Clicca per Dipingere)", ImVec2(-1, 35))) m_isBrushModeActive = true;
                 ImGui::PopStyleColor();
+            }
+            ImGui::Spacing();
+            
+            const char* planetSizes[] = { "Tiny (3x3)", "Micro (5x5)", "Small (7x7)", "Medium (11x11)", "Large (21x21)", "Huge (41x41)" };
+            int pSizeIdx = static_cast<int>(m_previewPlanetSize);
+            if (ImGui::Combo("Dimensione Globo", &pSizeIdx, planetSizes, IM_ARRAYSIZE(planetSizes))) {
+                m_previewPlanetSize = static_cast<fw::PlanetSize>(pSizeIdx);
+                m_needsRebuild = true; m_rebuildTimer = 0.2f;
             }
             ImGui::Spacing();
 

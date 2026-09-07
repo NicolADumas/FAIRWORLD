@@ -144,6 +144,8 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     glm::vec3 p01 = node->p01;
     glm::vec3 p11 = node->p11;
     float planetRadius = m_planetRadius;
+    fw::PlanetSize planetSize = m_planetSize;
+    bool isFlat = m_isFlat;
     
     std::string meshName = "LOD_" + std::to_string(node->lodLevel) + "_" + std::to_string(reinterpret_cast<uintptr_t>(node));
     
@@ -162,7 +164,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     
     // NOTA BENE: NON catturiamo 'node' come raw pointer, perché 'MergeNode' potrebbe distruggerlo nel thread principale prima che il job finisca!
     auto* matReg = world ? world->GetMaterialRegistry() : nullptr;
-    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, safeRegions, blockReg, matReg, centerPos, boundsRadius]() {
+    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, planetSize, isFlat, safeRegions, blockReg, matReg, centerPos, boundsRadius]() {
         MeshComponent mesh;
         mesh.name = meshName;
         mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
@@ -217,7 +219,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 activeRegion.perlinFrequency = 0.005f; // Base
                 
                 // --- GRID MAPPING LOGIC (Legge Sferica Esatta) ---
-                int N_lato = (int)std::ceil((glm::pi<float>() * planetRadius) / (2.0f * 16.0f));
+                int N_lato = fw::PlanetMath::GetEditorCanvasExtents(planetSize);
                 if (N_lato < 1) N_lato = 1;
                 
                 int face = -1;

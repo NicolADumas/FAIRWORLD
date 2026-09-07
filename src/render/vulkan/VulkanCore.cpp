@@ -232,9 +232,8 @@ bool VulkanCore::PickPhysicalDevice(XrManager* xrManager) {
         }
     }
 
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
-    std::cout << "[VULKAN] GPU Selezionata: " << deviceProperties.deviceName << std::endl;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &m_deviceProperties);
+    std::cout << "[VULKAN] GPU Selezionata: " << m_deviceProperties.deviceName << std::endl;
 
     return true;
 }

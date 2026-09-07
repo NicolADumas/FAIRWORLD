@@ -5,6 +5,7 @@
 #include "World.h" // Assicurati che PlanetType sia definito qui
 
 #include "DimensionsManager.h" // Aggiunto per ChunkMetadata e ChunkCoord
+#include "PlanetMath.h"
 
 namespace fw {
 
@@ -103,7 +104,8 @@ struct PlanetMap {
     std::vector<PlanetChunkInstance> chunkInstances;
     std::vector<SpawnPoint> spawnPoints;
     
-    float planetRadius = 50.0f; // Raggio del pianeta
+    PlanetSize planetSize = PlanetSize::Medium; // Sostituisce planetRadius
+    bool isFlat = false;        // Sostituisce il check planetRadius <= 0.0f
     float axialTilt = 23.44f;   // Inclinazione asse terrestre (gradi)
     float yearLength = 365.0f;  // Durata dell'anno (in giorni)
     
