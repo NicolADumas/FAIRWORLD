@@ -86,9 +86,9 @@ namespace fw {
             std::cout << "[WorldProjectManager] Progetto caricato correttamente da: " << targetPath << "\n";
         } else {
             std::cout << "[WorldProjectManager] File progetto non trovato o non valido in: " << targetPath << ". Inizializzazione predefinita.\n";
+            EnsureDefaultPlanetExists();
         }
 
-        EnsureDefaultPlanetExists();
         if (registry) {
             ValidateBlocks(registry);
         }

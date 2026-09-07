@@ -50,6 +50,9 @@ struct MapRegion {
     int faceIndex = -1;
     int gridX = -1;
     int gridY = -1;
+    
+    // Generazione sparsa
+    bool isBackgroundFill = false; // Se true, questa regione non forza la generazione del chunk, serve solo come base
 };
 
 // Struttura serializzabile per una cella della griglia

@@ -53,7 +53,6 @@ bool PlanetMapperState::InitApp() {
     }
 
     if (m_context && m_context->projectManager) {
-        m_context->projectManager->EnsureDefaultPlanetExists();
         m_context->projectManager->ValidateBlocks(m_context->blockRegistry);
     }
 
@@ -650,7 +649,11 @@ void PlanetMapperState::DrawBuilderUI() {
     
     if (ImGui::Button("\xF0\x9F\x92\xBE SALVA MONDO E MAPPA 3D (WORLD PROJECT)", ImVec2(-1, 30))) {
         PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
-        if (m_previewWorld) m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin che sovrascrivono la mappa!
+        if (m_previewWorld) {
+            m_previewWorld->CancelJobs();
+            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
+            m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin che sovrascrivono la mappa!
+        }
         m_showSaveConfirmPopup = true;
     }
     if (ImGui::Button("🚀 ESPLORA MAPPA IN PRIMA PERSONA (VOXEL TEST)", ImVec2(-1, 30))) {
@@ -659,7 +662,11 @@ void PlanetMapperState::DrawBuilderUI() {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 1.0f));
     if (ImGui::Button("🌍 CARICA MAPPA COME PRINCIPALE E APRI IN FAIRWORLD PLAY", ImVec2(-1, 30))) {
         m_context->projectManager->SaveProject();
-        if (m_previewWorld) m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin prima di giocare!
+        if (m_previewWorld) {
+            m_previewWorld->CancelJobs();
+            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
+            m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin prima di giocare!
+        }
         m_context->targetGameJsonPath = "saves/map/world_map.json";
         m_context->engine->SetGameMode(GameMode::Play);
         m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));

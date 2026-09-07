@@ -47,7 +47,6 @@ bool ChunkEditorState::InitApp() {
     }
 
     if (m_context && m_context->projectManager) {
-        m_context->projectManager->EnsureDefaultPlanetExists();
         m_context->projectManager->ValidateBlocks(m_context->blockRegistry);
     }
 
@@ -140,6 +139,7 @@ void ChunkEditorState::RebuildChunkPreview() {
     baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
     baseRegion.gravityModifier = tmpl.baseGravityModifier;
     baseRegion.seed = tmpl.seed;
+    baseRegion.isBackgroundFill = true;
     tempPlanet.regions.push_back(baseRegion);
 
     for (const auto& sub : tmpl.subRegions) {
@@ -648,7 +648,11 @@ void ChunkEditorState::DrawUI() {
     }
     if (ImGui::Button("💾 SALVA LIBRO CHUNK (WORLD PROJECT)", ImVec2(-1, 30))) {
         m_context->projectManager->SaveProject();
-        if (m_previewWorld) m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi su disco!
+        if (m_previewWorld) {
+            m_previewWorld->CancelJobs();
+            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
+            m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi su disco!
+        }
         m_showSaveConfirmPopup = true;
     }
     ImGui::EndChild();

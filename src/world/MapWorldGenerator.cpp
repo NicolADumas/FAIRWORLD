@@ -196,9 +196,35 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             }
         }
     } else {
+        bool hasOnlyBackground = true;
+        for (const auto& r : combinedRegions) {
+            if (!r.isBackgroundFill) {
+                hasOnlyBackground = false;
+                break;
+            }
+        }
+        
         for (int cz = dimManager.GetMinZ(); cz <= dimManager.GetMaxZ(); ++cz) {
             for (int cx = dimManager.GetMinX(); cx <= dimManager.GetMaxX(); ++cx) {
-                generateChunk(cx, cz, cx, cz, -1, glm::vec3(cx * 16.0f, 0.0f, cz * 16.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+                bool shouldSpawn = false;
+                
+                if (combinedRegions.empty() || hasOnlyBackground) {
+                    shouldSpawn = true; // Fallback for completely empty maps or maps with only background
+                } else {
+                    for (const auto& r : combinedRegions) {
+                        if (r.isBackgroundFill) continue;
+                        float margin = 2.0f; // Margine per overlapping
+                        if (cx >= r.rectMin.x - margin && cx <= r.rectMax.x + margin &&
+                            cz >= r.rectMin.y - margin && cz <= r.rectMax.y + margin) {
+                            shouldSpawn = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (shouldSpawn) {
+                    generateChunk(cx, cz, cx, cz, -1, glm::vec3(cx * 16.0f, 0.0f, cz * 16.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+                }
             }
         }
     }

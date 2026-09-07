@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include <filesystem>
+#include <iostream>
 #include "ForgeComponents.h"
 
 namespace fw {
@@ -37,13 +38,26 @@ public:
     }
 
     void ClearDiskCache() const {
+        std::cout << "[WorldChunkManager] Tentativo di eliminazione cache disco in: " << m_saveDir << "\n";
         try {
             if (std::filesystem::exists(m_saveDir)) {
-                std::filesystem::remove_all(m_saveDir);
-                std::filesystem::create_directories(m_saveDir);
+                int count = 0;
+                for (const auto& entry : std::filesystem::directory_iterator(m_saveDir)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".bin") {
+                        std::error_code ec;
+                        if (std::filesystem::remove(entry.path(), ec)) {
+                            count++;
+                        } else {
+                            std::cerr << "[WorldChunkManager] Impossibile eliminare " << entry.path() << ": " << ec.message() << "\n";
+                        }
+                    }
+                }
+                std::cout << "[WorldChunkManager] Cache pulita! " << count << " file .bin eliminati con successo.\n";
+            } else {
+                std::cout << "[WorldChunkManager] Nessuna cache trovata in " << m_saveDir << ".\n";
             }
-        } catch (...) {
-            // Ignora eventuali errori di file system (es. permessi)
+        } catch (const std::exception& e) {
+            std::cerr << "[WorldChunkManager] ERRORE durante la pulizia della cache: " << e.what() << "\n";
         }
     }
 
