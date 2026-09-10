@@ -65,6 +65,7 @@ struct ChunkDataExport {
 struct TerrainTemplate {
     std::string id = "default_terrain";
     std::string name = "Nuovo Terreno";
+    PlanetSize planetSize = PlanetSize::Small; // Associato al Macro-Chunk
     MapRegionType baseType = MapRegionType::Forest;
     float basePerlinFrequency = 0.03f;
     float baseGravityModifier = 1.0f;

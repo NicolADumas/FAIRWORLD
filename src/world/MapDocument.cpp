@@ -24,6 +24,7 @@ bool MapDocument::SaveJSON(const std::string& path) {
             json tj;
             tj["id"] = t.id;
             tj["name"] = t.name;
+            tj["planetSize"] = static_cast<int>(t.planetSize);
             tj["baseType"] = static_cast<int>(t.baseType);
             tj["basePerlinFrequency"] = t.basePerlinFrequency;
             tj["baseGravityModifier"] = t.baseGravityModifier;
@@ -152,6 +153,7 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 TerrainTemplate t;
                 t.id = tj.value("id", "default");
                 t.name = tj.value("name", "Unknown");
+                t.planetSize = static_cast<fw::PlanetSize>(tj.value("planetSize", (int)fw::PlanetSize::Small));
                 t.baseType = static_cast<MapRegionType>(tj.value("baseType", 0));
                 t.basePerlinFrequency = tj.value("basePerlinFrequency", 0.03f);
                 t.baseGravityModifier = tj.value("baseGravityModifier", 1.0f);
@@ -424,6 +426,7 @@ bool MapDocument::SaveBinary(const std::string& path) const {
         for (const auto& t : terrainLibrary) {
             writeStr(f, t.id);
             writeStr(f, t.name);
+            writeI32(f, (int32_t)t.planetSize);
             writeI32(f, (int32_t)t.baseType);
             writeF32(f, t.basePerlinFrequency);
             writeF32(f, t.baseGravityModifier);
@@ -520,6 +523,7 @@ bool MapDocument::LoadBinary(const std::string& path) {
             TerrainTemplate t;
             t.id                   = readStr(f);
             t.name                 = readStr(f);
+            t.planetSize           = (fw::PlanetSize)readI32(f);
             t.baseType             = (MapRegionType)readI32(f);
             t.basePerlinFrequency  = readF32(f);
             t.baseGravityModifier  = readF32(f);

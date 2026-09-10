@@ -8,6 +8,7 @@
 
 #include "BlockRegistry.h"
 #include "MapWorldGenerator.h"
+#include "ShapeMath.h"
 
 namespace fw {
 
@@ -34,6 +35,10 @@ namespace {
         fw::MapRegionType colBiome = biome.baseRegion.type;
         
         glm::vec3 colNormal = glm::normalize(biome.chunkCenterWorld);
+        
+        float totalWeight = 0.0f;
+        float weightedHeightSum = 0.0f;
+        float maxInfluence = 0.0f;
         
         for (const auto& r : biome.overlappingRegions) {
             float sdf = 0.0f;
@@ -65,17 +70,16 @@ namespace {
                 float halfW = (rMaxX - rMinX) * 0.5f;
                 float halfH = (rMaxZ - rMinZ) * 0.5f;
                 
-                if (r.shape == fw::RegionShape::Circle) {
-                    float dist = glm::distance(glm::vec2(worldX, worldZ), glm::vec2(centerX, centerZ));
-                    sdf = dist - halfW;
-                    normalizedDist = (halfW > 0.0f) ? std::clamp(dist / halfW, 0.0f, 1.0f) : 0.0f;
-                } else {
-                    glm::vec2 d = glm::abs(glm::vec2(worldX - centerX, worldZ - centerZ)) - glm::vec2(halfW, halfH);
-                    sdf = glm::length(glm::max(d, glm::vec2(0.0f))) + std::min(std::max(d.x, d.y), 0.0f);
-                    float maxDepth = std::min(halfW, halfH);
-                    normalizedDist = (maxDepth > 0.0f) ? std::clamp(1.0f + (sdf / maxDepth), 0.0f, 1.0f) : 0.0f;
-                }
-                blendDistance = 12.0f;
+                glm::vec2 localPos(worldX - centerX, worldZ - centerZ);
+                glm::vec2 extents(halfW, halfH);
+                
+                sdf = fw::ShapeMath::EvaluateSDF(r.shape, localPos, extents);
+                
+                // Approximate normalizedDist for macro-shaping
+                float maxDepth = std::min(halfW, halfH);
+                normalizedDist = (maxDepth > 0.0f) ? std::clamp(1.0f + (sdf / maxDepth), 0.0f, 1.0f) : 0.0f;
+                // Scale blendDistance so small brush sizes don't create huge regions
+                blendDistance = std::min(16.0f, std::max(2.0f, maxDepth * 0.4f));
             }
             
             if (sdf < blendDistance) {
@@ -106,24 +110,29 @@ namespace {
                 
                 float influence = std::clamp(1.0f - (sdf / blendDistance), 0.0f, 1.0f);
                 influence = influence * influence * (3.0f - 2.0f * influence);
-                finalHeight = glm::mix(finalHeight, rHeight, influence);
                 
-                if (influence > 0.5f) {
-                    surfaceBlock = r.surfaceBlockId;
-                    subsurfaceBlock = r.subsurfaceBlockId;
-                    colBiome = r.type;
-                }
-                
-                if (std::abs(worldX - 8.0f) < 0.1f && std::abs(worldZ - 8.0f) < 0.1f) {
-                    std::cout << "[DEBUG-SDF] al centro del chunk (8,8) -> biomeType: " << (int)r.type 
-                              << ", normalizedDist: " << normalizedDist 
-                              << ", sdf: " << sdf
-                              << ", rHeight (post-shape): " << rHeight 
-                              << ", finalHeight: " << finalHeight 
-                              << ", influence: " << influence << "\n";
+                if (influence > 0.0f) {
+                    weightedHeightSum += rHeight * influence;
+                    totalWeight += influence;
+                    
+                    if (influence > maxInfluence) {
+                        maxInfluence = influence;
+                        if (influence > 0.5f) { // Dominance threshold per i materiali
+                            surfaceBlock = r.surfaceBlockId;
+                            subsurfaceBlock = r.subsurfaceBlockId;
+                            colBiome = r.type;
+                        }
+                    }
                 }
             }
         }
+        
+        if (totalWeight > 0.0001f) {
+            float normalizedWeight = std::clamp(totalWeight, 0.0f, 1.0f);
+            float blendedHeight = weightedHeightSum / totalWeight;
+            finalHeight = glm::mix(baseHeight, blendedHeight, normalizedWeight);
+        }
+        
         return { finalHeight, surfaceBlock, subsurfaceBlock, colBiome };
     }
 }

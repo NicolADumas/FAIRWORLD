@@ -26,6 +26,13 @@ protected:
 private:
     void DrawUI();
     void RebuildChunkPreview();
+    void ClampBrushToMacroChunk(glm::ivec2& targetMin, glm::ivec2& targetMax) {
+        int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
+        targetMin.x = std::max(targetMin.x, -extents);
+        targetMin.y = std::max(targetMin.y, -extents);
+        targetMax.x = std::min(targetMax.x, extents);
+        targetMax.y = std::min(targetMax.y, extents);
+    }
     
     // Editor State (Specific Architecture)
     int m_activeTemplateIndex = 0;

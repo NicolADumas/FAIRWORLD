@@ -525,6 +525,7 @@ void PlanetMapperState::DrawBuilderUI() {
         if (ImGui::Combo("Grandezza Pianeta", &currentSizeIndex, sizeNames, IM_ARRAYSIZE(sizeNames))) {
             p.planetSize = (fw::PlanetSize)currentSizeIndex;
             m_lodSystem.SetPlanetSize(p.planetSize, p.isFlat);
+            m_activeTemplateIndex = -1; // Deseleziona il template corrente per evitare conflitti di grandezza
             RebuildPlanetRoots();
         }
         
@@ -553,11 +554,21 @@ void PlanetMapperState::DrawBuilderUI() {
         ImGui::TextDisabled("Nessun modello chunk presente nella libreria.");
     } else {
         ImGui::BeginChild("TemplateList", ImVec2(0, 140), true);
+        int matchCount = 0;
+        fw::PlanetSize currentPlanetSize = fw::PlanetSize::Small;
+        if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
+            currentPlanetSize = doc.planets[m_activePlanetIndex].planetSize;
+        }
         for (int i = 0; i < (int)doc.terrainLibrary.size(); ++i) {
+            if (doc.terrainLibrary[i].planetSize != currentPlanetSize) continue;
+            matchCount++;
             bool isSelected = (m_activeTemplateIndex == i);
             if (ImGui::Selectable((std::to_string(i+1) + ". " + doc.terrainLibrary[i].name + " [" + doc.terrainLibrary[i].id + "]").c_str(), isSelected)) {
                 m_activeTemplateIndex = i;
             }
+        }
+        if (matchCount == 0) {
+            ImGui::TextDisabled("Nessun modello chunk compatibile con questa grandezza.");
         }
         ImGui::EndChild();
     }

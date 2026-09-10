@@ -2733,7 +2733,8 @@ bool RenderManager::CreateForgePipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    uint32_t forgePushSize = sizeof(fw::ForgePushConstantData);
+    uint32_t maxPush = m_core->GetDeviceProperties().limits.maxPushConstantsSize;
+    uint32_t forgePushSize = sizeof(ForgePushConstantData);
     if (forgePushSize > maxPush) {
         std::cerr << "[WARNING] maxPushConstantsSize (" << maxPush << ") < ForgePushConstantData (" << forgePushSize << ")" << std::endl;
         forgePushSize = maxPush;
@@ -2898,6 +2899,7 @@ bool RenderManager::CreateGLBPipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
+    uint32_t maxPush = m_core->GetDeviceProperties().limits.maxPushConstantsSize;
     uint32_t glbPushSize = sizeof(GLBPushConstantData);
     if (glbPushSize > maxPush) {
         std::cerr << "[WARNING] maxPushConstantsSize (" << maxPush << ") < GLBPushConstantData (" << glbPushSize << ")" << std::endl;

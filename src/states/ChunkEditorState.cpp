@@ -12,6 +12,7 @@
 #include "JobSystem.h"
 #include "RenderManager.h"
 #include "CacheManager.h"
+#include "ShapeMath.h"
 #include "imgui.h"
 #include <iostream>
 #include <algorithm>
@@ -86,7 +87,7 @@ void ChunkEditorState::RebuildChunkPreview() {
     std::cout << "[ChunkEditorState] Rigenerazione asincrona anteprima 3D Voxel per chunk corrente...\n";
     
     if (m_previewWorld) {
-        m_previewWorld->GetRegistry().clear();
+        m_previewWorld->ClearWorld(false);
         if (m_context && m_context->cacheManager) {
             m_context->cacheManager->FlushCpuTransientCaches(m_context);
             m_context->cacheManager->FlushGpuRenderCaches(m_context);
@@ -152,7 +153,11 @@ void ChunkEditorState::RebuildChunkPreview() {
     tempDoc.planets.push_back(tempPlanet);
 
     fw::MapWorldGenerator::Generate(tempDoc, 0, *m_previewWorld, m_context->jobSystem);
-    m_orbitTarget = glm::vec3(0.0f, 18.0f, 0.0f);
+    
+    // Centra la telecamera 3D perfettamente sul blocco di chunk appena rigenerato
+    float centerX = ((minX + maxX) / 2.0f) * 16.0f;
+    float centerZ = ((minZ + maxZ) / 2.0f) * 16.0f;
+    m_orbitTarget = glm::vec3(centerX, 18.0f, centerZ);
 }
 
 void ChunkEditorState::UpdateApp(float dt) {
@@ -287,6 +292,7 @@ void ChunkEditorState::DrawUI() {
         fw::TerrainTemplate t;
         t.name = "Terreno " + std::to_string(doc.terrainLibrary.size() + 1);
         t.id = "terrain_" + std::to_string(doc.terrainLibrary.size() + 1);
+        t.planetSize = m_previewPlanetSize;
         t.baseType = fw::MapRegionType::Forest;
         t.basePerlinFrequency = 0.03f;
         t.baseGravityModifier = 1.0f;
@@ -329,6 +335,18 @@ void ChunkEditorState::DrawUI() {
         bool isSelected = (m_activeTemplateIndex == i);
         if (ImGui::Selectable((std::to_string(i+1) + ". " + doc.terrainLibrary[i].name).c_str(), isSelected)) {
             m_activeTemplateIndex = i;
+            m_previewPlanetSize = doc.terrainLibrary[i].planetSize;
+            int newMaxBrush = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
+            m_brushSize = std::clamp(m_brushSize, 1, newMaxBrush);
+            
+            // --- Auto-fit Zoom ---
+            int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
+            int cells = 2 * extents + 1;
+            float targetZoom = (280.0f * 0.8f) / (cells * 10.0f);
+            m_canvasZoom = std::clamp(targetZoom, 0.1f, 20.0f);
+            m_canvasPan = glm::vec2(0.0f, 0.0f);
+            // ---------------------
+            
             m_needsRebuild = true; m_rebuildTimer = 0.2f;
         }
     }
@@ -378,6 +396,17 @@ void ChunkEditorState::DrawUI() {
             ImVec2 mapMax = ChunkToScreen(extents, extents);
             drawList->AddRect(mapMin, mapMax, IM_COL32(100, 100, 100, 255), 0.0f, 0, 2.0f);
             
+            // --- DISEGNA GRIGLIA CHUNK ---
+            for (int i = -extents; i <= extents; ++i) {
+                ImVec2 p0_v = ChunkToScreen(i, -extents);
+                ImVec2 p1_v = ChunkToScreen(i, extents);
+                drawList->AddLine(p0_v, p1_v, IM_COL32(80, 80, 80, 100), 1.0f); // Vertical lines
+                
+                ImVec2 p0_h = ChunkToScreen(-extents, i);
+                ImVec2 p1_h = ChunkToScreen(extents, i);
+                drawList->AddLine(p0_h, p1_h, IM_COL32(80, 80, 80, 100), 1.0f); // Horizontal lines
+            }
+            
             // --- DISEGNA GLI ASSI E IL CENTRO (Origin 0,0) ---
             ImVec2 centerTop = ChunkToScreen(0, -extents);
             ImVec2 centerBottom = ChunkToScreen(0, extents);
@@ -419,8 +448,9 @@ void ChunkEditorState::DrawUI() {
                     int halfB = m_brushSize / 2;
                     glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
                     glm::ivec2 targetMax = glm::ivec2(cMouseCoord.x - halfB + m_brushSize - 1, cMouseCoord.y - halfB + m_brushSize - 1);
+                    ClampBrushToMacroChunk(targetMin, targetMax);
                     
-                    if (m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
+                    if (targetMin.x <= targetMax.x && targetMin.y <= targetMax.y && m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
                         m_strokeProcessedCells.insert(targetMin);
                         bool canAdd = true;
                         for (const auto& existing : activeTemplate.subRegions) {
@@ -456,8 +486,9 @@ void ChunkEditorState::DrawUI() {
                     int halfB = m_brushSize / 2;
                     glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
                     glm::ivec2 targetMax = glm::ivec2(cMouseCoord.x - halfB + m_brushSize - 1, cMouseCoord.y - halfB + m_brushSize - 1);
+                    ClampBrushToMacroChunk(targetMin, targetMax);
                     
-                    if (m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
+                    if (targetMin.x <= targetMax.x && targetMin.y <= targetMax.y && m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
                         m_strokeProcessedCells.insert(targetMin);
                         bool erased = false;
                         for (auto it = activeTemplate.subRegions.begin(); it != activeTemplate.subRegions.end(); ) {
@@ -527,22 +558,29 @@ void ChunkEditorState::DrawUI() {
                                      (i == hoveredInstance) ? IM_COL32(200, 200, 200, 255) : IM_COL32(0,0,0,0);
                                      
                                      
-                if (r.shape == fw::RegionShape::Circle) {
-                    ImVec2 center((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
-                    float radius = std::min(pMax.x - pMin.x, pMax.y - pMin.y) * 0.5f;
-                    drawList->AddCircleFilled(center, radius, fillColor);
-                    if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddCircle(center, radius, outlineColor, 0, 2.0f);
-                } else if (r.shape == fw::RegionShape::Rhombus) {
-                    ImVec2 center((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
-                    ImVec2 points[4] = {
-                        ImVec2(center.x, pMin.y), ImVec2(pMax.x, center.y),
-                        ImVec2(center.x, pMax.y), ImVec2(pMin.x, center.y)
-                    };
-                    drawList->AddConvexPolyFilled(points, 4, fillColor);
-                    if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddPolyline(points, 4, outlineColor, ImDrawFlags_Closed, 2.0f);
-                } else {
+                ImVec2 center((pMin.x + pMax.x) * 0.5f, (pMin.y + pMax.y) * 0.5f);
+                float halfW = std::abs(pMax.x - pMin.x) * 0.5f;
+                float halfH = std::abs(pMax.y - pMin.y) * 0.5f;
+                
+                if (r.shape == fw::RegionShape::Rectangle) {
                     drawList->AddRectFilled(pMin, pMax, fillColor);
                     if (outlineColor != IM_COL32(0,0,0,0)) drawList->AddRect(pMin, pMax, outlineColor, 0.0f, 0, 2.0f);
+                } else {
+                    std::vector<glm::vec2> boundary;
+                    fw::ShapeMath::GenerateBoundaryVertices(r.shape, glm::vec2(center.x, center.y), glm::vec2(halfW, halfH), boundary);
+                    
+                    if (fillColor != IM_COL32(0,0,0,0)) {
+                        for (size_t j = 0; j < boundary.size(); ++j) {
+                            size_t nextJ = (j + 1) % boundary.size();
+                            drawList->AddTriangleFilled(center, ImVec2(boundary[j].x, boundary[j].y), ImVec2(boundary[nextJ].x, boundary[nextJ].y), fillColor);
+                        }
+                    }
+                    
+                    if (outlineColor != IM_COL32(0,0,0,0)) {
+                        std::vector<ImVec2> imPts;
+                        for (const auto& p : boundary) imPts.push_back(ImVec2(p.x, p.y));
+                        drawList->AddPolyline(imPts.data(), (int)imPts.size(), outlineColor, ImDrawFlags_Closed, 2.0f);
+                    }
                 }
             } // fine for subRegions
             
@@ -558,14 +596,15 @@ void ChunkEditorState::DrawUI() {
 
             if (canvasHovered && io.KeyShift) {
                 int halfB = m_brushSize / 2;
-                int bMinX = cMouseCoord.x - halfB;
-                int bMinZ = cMouseCoord.y - halfB;
-                int bMaxX = cMouseCoord.x - halfB + m_brushSize;
-                int bMaxZ = cMouseCoord.y - halfB + m_brushSize;
+                glm::ivec2 targetMin = glm::ivec2(cMouseCoord.x - halfB, cMouseCoord.y - halfB);
+                glm::ivec2 targetMax = glm::ivec2(cMouseCoord.x - halfB + m_brushSize - 1, cMouseCoord.y - halfB + m_brushSize - 1);
+                ClampBrushToMacroChunk(targetMin, targetMax);
                 
-                ImVec2 sMin = ChunkToScreen(bMinX, bMinZ);
-                ImVec2 sMax = ChunkToScreen(bMaxX, bMaxZ);
-                drawList->AddRect(sMin, sMax, IM_COL32(255, 255, 0, 255));
+                if (targetMin.x <= targetMax.x && targetMin.y <= targetMax.y) {
+                    ImVec2 sMin = ChunkToScreen(targetMin.x, targetMin.y);
+                    ImVec2 sMax = ChunkToScreen(targetMax.x + 1, targetMax.y + 1);
+                    drawList->AddRect(sMin, sMax, IM_COL32(255, 255, 0, 255));
+                }
             }
             
             if (m_isBrushModeActive) {
@@ -585,7 +624,10 @@ void ChunkEditorState::DrawUI() {
 
             drawBlockCombo("Blocco Superficie Pennello", m_paintSurfaceBlock);
             drawBlockCombo("Blocco Sottosuolo Pennello", m_paintSubsurfaceBlock);
-            ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, 10);
+            
+            int maxBrushSize = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
+            m_brushSize = std::clamp(m_brushSize, 1, maxBrushSize);
+            ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, maxBrushSize);
             
             ImGui::Spacing();
             if (m_isBrushModeActive) {
@@ -601,8 +643,20 @@ void ChunkEditorState::DrawUI() {
             
             const char* planetSizes[] = { "Tiny (3x3)", "Micro (5x5)", "Small (7x7)", "Medium (11x11)", "Large (21x21)", "Huge (41x41)" };
             int pSizeIdx = static_cast<int>(m_previewPlanetSize);
-            if (ImGui::Combo("Dimensione Globo", &pSizeIdx, planetSizes, IM_ARRAYSIZE(planetSizes))) {
+            if (ImGui::Combo("Dimensione Macro-Chunk", &pSizeIdx, planetSizes, IM_ARRAYSIZE(planetSizes))) {
                 m_previewPlanetSize = static_cast<fw::PlanetSize>(pSizeIdx);
+                activeTemplate.planetSize = m_previewPlanetSize;
+                int newMaxBrush = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
+                m_brushSize = std::clamp(m_brushSize, 1, newMaxBrush);
+                
+                // --- Auto-fit Zoom ---
+                int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
+                int cells = 2 * extents + 1;
+                float targetZoom = (280.0f * 0.8f) / (cells * 10.0f); // 280 = Canvas height, 10 = BASE_CHUNK_SIZE
+                m_canvasZoom = std::clamp(targetZoom, 0.1f, 20.0f);
+                m_canvasPan = glm::vec2(0.0f, 0.0f); // Resetta la traslazione
+                // ---------------------
+                
                 m_needsRebuild = true; m_rebuildTimer = 0.2f;
             }
             ImGui::Spacing();
@@ -718,7 +772,13 @@ void ChunkEditorState::DrawUI() {
         m_showSaveConfirmPopup = false;
     }
     if (ImGui::BeginPopupModal("LibroChunkSalvato", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("I modelli di chunk sono stati sincronizzati e salvati con successo su world_map.json.\nIl Planet Mapper e il motore di gioco leggeranno queste impostazioni.");
+        if (m_context && m_context->projectManager && m_context->projectManager->GetDocument().terrainLibrary.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "ATTENZIONE: Non c'e' nessun Modello Chunk nella libreria!");
+            ImGui::Text("Il progetto e' stato salvato, ma non hai esportato alcun chunk.\nDevi usare '+ AGGIUNGI MODELLO CHUNK' per poterne piazzare nel Planet Mapper.");
+        } else {
+            ImGui::Text("I modelli di chunk sono stati sincronizzati e salvati con successo su world_map.json.\nIl Planet Mapper e il motore di gioco leggeranno queste impostazioni.");
+        }
+        
         if (ImGui::Button("OK", ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
         }
