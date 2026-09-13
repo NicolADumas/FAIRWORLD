@@ -9,15 +9,15 @@ namespace fw {
 struct MapRegionGPU {
     alignas(16) glm::vec3 centerNormal;  // offset 0
     alignas(4)  float angularRadius;     // offset 12
-    alignas(16) glm::vec4 rectMinMax;    // offset 16 (minX, minY, maxX, maxY)
-    alignas(4)  uint32_t shapeType;      // offset 32 (0=Rect, 1=Circle, 2=Rhombus, 3=Star)
+    alignas(16) glm::vec4 rectMinMax;    // offset 16 (gridX_min, gridY_min, gridX_max, gridY_max)
+    alignas(4)  uint32_t shapeType;      // offset 32
     alignas(4)  uint32_t biomeType;      // offset 36
     alignas(4)  float perlinFreq;        // offset 40
     alignas(4)  float gravityMod;        // offset 44
     alignas(4)  uint32_t isGridAligned;  // offset 48
-    alignas(4)  uint32_t surfaceBlock;   // offset 52
-    alignas(4)  uint32_t subsurfaceBlock;// offset 56
-    alignas(4)  uint32_t _pad;           // offset 60
+    alignas(4)  uint32_t faceIndex;      // offset 52 (0-5 per le 6 facce del cubo)
+    alignas(4)  uint32_t surfaceBlock;   // offset 56
+    alignas(4)  uint32_t subsurfaceBlock;// offset 60
 };
 
 } // namespace fw

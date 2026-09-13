@@ -5,7 +5,11 @@
 #include <string>
 #include <glm/glm.hpp>
 #include "SphericalLOD.h"
-#include "RaycastSystem.h"
+
+// Componenti
+#include "components/PlanetMapperUI.h"
+#include "components/PlanetMapperCamera.h"
+#include "components/PlanetMapperCompiler.h"
 
 struct SharedContext;
 
@@ -21,33 +25,19 @@ protected:
 
 private:
     void RebuildPlanetRoots();
-    void DrawBuilderUI();
-    void CompileAndGenerate();
     
-    // Architettura Specifica (Planet Mapper State)
-    int m_activePlanetIndex = 0;
-    
-    bool m_showPlacementTable = false;
-    bool m_showSaveConfirmPopup = false;
-    
-    int m_activeTemplateIndex = 0; // Scelto tra la terrainLibrary di WorldProjectManager
-    int m_selectedChunkInstanceIndex = -1;
+    PlanetMapperUI m_ui;
+    PlanetMapperCamera m_camera;
+    PlanetMapperCompiler m_compiler;
 
-    // Telecamera Orbitale e Navigazione Sfera
-    float m_orbitDistance = 250.0f;
-    float m_orbitYaw = 45.0f;
-    float m_orbitPitch = 30.0f;
-    glm::vec3 m_orbitTarget = glm::vec3(0.0f);
-    
-    // Sistema LOD Sferico
+    int m_activePlanetIndex = 0;
+    int m_activeTemplateIndex = 0;
+
     std::vector<fw::ChunkNode> m_planetRootNodes;
     std::vector<entt::entity> m_spawnPointMarkers;
     entt::entity m_cursorMarker = entt::null;
     fw::SphericalLODSystem m_lodSystem;
-    
-    fw::RaycastHit m_lastRayHit;
-    
-    // Feedback visivo salvataggio
-    float m_saveFlashTimer = 0.0f; // secondi rimasti per mostrare il messaggio
-    std::string m_saveFlashMsg;
+
+    // Risultato UI dell'ultimo RenderApp(), consumato in UpdateApp() del frame successivo
+    PlanetMapperUIResult m_lastUIResult{};
 };

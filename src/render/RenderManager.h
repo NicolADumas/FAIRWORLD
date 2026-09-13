@@ -214,15 +214,33 @@ private:
     std::unique_ptr<fw::SolarSystemRenderer> m_solarSystemRenderer;
     std::unique_ptr<TerrainPipelineSystem> m_terrainPipeline;
 
-    // --- TERRAIN COMPUTE STATE ---
-    VkBuffer       m_terrainStagingBuffer{ VK_NULL_HANDLE };
-    VkDeviceMemory m_terrainStagingMemory{ VK_NULL_HANDLE };
-    void*          m_terrainStagingMapped{ nullptr };
-    uint32_t       m_terrainStagingCapacityBytes{ 0 };
+    // --- TERRAIN INCREMENTAL UPLOAD (FASE 3/4) ---
+    static constexpr uint32_t MAX_TERRAIN_CHUNKS  = 50000;
+    static constexpr uint32_t MAX_TERRAIN_REGIONS = 65536;
+    static constexpr VkDeviceSize TERRAIN_STAGING_SIZE = 4 * 1024 * 1024; // 4 MB (sufficient for partial updates)
+
+    VkBuffer       m_terrainStagingRingBuffer{ VK_NULL_HANDLE };
+    VkDeviceMemory m_terrainStagingRingMemory{ VK_NULL_HANDLE };
+    void*          m_terrainStagingRingMapped{ nullptr };
+    VkDeviceSize   m_terrainStagingRingHead = 0;
+
+    struct TerrainStagingAllocation {
+        VkDeviceSize offset;
+        VkDeviceSize size;
+        uint32_t frameIndex;
+    };
+    std::vector<TerrainStagingAllocation> m_terrainInFlightAllocations;
+    std::vector<VkBufferCopy> m_pendingChunkCopies;
+    std::vector<VkBufferCopy> m_pendingRegionCopies;
+
     uint32_t       m_terrainNumChunks{ 0 };
     uint32_t       m_terrainNumRegions{ 0 };
     float          m_terrainPlanetRadius{ 50.0f };
     bool           m_terrainDataDirty{ false };
+
+    // Allocazione dal Ring Buffer e gestione della libreria
+    VkDeviceSize AllocateTerrainStaging(VkDeviceSize size, uint32_t currentFrame);
+    void ReclaimTerrainStaging(uint32_t frameIndex);
 
     // --- FORGE DESCRIPTOR SETS ---
     VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };
@@ -325,9 +343,14 @@ public:
     void LoadAllMobMeshes(class AssetManager& assets);
 
     // Chiamato da PlanetMapperState quando cambiano regioni/chunk: prepara i dati per il Compute Shader
+    // Carica tutti i dati in un colpo solo (full rebuild)
     void UploadTerrainData(const std::vector<ChunkData>& chunks,
                            const std::vector<fw::MapRegionGPU>& regions,
                            float planetRadius);
+
+    // Carica singole porzioni incrementalmente (partial rebuild)
+    void UpdateTerrainChunk(uint32_t index, const ChunkData& chunk);
+    void UpdateTerrainRegion(uint32_t index, const fw::MapRegionGPU& region);
     void LoadMobMesh(const std::string& filepath);
     void LoadGLBMesh(const std::string& filepath);
 

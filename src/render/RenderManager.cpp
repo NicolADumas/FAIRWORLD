@@ -1201,6 +1201,8 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     vkResetFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame]);
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 
+    ReclaimTerrainStaging(m_currentFrame);
+
     // REGISTRAZIONE DEI COMANDI
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3274,62 +3276,64 @@ VulkanTextureArray RenderManager::CreateTextureArray(
 
 // ============================================================
 // TERRAIN COMPUTE PIPELINE - CPU-Side Implementation
-// ============================================================
+// ====================================// --- TERRAIN INCREMENTAL STAGING PIPELINE ---
 
-bool RenderManager::CreateTerrainStagingBuffer(uint32_t totalBytes) {
-    VkDevice device = m_core->GetDevice();
-    if (!device) return false;
+VkDeviceSize RenderManager::AllocateTerrainStaging(VkDeviceSize size, uint32_t currentFrame) {
+    if (m_terrainStagingRingBuffer == VK_NULL_HANDLE) {
+        VkDevice device = m_core->GetDevice();
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size        = TERRAIN_STAGING_SIZE;
+        bufferInfo.usage       = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufferInfo, nullptr, &m_terrainStagingRingBuffer);
 
-    if (m_terrainStagingBuffer != VK_NULL_HANDLE) {
-        if (m_terrainStagingMapped) {
-            vkUnmapMemory(device, m_terrainStagingMemory);
-            m_terrainStagingMapped = nullptr;
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_terrainStagingRingBuffer, &memReqs);
+
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceMemoryProperties(m_core->GetPhysicalDevice(), &memProps);
+
+        uint32_t memTypeIdx = UINT32_MAX;
+        VkMemoryPropertyFlags desired = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+            if ((memReqs.memoryTypeBits & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & desired) == desired) {
+                memTypeIdx = i;
+                break;
+            }
         }
-        vkDestroyBuffer(device, m_terrainStagingBuffer, nullptr);
-        vkFreeMemory(device, m_terrainStagingMemory, nullptr);
-        m_terrainStagingBuffer = VK_NULL_HANDLE;
-        m_terrainStagingMemory = VK_NULL_HANDLE;
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize  = memReqs.size;
+        allocInfo.memoryTypeIndex = memTypeIdx;
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_terrainStagingRingMemory);
+        vkBindBufferMemory(device, m_terrainStagingRingBuffer, m_terrainStagingRingMemory, 0);
+        vkMapMemory(device, m_terrainStagingRingMemory, 0, TERRAIN_STAGING_SIZE, 0, &m_terrainStagingRingMapped);
+        m_terrainStagingRingHead = 0;
     }
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size        = totalBytes;
-    bufferInfo.usage       = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &m_terrainStagingBuffer) != VK_SUCCESS) {
-        std::cerr << "[TerrainCompute] Impossibile creare staging buffer.\n";
-        return false;
+    if (m_terrainStagingRingHead + size > TERRAIN_STAGING_SIZE) {
+        m_terrainStagingRingHead = 0; // Wrap-around
     }
 
-    VkMemoryRequirements memReqs;
-    vkGetBufferMemoryRequirements(device, m_terrainStagingBuffer, &memReqs);
+    VkDeviceSize offset = m_terrainStagingRingHead;
+    m_terrainStagingRingHead += size;
 
-    VkPhysicalDeviceMemoryProperties memProps;
-    vkGetPhysicalDeviceMemoryProperties(m_core->GetPhysicalDevice(), &memProps);
+    TerrainStagingAllocation alloc{};
+    alloc.offset = offset;
+    alloc.size = size;
+    alloc.frameIndex = currentFrame;
+    m_terrainInFlightAllocations.push_back(alloc);
 
-    uint32_t memTypeIdx = UINT32_MAX;
-    VkMemoryPropertyFlags desired = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
-        if ((memReqs.memoryTypeBits & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & desired) == desired) {
-            memTypeIdx = i;
-            break;
-        }
-    }
-    if (memTypeIdx == UINT32_MAX) {
-        std::cerr << "[TerrainCompute] Nessun memory type host-visible trovato.\n";
-        return false;
-    }
+    return offset;
+}
 
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize  = memReqs.size;
-    allocInfo.memoryTypeIndex = memTypeIdx;
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_terrainStagingMemory) != VK_SUCCESS) return false;
-    vkBindBufferMemory(device, m_terrainStagingBuffer, m_terrainStagingMemory, 0);
-    vkMapMemory(device, m_terrainStagingMemory, 0, totalBytes, 0, &m_terrainStagingMapped);
-
-    m_terrainStagingCapacityBytes = totalBytes;
-    return true;
+void RenderManager::ReclaimTerrainStaging(uint32_t frameIndex) {
+    auto it = std::remove_if(m_terrainInFlightAllocations.begin(), m_terrainInFlightAllocations.end(),
+        [frameIndex](const TerrainStagingAllocation& alloc) {
+            return alloc.frameIndex == frameIndex;
+        });
+    m_terrainInFlightAllocations.erase(it, m_terrainInFlightAllocations.end());
 }
 
 void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
@@ -3337,79 +3341,71 @@ void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
                                        float planetRadius) {
     if (!m_terrainPipeline) return;
 
-    // Clamp al limite del buffer GPU: non possiamo inviare più di quanto allocato
-    const uint32_t MAX_REGIONS = 65536;
-    const uint32_t MAX_CHUNKS  = 50000;
-    uint32_t numChunks  = (uint32_t)std::min((size_t)MAX_CHUNKS,  chunks.size());
-    uint32_t numRegions = (uint32_t)std::min((size_t)MAX_REGIONS, regions.size());
-
-    if (numRegions < regions.size()) {
-        std::cerr << "[TerrainCompute] WARN: Regioni troncate da " << regions.size()
-                  << " a " << numRegions << " (limite GPU).\n";
-    }
-
-    uint32_t chunkBytes    = (uint32_t)(sizeof(ChunkData)        * numChunks);
-    uint32_t regionBytes   = (uint32_t)(sizeof(fw::MapRegionGPU) * numRegions);
-    uint32_t indirectBytes = (uint32_t)(sizeof(VkDrawIndexedIndirectCommand) * numChunks);
-    uint32_t totalBytes    = chunkBytes + regionBytes + indirectBytes;
-    
-    if (totalBytes == 0) {
-        m_terrainNumChunks = 0;
-        m_terrainNumRegions = 0;
-        if (m_planetMapperRenderer) m_planetMapperRenderer->SetTerrainNumChunks(0);
-        return;
-    }
-
-    if (totalBytes > m_terrainStagingCapacityBytes || m_terrainStagingBuffer == VK_NULL_HANDLE) {
-        if (!CreateTerrainStagingBuffer(totalBytes)) return;
-    }
-
-    // Copia in RAM mappata: chunk, poi regioni
-    if (m_terrainStagingMapped) {
-        if (chunkBytes > 0)
-            memcpy(m_terrainStagingMapped, chunks.data(), chunkBytes);
-        if (regionBytes > 0)
-            memcpy(static_cast<uint8_t*>(m_terrainStagingMapped) + chunkBytes, regions.data(), regionBytes);
-    }
-
-    m_terrainNumChunks    = numChunks;
-    m_terrainNumRegions   = numRegions;
     m_terrainPlanetRadius = planetRadius;
-    m_terrainDataDirty    = true;
+    m_terrainNumChunks  = (uint32_t)std::min((size_t)MAX_TERRAIN_CHUNKS,  chunks.size());
+    m_terrainNumRegions = (uint32_t)std::min((size_t)MAX_TERRAIN_REGIONS, regions.size());
 
-    // Aggiorna anche il renderer in modo che usi il conteggio corretto nel draw indiretto
     if (m_planetMapperRenderer) {
         m_planetMapperRenderer->SetTerrainNumChunks(m_terrainNumChunks);
     }
 
-    std::cout << "[TerrainCompute] Dati pronti: " << m_terrainNumChunks << " chunk, "
-              << m_terrainNumRegions << " regioni. Radius=" << planetRadius << "\n";
+    for (uint32_t i = 0; i < m_terrainNumChunks; ++i) {
+        UpdateTerrainChunk(i, chunks[i]);
+    }
+    for (uint32_t i = 0; i < m_terrainNumRegions; ++i) {
+        UpdateTerrainRegion(i, regions[i]);
+    }
+}
+
+void RenderManager::UpdateTerrainChunk(uint32_t index, const ChunkData& chunk) {
+    if (index >= MAX_TERRAIN_CHUNKS) return;
+    
+    VkDeviceSize allocSize = sizeof(ChunkData);
+    VkDeviceSize stagingOffset = AllocateTerrainStaging(allocSize, m_currentFrame);
+    
+    if (m_terrainStagingRingMapped) {
+        std::memcpy(static_cast<uint8_t*>(m_terrainStagingRingMapped) + stagingOffset, &chunk, allocSize);
+    }
+
+    VkBufferCopy copy{};
+    copy.srcOffset = stagingOffset;
+    copy.dstOffset = index * allocSize;
+    copy.size = allocSize;
+    m_pendingChunkCopies.push_back(copy);
+    m_terrainDataDirty = true;
+}
+
+void RenderManager::UpdateTerrainRegion(uint32_t index, const fw::MapRegionGPU& region) {
+    if (index >= MAX_TERRAIN_REGIONS) return;
+    
+    VkDeviceSize allocSize = sizeof(fw::MapRegionGPU);
+    VkDeviceSize stagingOffset = AllocateTerrainStaging(allocSize, m_currentFrame);
+    
+    if (m_terrainStagingRingMapped) {
+        std::memcpy(static_cast<uint8_t*>(m_terrainStagingRingMapped) + stagingOffset, &region, allocSize);
+    }
+
+    VkBufferCopy copy{};
+    copy.srcOffset = stagingOffset;
+    copy.dstOffset = index * allocSize;
+    copy.size = allocSize;
+    m_pendingRegionCopies.push_back(copy);
+    m_terrainDataDirty = true;
 }
 
 void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
     if (!m_terrainDataDirty) return;
     if (!m_terrainPipeline) return;
-    if (m_terrainNumChunks == 0) return;
-    if (m_terrainStagingBuffer == VK_NULL_HANDLE) return;
+    if (m_terrainStagingRingBuffer == VK_NULL_HANDLE) return;
 
-    uint32_t chunkBytes  = sizeof(ChunkData)        * m_terrainNumChunks;
-    uint32_t regionBytes = sizeof(fw::MapRegionGPU) * m_terrainNumRegions;
-
-    // 1. Copy staging -> device-local chunk buffer
-    if (chunkBytes > 0) {
-        VkBufferCopy copyChunk{};
-        copyChunk.srcOffset = 0;
-        copyChunk.dstOffset = 0;
-        copyChunk.size      = chunkBytes;
-        vkCmdCopyBuffer(cmd, m_terrainStagingBuffer, m_terrainPipeline->getChunkBuffer(), 1, &copyChunk);
+    if (!m_pendingChunkCopies.empty()) {
+        vkCmdCopyBuffer(cmd, m_terrainStagingRingBuffer, m_terrainPipeline->getChunkBuffer(), 
+            (uint32_t)m_pendingChunkCopies.size(), m_pendingChunkCopies.data());
     }
-    // 2. Copy staging -> device-local region buffer
-    if (regionBytes > 0) {
-        VkBufferCopy copyRegion{};
-        copyRegion.srcOffset = chunkBytes;
-        copyRegion.dstOffset = 0;
-        copyRegion.size      = regionBytes;
-        vkCmdCopyBuffer(cmd, m_terrainStagingBuffer, m_terrainPipeline->getRegionBuffer(), 1, &copyRegion);
+    
+    if (!m_pendingRegionCopies.empty()) {
+        vkCmdCopyBuffer(cmd, m_terrainStagingRingBuffer, m_terrainPipeline->getRegionBuffer(), 
+            (uint32_t)m_pendingRegionCopies.size(), m_pendingRegionCopies.data());
     }
 
     // Barrier: aspetta transfer prima del compute
@@ -3422,29 +3418,38 @@ void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
     barriers[0].buffer              = m_terrainPipeline->getChunkBuffer();
     barriers[0].offset              = 0;
     barriers[0].size                = VK_WHOLE_SIZE;
+    
     barriers[1]                     = barriers[0];
     barriers[1].buffer              = m_terrainPipeline->getRegionBuffer();
-    int numBarriers = (regionBytes > 0) ? 2 : 1;
+    
+    int numBarriers = (!m_pendingRegionCopies.empty() || m_terrainNumRegions > 0) ? 2 : 1;
+    
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0, 0, nullptr, numBarriers, barriers, 0, nullptr);
 
-    // 3. Dispatch del Compute Shader
-    TerrainGenPushConstants pc{};
-    pc.numChunks    = m_terrainNumChunks;
-    pc.numRegions   = m_terrainNumRegions;
-    pc.planetRadius = m_terrainPlanetRadius;
-    pc._pad         = 0.0f;
-    m_terrainPipeline->dispatch(cmd, pc);
+    m_pendingChunkCopies.clear();
+    m_pendingRegionCopies.clear();
+    m_terrainDataDirty = false;
+
+    // 3. Dispatch del Compute Shader se ci sono chunk
+    if (m_terrainNumChunks > 0) {
+        TerrainGenPushConstants pc{};
+        pc.numChunks    = m_terrainNumChunks;
+        pc.numRegions   = m_terrainNumRegions;
+        pc.planetRadius = m_terrainPlanetRadius;
+        pc._pad         = 0.0f;
+        m_terrainPipeline->dispatch(cmd, pc);
+    }
 
     // 4. Prepara i comandi di draw indirect con valori validi
-    {
-        uint32_t offsetForIndirect = chunkBytes + regionBytes;
+    if (m_terrainNumChunks > 0) {
         uint32_t indirectBytes = sizeof(VkDrawIndexedIndirectCommand) * m_terrainNumChunks;
-
-        if ((offsetForIndirect + indirectBytes) <= m_terrainStagingCapacityBytes && m_terrainStagingMapped) {
+        VkDeviceSize stagingOffset = AllocateTerrainStaging(indirectBytes, m_currentFrame);
+        
+        if (m_terrainStagingRingMapped) {
             auto* cmdsPtr = reinterpret_cast<VkDrawIndexedIndirectCommand*>(
-                static_cast<uint8_t*>(m_terrainStagingMapped) + offsetForIndirect);
+                static_cast<uint8_t*>(m_terrainStagingRingMapped) + stagingOffset);
             for (uint32_t i = 0; i < m_terrainNumChunks; ++i) {
                 cmdsPtr[i].indexCount    = 1536; // 16*16*6
                 cmdsPtr[i].instanceCount = 1;
@@ -3452,28 +3457,26 @@ void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
                 cmdsPtr[i].vertexOffset  = (int32_t)(i * 289); // 17*17 vertici per chunk
                 cmdsPtr[i].firstInstance = i;
             }
-
-            VkBufferCopy indirectCopy{};
-            indirectCopy.srcOffset = offsetForIndirect;
-            indirectCopy.dstOffset = 0;
-            indirectCopy.size      = indirectBytes;
-            vkCmdCopyBuffer(cmd, m_terrainStagingBuffer, m_terrainPipeline->getIndirectBuffer(), 1, &indirectCopy);
-
-            VkBufferMemoryBarrier indBar{};
-            indBar.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            indBar.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-            indBar.dstAccessMask       = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-            indBar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            indBar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            indBar.buffer              = m_terrainPipeline->getIndirectBuffer();
-            indBar.offset              = 0;
-            indBar.size                = VK_WHOLE_SIZE;
-            vkCmdPipelineBarrier(cmd,
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                0, 0, nullptr, 1, &indBar, 0, nullptr);
         }
-    }
 
-    m_terrainDataDirty = false;
+        VkBufferCopy indirectCopy{};
+        indirectCopy.srcOffset = stagingOffset;
+        indirectCopy.dstOffset = 0;
+        indirectCopy.size      = indirectBytes;
+        vkCmdCopyBuffer(cmd, m_terrainStagingRingBuffer, m_terrainPipeline->getIndirectBuffer(), 1, &indirectCopy);
+
+        VkBufferMemoryBarrier indBar{};
+        indBar.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        indBar.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+        indBar.dstAccessMask       = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+        indBar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        indBar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        indBar.buffer              = m_terrainPipeline->getIndirectBuffer();
+        indBar.offset              = 0;
+        indBar.size                = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+            0, 0, nullptr, 1, &indBar, 0, nullptr);
+    }
 }

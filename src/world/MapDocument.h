@@ -118,6 +118,22 @@ struct PlanetMap {
     int32_t minZ = -16;
     int32_t maxZ = 16;
     std::vector<ChunkDataExport> chunkOverrides; // Solo i chunk custom
+
+    // --- Dirty Tracking per GPU Upload Incrementale ---
+    std::vector<uint32_t> dirtyChunkIndices;
+    bool structuralDirty = true; // True all'avvio per forzare un full upload iniziale
+
+    void MarkChunkDirty(uint32_t index) {
+        // Evita duplicati (potrebbe essere ottimizzato in futuro se necessario)
+        if (std::find(dirtyChunkIndices.begin(), dirtyChunkIndices.end(), index) == dirtyChunkIndices.end()) {
+            dirtyChunkIndices.push_back(index);
+        }
+    }
+
+    void MarkStructuralChange() {
+        structuralDirty = true;
+        dirtyChunkIndices.clear(); // Il full rebuild copre tutto, non servono i parziali
+    }
 };
 
 struct MapDocument {

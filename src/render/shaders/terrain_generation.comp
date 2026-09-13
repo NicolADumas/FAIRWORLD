@@ -20,15 +20,15 @@ struct ChunkData {
 struct MapRegionGPU {
     vec3 centerNormal;
     float angularRadius;
-    vec4 rectMinMax;
+    vec4 rectMinMax;     // (gridX_min, gridY_min, gridX_max, gridY_max) per isGridAligned
     uint shapeType;
     uint biomeType;
     float perlinFreq;
     float gravityMod;
     uint isGridAligned;
+    uint faceIndex;      // 0-5 per le 6 facce del cubo
     uint surfaceBlock;
     uint subsurfaceBlock;
-    uint _pad;
 };
 
 struct Vertex {
@@ -145,6 +145,25 @@ float octaveNoise(vec3 pos, float freq, int octaves) {
     return total / maxVal;
 }
 
+// Converte una posizione 3D normalizzata nella faccia del cubo in (u, v) [-1, +1]
+// Restituisce la faccia dominante in outFace (0-5)
+vec2 normalToFaceUV(vec3 normal, out uint outFace) {
+    vec3 absN = abs(normal);
+    if (absN.z >= absN.x && absN.z >= absN.y) {
+        outFace = (normal.z > 0.0) ? 0u : 1u;
+        float s = (normal.z > 0.0) ? 1.0 : -1.0;
+        return vec2(normal.x * s, normal.y) / absN.z;
+    } else if (absN.x >= absN.y) {
+        outFace = (normal.x > 0.0) ? 2u : 3u;
+        float s = (normal.x > 0.0) ? 1.0 : -1.0;
+        return vec2(-normal.z * s, normal.y) / absN.x;
+    } else {
+        outFace = (normal.y > 0.0) ? 4u : 5u;
+        float s = (normal.y > 0.0) ? 1.0 : -1.0;
+        return vec2(normal.x, -normal.z * s) / absN.y;
+    }
+}
+
 // --- CALCOLO VERTICE E SDF ---
 
 void main() {
@@ -153,12 +172,9 @@ void main() {
     
     ChunkData chunk = chunks[chunkIdx];
     
-    // Griglia 16x16 per chunk (17x17 vertici -> mapriamo gl_LocalInvocationID)
     uint lx = gl_LocalInvocationID.x;
     uint ly = gl_LocalInvocationID.y;
     
-    // Per disegnare 16 quad servono 17 vertici, qui limitiamo ai primi 17x17 (richiede workgroup 17x17, 
-    // oppure inviamo 16x16 e l'ultimo workgroup gestisce i bordi. Per semplicità qui facciamo finta che sia un plane 16x16 vertici)
     float u = float(lx) / 16.0;
     float v = float(ly) / 16.0;
     
@@ -173,6 +189,10 @@ void main() {
     float baseHeight = pc.planetRadius;
     float finalHeight = baseHeight;
     uint surfaceMat = 1; // Default
+
+    // Determina la faccia e le coordinate UV del vertice corrente
+    uint vertexFace;
+    vec2 vertexUV = normalToFaceUV(normal, vertexFace); // UV in [-1, +1]
     
     // SDF Blending Logica Parallela
     float minSdf = 9999.0;
@@ -182,12 +202,37 @@ void main() {
         float sdf = 9999.0;
         float blendDistance = 0.08;
         
-        if (r.angularRadius > 0.0) { // Sferico
-            float dt = clamp(dot(normal, r.centerNormal), -1.0, 1.0);
-            float angle = acos(dt);
-            sdf = angle - r.angularRadius;
-        } else { // 2D (Approssimato su GPU)
-            sdf = 9999.0; // Da implementare logica 2D GPU
+        if (r.isGridAligned == 1u) {
+            // Test Grid-Aligned: usa le coordinate della griglia in pixels
+            // Le coordinate UV del vertice in [-1,+1] vengono convertite in tile-coords [0, N]
+            // rectMinMax contiene (gridX_min, gridY_min, gridX_max, gridY_max) in tile coords
+            if (vertexFace != r.faceIndex) {
+                sdf = 9999.0; // Non appartiene a questa faccia
+            } else {
+                // N_lato Ã¨ implicito nella trasformazione UV -> griglia
+                // UV in [-1,+1], per ricavare la tile: tile = (uv+1)/2 * N (float)
+                // Non conosciamo N_lato nel shader, ma rectMinMax Ã¨ in tile-space
+                // Usiamo rectMinMax come range UV normalizzato: moltiplichiamo per 0.5*(uv+1)
+                // PiÃ¹ semplice: il Compiler passa rectMinMax giÃ  in UV normalizzato [0,1]
+                // converti vertexUV da [-1,+1] a [0,1]
+                vec2 uvN = (vertexUV + 1.0) * 0.5; // [0, 1]
+                // rectMinMax.xy = uvMin [0,1], rectMinMax.zw = uvMax [0,1]
+                vec2 uvMin = r.rectMinMax.xy;
+                vec2 uvMax = r.rectMinMax.zw;
+                
+                // SDF rettangolare in spazio UV normalizzato
+                vec2 d = max(uvMin - uvN, uvN - uvMax);
+                float blendUV = 0.03; // ~3% del range UV
+                sdf = max(d.x, d.y);
+                blendDistance = blendUV;
+            }
+        } else {
+            // Test sferico (angolare)
+            if (r.angularRadius > 0.0) {
+                float dt = clamp(dot(normal, r.centerNormal), -1.0, 1.0);
+                float angle = acos(dt);
+                sdf = angle - r.angularRadius;
+            }
         }
         
         if (sdf < blendDistance) {
@@ -209,12 +254,12 @@ void main() {
     vec3 finalPos = normal * finalHeight;
     
     // Scrittura Output
-    uint vertexIdx = chunkIdx * 289 + (ly * 17 + lx); // 16x16 quad requires 17x17 vertices
+    uint vertexIdx = chunkIdx * 289 + (ly * 17 + lx);
     vertices[vertexIdx].position = finalPos;
     vertices[vertexIdx].color = vec4(1.0);
     vertices[vertexIdx].roughMetal = vec2(0.8, 0.1);
     vertices[vertexIdx].materialID = surfaceMat;
-    vertices[vertexIdx].normal = normal; // Approssimato, il normal andrebbe ricalcolato post-displacement
+    vertices[vertexIdx].normal = normal;
     vertices[vertexIdx].ao = 1.0;
     vertices[vertexIdx].light = 1.0;
     vertices[vertexIdx].emissive = 0.0;

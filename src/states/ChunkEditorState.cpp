@@ -88,6 +88,10 @@ void ChunkEditorState::RebuildChunkPreview() {
     
     if (m_previewWorld) {
         m_previewWorld->ClearWorld(false);
+        auto pEnt = m_previewWorld->GetPlanetEntity();
+        if (m_previewWorld->GetRegistry().valid(pEnt) && m_previewWorld->GetRegistry().all_of<fw::PlanetGeometryComponent>(pEnt)) {
+            m_previewWorld->GetRegistry().get<fw::PlanetGeometryComponent>(pEnt).isLogicalSphere = false;
+        }
         if (m_context && m_context->cacheManager) {
             m_context->cacheManager->FlushCpuTransientCaches(m_context);
             m_context->cacheManager->FlushGpuRenderCaches(m_context);
@@ -157,7 +161,7 @@ void ChunkEditorState::RebuildChunkPreview() {
     // Centra la telecamera 3D perfettamente sul blocco di chunk appena rigenerato
     float centerX = ((minX + maxX) / 2.0f) * 16.0f;
     float centerZ = ((minZ + maxZ) / 2.0f) * 16.0f;
-    m_orbitTarget = glm::vec3(centerX, 18.0f, centerZ);
+    // Rimozione reset forzato della camera (orbitTarget e orbitDistance) per permettere all'utente di mantenere lo zoom e la posizione desiderati.
 }
 
 void ChunkEditorState::UpdateApp(float dt) {
@@ -205,7 +209,8 @@ void ChunkEditorState::UpdateApp(float dt) {
             m_orbitTarget -= up * io.MouseDelta.y * 0.1f;
         }
         if (io.MouseWheel != 0.0f) {
-            m_orbitDistance -= io.MouseWheel * 5.0f;
+            float scrollSpeed = std::max(m_orbitDistance * 0.1f, 5.0f);
+            m_orbitDistance -= io.MouseWheel * scrollSpeed;
             m_orbitDistance = std::max(m_orbitDistance, 5.0f);
         }
     }
@@ -354,6 +359,7 @@ void ChunkEditorState::DrawUI() {
 
     if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < (int)doc.terrainLibrary.size()) {
         auto& activeTemplate = doc.terrainLibrary[m_activeTemplateIndex];
+        m_previewPlanetSize = activeTemplate.planetSize;
 
         if (ImGui::CollapsingHeader("Tela 2D - Dipingi Sotto-Regioni (Fiumi, Zone, Strutture)", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGuiWindowFlags canvasFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;

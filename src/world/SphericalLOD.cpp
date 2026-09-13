@@ -219,7 +219,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 activeRegion.perlinFrequency = 0.005f; // Base
                 
                 // --- GRID MAPPING LOGIC (Legge Sferica Esatta) ---
-                int N_lato = fw::PlanetMath::GetEditorCanvasExtents(planetSize);
+                int N_lato = fw::PlanetMath::GetFaceResolution(planetSize);
                 if (N_lato < 1) N_lato = 1;
                 
                 int face = -1;

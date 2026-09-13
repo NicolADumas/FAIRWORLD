@@ -25,14 +25,6 @@ PlanetMapperState::PlanetMapperState(SharedContext* context) : AppBaseState(cont
     std::cout << "[PlanetMapperState] Costruito come estensione di AppBaseState.\n";
 }
 
-// Helper centralizzato: salva e avvia il flash visivo di conferma
-static void PMS_DoSave(fw::WorldProjectManager* pm, float& flashTimer, std::string& flashMsg) {
-    if (!pm) return;
-    bool ok = pm->SaveProject();
-    flashTimer = 2.5f; // mostra il messaggio per 2.5 secondi
-    flashMsg = ok ? "✅ SALVATO!" : "❌ ERRORE SALVATAGGIO";
-}
-
 PlanetMapperState::~PlanetMapperState() {
     if (m_context) {
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
@@ -58,6 +50,7 @@ bool PlanetMapperState::InitApp() {
 
     m_previewWorld = std::make_unique<fw::GameWorld>();
     m_previewWorld->Initialize(m_context);
+    m_previewWorld->InitializePhysics();
 
     if (m_context && m_context->engine) {
         m_context->engine->SetGameMode(GameMode::PlanetMapper);
@@ -65,27 +58,13 @@ bool PlanetMapperState::InitApp() {
         m_context->forgeWorld = m_previewWorld.get();
     }
 
-    RebuildPlanetRoots(); // Crea i nodi radice (facce sferiche) per la GPU
-    CompileAndGenerate(); // Genera subito il Voxel Planet ad alta definizione!
-
-    m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-    m_orbitDistance = 250.0f;
-    m_orbitPitch = 20.0f;
-    m_orbitYaw = -45.0f;
-    m_lastRayHit.hit = false;
+    m_camera.Init(250.0f, 20.0f, -45.0f);
     
-    // Assegna il nome dell'applicazione per la schermata di caricamento
+    RebuildPlanetRoots();
+    m_compiler.Update(m_context, m_activePlanetIndex);
+
     m_appName = "PLANET MAPPER";
-    
     std::cout << "[SYSTEM] " << m_appName << " caricato con successo e pronto all'uso!\n";
-
-    if (m_context) {
-        m_context->activeCameraView.cameraPosition = glm::vec3(0.0f, 0.0f, m_orbitDistance);
-        m_context->activeCameraView.cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-        m_context->activeCameraView.viewMatrix = glm::lookAt(m_context->activeCameraView.cameraPosition, m_orbitTarget, glm::vec3(0, 1, 0));
-        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 0.1f, 2000.0f);
-        m_context->activeCameraView.projectionMatrix[1][1] *= -1;
-    }
 
     return true;
 }
@@ -128,10 +107,9 @@ void PlanetMapperState::RebuildPlanetRoots() {
 
 void PlanetMapperState::UpdateApp(float dt) {
     if (!m_context || !m_context->projectManager) return;
-    auto& doc = m_context->projectManager->GetDocument();
+    auto& doc = m_context->projectManager->GetDocumentMutable();
 
-    // Decrementa timer feedback salvataggio
-    if (m_saveFlashTimer > 0.0f) m_saveFlashTimer -= dt;
+    m_ui.Update(dt);
 
     if (m_context) {
         m_context->isMapBuilderMode = true;
@@ -145,138 +123,45 @@ void PlanetMapperState::UpdateApp(float dt) {
         }
     }
 
-    ImGuiIO& io = ImGui::GetIO();
     uint32_t w = 1920, h = 1080;
     if (m_context->engine && m_context->engine->GetRenderManager()) {
         w = m_context->engine->GetRenderManager()->GetWindowWidth();
         h = m_context->engine->GetRenderManager()->GetWindowHeight();
     }
 
-    bool allowCameraControl = false;
-    if (!io.WantCaptureMouse) {
-        if (io.MousePos.x >= w * 0.45f) allowCameraControl = true;
+    // Aggiornamento telecamera
+    m_camera.Update(dt, m_context, w, h);
+
+    // m_ui.Draw() viene chiamato in RenderApp() dove il frame ImGui e' attivo.
+    // Qui consumiamo solo il risultato dell'ultimo frame Draw.
+    PlanetMapperUIResult uiResult = m_lastUIResult;
+    m_lastUIResult = {}; // Reset per il prossimo frame
+
+    if (uiResult.requestRebuildRoots) {
+        RebuildPlanetRoots();
+        m_compiler.Update(m_context, m_activePlanetIndex); // Refresh GPU chunks after root change
+    } else if (uiResult.documentChanged) {
+        m_compiler.Update(m_context, m_activePlanetIndex);
     }
 
-    if (allowCameraControl) {
-        // --- Orbita con drag mouse ---
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            m_orbitYaw -= io.MouseDelta.x * 0.5f;
-            m_orbitPitch += io.MouseDelta.y * 0.5f;
-            m_orbitPitch = std::clamp(m_orbitPitch, -89.0f, 89.0f);
+    if (uiResult.goToPlayState) {
+        if (m_previewWorld) {
+            m_previewWorld->CancelJobs();
+            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
+            m_previewWorld->GetChunkManager().ClearDiskCache();
         }
-        // --- Zoom con rotellina (più aggressivo vicino al pianeta) ---
-        if (io.MouseWheel != 0.0f) {
-            float scrollSpeed = std::max(m_orbitDistance * 0.1f, 5.0f);
-            m_orbitDistance -= io.MouseWheel * scrollSpeed;
-            m_orbitDistance = std::max(m_orbitDistance, 2.0f);
+        m_context->targetGameJsonPath = "saves/map/world_map.json";
+        m_context->engine->SetGameMode(GameMode::Play);
+        m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
+        return;
+    } else if (uiResult.goToHubState) {
+        if (m_previewWorld) {
+            m_previewWorld->CancelJobs();
+            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
         }
-        // --- Free-fly WASD: modifica la posizione orbitale "avanzando" ---
-        // W/S = avvicina/allontana  (come zoom ma da tastiera)
-        // A/D = ruota yaw orbitale  (come drag orizzontale)
-        // R/F = ruota pitch orbitale (salire/scendere sull'orbita)
-        float flySpeed = std::max(m_orbitDistance * 0.03f, 1.5f) * dt * 60.0f;
-        if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
-            m_orbitDistance -= flySpeed;
-            m_orbitDistance = std::max(m_orbitDistance, 2.0f);
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
-            m_orbitDistance += flySpeed;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
-            m_orbitYaw -= flySpeed * 0.5f;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
-            m_orbitYaw += flySpeed * 0.5f;
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_R) || ImGui::IsKeyDown(ImGuiKey_PageUp)) {
-            m_orbitPitch = std::min(m_orbitPitch + flySpeed * 0.4f, 89.0f);
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_F) || ImGui::IsKeyDown(ImGuiKey_PageDown)) {
-            m_orbitPitch = std::max(m_orbitPitch - flySpeed * 0.4f, -89.0f);
-        }
-    }
-
-    float pitchRad = glm::radians(m_orbitPitch);
-    float yawRad = glm::radians(m_orbitYaw);
-    
-    glm::vec3 camPos;
-    camPos.x = m_orbitTarget.x + m_orbitDistance * cos(pitchRad) * sin(yawRad);
-    camPos.y = m_orbitTarget.y + m_orbitDistance * sin(pitchRad);
-    camPos.z = m_orbitTarget.z + m_orbitDistance * cos(pitchRad) * cos(yawRad);
-
-    if (m_context) {
-        m_context->activeCameraView.cameraPosition = camPos;
-        m_context->activeCameraView.cameraFront = glm::normalize(m_orbitTarget - camPos);
-        m_context->activeCameraView.viewMatrix = glm::lookAt(camPos, m_orbitTarget, glm::vec3(0, 1, 0));
-        
-        float aspect = 16.0f / 9.0f; 
-        if (h > 0) {
-            aspect = (w * 0.65f) / (float)h;
-        }
-        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 3000.0f);
-        m_context->activeCameraView.projectionMatrix[1][1] *= -1;
-    }
-
-    // ------------------------------------------------------------------
-    // Sfera Raycast dal cursore (Hover & Selection)
-    // ------------------------------------------------------------------
-    if (allowCameraControl && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && m_context) {
-        
-        float viewX = (w * 0.35f);
-        float viewW = (w * 0.65f);
-        float viewY = 0.0f;
-        float viewH = (float)h;
-        
-        float mouseX_inView = io.MousePos.x - viewX;
-        float mouseY_inView = io.MousePos.y - viewY;
-        
-        float mouseX_NDC = (2.0f * mouseX_inView) / viewW - 1.0f;
-        float mouseY_NDC = 1.0f - (2.0f * mouseY_inView) / viewH;
-        
-        glm::vec4 rayClip = glm::vec4(mouseX_NDC, mouseY_NDC, -1.0f, 1.0f);
-        glm::vec4 rayEye = glm::inverse(m_context->activeCameraView.projectionMatrix) * rayClip;
-        rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
-        
-        glm::vec3 rayWorld = glm::normalize(glm::vec3(glm::inverse(m_context->activeCameraView.viewMatrix) * rayEye));
-        
-        fw::RaycastQuery query;
-        query.ray.origin = m_context->activeCameraView.cameraPosition;
-        query.ray.direction = rayWorld;
-        query.mode = fw::RaycastMode::Voxel;
-        query.maxDistance = 10000.0f;
-        
-        fw::RaycastHit hit = fw::RaycastSystem::Cast(m_context, query);
-        if (hit.hit && hit.type == fw::RaycastHitType::Voxel) {
-            // Calcola la mappatura UV sferica dal punto di impatto Voxel
-            glm::vec3 dir = glm::normalize(hit.worldPosition);
-            fw::CubeSphereMapping::DirectionToFaceUV(dir, hit.faceIndex, hit.uv);
-        }
-        m_lastRayHit = hit;
-        
-        if (hit.hit && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-            float pRadius = fw::PlanetMath::GetPlanetRadius(doc.planets[m_activePlanetIndex].planetSize);
-            int resolution = fw::PlanetMath::GetEditorCanvasExtents(doc.planets[m_activePlanetIndex].planetSize);
-            if (resolution < 1) resolution = 1;
-            
-            int col = 0, row = 0;
-            fw::CubeSphereMapping::FaceUVToCell(hit.uv, resolution, col, row);
-            
-            // Middle Click -> Change Orbit Target
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-                glm::vec3 hitPoint = fw::CubeSphereMapping::CellToDirection(hit.faceIndex, col, row, resolution) * pRadius;
-                m_orbitTarget = hitPoint;
-            }
-            
-            // Left Click -> Add Spawn Point Shortcut
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                // Logic to place spawn point quickly or select region
-            }
-        } else {
-            m_lastRayHit.hit = false;
-        }
-    } else {
-        m_lastRayHit.hit = false;
-        if (m_selectedChunkInstanceIndex >= 0) {}
+        m_context->engine->SetGameMode(GameMode::Hub);
+        m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
+        return;
     }
 
     if (m_context && m_context->jobSystem && m_context->assetManager) {
@@ -292,7 +177,6 @@ void PlanetMapperState::UpdateApp(float dt) {
                         int baseX = inst.gridX;
                         int baseZ = inst.gridY;
                         
-                        // Push base region
                         fw::MapRegion baseR;
                         baseR.eulerAngles = inst.eulerAngles;
                         baseR.angularRadius = inst.angularRadius;
@@ -311,7 +195,6 @@ void PlanetMapperState::UpdateApp(float dt) {
                         }
                         activeRegions.push_back(baseR);
                         
-                        // Push subregions (painter's algorithm)
                         for (const auto& sub : tpl.subRegions) {
                             fw::MapRegion projected = sub;
                             projected.faceIndex = inst.faceIndex;
@@ -332,6 +215,9 @@ void PlanetMapperState::UpdateApp(float dt) {
         if (pMap) {
             m_lodSystem.SetPlanetSize(pMap->planetSize, pMap->isFlat);
         }
+        for (auto& root : m_planetRootNodes) {
+            m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry);
+        }
     }
 
     if (m_previewWorld) {
@@ -341,21 +227,13 @@ void PlanetMapperState::UpdateApp(float dt) {
         }
         m_previewWorld->Update(dt);
         
-        // Se abbiamo selezionato una regione, proviamo a dipingerci sopra
-        if (m_selectedChunkInstanceIndex >= 0 && m_selectedChunkInstanceIndex < (int)doc.planets[m_activePlanetIndex].chunkInstances.size()) {}
-        
-        // --- Sincronizzazione Marker Spawn Point ---
         if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
             auto& p = doc.planets[m_activePlanetIndex];
-            // Se ci sono più marker che punti, elimina i marker in eccesso
             while (m_spawnPointMarkers.size() > p.spawnPoints.size()) {
                 auto ent = m_spawnPointMarkers.back();
-                if (m_previewWorld->GetRegistry().valid(ent)) {
-                    m_previewWorld->DestroyEntity(ent);
-                }
+                if (m_previewWorld->GetRegistry().valid(ent)) m_previewWorld->DestroyEntity(ent);
                 m_spawnPointMarkers.pop_back();
             }
-            // Se ci sono meno marker, creali come obelisco (pilastro + piramide)
             while (m_spawnPointMarkers.size() < p.spawnPoints.size()) {
                 entt::entity newMarker = m_previewWorld->CreatePrimitive("SpawnMarker", fw::Vec3(0.0f, 0.0f, 0.0f), "obelisk");
                 auto& mesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(newMarker);
@@ -364,7 +242,6 @@ void PlanetMapperState::UpdateApp(float dt) {
                 m_spawnPointMarkers.push_back(newMarker);
             }
             
-            // Aggiorna posizione, scala e colore di ogni marker
             for (size_t i = 0; i < p.spawnPoints.size(); ++i) {
                 auto& sp = p.spawnPoints[i];
                 auto ent = m_spawnPointMarkers[i];
@@ -388,10 +265,7 @@ void PlanetMapperState::UpdateApp(float dt) {
                 auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(ent);
                 trans.location = fw::Vec3(pos.x, pos.y, pos.z);
 
-                // Rotazione: vogliamo che l'obelisco abbia la base sulla superficie
-                // e la punta puntata verso l'esterno del pianeta (dir = outward normal)
-                // Usiamo una matrice che mappa +Y locale -> dir del pianeta
-                glm::vec3 worldUp = dir; // la direzione "su" per questo punto sulla sfera
+                glm::vec3 worldUp = dir;
                 glm::vec3 forward(1.0f, 0.0f, 0.0f);
                 if (glm::abs(glm::dot(worldUp, forward)) > 0.99f) forward = glm::vec3(0.0f, 0.0f, 1.0f);
                 glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
@@ -399,16 +273,15 @@ void PlanetMapperState::UpdateApp(float dt) {
                 glm::mat3 rotMat(right, worldUp, forward);
                 glm::quat oq = glm::quat_cast(rotMat);
                 trans.rotation = fw::Quat(oq.x, oq.y, oq.z, oq.w);
-                trans.scale = fw::Vec3(1.0f, 1.0f, 1.0f); // obelisco ha già le sue dimensioni
+                trans.scale = fw::Vec3(1.0f, 1.0f, 1.0f);
                 
                 auto& meshComp = m_previewWorld->GetRegistry().get<fw::MeshComponent>(ent);
                 meshComp.colorOverride[0] = sp.color.r;
                 meshComp.colorOverride[1] = sp.color.g;
                 meshComp.colorOverride[2] = sp.color.b;
-                meshComp.colorOverride[3] = sp.color.a; // usa l'alpha reale del colore spawn
+                meshComp.colorOverride[3] = sp.color.a;
             }
             
-            // --- GESTIONE CURSORE ---
             if (!m_previewWorld->GetRegistry().valid(m_cursorMarker)) {
                 m_cursorMarker = m_previewWorld->CreatePrimitive("CursorMarker", fw::Vec3(0.0f, 0.0f, 0.0f), "cube");
                 auto& mesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(m_cursorMarker);
@@ -420,12 +293,12 @@ void PlanetMapperState::UpdateApp(float dt) {
                 auto& ctrans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(m_cursorMarker);
                 auto& cmesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(m_cursorMarker);
                 
-                if (m_lastRayHit.hit) {
-                    glm::vec3 cpos = m_lastRayHit.worldPosition + m_lastRayHit.faceNormal * 0.5f; // Leggermente sopra la superficie
+                if (m_camera.GetLastRayHit().hit) {
+                    glm::vec3 cpos = m_camera.GetLastRayHit().worldPosition + m_camera.GetLastRayHit().faceNormal * 0.5f;
                     
                     ctrans.location = fw::Vec3(cpos.x, cpos.y, cpos.z);
                     
-                    glm::vec3 worldUp = m_lastRayHit.faceNormal;
+                    glm::vec3 worldUp = m_camera.GetLastRayHit().faceNormal;
                     glm::vec3 forward(1.0f, 0.0f, 0.0f);
                     if (glm::abs(glm::dot(worldUp, forward)) > 0.99f) forward = glm::vec3(0.0f, 0.0f, 1.0f);
                     glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
@@ -434,710 +307,37 @@ void PlanetMapperState::UpdateApp(float dt) {
                     glm::quat cq = glm::quat_cast(rotMat);
                     
                     ctrans.rotation = fw::Quat(cq.x, cq.y, cq.z, cq.w);
-                    
-                    // Cursor più piccolo e sottile degli spawn point, per indicare precisione
                     ctrans.scale = fw::Vec3(1.0f, 4.0f, 1.0f);
                     
-                    cmesh.colorOverride[0] = 0.0f; // Ciano brillante
+                    cmesh.colorOverride[0] = 0.0f;
                     cmesh.colorOverride[1] = 1.0f;
                     cmesh.colorOverride[2] = 1.0f;
-                    cmesh.colorOverride[3] = 1.0f; // Opaco
+                    cmesh.colorOverride[3] = 1.0f;
                 } else {
-                    // Nascondi se non colpiamo nulla
                     cmesh.colorOverride[3] = 0.0f;
                 }
             }
-            // --- FINE GESTIONE CURSORE ---
-            
         }
-        // --- Fine Sincronizzazione ---
     }
 }
 
 void PlanetMapperState::RenderApp() {
-    DrawBuilderUI();
-}
-
-void PlanetMapperState::DrawBuilderUI() {
     if (!m_context || !m_context->projectManager) return;
-    auto& doc = m_context->projectManager->GetDocumentMutable();
 
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-    float leftWidth = viewport->Size.x * 0.35f; // Riduciamo la UI al 35% per dare respiro al 3D!
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(ImVec2(leftWidth, viewport->Size.y));
-    ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | 
-                                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
-
-    ImGui::Begin("PlanetMapperLeft", nullptr, windowFlags);
-    
-    // Invocazione della Madre: gestisce la barra superiore e l'uscita in sicurezza verso l'Hub
-    if (DrawMotherHeader("PLANET MAPPER - GLOBO SFERICO & SISTEMA SOLARE")) {
-        ImGui::End();
-        return;
-    }
-
-    ImGui::BeginChild("PlanetControls", ImVec2(0, -135.0f), true);
-
-    if (ImGui::Button("➕ Nuovo Pianeta", ImVec2(-1, 30))) {
-        fw::PlanetMap newPlanet;
-        newPlanet.name = "Pianeta " + std::to_string(doc.planets.size() + 1);
-        newPlanet.planetSize = fw::PlanetSize::Medium; // Raggio di default
-        newPlanet.isFlat = false;
-        newPlanet.axialTilt = 0.0f;
-        newPlanet.yearLength = 365.0f;
-        doc.planets.push_back(newPlanet);
-        m_activePlanetIndex = (int)doc.planets.size() - 1;
-        m_lodSystem.SetPlanetSize(newPlanet.planetSize, newPlanet.isFlat);
-        RebuildPlanetRoots();
-        PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
-    }
-    ImGui::Spacing();
-
-    if (!doc.planets.empty()) {
-        if (ImGui::BeginCombo("Pianeta Attivo", doc.planets[m_activePlanetIndex].name.c_str())) {
-            for (int i = 0; i < (int)doc.planets.size(); ++i) {
-                bool isSelected = (m_activePlanetIndex == i);
-                if (ImGui::Selectable(doc.planets[i].name.c_str(), isSelected)) {
-                    m_activePlanetIndex = i;
-                    m_lodSystem.SetPlanetSize(doc.planets[i].planetSize, doc.planets[i].isFlat);
-                    RebuildPlanetRoots();
-                }
-                if (isSelected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::Separator();
-    }
-
-    if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-        auto& p = doc.planets[m_activePlanetIndex];
-        char nameBuf[128];
-        strncpy_s(nameBuf, p.name.c_str(), sizeof(nameBuf));
-        if (ImGui::InputText("Nome Pianeta", nameBuf, sizeof(nameBuf))) {
-            p.name = nameBuf;
-        }
-
-        const char* sizeNames[] = { "Tiny", "Small", "Medium", "Large", "Huge", "Gigantic" };
-        int currentSizeIndex = (int)p.planetSize;
-        if (ImGui::Combo("Grandezza Pianeta", &currentSizeIndex, sizeNames, IM_ARRAYSIZE(sizeNames))) {
-            p.planetSize = (fw::PlanetSize)currentSizeIndex;
-            m_lodSystem.SetPlanetSize(p.planetSize, p.isFlat);
-            m_activeTemplateIndex = -1; // Deseleziona il template corrente per evitare conflitti di grandezza
-            RebuildPlanetRoots();
-        }
-        
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.2f, 1.0f), "Parametri Astronomici (Sistema Solare)");
-        ImGui::SliderFloat("Inclinazione Asse (Gradi)", &p.axialTilt, -90.0f, 90.0f, "%.2f");
-        ImGui::SliderFloat("Durata Anno (Giorni)", &p.yearLength, 10.0f, 1000.0f, "%.0f");
-        ImGui::Spacing();
-
-        int N_lato = fw::PlanetMath::GetEditorCanvasExtents(p.planetSize);
-        float S = 16.0f;
-        float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
-        int C_totale = 6 * (int)(N_lato * N_lato);
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Legge della Superficie Sferica (C = 4*PI*R^2 / S^2)");
-        ImGui::Text("Dimensione Chunk Base: %.1f m | Risoluzione Faccia: %d x %d", S, (int)N_lato, (int)N_lato);
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Chunk Totali Generati: %d | Cursore Zoom Distanza: %.1f", C_totale, m_orbitDistance);
-        ImGui::SameLine();
-        if (ImGui::Button("Zoom +", ImVec2(60, 20))) m_orbitDistance = std::max(10.0f, m_orbitDistance - 25.0f);
-        ImGui::SameLine();
-        if (ImGui::Button("Zoom -", ImVec2(60, 20))) m_orbitDistance += 25.0f;
-    }
-    ImGui::Separator();
-
-    ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "Catalogo Chunk dalla Libreria (Progettati col Chunk Editor):");
-    if (doc.terrainLibrary.empty()) {
-        ImGui::TextDisabled("Nessun modello chunk presente nella libreria.");
-    } else {
-        ImGui::BeginChild("TemplateList", ImVec2(0, 140), true);
-        int matchCount = 0;
-        fw::PlanetSize currentPlanetSize = fw::PlanetSize::Small;
-        if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-            currentPlanetSize = doc.planets[m_activePlanetIndex].planetSize;
-        }
-        for (int i = 0; i < (int)doc.terrainLibrary.size(); ++i) {
-            if (doc.terrainLibrary[i].planetSize != currentPlanetSize) continue;
-            matchCount++;
-            bool isSelected = (m_activeTemplateIndex == i);
-            if (ImGui::Selectable((std::to_string(i+1) + ". " + doc.terrainLibrary[i].name + " [" + doc.terrainLibrary[i].id + "]").c_str(), isSelected)) {
-                m_activeTemplateIndex = i;
-            }
-        }
-        if (matchCount == 0) {
-            ImGui::TextDisabled("Nessun modello chunk compatibile con questa grandezza.");
-        }
-        ImGui::EndChild();
-    }
-    ImGui::Spacing();
-
-    if (ImGui::Button("📊 APRI TABELLA CHUNKS EXCEL (COLLOCAMENTO GEOGRAFICO)", ImVec2(-1, 35))) {
-        m_showPlacementTable = true;
-    }
-
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("📍 Punti di Inizio (Spawn Points)")) {
-        if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-            auto& p = doc.planets[m_activePlanetIndex];
-            
-            if (ImGui::Button("➕  Aggiungi Punto di Inizio", ImVec2(-1, 25))) {
-                fw::SpawnPoint sp;
-                sp.name = "Spawn " + std::to_string(p.spawnPoints.size() + 1);
-                
-                // --- CALCOLA LA POSIZIONE DAL PUNTATORE (RAYCAST 3D) ---
-                if (m_lastRayHit.hit) {
-                    sp.faceIndex = m_lastRayHit.faceIndex;
-                    float localU = (m_lastRayHit.uv.x * 2.0f) - 1.0f;
-                    float localV = (m_lastRayHit.uv.y * 2.0f) - 1.0f;
-                    float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
-                    sp.localX = localU * R;
-                    sp.localZ = localV * R;
-                } else {
-                    // Fallback se si clicca nel vuoto
-                    sp.faceIndex = 0;
-                    sp.localX = 0.0f;
-                    sp.localZ = 0.0f;
-                }
-                
-                p.spawnPoints.push_back(sp);
-                // Salvataggio immediato con feedback visivo
-                PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
-            }
-            ImGui::Spacing();
-            
-            for (int i = 0; i < (int)p.spawnPoints.size(); ++i) {
-                auto& sp = p.spawnPoints[i];
-                ImGui::PushID(i);
-                
-                char spName[64];
-                strncpy_s(spName, sp.name.c_str(), sizeof(spName));
-                if (ImGui::InputText("Nome", spName, sizeof(spName))) {
-                    sp.name = spName;
-                }
-                
-                const char* faceNames[] = { "+Z (Nord)", "-Z (Sud)", "+X (Est)", "-X (Ovest)", "+Y (Top/Cielo)", "-Y (Bottom/Nucleo)" };
-                ImGui::Combo("Faccia Base", &sp.faceIndex, faceNames, IM_ARRAYSIZE(faceNames));
-                
-                float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
-                ImGui::SliderFloat("Offset X", &sp.localX, -R, R, "%.1f");
-                ImGui::SliderFloat("Offset Z", &sp.localZ, -R, R, "%.1f");
-                ImGui::SliderFloat("Offset Y (Altezza)", &sp.heightOffset, 0.0f, R + 300.0f, "%.1f");
-                
-                float c[4] = { sp.color.r, sp.color.g, sp.color.b, sp.color.a };
-                if (ImGui::ColorEdit4("Colore Prisma", c)) {
-                    sp.color = glm::vec4(c[0], c[1], c[2], c[3]);
-                }
-                
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.1f, 1.0f));
-                if (ImGui::Button("Rimuovi", ImVec2(80, 20))) {
-                    p.spawnPoints.erase(p.spawnPoints.begin() + i);
-                    PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
-                    ImGui::PopStyleColor();
-                    ImGui::PopID();
-                    break;
-                }
-                ImGui::PopStyleColor();
-                ImGui::SameLine();
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.5f, 0.2f, 1.0f));
-                if (ImGui::Button("\xF0\x9F\x92\xBE Salva", ImVec2(-1, 20))) {
-                    PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
-                }
-                ImGui::PopStyleColor();
-                
-                ImGui::Separator();
-                ImGui::PopID();
-            }
-        }
-    }
-
-    ImGui::EndChild();
-
-    ImGui::BeginChild("BottomBar", ImVec2(0, 130.0f), true);
-    
-    // --- Flash di conferma salvataggio ---
-    if (m_saveFlashTimer > 0.0f) {
-        ImVec4 flashColor = (m_saveFlashMsg[0] == '\xE2') // UTF-8 ✅
-            ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f)
-            : ImVec4(1.0f, 0.3f, 0.2f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Text, flashColor);
-        ImGui::Text("%s  (saves/map/world_map.json)", m_saveFlashMsg.c_str());
-        ImGui::PopStyleColor();
-    }
-    
-    if (ImGui::Button("\xF0\x9F\x92\xBE SALVA MONDO E MAPPA 3D (WORLD PROJECT)", ImVec2(-1, 30))) {
-        PMS_DoSave(m_context->projectManager, m_saveFlashTimer, m_saveFlashMsg);
-        if (m_previewWorld) {
-            m_previewWorld->CancelJobs();
-            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
-            m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin che sovrascrivono la mappa!
-        }
-        m_showSaveConfirmPopup = true;
-    }
-    if (ImGui::Button("🚀 ESPLORA MAPPA IN PRIMA PERSONA (VOXEL TEST)", ImVec2(-1, 30))) {
-        CompileAndGenerate();
-    }
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 1.0f));
-    if (ImGui::Button("🌍 CARICA MAPPA COME PRINCIPALE E APRI IN FAIRWORLD PLAY", ImVec2(-1, 30))) {
-        m_context->projectManager->SaveProject();
-        if (m_previewWorld) {
-            m_previewWorld->CancelJobs();
-            if (m_context->jobSystem) m_context->jobSystem->WaitAll();
-            m_previewWorld->GetChunkManager().ClearDiskCache(); // Elimina i vecchi salvataggi .bin prima di giocare!
-        }
-        m_context->targetGameJsonPath = "saves/map/world_map.json";
-        m_context->engine->SetGameMode(GameMode::Play);
-        m_context->stateManager->ChangeState(std::make_unique<PlayState>(m_context));
-    }
-    ImGui::PopStyleColor();
-    ImGui::EndChild();
-
-    ImGui::End();
-
-    ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + leftWidth + 20.0f, viewport->Pos.y + 20.0f));
-    ImGui::SetNextWindowBgAlpha(0.7f);
-    ImGui::Begin("OverlayGlobe", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove);
-    ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), ">>> GLOBO SFERICO LOD 3D (ANTEPRIMA PIANETA IN TEMPO REALE) <<<");
-    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 0.8f), "Drag mouse: ruota  |  Rotellina: zoom  |  W/S: avvicina/allontana  |  A/D: ruota  |  R/F: su/giu");
-    
-    ImGui::Separator();
-    
-    // --- TOOL POSIZIONE CAMERA ---
-    // Calcola lat/lon dal yaw/pitch orbitale
-    float pitch = m_orbitPitch;
-    float yaw   = m_orbitYaw;
-    
-    // La camera guarda verso il centro del pianeta, quindi la direzione "al suolo" è l'opposto della camera
-    float pitchRad = glm::radians(pitch);
-    float yawRad   = glm::radians(yaw);
-    glm::vec3 camNorm;
-    camNorm.x = cos(pitchRad) * sin(yawRad);
-    camNorm.y = sin(pitchRad);
-    camNorm.z = cos(pitchRad) * cos(yawRad);
-    // camNorm è la direzione dalla camera verso il pianeta (già normalizzata)
-    
-    // Latitudine e Longitudine geografiche
-    float latDeg = glm::degrees(asin(std::clamp(camNorm.y, -1.0f, 1.0f)));
-    float lonDeg = glm::degrees(atan2(camNorm.x, camNorm.z));
-    
-    // Faccia del cubo sferico
-    float camAx = std::abs(camNorm.x), camAy = std::abs(camNorm.y), camAz = std::abs(camNorm.z);
-    const char* faceName = "";
-    if      (camAz >= camAx && camAz >= camAy) faceName = camNorm.z > 0 ? "NORD (+Z)" : "SUD (-Z)";
-    else if (camAx >= camAy && camAx >= camAz) faceName = camNorm.x > 0 ? "EST (+X)"  : "OVEST (-X)";
-    else                                        faceName = camNorm.y > 0 ? "POLO NORD (+Y)" : "POLO SUD (-Y)";
-    
-    // Distanza dalla superficie (se c'è un pianeta caricato)
-    float surfaceDist = m_orbitDistance;
-    if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-        surfaceDist = m_orbitDistance - fw::PlanetMath::GetPlanetRadius(doc.planets[m_activePlanetIndex].planetSize);
-    }
-    
-    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.2f, 1.0f), "POSIZIONE CAMERA:");
-    ImGui::Text("  Latitudine: %.1f deg  |  Longitudine: %.1f deg", latDeg, lonDeg);
-    ImGui::Text("  Faccia:     %s", faceName);
-    ImGui::Text("  Dist. dalla superficie: %.1f m  |  Orbita: %.1f m", surfaceDist, m_orbitDistance);
-    
-    // --- SLIDER LOD DISTANCE ---
-    ImGui::Separator();
-    ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f), "LOD (distanza divisione chunk):");
-    float lodMul = m_lodSystem.GetDistanceMultiplier();
-    if (ImGui::SliderFloat("Moltiplicatore LOD", &lodMul, 1.0f, 8.0f, "%.1fx")) {
-        m_lodSystem.SetDistanceMultiplier(lodMul);
-    }
-    ImGui::TextDisabled("Basso = chunk vicini e dettagliati  |  Alto = chunk piu' distanti");
-    
-    ImGui::End();
-
-    if (m_showSaveConfirmPopup) {
-        ImGui::OpenPopup("PianetaSalvato");
-        m_showSaveConfirmPopup = false;
-    }
-    if (ImGui::BeginPopupModal("PianetaSalvato", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Mappa planetaria salvata con successo via WorldProjectManager in world_map.json.");
-        if (ImGui::Button("OK", ImVec2(120, 0))) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-
-    if (m_showPlacementTable && !doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {
-        auto& currentPlanet = doc.planets[m_activePlanetIndex];
-        float pRadius = fw::PlanetMath::GetPlanetRadius(currentPlanet.planetSize);
-        int N_lato = (int)std::ceil((glm::pi<float>() * pRadius) / (2.0f * 16.0f));
-        if (N_lato < 1) N_lato = 1;
-
-        ImGui::SetNextWindowSize(ImVec2(1000, 600), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Tabella Collocamento Chunks - Excel Style (Legge Sferica)", &m_showPlacementTable)) {
-            std::map<int, int> gridLookup;
-            for (int i = 0; i < (int)currentPlanet.chunkInstances.size(); ++i) {
-                if (currentPlanet.chunkInstances[i].isGridAligned) {
-                    int key = currentPlanet.chunkInstances[i].faceIndex * 1000000 + currentPlanet.chunkInstances[i].gridY * 1000 + currentPlanet.chunkInstances[i].gridX;
-                    gridLookup[key] = i;
-                }
-            }
-
-            int toDeleteIndex = -1;
-            bool shouldPushToAdd = false;
-            bool needsRebuild = false;
-            fw::PlanetChunkInstance toAdd;
-
-            if (ImGui::BeginTabBar("FacesTabBar")) {
-                const char* faceNames[] = { "+Z (Nord)", "-Z (Sud)", "+X (Est)", "-X (Ovest)", "+Y (Top/Cielo)", "-Y (Bottom/Nucleo)" };
-                for (int f = 0; f < 6; ++f) {
-                    if (ImGui::BeginTabItem(faceNames[f])) {
-                        ImGui::Text("Faccia %d - Risoluzione Griglia: %d x %d Cella (Ogni cella rappresenta una porzione del globo)", f, N_lato, N_lato);
-                        ImGui::TextDisabled("Seleziona un modello chunk a sinistra nel catalogo e clicca su una cella vuota (---) per piazzare il chunk.");
-                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Clicca su una cella verde (occupata) per rimuovere quel chunk dalla sfera.");
-                        
-                        if (ImGui::Button("Riempi Tutti i Vuoti", ImVec2(150, 25))) {
-                            if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < (int)doc.terrainLibrary.size()) {
-                                for (int row = 0; row < N_lato; ++row) {
-                                    for (int col = 0; col < N_lato; ++col) {
-                                        int key = f * 1000000 + row * 1000 + col;
-                                        if (gridLookup.find(key) == gridLookup.end()) {
-                                            fw::PlanetChunkInstance addInst;
-                                            addInst.name = "Chunk_" + std::to_string(f) + "_" + std::to_string(col) + "_" + std::to_string(row);
-                                            addInst.templateId = doc.terrainLibrary[m_activeTemplateIndex].id;
-                                            addInst.isGridAligned = true;
-                                            addInst.faceIndex = f;
-                                            addInst.gridX = col;
-                                            addInst.gridY = row;
-                                            float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
-                                            float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
-                                            glm::vec3 dir(0.0f);
-                                            switch(f) {
-                                                case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                                                case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                                                case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                                                case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                                                case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                                                case 5: dir = glm::vec3(cx, -1.0f, cy); break;
-                                            }
-                                            dir = glm::normalize(dir);
-                                            addInst.eulerAngles.x = glm::degrees(asin(dir.y));
-                                            addInst.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
-                                            addInst.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 1.5f;
-                                            currentPlanet.chunkInstances.push_back(addInst);
-                                            needsRebuild = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Svuota Tutta la Faccia", ImVec2(180, 25))) {
-                            for (int row = 0; row < N_lato; ++row) {
-                                for (int col = 0; col < N_lato; ++col) {
-                                    int key = f * 1000000 + row * 1000 + col;
-                                    auto it = gridLookup.find(key);
-                                    if (it != gridLookup.end()) {
-                                        // Segna per l'eliminazione (richiede un po' di attenzione con gli indici, ma lo facciamo ricreando l'array)
-                                        toDeleteIndex = it->second;
-                                    }
-                                }
-                            }
-                            // Metodo più sicuro: rimuovere tutti gli elementi di questa faccia
-                            auto newEnd = std::remove_if(currentPlanet.chunkInstances.begin(), currentPlanet.chunkInstances.end(), [f](const fw::PlanetChunkInstance& inst) {
-                                return inst.isGridAligned && inst.faceIndex == f;
-                            });
-                            if (newEnd != currentPlanet.chunkInstances.end()) {
-                                currentPlanet.chunkInstances.erase(newEnd, currentPlanet.chunkInstances.end());
-                                needsRebuild = true;
-                            }
-                        }
-                        ImGui::Spacing();
-                        
-                        ImGui::BeginChild(std::string("GridScroll_" + std::to_string(f)).c_str(), ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
-                        ImGuiListClipper clipper;
-                        clipper.Begin(N_lato, 35.0f);
-                        while (clipper.Step()) {
-                            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
-                                for (int col = 0; col < N_lato; ++col) {
-                                    int key = f * 1000000 + row * 1000 + col;
-                                    auto it = gridLookup.find(key);
-                                    ImGui::PushID(key);
-                                    if (col > 0) ImGui::SameLine(0, 2.0f);
-
-                                    if (it != gridLookup.end()) {
-                                        auto& inst = currentPlanet.chunkInstances[it->second];
-                                        std::string shortName = "CH";
-                                        for (const auto& t : doc.terrainLibrary) {
-                                            if (t.id == inst.templateId) { shortName = t.name.substr(0, std::min<size_t>(t.name.size(), 4)); break; }
-                                        }
-                                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
-                                        if (ImGui::Button(shortName.c_str(), ImVec2(45, 30))) {
-                                            toDeleteIndex = it->second;
-                                        }
-                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chunk: %s\nTemplate ID: %s", inst.name.c_str(), inst.templateId.c_str());
-                                        ImGui::PopStyleColor();
-                                    } else {
-                                        if (ImGui::Button("---", ImVec2(45, 30))) {
-                                            if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < (int)doc.terrainLibrary.size()) {
-                                                toAdd.name = "Chunk_" + std::to_string(f) + "_" + std::to_string(col) + "_" + std::to_string(row);
-                                                toAdd.templateId = doc.terrainLibrary[m_activeTemplateIndex].id;
-                                                toAdd.isGridAligned = true;
-                                                toAdd.faceIndex = f;
-                                                toAdd.gridX = col;
-                                                toAdd.gridY = row;
-                                                
-                                                float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
-                                                float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
-                                                glm::vec3 dir(0.0f);
-                                                switch(f) {
-                                                    case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                                                    case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                                                    case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                                                    case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                                                    case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                                                    case 5: dir = glm::vec3(cx, -1.0f, cy); break;
-                                                }
-                                                dir = glm::normalize(dir);
-                                                toAdd.eulerAngles.x = glm::degrees(asin(dir.y));
-                                                toAdd.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
-                                                toAdd.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 1.5f;
-                                                shouldPushToAdd = true;
-                                                needsRebuild = true;
-                                            }
-                                        }
-                                    }
-                                    ImGui::PopID();
-                                }
-                            }
-                        }
-                        ImGui::EndChild();
-                        ImGui::EndTabItem();
-                    }
-                }
-                ImGui::EndTabBar();
-            }
-
-            if (toDeleteIndex >= 0) {
-                currentPlanet.chunkInstances.erase(currentPlanet.chunkInstances.begin() + toDeleteIndex);
-                needsRebuild = true;
-            }
-            if (shouldPushToAdd) {
-                currentPlanet.chunkInstances.push_back(toAdd);
-                needsRebuild = true;
-            }
-            if (needsRebuild) {
-                CompileAndGenerate();
-            }
-        }
-        ImGui::End();
-    }
-}
-
-// DrawRuntimeUI removed
-
-void PlanetMapperState::CompileAndGenerate() {
-    if (!m_context || !m_context->projectManager) return;
-    auto& doc = m_context->projectManager->GetDocumentMutable();
-
-    std::cout << "[PlanetMapperState] Inizio compilazione e generazione voxel dell'intero pianeta...\n";
-    if (m_context && m_context->jobSystem) {
-        m_context->jobSystem->WaitAll();
-    }
-    if (m_context) {
-        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) m_context->forgeWorld = nullptr;
-        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) m_context->activeRegistry = nullptr;
-    }
-    m_previewWorld = std::make_unique<fw::GameWorld>();
-    m_previewWorld->Initialize(m_context);
-    m_previewWorld->InitializePhysics();
-
-    m_context->activeRegistry = &m_previewWorld->GetRegistry();
-    m_context->forgeWorld = m_previewWorld.get();
-    m_context->isForgeMode = false;
-
-    if (m_context->cacheManager) {
-        m_context->cacheManager->FlushGpuRenderCaches(m_context);
-        m_context->cacheManager->FlushCpuTransientCaches(m_context);
-    } else if (m_context->engine && m_context->engine->GetRenderManager()) {
-        m_context->engine->GetRenderManager()->InvalidateForgeCache();
-    }
-    if (m_context->engine) {
-        m_context->engine->SetGameMode(GameMode::PlanetMapper);
-    }
-
-    if (doc.planets.empty() || m_activePlanetIndex < 0 || m_activePlanetIndex >= (int)doc.planets.size()) return;
-    auto& currentPlanet = doc.planets[m_activePlanetIndex];
-    currentPlanet.regions.clear();
-
-    if (!currentPlanet.chunkInstances.empty()) {
-        for (const auto& inst : currentPlanet.chunkInstances) {
-            for (const auto& tmpl : doc.terrainLibrary) {
-                if (tmpl.id == inst.templateId) {
-                    fw::MapRegion baseRegion;
-                    baseRegion.eulerAngles = inst.eulerAngles;
-                    baseRegion.angularRadius = inst.angularRadius;
-                    baseRegion.isGridAligned = inst.isGridAligned;
-                    baseRegion.faceIndex = inst.faceIndex;
-                    baseRegion.gridX = inst.gridX;
-                    baseRegion.gridY = inst.gridY;
-                    baseRegion.type = tmpl.baseType;
-                    baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
-                    baseRegion.gravityModifier = tmpl.baseGravityModifier;
-                    baseRegion.seed = tmpl.seed;
-
-                    if (inst.isGridAligned && inst.gridX != -1 && inst.gridY != -1) {
-                        int radiusTiles = (int)std::max(1.0f, inst.angularRadius * 10.0f);
-                        baseRegion.rectMin = glm::ivec2(inst.gridX - radiusTiles, inst.gridY - radiusTiles);
-                        baseRegion.rectMax = glm::ivec2(inst.gridX + radiusTiles, inst.gridY + radiusTiles);
-                    }
-                    currentPlanet.regions.push_back(baseRegion);
-
-                    for (const auto& sub : tmpl.subRegions) {
-                        fw::MapRegion projectedSub = sub;
-                        if (inst.isGridAligned && inst.gridX != -1 && inst.gridY != -1) {
-                            projectedSub.rectMin += glm::ivec2(inst.gridX, inst.gridY);
-                            projectedSub.rectMax += glm::ivec2(inst.gridX, inst.gridY);
-                        }
-                        currentPlanet.regions.push_back(projectedSub);
-                    }
-                    break;
-                }
-            }
-        }
-    } else if (m_activeTemplateIndex >= 0 && m_activeTemplateIndex < (int)doc.terrainLibrary.size()) {
-        const auto& tmpl = doc.terrainLibrary[m_activeTemplateIndex];
-        fw::MapRegion baseRegion;
-        baseRegion.eulerAngles = glm::vec3(0.0f);
-        baseRegion.angularRadius = tmpl.baseAngularRadius;
-        baseRegion.type = tmpl.baseType;
-        baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
-        baseRegion.gravityModifier = tmpl.baseGravityModifier;
-        baseRegion.seed = tmpl.seed;
-        currentPlanet.regions.push_back(baseRegion);
-
-        for (const auto& sub : tmpl.subRegions) {
-            fw::MapRegion projectedSub = sub;
-            projectedSub.eulerAngles = glm::vec3(0.0f);
-            currentPlanet.regions.push_back(projectedSub);
-        }
-    }
-
-    // PLANET MAPPER: La CPU non ha bisogno di chunk fisici — il Compute Shader GPU gestisce
-    // tutto il rendering visivo tramite UploadTerrainData qui sotto.
-    // MapWorldGenerator::Generate() verrebbe eseguita sincronamente su migliaia di chunk
-    // causando un freeze. La saltiamo completamente.
-
-    // === UPLOAD DATI AL GPU COMPUTE SHADER ===
-    // Costruisce i ChunkData e le MapRegionGPU per il pipeline del terreno e li carica sulla VRAM.
-    if (m_context->engine && m_context->engine->GetRenderManager()) {
-        auto* rm = m_context->engine->GetRenderManager();
-        const auto& planet = currentPlanet;
-
-        // Combina regions "fisse" (planet.regions) con quelle piazzate tramite chunkInstances
-        std::vector<fw::MapRegion> allRegions = planet.regions;
-        if (m_context && m_context->projectManager) {
-            auto& doc = m_context->projectManager->GetDocument();
-            for (const auto& inst : planet.chunkInstances) {
-                for (const auto& tpl : doc.terrainLibrary) {
-                    if (tpl.id == inst.templateId) {
-                        int baseX = inst.gridX;
-                        int baseZ = inst.gridY;
-                        
-                        // Push base region
-                        fw::MapRegion baseR;
-                        baseR.eulerAngles = inst.eulerAngles;
-                        baseR.angularRadius = inst.angularRadius;
-                        baseR.isGridAligned = inst.isGridAligned;
-                        baseR.faceIndex = inst.faceIndex;
-                        baseR.gridX = baseX;
-                        baseR.gridY = baseZ;
-                        baseR.rectMin = glm::ivec2(baseX, baseZ);
-                        baseR.rectMax = glm::ivec2(baseX, baseZ);
-                        baseR.type = tpl.baseType;
-                        baseR.gravityModifier = tpl.baseGravityModifier;
-                        baseR.perlinFrequency = tpl.basePerlinFrequency;
-                        if (m_context->blockRegistry) {
-                            baseR.surfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:grass").id;
-                            baseR.subsurfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
-                        }
-                        allRegions.push_back(baseR);
-                        
-                        // Push subregions (painter's algorithm)
-                        for (const auto& sub : tpl.subRegions) {
-                            fw::MapRegion projected = sub;
-                            projected.faceIndex = inst.faceIndex;
-                            projected.isGridAligned = inst.isGridAligned;
-                            projected.gridX = baseX;
-                            projected.gridY = baseZ;
-                            projected.rectMin += glm::ivec2(baseX, baseZ);
-                            projected.rectMax += glm::ivec2(baseX, baseZ);
-                            allRegions.push_back(projected);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Raccoglie le regioni in formato GPU
-        std::vector<fw::MapRegionGPU> gpuRegions;
-        gpuRegions.reserve(allRegions.size());
-        for (const auto& r : allRegions) {
-            fw::MapRegionGPU gr{};
-            float pitch = glm::radians(r.eulerAngles.x);
-            float yaw   = glm::radians(r.eulerAngles.y);
-            gr.centerNormal   = glm::vec3(cos(pitch) * cos(yaw), sin(pitch), cos(pitch) * sin(yaw));
-            gr.angularRadius  = r.angularRadius;
-            gr.rectMinMax     = glm::vec4((float)r.rectMin.x, (float)r.rectMin.y, (float)r.rectMax.x, (float)r.rectMax.y);
-            gr.shapeType      = (uint32_t)r.shape;
-            gr.biomeType      = (uint32_t)r.type;
-            gr.perlinFreq     = r.perlinFrequency;
-            gr.gravityMod     = r.gravityModifier;
-            gr.isGridAligned  = r.isGridAligned ? 1u : 0u;
-            gr.surfaceBlock   = r.surfaceBlockId;
-            gr.subsurfaceBlock = r.subsurfaceBlockId;
-            gr._pad           = 0;
-            gpuRegions.push_back(gr);
-        }
-
-        // Raccoglie i chunk dalle radici LOD della faccia sfericale
-        // Usiamo i root nodes della griglia 3x2 come chunk di base (LOD0)
-        std::vector<ChunkData> gpuChunks;
-        gpuChunks.reserve(m_planetRootNodes.size());
-        for (int i = 0; i < (int)m_planetRootNodes.size(); ++i) {
-            const auto& node = m_planetRootNodes[i];
-            ChunkData cd{};
-            cd.center  = node.centerPos;
-            cd.radius  = node.boundsRadius;
-            cd.p00     = glm::vec4(node.p00, 0.0f);
-            cd.p10     = glm::vec4(node.p10, 0.0f);
-            cd.p01     = glm::vec4(node.p01, 0.0f);
-            cd.p11     = glm::vec4(node.p11, 0.0f);
-            cd.chunkID = (uint32_t)i;
-            cd._pad0 = 0; cd._pad1 = 0; cd._pad2 = 0;
-            gpuChunks.push_back(cd);
-        }
-
-        rm->UploadTerrainData(gpuChunks, gpuRegions, fw::PlanetMath::GetPlanetRadius(planet.planetSize));
-    }
-
-    // m_isBuilderMode = false rimosso
-    
-    if (!currentPlanet.isFlat) {
-        float R = fw::PlanetMath::GetPlanetRadius(currentPlanet.planetSize);
-        // Telecamera sferica
-        m_orbitTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-        m_orbitDistance = R + 100.0f;
-        m_orbitPitch = 40.0f;
-        m_orbitYaw = 45.0f;
-        std::cout << "[PlanetMapperState] Anteprima Voxel sferica completata! Camera in orbita a raggio: " << m_orbitDistance << "\n";
-    } else {
-        // Telecamera piana (legacy)
-        float midX = ((float)(currentPlanet.maxX + currentPlanet.minX) * 0.5f) * 16.0f;
-        float midZ = ((float)(currentPlanet.maxZ + currentPlanet.minZ) * 0.5f) * 16.0f;
-        float midY = 20.0f;
-        m_orbitTarget = glm::vec3(midX, midY, midZ);
-        float mapSpan = std::max((float)(currentPlanet.maxX - currentPlanet.minX), (float)(currentPlanet.maxZ - currentPlanet.minZ)) * 16.0f;
-        m_orbitDistance = std::max(mapSpan * 1.5f, 60.0f);
-        m_orbitPitch = 40.0f;
-        m_orbitYaw = 45.0f;
-        std::cout << "[PlanetMapperState] Anteprima Voxel del Pianeta completata! Camera centrata su: (" << midX << ", " << midY << ", " << midZ << ")\n";
+    // Draw UI (ImGui e' attivo in questo scope)
+    float dist = m_camera.GetOrbitDistance();
+    m_lastUIResult = m_ui.Draw(
+        m_context,
+        m_activePlanetIndex,
+        m_activeTemplateIndex,
+        dist,
+        m_camera.GetOrbitYaw(),
+        m_camera.GetOrbitPitch(),
+        m_camera.GetLastRayHit(),
+        m_lodSystem
+    );
+    // La distanza dell'orbita e' aggiornabile anche qui perche' e' solo un float.
+    if (dist != m_camera.GetOrbitDistance()) {
+        m_camera.SetOrbitDistance(dist);
     }
 }
