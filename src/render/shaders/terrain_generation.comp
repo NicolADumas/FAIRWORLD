@@ -61,7 +61,11 @@ layout(push_constant) uniform PushConstants {
     uint numChunks;
     uint numRegions;
     float planetRadius;
-    float _pad;
+    uint baseBiomeType;
+    uint baseSurfaceBlock;
+    uint baseSubsurfaceBlock;
+    float basePerlinFreq;
+    float baseGravityMod;
 } pc;
 
 // --- SIMPLEX NOISE 3D (Ashima Arts) ---
@@ -186,16 +190,21 @@ void main() {
     );
     vec3 normal = normalize(posOnFace);
     
-    float baseHeight = pc.planetRadius;
-    float finalHeight = baseHeight;
-    uint surfaceMat = 1; // Default
+    // 1. Calcolo Base Terrain (Layer 0)
+    float baseNoise = octaveNoise(normal, pc.basePerlinFreq * 100.0, 4);
+    float baseHeight = pc.planetRadius + (baseNoise * pc.planetRadius * 0.05 * pc.baseGravityMod);
+    uint surfaceMat = pc.baseSurfaceBlock;
 
     // Determina la faccia e le coordinate UV del vertice corrente
     uint vertexFace;
     vec2 vertexUV = normalToFaceUV(normal, vertexFace); // UV in [-1, +1]
     
-    // SDF Blending Logica Parallela
-    float minSdf = 9999.0;
+    // 2. Valutazione Local Regions (Layer 1 - IDW)
+    float chunkBlendedHeight = 0.0;
+    float chunkTotalWeight = 0.0;
+    float maxInfluence = -1.0;
+    uint dominantMat = surfaceMat;
+
     for (uint i = 0; i < pc.numRegions; ++i) {
         MapRegionGPU r = regions[i];
         
@@ -203,31 +212,21 @@ void main() {
         float blendDistance = 0.08;
         
         if (r.isGridAligned == 1u) {
-            // Test Grid-Aligned: usa le coordinate della griglia in pixels
-            // Le coordinate UV del vertice in [-1,+1] vengono convertite in tile-coords [0, N]
-            // rectMinMax contiene (gridX_min, gridY_min, gridX_max, gridY_max) in tile coords
             if (vertexFace != r.faceIndex) {
                 sdf = 9999.0; // Non appartiene a questa faccia
             } else {
-                // N_lato Ã¨ implicito nella trasformazione UV -> griglia
-                // UV in [-1,+1], per ricavare la tile: tile = (uv+1)/2 * N (float)
-                // Non conosciamo N_lato nel shader, ma rectMinMax Ã¨ in tile-space
-                // Usiamo rectMinMax come range UV normalizzato: moltiplichiamo per 0.5*(uv+1)
-                // PiÃ¹ semplice: il Compiler passa rectMinMax giÃ  in UV normalizzato [0,1]
-                // converti vertexUV da [-1,+1] a [0,1]
                 vec2 uvN = (vertexUV + 1.0) * 0.5; // [0, 1]
-                // rectMinMax.xy = uvMin [0,1], rectMinMax.zw = uvMax [0,1]
+                uvN.y = 1.0 - uvN.y;
+                
                 vec2 uvMin = r.rectMinMax.xy;
                 vec2 uvMax = r.rectMinMax.zw;
                 
-                // SDF rettangolare in spazio UV normalizzato
                 vec2 d = max(uvMin - uvN, uvN - uvMax);
                 float blendUV = 0.03; // ~3% del range UV
                 sdf = max(d.x, d.y);
                 blendDistance = blendUV;
             }
         } else {
-            // Test sferico (angolare)
             if (r.angularRadius > 0.0) {
                 float dt = clamp(dot(normal, r.centerNormal), -1.0, 1.0);
                 float angle = acos(dt);
@@ -235,20 +234,34 @@ void main() {
             }
         }
         
-        if (sdf < blendDistance) {
+        float influence = clamp(1.0 - (sdf / blendDistance), 0.0, 1.0);
+        influence = influence * influence * (3.0 - 2.0 * influence); // smoothstep
+        
+        if (influence > 0.0) {
             float n = octaveNoise(normal, r.perlinFreq * 100.0, 4);
             float regionHeight = pc.planetRadius + (n * pc.planetRadius * 0.05 * r.gravityMod);
             
-            float influence = clamp(1.0 - (sdf / blendDistance), 0.0, 1.0);
-            influence = influence * influence * (3.0 - 2.0 * influence); // smoothstep
+            chunkBlendedHeight += regionHeight * influence;
+            chunkTotalWeight += influence;
             
-            finalHeight = mix(finalHeight, regionHeight, influence);
-            
-            if (sdf < minSdf) {
-                minSdf = sdf;
-                if (influence > 0.5) surfaceMat = r.surfaceBlock;
+            if (influence > maxInfluence) {
+                maxInfluence = influence;
+                dominantMat = r.surfaceBlock;
             }
         }
+    }
+    
+    // 3. Compositing
+    float finalHeight = baseHeight;
+    if (chunkTotalWeight > 0.0) {
+        float avgChunkHeight = chunkBlendedHeight / chunkTotalWeight;
+        float layerAlpha = clamp(chunkTotalWeight, 0.0, 1.0);
+        finalHeight = mix(baseHeight, avgChunkHeight, layerAlpha);
+    }
+    
+    // 4. Threshold Materiale
+    if (maxInfluence > 0.5) {
+        surfaceMat = dominantMat;
     }
     
     vec3 finalPos = normal * finalHeight;

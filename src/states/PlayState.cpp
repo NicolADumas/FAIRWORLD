@@ -377,16 +377,50 @@ void PlayState::Update(float dt) {
     
     // Costruiamo la lista di regioni attive da passare al LOD system
     std::vector<fw::MapRegion> activeRegions;
+    fw::PlanetBaseTerrain baseTerrain;
     if (m_context->projectManager) {
         const auto& doc = m_context->projectManager->GetDocument();
         if (!doc.planets.empty()) {
-            activeRegions = doc.planets[0].regions;
-            // ... potremmo anche espandere chunkInstances qui se necessario, ma per ora le regioni base bastano.
+            const auto& pMap = doc.planets[0];
+            activeRegions = pMap.regions;
+            baseTerrain = pMap.baseTerrain;
+            
+            for (const auto& inst : pMap.chunkInstances) {
+                for (const auto& tpl : doc.terrainLibrary) {
+                    if (tpl.id == inst.templateId) {
+                        fw::MapRegion baseR;
+                        baseR.eulerAngles = inst.eulerAngles;
+                        baseR.angularRadius = inst.angularRadius;
+                        baseR.isGridAligned = inst.isGridAligned;
+                        baseR.faceIndex = inst.faceIndex;
+                        baseR.gridX = inst.gridX;
+                        baseR.gridY = inst.gridY;
+                        baseR.rectMin = glm::ivec2(inst.gridX, inst.gridY);
+                        baseR.rectMax = glm::ivec2(inst.gridX, inst.gridY);
+                        baseR.type = tpl.baseType;
+                        baseR.gravityModifier = tpl.baseGravityModifier;
+                        baseR.perlinFrequency = tpl.basePerlinFrequency;
+                        baseR.surfaceBlockId = tpl.baseSurfaceBlockId;
+                        baseR.subsurfaceBlockId = tpl.baseSubsurfaceBlockId;
+                        activeRegions.push_back(baseR);
+                        
+                        for (const auto& sub : tpl.subRegions) {
+                            fw::MapRegion projected = sub;
+                            projected.faceIndex = inst.faceIndex;
+                            projected.isGridAligned = inst.isGridAligned;
+                            projected.rectMin += glm::ivec2(inst.gridX, inst.gridY);
+                            projected.rectMax += glm::ivec2(inst.gridX, inst.gridY);
+                            activeRegions.push_back(projected);
+                        }
+                        break;
+                    }
+                }
+            }
         }
     }
     
     for (auto& root : m_planetRootNodes) {
-        m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_context->forgeWorld, m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry);
+        m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_context->forgeWorld, m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry, baseTerrain);
     }
 
     // --- ESECUZIONE SISTEMI ECS ---

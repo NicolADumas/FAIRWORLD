@@ -53,9 +53,9 @@ private:
         return chunkRadius * DISTANCE_MULTIPLIER * (lodLevel + 1);
     }
 
-    void SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg);
+    void SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg, const fw::PlanetBaseTerrain& baseTerrain);
     void MergeNode(ChunkNode& node, GameWorld* world);
-    void RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg);
+    void RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg, const fw::PlanetBaseTerrain& baseTerrain);
 
 public:
     void SetPlanetSize(fw::PlanetSize size, bool isFlat) { 
@@ -65,7 +65,7 @@ public:
     }
     void SetDistanceMultiplier(float m) { DISTANCE_MULTIPLIER = m; }
     float GetDistanceMultiplier() const { return DISTANCE_MULTIPLIER; }
-    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg);
+    void UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg, const fw::PlanetBaseTerrain& baseTerrain);
 };
 
 } // namespace fw

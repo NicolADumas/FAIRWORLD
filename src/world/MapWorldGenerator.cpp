@@ -36,6 +36,23 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             if (tmpl.id == inst.templateId) {
                 int baseX = inst.gridX;
                 int baseZ = inst.gridY;
+                
+                fw::MapRegion baseR;
+                baseR.eulerAngles = inst.eulerAngles;
+                baseR.angularRadius = inst.angularRadius;
+                baseR.isGridAligned = inst.isGridAligned;
+                baseR.faceIndex = inst.faceIndex;
+                baseR.gridX = baseX;
+                baseR.gridY = baseZ;
+                baseR.rectMin = glm::ivec2(baseX, baseZ);
+                baseR.rectMax = glm::ivec2(baseX, baseZ);
+                baseR.type = tmpl.baseType;
+                baseR.gravityModifier = tmpl.baseGravityModifier;
+                baseR.perlinFrequency = tmpl.basePerlinFrequency;
+                baseR.surfaceBlockId = tmpl.baseSurfaceBlockId;
+                baseR.subsurfaceBlockId = tmpl.baseSubsurfaceBlockId;
+                combinedRegions.push_back(baseR);
+                
                 for (const auto& sub : tmpl.subRegions) {
                     fw::MapRegion projected = sub;
                     projected.faceIndex = inst.faceIndex;
@@ -75,12 +92,15 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         biomeData.planetSize = planet.planetSize;
         biomeData.isFlat = planet.isFlat;
         biomeData.chunkCenterWorld = pos;
+        biomeData.baseTerrain = planet.baseTerrain;
         
         for (auto it = combinedRegions.begin(); it != combinedRegions.end(); ++it) {
             if (it->isGridAligned) {
-                if (it->faceIndex == face && it->gridX == local_cx && it->gridY == local_cz) {
-                    biomeData.hasBaseRegion = true;
-                    biomeData.baseRegion = *it;
+                // Aggiungi un margine di 1 tile per l'SDF blending sui chunk adiacenti
+                int margin = 1; 
+                if (it->faceIndex == face && local_cx >= it->gridX - margin && local_cx <= it->gridX + margin &&
+                    local_cz >= it->gridY - margin && local_cz <= it->gridY + margin) {
+                    biomeData.overlappingRegions.push_back(*it);
                     biomeData.isCustomMapped = true;
                 }
             } else if (it->angularRadius > 0.0f) {
@@ -119,34 +139,13 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             }
         }
 
-        if (!biomeData.hasBaseRegion) {
-            biomeData.baseRegion.type = fw::MapRegionType::Forest; 
-            uint8_t idGrass = 1;
-            uint8_t idDirt = 3;
-            float grav = 1.0f;
-            float perlin = 0.03f;
-            if (!doc.terrainLibrary.empty()) {
-                const auto& defaultTmpl = doc.terrainLibrary[0];
-                idGrass = defaultTmpl.baseSurfaceBlockId;
-                idDirt = defaultTmpl.baseSubsurfaceBlockId;
-                grav = defaultTmpl.baseGravityModifier;
-                perlin = defaultTmpl.basePerlinFrequency;
-            }
-            biomeData.baseRegion.surfaceBlockId = idGrass;
-            biomeData.baseRegion.subsurfaceBlockId = idDirt;
-            biomeData.baseRegion.gravityModifier = grav;
-            biomeData.baseRegion.perlinFrequency = perlin;
-            biomeData.surfaceBlockId = idGrass;
-            biomeData.subsurfaceBlockId = idDirt;
-        } else {
-            biomeData.surfaceBlockId = biomeData.baseRegion.surfaceBlockId;
-            biomeData.subsurfaceBlockId = biomeData.baseRegion.subsurfaceBlockId;
-        }
+        biomeData.surfaceBlockId = biomeData.baseTerrain.surfaceBlock;
+        biomeData.subsurfaceBlockId = biomeData.baseTerrain.subsurfaceBlock;
         
         targetWorld.GetRegistry().emplace_or_replace<fw::BiomeDataComponent>(chunkEnt, biomeData);
         targetWorld.GetRegistry().emplace_or_replace<fw::TerrainGenTag>(chunkEnt);
         
-        switch (biomeData.baseRegion.type) {
+        switch (biomeData.baseTerrain.biome) {
             case fw::MapRegionType::Forest:  targetWorld.GetRegistry().emplace_or_replace<fw::ForestBiomeTag>(chunkEnt); break;
             case fw::MapRegionType::Desert:  targetWorld.GetRegistry().emplace_or_replace<fw::DesertBiomeTag>(chunkEnt); break;
             case fw::MapRegionType::Tundra:  targetWorld.GetRegistry().emplace_or_replace<fw::TundraBiomeTag>(chunkEnt); break;

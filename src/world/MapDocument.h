@@ -98,12 +98,22 @@ struct SpawnPoint {
     glm::vec4 color = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f); // Colore del puntatore
 };
 
+struct PlanetBaseTerrain {
+    MapRegionType biome = MapRegionType::Forest;
+    uint32_t surfaceBlock = 1;     // Erba/Grass
+    uint32_t subsurfaceBlock = 3;  // Terra/Dirt
+    float perlinFrequency = 0.5f;
+    float gravityModifier = 1.0f;
+};
+
 struct PlanetMap {
     PlanetType type;
     std::string name;
     std::vector<MapRegion> regions; // Legacy / Fallback
     std::vector<PlanetChunkInstance> chunkInstances;
     std::vector<SpawnPoint> spawnPoints;
+    
+    PlanetBaseTerrain baseTerrain;
     
     PlanetSize planetSize = PlanetSize::Medium; // Sostituisce planetRadius
     bool isFlat = false;        // Sostituisce il check planetRadius <= 0.0f

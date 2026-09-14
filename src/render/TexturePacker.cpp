@@ -2,6 +2,7 @@
 #include "TexturePacker.h"
 #include <iostream>
 #include <stdexcept>
+#include <filesystem>
 
 // STB_IMAGE_IMPLEMENTATION è già definito in RenderManager.cpp
 #include <stb_image.h>
@@ -21,8 +22,20 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
     result.channels = 4;
     
     std::string cacheFile = "assets/texture_cache.bin";
+    std::string materialsFile = "assets/definitions/materials.json";
+    bool cacheValid = true;
+    
+    if (std::filesystem::exists(cacheFile) && std::filesystem::exists(materialsFile)) {
+        if (std::filesystem::last_write_time(materialsFile) > std::filesystem::last_write_time(cacheFile)) {
+            cacheValid = false;
+        }
+    }
+    
     FILE* fCache = nullptr;
-    fopen_s(&fCache, cacheFile.c_str(), "rb");
+    if (cacheValid) {
+        fopen_s(&fCache, cacheFile.c_str(), "rb");
+    }
+    
     if (fCache) {
         // Read header
         int cachedLayerCount = 0;

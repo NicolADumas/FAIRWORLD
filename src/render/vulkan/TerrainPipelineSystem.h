@@ -15,7 +15,12 @@ struct TerrainGenPushConstants {
     uint32_t numChunks;
     uint32_t numRegions;
     float planetRadius;
-    float _pad;
+    uint32_t baseBiomeType;
+    
+    uint32_t baseSurfaceBlock;
+    uint32_t baseSubsurfaceBlock;
+    float basePerlinFreq;
+    float baseGravityMod;
 };
 
 class TerrainPipelineSystem {

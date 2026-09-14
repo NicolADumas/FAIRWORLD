@@ -137,11 +137,9 @@ void PlanetMapperState::UpdateApp(float dt) {
     PlanetMapperUIResult uiResult = m_lastUIResult;
     m_lastUIResult = {}; // Reset per il prossimo frame
 
-    if (uiResult.requestRebuildRoots) {
+    if (uiResult.requestRebuildRoots || uiResult.documentChanged) {
         RebuildPlanetRoots();
         m_compiler.Update(m_context, m_activePlanetIndex); // Refresh GPU chunks after root change
-    } else if (uiResult.documentChanged) {
-        m_compiler.Update(m_context, m_activePlanetIndex);
     }
 
     if (uiResult.goToPlayState) {
@@ -189,10 +187,8 @@ void PlanetMapperState::UpdateApp(float dt) {
                         baseR.type = tpl.baseType;
                         baseR.gravityModifier = tpl.baseGravityModifier;
                         baseR.perlinFrequency = tpl.basePerlinFrequency;
-                        if (m_context && m_context->blockRegistry) {
-                            baseR.surfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:grass").id;
-                            baseR.subsurfaceBlockId = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
-                        }
+                        baseR.surfaceBlockId = tpl.baseSurfaceBlockId;
+                        baseR.subsurfaceBlockId = tpl.baseSubsurfaceBlockId;
                         activeRegions.push_back(baseR);
                         
                         for (const auto& sub : tpl.subRegions) {
@@ -216,7 +212,7 @@ void PlanetMapperState::UpdateApp(float dt) {
             m_lodSystem.SetPlanetSize(pMap->planetSize, pMap->isFlat);
         }
         for (auto& root : m_planetRootNodes) {
-            m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry);
+            m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_previewWorld.get(), m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry, pMap ? pMap->baseTerrain : fw::PlanetBaseTerrain());
         }
     }
 

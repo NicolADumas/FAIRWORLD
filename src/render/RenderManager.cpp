@@ -3338,10 +3338,12 @@ void RenderManager::ReclaimTerrainStaging(uint32_t frameIndex) {
 
 void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
                                        const std::vector<fw::MapRegionGPU>& regions,
-                                       float planetRadius) {
+                                       float planetRadius,
+                                       const fw::PlanetBaseTerrain& baseTerrain) {
     if (!m_terrainPipeline) return;
 
     m_terrainPlanetRadius = planetRadius;
+    m_terrainBaseTerrain = baseTerrain;
     m_terrainNumChunks  = (uint32_t)std::min((size_t)MAX_TERRAIN_CHUNKS,  chunks.size());
     m_terrainNumRegions = (uint32_t)std::min((size_t)MAX_TERRAIN_REGIONS, regions.size());
 
@@ -3435,10 +3437,14 @@ void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
     // 3. Dispatch del Compute Shader se ci sono chunk
     if (m_terrainNumChunks > 0) {
         TerrainGenPushConstants pc{};
-        pc.numChunks    = m_terrainNumChunks;
-        pc.numRegions   = m_terrainNumRegions;
-        pc.planetRadius = m_terrainPlanetRadius;
-        pc._pad         = 0.0f;
+        pc.numChunks           = m_terrainNumChunks;
+        pc.numRegions          = m_terrainNumRegions;
+        pc.planetRadius        = m_terrainPlanetRadius;
+        pc.baseBiomeType       = (uint32_t)m_terrainBaseTerrain.biome;
+        pc.baseSurfaceBlock    = m_terrainBaseTerrain.surfaceBlock;
+        pc.baseSubsurfaceBlock = m_terrainBaseTerrain.subsurfaceBlock;
+        pc.basePerlinFreq      = m_terrainBaseTerrain.perlinFrequency;
+        pc.baseGravityMod      = m_terrainBaseTerrain.gravityModifier;
         m_terrainPipeline->dispatch(cmd, pc);
     }
 

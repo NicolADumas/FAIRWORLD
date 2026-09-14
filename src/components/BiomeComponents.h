@@ -17,8 +17,7 @@ struct BiomeDataComponent {
     bool isCustomMapped = false;
     
     // Campi per SDF Blending su Chunk Voxel
-    bool hasBaseRegion = false;
-    MapRegion baseRegion;
+    PlanetBaseTerrain baseTerrain;
     std::vector<MapRegion> overlappingRegions;
     fw::PlanetSize planetSize = fw::PlanetSize::Medium;
     bool isFlat = false;

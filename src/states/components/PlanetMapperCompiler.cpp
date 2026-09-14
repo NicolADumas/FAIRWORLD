@@ -31,8 +31,7 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
     planet.regions.clear();
     auto& doc = context->projectManager->GetDocumentMutable();
 
-    if (!planet.chunkInstances.empty()) {
-        for (const auto& inst : planet.chunkInstances) {
+    for (const auto& inst : planet.chunkInstances) {
             for (const auto& tmpl : doc.terrainLibrary) {
                 if (tmpl.id == inst.templateId) {
                     fw::MapRegion baseRegion;
@@ -66,7 +65,6 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
                 }
             }
         }
-    }
 
     if (context->engine && context->engine->GetRenderManager()) {
         auto* rm = context->engine->GetRenderManager();
@@ -182,7 +180,7 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
             gpuChunks.push_back(cd);
         }
 
-        rm->UploadTerrainData(gpuChunks, gpuRegions, R);
+        rm->UploadTerrainData(gpuChunks, gpuRegions, R, planet.baseTerrain);
     }
 }
 

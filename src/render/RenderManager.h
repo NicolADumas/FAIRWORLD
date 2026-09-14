@@ -23,6 +23,7 @@
 #include "apps/SolarSystemRenderer.h"
 #include "vulkan/TerrainPipelineSystem.h"
 #include "vulkan/TerrainGPUTypes.h"
+#include "MapDocument.h"
 
 class XrManager;
 struct BlockDef;
@@ -236,6 +237,7 @@ private:
     uint32_t       m_terrainNumChunks{ 0 };
     uint32_t       m_terrainNumRegions{ 0 };
     float          m_terrainPlanetRadius{ 50.0f };
+    fw::PlanetBaseTerrain m_terrainBaseTerrain;
     bool           m_terrainDataDirty{ false };
 
     // Allocazione dal Ring Buffer e gestione della libreria
@@ -346,7 +348,8 @@ public:
     // Carica tutti i dati in un colpo solo (full rebuild)
     void UploadTerrainData(const std::vector<ChunkData>& chunks,
                            const std::vector<fw::MapRegionGPU>& regions,
-                           float planetRadius);
+                           float planetRadius,
+                           const fw::PlanetBaseTerrain& baseTerrain);
 
     // Carica singole porzioni incrementalmente (partial rebuild)
     void UpdateTerrainChunk(uint32_t index, const ChunkData& chunk);

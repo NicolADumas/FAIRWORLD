@@ -361,16 +361,25 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
                             }
                         }
                         ImGui::SameLine();
-                        if (ImGui::Button("Svuota Tutta la Faccia", ImVec2(180, 25))) {
-                            auto newEnd = std::remove_if(currentPlanet.chunkInstances.begin(), currentPlanet.chunkInstances.end(), [f](const fw::PlanetChunkInstance& inst) {
-                                return inst.isGridAligned && inst.faceIndex == f;
-                            });
-                            if (newEnd != currentPlanet.chunkInstances.end()) {
-                                currentPlanet.chunkInstances.erase(newEnd, currentPlanet.chunkInstances.end());
-                                currentPlanet.MarkStructuralChange();
-                                result.documentChanged = true;
-                            }
-                        }
+                          if (ImGui::Button("Svuota Tutta la Faccia", ImVec2(180, 25))) {
+                              auto newEnd = std::remove_if(currentPlanet.chunkInstances.begin(), currentPlanet.chunkInstances.end(), [f](const fw::PlanetChunkInstance& inst) {
+                                  return inst.isGridAligned && inst.faceIndex == f;
+                              });
+                              if (newEnd != currentPlanet.chunkInstances.end()) {
+                                  currentPlanet.chunkInstances.erase(newEnd, currentPlanet.chunkInstances.end());
+                                  currentPlanet.MarkStructuralChange();
+                                  result.documentChanged = true;
+                                  
+                                  // Ricalcola gridLookup perch gli indici sono cambiati!
+                                  gridLookup.clear();
+                                  for (int i = 0; i < (int)currentPlanet.chunkInstances.size(); ++i) {
+                                      if (currentPlanet.chunkInstances[i].isGridAligned) {
+                                          int key = currentPlanet.chunkInstances[i].faceIndex * 1000000 + currentPlanet.chunkInstances[i].gridY * 1000 + currentPlanet.chunkInstances[i].gridX;
+                                          gridLookup[key] = i;
+                                      }
+                                  }
+                              }
+                          }
                         ImGui::Spacing();
                         
                         ImGui::BeginChild(std::string("GridScroll_" + std::to_string(f)).c_str(), ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);

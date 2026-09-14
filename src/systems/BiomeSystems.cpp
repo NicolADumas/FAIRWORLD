@@ -21,18 +21,18 @@ namespace {
     };
 
     SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, glm::vec3 noisePos, const PerlinNoise& terrainNoiseGen) {
-        float freq = biome.baseRegion.perlinFrequency;
+        float freq = biome.baseTerrain.perlinFrequency;
         float terrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
-        float baseHeight = 25.0f + (terrainVal * 25.0f * biome.baseRegion.gravityModifier);
+        float baseHeight = 25.0f + (terrainVal * 25.0f * biome.baseTerrain.gravityModifier);
         
-        if (biome.baseRegion.type == fw::MapRegionType::Ocean) {
+        if (biome.baseTerrain.biome == fw::MapRegionType::Ocean) {
             baseHeight = 8.0f + (terrainVal * 5.0f); // Oceano profondo
         }
         
         float finalHeight = baseHeight;
-        uint8_t surfaceBlock = biome.baseRegion.surfaceBlockId;
-        uint8_t subsurfaceBlock = biome.baseRegion.subsurfaceBlockId;
-        fw::MapRegionType colBiome = biome.baseRegion.type;
+        uint8_t surfaceBlock = biome.baseTerrain.surfaceBlock;
+        uint8_t subsurfaceBlock = biome.baseTerrain.subsurfaceBlock;
+        fw::MapRegionType colBiome = biome.baseTerrain.biome;
         
         glm::vec3 colNormal = glm::normalize(biome.chunkCenterWorld);
         

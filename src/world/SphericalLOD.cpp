@@ -32,13 +32,12 @@ namespace {
     }
 }
 
-void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, class BlockRegistry* blockReg) {
-    float distance = glm::length(node.centerPos - playerPos);
-    bool inFrustum = IsSphereInFrustum(viewProj, node.centerPos, node.boundsRadius);
-    
-    // Genera la mesh se non esiste e non stiamo già generando (SOLO SE NEL FRUSTUM)
-    if (inFrustum && node.targetEntity == entt::null && !node.isGenerating && node.state == LODState::Stable) {
-        RequestMeshGeneration(&node, world, jobs, assets, activeRegions, blockReg);
+void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerPos, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, const glm::mat4& viewProj, BlockRegistry* blockReg, const fw::PlanetBaseTerrain& baseTerrain) {
+    if (!world || !jobs) return;
+
+    bool inFrustum = true;
+    if (node.boundsRadius > 0.0f) {
+        inFrustum = IsSphereInFrustum(viewProj, node.centerPos, node.boundsRadius * 1.5f);
     }
     
     // Gestione visibilità
@@ -50,12 +49,22 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
         }
     }
     
-    // Siamo vicini e possiamo ancora dividere? Dividiamo (SOLO SE NEL FRUSTUM).
-    if (inFrustum && distance < GetThresholdForLOD(node.lodLevel, node.boundsRadius) && node.lodLevel > 0) {
-        if (node.state == LODState::Stable) {
-            SplitNode(node, world, jobs, assets, activeRegions, blockReg);
+    if (!inFrustum) {
+        if (node.targetEntity == entt::null && !node.isGenerating) {
+            RequestMeshGeneration(&node, world, jobs, assets, activeRegions, blockReg, baseTerrain);
         }
+        return; 
+    }
 
+    float distToPlayer = glm::distance(playerPos, node.centerPos);
+    float threshold = GetThresholdForLOD(node.lodLevel, node.boundsRadius);
+
+    if (distToPlayer < threshold && node.lodLevel < 6) { // MAX LOD = 6
+        if (node.state == LODState::Stable || node.state == LODState::Merging) {
+            SplitNode(node, world, jobs, assets, activeRegions, blockReg, baseTerrain);
+            node.state = LODState::Splitting;
+        }
+        
         if (node.state == LODState::Splitting) {
             bool allChildrenReady = true;
             for (int i = 0; i < 4; ++i) {
@@ -85,28 +94,34 @@ void SphericalLODSystem::UpdateLODTree(ChunkNode& node, const glm::vec3& playerP
                 node.state = LODState::Split;
             }
         }
-
-        for (auto& child : node.children) {
-            if (child) {
-                UpdateLODTree(*child, playerPos, world, jobs, assets, activeRegions, viewProj, blockReg);
+        
+        if (node.state == LODState::Split || node.state == LODState::Splitting) {
+            for (int i = 0; i < 4; ++i) {
+                if (node.children[i]) {
+                    UpdateLODTree(*node.children[i], playerPos, world, jobs, assets, activeRegions, viewProj, blockReg, baseTerrain);
+                }
             }
         }
-    } 
-    else if ((node.state == LODState::Split || node.state == LODState::Splitting) && (!inFrustum || distance >= GetThresholdForLOD(node.lodLevel, node.boundsRadius))) {
-        node.state = LODState::Merging;
+    } else {
+        if (node.state == LODState::Split || node.state == LODState::Splitting) {
+            node.state = LODState::Merging;
+        }
         
-        if (node.targetEntity == entt::null && !node.isGenerating) {
-            RequestMeshGeneration(&node, world, jobs, assets, activeRegions, blockReg);
-        } else {
-            if (auto* parentVis = world->GetRegistry().try_get<fw::VisibilityComponent>(node.targetEntity)) {
-                parentVis->enabled = true; // Lo riattiviamo momentaneamente finché i figli scompaiono (o lo facciamo direttamente nel merge)
+        if (node.state == LODState::Merging || node.state == LODState::Stable) {
+            if (node.targetEntity == entt::null && !node.isGenerating) {
+                RequestMeshGeneration(&node, world, jobs, assets, activeRegions, blockReg, baseTerrain);
+            } else {
+                if (auto* parentVis = world->GetRegistry().try_get<fw::VisibilityComponent>(node.targetEntity)) {
+                    parentVis->enabled = true; // Lo riattiviamo momentaneamente finché i figli scompaiono (o lo facciamo direttamente nel merge)
+                }
+                MergeNode(node, world);
+                node.state = LODState::Stable;
             }
-            MergeNode(node, world);
         }
     }
 }
 
-void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg) {
+void SphericalLODSystem::SplitNode(ChunkNode& node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg, const fw::PlanetBaseTerrain& baseTerrain) {
     node.state = LODState::Splitting;
     
     glm::vec3 m0 = (node.p00 + node.p10) * 0.5f;
@@ -136,18 +151,22 @@ void SphericalLODSystem::MergeNode(ChunkNode& node, GameWorld* world) {
     node.state = LODState::Stable;
 }
 
-void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg) {
+void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world, JobSystem* jobs, AssetManager* assets, const std::vector<MapRegion>& activeRegions, class BlockRegistry* blockReg, const fw::PlanetBaseTerrain& baseTerrain) {
+    if (!world || !jobs || !node || node->isGenerating) return;
+    
     node->isGenerating = true;
     
     glm::vec3 p00 = node->p00;
     glm::vec3 p10 = node->p10;
     glm::vec3 p01 = node->p01;
     glm::vec3 p11 = node->p11;
+    glm::vec3 centerPos = node->centerPos;
+    float boundsRadius = node->boundsRadius;
     float planetRadius = m_planetRadius;
     fw::PlanetSize planetSize = m_planetSize;
     bool isFlat = m_isFlat;
     
-    std::string meshName = "LOD_" + std::to_string(node->lodLevel) + "_" + std::to_string(reinterpret_cast<uintptr_t>(node));
+    std::string meshName = "LODChunk_" + std::to_string((int)(centerPos.x * 100)) + "_" + std::to_string((int)(centerPos.y * 100)) + "_" + std::to_string((int)(centerPos.z * 100));
     
     if (node->targetEntity == entt::null) {
         node->targetEntity = world->CreateEmptyEntity(meshName);
@@ -156,22 +175,15 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     }
     entt::entity target = node->targetEntity;
     
-    glm::vec3 centerPos = node->centerPos;
-    float boundsRadius = node->boundsRadius;
-    
-    // Per l'esecuzione asincrona, facciamo una copia dei dati di base per thread-safety
-    std::vector<MapRegion> safeRegions = activeRegions;
-    
-    // NOTA BENE: NON catturiamo 'node' come raw pointer, perché 'MergeNode' potrebbe distruggerlo nel thread principale prima che il job finisca!
     auto* matReg = world ? world->GetMaterialRegistry() : nullptr;
-    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, planetSize, isFlat, safeRegions, blockReg, matReg, centerPos, boundsRadius]() {
+    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, planetSize, isFlat, activeRegions, blockReg, matReg, centerPos, boundsRadius, baseTerrain]() {
         MeshComponent mesh;
         mesh.name = meshName;
         mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
         
-        std::vector<MapRegion> gridAlignedRegions;
         std::vector<MapRegion> intersectingFreeRegions;
-        for (const auto& r : safeRegions) {
+        std::vector<MapRegion> gridAlignedRegions;
+        for (const auto& r : activeRegions) {
             if (r.isGridAligned) {
                 gridAlignedRegions.push_back(r);
             } else {
@@ -215,8 +227,11 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 // DATA-DRIVEN: Calcoliamo l'influenza delle regioni tramite Grid Mapping esatto e distanza angolare (Fallback)
                 MapRegion activeRegion;
                 activeRegion.seed = 12345;
-                activeRegion.gravityModifier = 1.0f;
-                activeRegion.perlinFrequency = 0.005f; // Base
+                activeRegion.gravityModifier = baseTerrain.gravityModifier;
+                activeRegion.perlinFrequency = baseTerrain.perlinFrequency;
+                activeRegion.type = baseTerrain.biome;
+                activeRegion.surfaceBlockId = baseTerrain.surfaceBlock;
+                activeRegion.subsurfaceBlockId = baseTerrain.subsurfaceBlock;
                 
                 // --- GRID MAPPING LOGIC (Legge Sferica Esatta) ---
                 int N_lato = fw::PlanetMath::GetFaceResolution(planetSize);
@@ -254,17 +269,28 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     }
                 }
                 
+                bool hasAnyRegion = foundGridAligned || !intersectingFreeRegions.empty();
+                
+                if (!hasAnyRegion) {
+                    // Blank white sphere for unpainted areas
+                    positions.push_back(normal * planetRadius);
+                    normals.push_back(normal);
+                    colors.push_back(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)); // Bianco
+                    materials.push_back(0); 
+                    emissives.push_back(0.0f);
+                    continue;
+                }
+                
                 MapRegion baseRegion;
                 baseRegion.seed = 12345;
-                baseRegion.gravityModifier = 1.0f;
-                baseRegion.perlinFrequency = 0.005f;
-                baseRegion.type = MapRegionType::Forest;
+                baseRegion.gravityModifier = baseTerrain.gravityModifier;
+                baseRegion.perlinFrequency = baseTerrain.perlinFrequency;
+                baseRegion.type = baseTerrain.biome;
+                baseRegion.surfaceBlockId = baseTerrain.surfaceBlock;
+                baseRegion.subsurfaceBlockId = baseTerrain.subsurfaceBlock;
                 
                 if (foundGridAligned) {
                     baseRegion = activeRegion;
-                } else if (blockReg) {
-                    baseRegion.surfaceBlockId = blockReg->GetBlock("fairworld:grass").id;
-                    baseRegion.subsurfaceBlockId = blockReg->GetBlock("fairworld:dirt").id;
                 }
                 
                 float baseTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, baseRegion, baseRegion.perlinFrequency);
@@ -274,7 +300,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 }
                 float finalHeight = baseHeight;
                 MapRegion dominantRegion = baseRegion;
-                float minSdf = 9999.0f;
+                float maxInfluence = 0.0f;
                 
                 for (const auto& r : intersectingFreeRegions) {
                     float pitch = glm::radians(r.eulerAngles.x);
@@ -303,102 +329,97 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                         
                         finalHeight = glm::mix(finalHeight, regionHeight, influence);
                         
-                        if (influence > 0.5f) { // Il materiale cambia quando l'influenza supera il 50%
+                        if (influence > maxInfluence) {
+                            maxInfluence = influence;
                             dominantRegion = r;
                         }
                     }
                 }
                 
-                // Nessuna regione trovata? Mettiamo il wireframe (solo se neanche la griglia base era presente e non ci sono regioni libere vicine)
-                if (!foundGridAligned && intersectingFreeRegions.empty()) {
-                    // Rendering Olografico / Wireframe per zone non dipinte
-                    float height = planetRadius;
-                    positions.push_back(normal * height);
-                    normals.push_back(normal);
-                    
-                    float uGrid = atan2(normal.z, normal.x) * 40.0f;
-                    float vGrid = asin(normal.y) * 40.0f;
-                    bool isLine = (fmod(std::abs(uGrid), 1.0f) < 0.05f || fmod(std::abs(vGrid), 1.0f) < 0.05f);
-                    
-                    colors.push_back(isLine ? glm::vec4(0.0f, 0.8f, 1.0f, 1.0f) : glm::vec4(0.02f, 0.05f, 0.1f, 1.0f));
-                    materials.push_back(0); 
-                    emissives.push_back(isLine ? 1.0f : 0.0f);
-                } else {
-                    float height = finalHeight;
-                    positions.push_back(normal * height);
-                    normals.push_back(normal);
-                    
-                    float latitude = asin(normal.y);
-                    float latTemp = 1.0f - std::abs(latitude) / (glm::pi<float>() / 2.0f);
-                    float tempNoise = (MapWorldGenerator::SampleSphericalNoise(normal, dominantRegion, 0.001f) + 1.0f) * 0.5f;
-                    float humNoise = (MapWorldGenerator::SampleSphericalNoise(normal, dominantRegion, 0.003f) + 1.0f) * 0.5f;
-                    float tempFinal = (tempNoise * 0.5f) + (latTemp * 0.5f);
-                    float relHeight = std::clamp((height - planetRadius) / (planetRadius * 0.05f), 0.0f, 1.0f);
-                    
-                    const ::BiomeDef* biome = MapWorldGenerator::EvaluateBiome(tempFinal, humNoise, relHeight, assets);
-                    glm::vec4 color(0.3f, 0.8f, 0.3f, 1.0f);
-                    
-                    uint32_t matId = dominantRegion.surfaceBlockId; 
-                    
-                    uint8_t idSand = 5;
-                    uint8_t idWater = 6;
-                    uint8_t idSnow = 7;
-                    uint8_t idStone = 3;
-                    uint8_t idGrass = 1;
-                    
-                    if (blockReg) {
-                        idSand = blockReg->GetBlock("fairworld:sand").id;
-                        idWater = blockReg->GetBlock("fairworld:water").id;
-                        idStone = blockReg->GetBlock("fairworld:stone").id;
-                        idGrass = blockReg->GetBlock("fairworld:grass").id;
-                        idSnow = blockReg->GetBlock("fairworld:snow").id;
-                        if (idSnow == 0) idSnow = 7; // Fallback
-                    }
-
-                    // Colore approssimativo per debug se non ci sono texture valide
-                    if (matId == idSand) color = glm::vec4(0.8f, 0.7f, 0.4f, 1.0f); // Sabbia
-                    else if (matId == idWater) color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f); // Acqua
-                    else if (matId == idSnow) color = glm::vec4(0.9f, 0.9f, 0.95f, 1.0f); // Neve
-                    else if (matId == idStone) color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f); // Pietra
-                    
-                    // Elevation based materials (Stone for mountains, Snow for peaks)
-                    float elevation = height - planetRadius;
-                    
-                    // Sovrascrivi con Neve/Pietra SOLO se l'utente aveva messo Erba/Sabbia di base
-                    if (matId == idGrass || matId == idSand) {
-                        if (elevation > planetRadius * 0.02f) {
-                            matId = idStone; // Pietra per le montagne
-                        }
-                        if (elevation > planetRadius * 0.04f) {
-                            matId = idSnow; // Neve per le alte vette
-                        }
-                    }
-                    
-                    if (dominantRegion.type == MapRegionType::Ocean || matId == idWater || height < planetRadius + 0.1f) {
-                        // Forza il livello del mare perfettamente piatto e l'ID acqua
-                        positions.back() = normal * (planetRadius + 0.1f);
-                        color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f);
-                        matId = idWater; // Acqua
-                    }
-                    
-                    float latDeg = glm::degrees(latitude);
-                    float em = 0.0f;
-                    // Equator and Poles markers
-                    if (std::abs(latDeg) < 0.8f) { // Equatore
-                        color = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f);
-                        em = 1.0f;
-                    } else if (latDeg > 88.0f) { // Polo Nord
-                        color = glm::vec4(0.2f, 0.2f, 1.0f, 1.0f);
-                        em = 1.0f;
-                    } else if (latDeg < -88.0f) { // Polo Sud
-                        color = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
-                        em = 1.0f;
-                    }
-                    
-                    colors.push_back(color);
-                    materials.push_back(matId);
-                    emissives.push_back(em);
+                float height = finalHeight;
+                positions.push_back(normal * height);
+                normals.push_back(normal);
+                
+                float latitude = asin(normal.y);
+                float latTemp = 1.0f - std::abs(latitude) / (glm::pi<float>() / 2.0f);
+                float tempNoise = (MapWorldGenerator::SampleSphericalNoise(normal, dominantRegion, 0.001f) + 1.0f) * 0.5f;
+                float humNoise = (MapWorldGenerator::SampleSphericalNoise(normal, dominantRegion, 0.003f) + 1.0f) * 0.5f;
+                float tempFinal = (tempNoise * 0.5f) + (latTemp * 0.5f);
+                float relHeight = std::clamp((height - planetRadius) / (planetRadius * 0.05f), 0.0f, 1.0f);
+                
+                const ::BiomeDef* biome = MapWorldGenerator::EvaluateBiome(tempFinal, humNoise, relHeight, assets);
+                glm::vec4 color(0.3f, 0.8f, 0.3f, 1.0f);
+                
+                uint32_t matId = dominantRegion.surfaceBlockId; 
+                
+                uint8_t idSand = 5;
+                uint8_t idWater = 6;
+                uint8_t idSnow = 7;
+                uint8_t idStone = 3;
+                uint8_t idGrass = 1;
+                
+                if (blockReg) {
+                    idSand = blockReg->GetBlock("fairworld:sand").id;
+                    idWater = blockReg->GetBlock("fairworld:water").id;
+                    idStone = blockReg->GetBlock("fairworld:stone").id;
+                    idGrass = blockReg->GetBlock("fairworld:grass").id;
+                    idSnow = blockReg->GetBlock("fairworld:snow").id;
+                    if (idSnow == 0) idSnow = 7; // Fallback
                 }
+
+                // Elevation based materials (Stone for mountains, Snow for peaks)
+                float elevation = height - planetRadius;
+                
+                // Sovrascrivi con Neve/Pietra SOLO se l'utente aveva messo Erba/Sabbia e se il bioma lo supporta
+                if ((dominantRegion.type == MapRegionType::Forest || dominantRegion.type == MapRegionType::Tundra) && (matId == idGrass || matId == idSand)) {
+                    if (elevation > planetRadius * 0.02f) {
+                        matId = idStone; // Pietra per le montagne
+                    }
+                    if (elevation > planetRadius * 0.04f) {
+                        matId = idSnow; // Neve per le alte vette
+                    }
+                }
+                
+                if (dominantRegion.type == MapRegionType::Ocean) {
+                    positions.back() = normal * (planetRadius + 0.1f);
+                    matId = idWater; // Acqua per Oceano
+                } else if (dominantRegion.type == MapRegionType::Forest || dominantRegion.type == MapRegionType::Tundra) {
+                    // Acqua o Neve per le valli e fiumi in Forest/Tundra
+                    if (height < planetRadius + 0.1f) {
+                        positions.back() = normal * (planetRadius + 0.1f);
+                        matId = (dominantRegion.type == MapRegionType::Tundra) ? idSnow : idWater;
+                    }
+                } else if (dominantRegion.type == MapRegionType::Volcano) {
+                    // Lava (qui mettiamo Pietra scura o arancio) per i vulcani nelle depressioni
+                    if (height < planetRadius + 0.1f) {
+                        positions.back() = normal * (planetRadius + 0.1f);
+                        matId = idStone;
+                    }
+                }
+                
+                // Colore approssimativo per debug se non ci sono texture valide
+                if (matId == idSand) color = glm::vec4(0.8f, 0.7f, 0.4f, 1.0f); // Sabbia
+                else if (matId == idWater) color = glm::vec4(0.1f, 0.3f, 0.8f, 1.0f); // Acqua
+                else if (matId == idSnow) color = glm::vec4(0.9f, 0.9f, 0.95f, 1.0f); // Neve
+                else if (matId == idStone) color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f); // Pietra
+                
+                float latDeg = glm::degrees(latitude);
+                float em = 0.0f;
+                // Equator and Poles markers
+                if (std::abs(latDeg) < 0.8f) { // Equatore
+                    color = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f);
+                    em = 1.0f;
+                } else if (latDeg > 88.0f) { // Polo Nord
+                    color = glm::vec4(0.2f, 0.2f, 1.0f, 1.0f);
+                    em = 1.0f;
+                } else if (latDeg < -88.0f) { // Polo Sud
+                    color = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
+                    em = 1.0f;
+                }
+                
+                colors.push_back(color);
+                materials.push_back(matId);
+                emissives.push_back(em);
             }
         }
         
