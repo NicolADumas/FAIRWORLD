@@ -108,6 +108,7 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 cj["faceIndex"] = inst.faceIndex;
                 cj["gridX"] = inst.gridX;
                 cj["gridY"] = inst.gridY;
+                cj["isActive"] = inst.isActive;
                 pj["chunkInstances"].push_back(cj);
             }
             pj["spawnPoints"] = json::array();
@@ -287,6 +288,7 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         inst.faceIndex = cj.value("faceIndex", 0);
                         inst.gridX = cj.value("gridX", 0);
                         inst.gridY = cj.value("gridY", 0);
+                        inst.isActive = cj.value("isActive", true);
                         planet.chunkInstances.push_back(inst);
                     }
                 }
@@ -406,7 +408,7 @@ namespace fw {
 
 // Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
 static constexpr uint32_t FWB_MAGIC   = 0x46574231; // 'FWB1'
-static constexpr uint32_t FWB_VERSION = 4;
+static constexpr uint32_t FWB_VERSION = 5;
 
 bool MapDocument::SaveBinary(const std::string& path) const {
     try {
@@ -466,6 +468,7 @@ bool MapDocument::SaveBinary(const std::string& path) const {
                 writeI32(f, ci.faceIndex);
                 writeI32(f, ci.gridX);
                 writeI32(f, ci.gridY);
+                writeBool(f, ci.isActive);
             }
 
             // ChunkOverrides
@@ -569,6 +572,7 @@ bool MapDocument::LoadBinary(const std::string& path) {
                 ci.faceIndex     = readI32(f);
                 ci.gridX         = readI32(f);
                 ci.gridY         = readI32(f);
+                ci.isActive      = readBool(f);
                 p.chunkInstances.push_back(std::move(ci));
             }
 
@@ -646,6 +650,81 @@ bool MapDocument::LoadSmart(const std::string& jsonPath) {
     std::cout << "[MapDocument] Generazione cache binaria: " << binPath << "\n";
     SaveBinary(binPath);
     return true;
+}
+
+DocumentValidationResult MapDocument::ValidateAndRepairDocument(MapDocument& doc) {
+    DocumentValidationResult result;
+    
+    // Assicuriamoci che esista almeno un template di fallback
+    std::string fallbackTemplateId = "default_terrain";
+    if (!doc.terrainLibrary.empty()) {
+        fallbackTemplateId = doc.terrainLibrary[0].id;
+    }
+
+    for (auto& planet : doc.planets) {
+        int N_lato = fw::PlanetMath::GetFaceResolution(planet.planetSize);
+        if (N_lato < 1) N_lato = 1;
+
+        std::vector<PlanetChunkInstance> newInstances;
+        std::map<int, int> gridLookup; // Per il controllo dei duplicati: face * 1M + Y * 1K + X
+
+        for (auto& inst : planet.chunkInstances) {
+            // 1. Template Integrity Check
+            bool templateExists = false;
+            for (const auto& tmpl : doc.terrainLibrary) {
+                if (tmpl.id == inst.templateId) {
+                    templateExists = true;
+                    break;
+                }
+            }
+            if (!templateExists) {
+                inst.templateId = fallbackTemplateId;
+                result.missingTemplatesFixed++;
+                result.changed = true;
+            }
+
+            // Se non è allineato alla griglia, non applichiamo bounds check logici
+            if (!inst.isGridAligned) {
+                newInstances.push_back(inst);
+                continue;
+            }
+
+            // 2. Bounds Check
+            bool wasActive = inst.isActive;
+            if (inst.gridX < 0 || inst.gridX >= N_lato || inst.gridY < 0 || inst.gridY >= N_lato) {
+                inst.isActive = false; // Out of Bounds
+                if (wasActive) {
+                    result.outOfBoundsHidden++;
+                    result.changed = true;
+                }
+            } else {
+                inst.isActive = true; // In Bounds
+                if (!wasActive) {
+                    result.outOfBoundsRestored++;
+                    result.changed = true;
+                }
+            }
+
+            // 3. Duplicate Sweeping (solo per i chunk attivi e grid-aligned)
+            if (inst.isActive) {
+                int key = inst.faceIndex * 1000000 + inst.gridY * 1000 + inst.gridX;
+                if (gridLookup.find(key) != gridLookup.end()) {
+                    result.duplicatesRemoved++;
+                    result.changed = true;
+                    continue; // Scarta il duplicato (non aggiungerlo a newInstances)
+                }
+                gridLookup[key] = (int)newInstances.size();
+            }
+
+            newInstances.push_back(inst);
+        }
+
+        if (result.duplicatesRemoved > 0) {
+            planet.chunkInstances = newInstances;
+        }
+    }
+
+    return result;
 }
 
 } // namespace fw (binario)

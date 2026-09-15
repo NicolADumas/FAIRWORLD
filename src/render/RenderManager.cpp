@@ -341,7 +341,13 @@ bool RenderManager::CreateDescriptorSetLayout() {
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+    VkDescriptorSetLayoutBinding ssboLayoutBinding{};
+    ssboLayoutBinding.binding = 2;
+    ssboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ssboLayoutBinding.descriptorCount = 1;
+    ssboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, samplerLayoutBinding, ssboLayoutBinding };
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -368,7 +374,13 @@ bool RenderManager::CreateDescriptorSetLayout() {
     ormLayoutBinding.descriptorCount = 1;
     ormLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> forgeBindings = { albedoLayoutBinding, normalLayoutBinding, ormLayoutBinding };
+    VkDescriptorSetLayoutBinding forgeSsboLayoutBinding{};
+    forgeSsboLayoutBinding.binding = 3;
+    forgeSsboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    forgeSsboLayoutBinding.descriptorCount = 1;
+    forgeSsboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 4> forgeBindings = { albedoLayoutBinding, normalLayoutBinding, ormLayoutBinding, forgeSsboLayoutBinding };
     VkDescriptorSetLayoutCreateInfo forgeLayoutInfo{};
     forgeLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     forgeLayoutInfo.bindingCount = static_cast<uint32_t>(forgeBindings.size());
@@ -1818,6 +1830,11 @@ void RenderManager::Shutdown() {
     if (m_core->GetDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_core->GetDevice());
 
+        if (m_blockPropertiesBuffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_memory->GetAllocator(), m_blockPropertiesBuffer, m_blockPropertiesAlloc);
+            m_blockPropertiesBuffer = VK_NULL_HANDLE;
+        }
+
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
@@ -2127,9 +2144,11 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         m_memory->GetForgeDescriptorPool() = VK_NULL_HANDLE;
     }
     
-    std::array<VkDescriptorPoolSize, 1> poolSizes{};
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2171,7 +2190,12 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         ormInfo.imageView = m_ormImageView;
         ormInfo.sampler = m_textureSampler;
 
-        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+        VkDescriptorBufferInfo ssboInfo{};
+        ssboInfo.buffer = m_blockPropertiesBuffer;
+        ssboInfo.offset = 0;
+        ssboInfo.range = VK_WHOLE_SIZE;
+
+        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = m_memory->GetForgeDescriptorSets()[i];
@@ -2196,6 +2220,14 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pImageInfo = &ormInfo;
+        
+        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[3].dstSet = m_memory->GetForgeDescriptorSets()[i];
+        descriptorWrites[3].dstBinding = 3; // ssbo
+        descriptorWrites[3].dstArrayElement = 0;
+        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[3].descriptorCount = 1;
+        descriptorWrites[3].pBufferInfo = &ssboInfo;
         vkUpdateDescriptorSets(m_core->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
         // --- Aggiorna anche i vecchi descriptor set (m_memory->GetDescriptorSets()) ---
@@ -2205,7 +2237,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         uboInfo.offset = 0;
         uboInfo.range = sizeof(UniformBufferObject);
 
-        std::array<VkWriteDescriptorSet, 2> legacyWrites{};
+        std::array<VkWriteDescriptorSet, 3> legacyWrites{};
 
         legacyWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         legacyWrites[0].dstSet = m_memory->GetDescriptorSets()[i];
@@ -2222,6 +2254,14 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         legacyWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         legacyWrites[1].descriptorCount = 1;
         legacyWrites[1].pImageInfo = &albedoInfo; // Usiamo l'albedo come texture legacy
+        
+        legacyWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        legacyWrites[2].dstSet = m_memory->GetDescriptorSets()[i];
+        legacyWrites[2].dstBinding = 2;
+        legacyWrites[2].dstArrayElement = 0;
+        legacyWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        legacyWrites[2].descriptorCount = 1;
+        legacyWrites[2].pBufferInfo = &ssboInfo;
 
         vkUpdateDescriptorSets(m_core->GetDevice(), static_cast<uint32_t>(legacyWrites.size()), legacyWrites.data(), 0, nullptr);
     }
@@ -2524,6 +2564,42 @@ bool RenderManager::LoadPBRTextureFromFile(const std::string& filePath, uint32_t
         return true;
     }
     return false;
+}
+
+void RenderManager::UpdateBlockPropertiesSSBO(const std::vector<fw::BlockPropertiesGPU>& properties) {
+    if (properties.empty()) return;
+
+    VkDeviceSize bufferSize = sizeof(fw::BlockPropertiesGPU) * properties.size();
+
+    if (m_blockPropertiesBuffer == VK_NULL_HANDLE) {
+        // Create the SSBO
+        m_memory->CreateBuffer(bufferSize, 
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_MEMORY_USAGE_GPU_ONLY, 
+            m_blockPropertiesBuffer, m_blockPropertiesAlloc);
+    }
+
+    // Staging buffer to copy data to GPU
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAlloc;
+    m_memory->CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAlloc);
+
+    void* data;
+    vmaMapMemory(m_memory->GetAllocator(), stagingAlloc, &data);
+    memcpy(data, properties.data(), (size_t)bufferSize);
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingAlloc);
+
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+    VkBufferCopy copyRegion{};
+    copyRegion.size = bufferSize;
+    vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_blockPropertiesBuffer, 1, &copyRegion);
+    EndSingleTimeCommands(commandBuffer);
+
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingAlloc);
+
+    // Update descriptor sets (this function is usually called early during initialization by CacheManager, 
+    // but just in case, we also update the descriptor sets if CreatePBRTextures hasn't done it yet, 
+    // though usually CreatePBRTextures will bind it during its own loop).
 }
 
 void RenderManager::CleanupSwapchain() {
@@ -3347,6 +3423,9 @@ void RenderManager::UploadTerrainData(const std::vector<ChunkData>& chunks,
     m_terrainNumChunks  = (uint32_t)std::min((size_t)MAX_TERRAIN_CHUNKS,  chunks.size());
     m_terrainNumRegions = (uint32_t)std::min((size_t)MAX_TERRAIN_REGIONS, regions.size());
 
+    // Flag come sporco per far girare il compute shader anche a 0 chunk
+    m_terrainDataDirty = true;
+
     if (m_planetMapperRenderer) {
         m_planetMapperRenderer->SetTerrainNumChunks(m_terrainNumChunks);
     }
@@ -3434,19 +3513,17 @@ void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
     m_pendingRegionCopies.clear();
     m_terrainDataDirty = false;
 
-    // 3. Dispatch del Compute Shader se ci sono chunk
-    if (m_terrainNumChunks > 0) {
-        TerrainGenPushConstants pc{};
-        pc.numChunks           = m_terrainNumChunks;
-        pc.numRegions          = m_terrainNumRegions;
-        pc.planetRadius        = m_terrainPlanetRadius;
-        pc.baseBiomeType       = (uint32_t)m_terrainBaseTerrain.biome;
-        pc.baseSurfaceBlock    = m_terrainBaseTerrain.surfaceBlock;
-        pc.baseSubsurfaceBlock = m_terrainBaseTerrain.subsurfaceBlock;
-        pc.basePerlinFreq      = m_terrainBaseTerrain.perlinFrequency;
-        pc.baseGravityMod      = m_terrainBaseTerrain.gravityModifier;
-        m_terrainPipeline->dispatch(cmd, pc);
-    }
+    // 3. Dispatch del Compute Shader sempre, per azzerare/rigenerare il GPU buffer
+    TerrainGenPushConstants pc{};
+    pc.numChunks           = m_terrainNumChunks;
+    pc.numRegions          = m_terrainNumRegions;
+    pc.planetRadius        = m_terrainPlanetRadius;
+    pc.baseBiomeType       = (uint32_t)m_terrainBaseTerrain.biome;
+    pc.baseSurfaceBlock    = m_terrainBaseTerrain.surfaceBlock;
+    pc.baseSubsurfaceBlock = m_terrainBaseTerrain.subsurfaceBlock;
+    pc.basePerlinFreq      = m_terrainBaseTerrain.perlinFrequency;
+    pc.baseGravityMod      = m_terrainBaseTerrain.gravityModifier;
+    m_terrainPipeline->dispatch(cmd, pc);
 
     // 4. Prepara i comandi di draw indirect con valori validi
     if (m_terrainNumChunks > 0) {

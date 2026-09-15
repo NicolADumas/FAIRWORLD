@@ -103,6 +103,9 @@ void ChunkEditorState::RebuildChunkPreview() {
     fw::MapDocument tempDoc;
     fw::PlanetMap tempPlanet;
     tempPlanet.name = "PreviewChunk";
+    // Override locale per Chunk Editor: usa la base solida del template, non l'aria!
+    tempPlanet.baseTerrain.surfaceBlock = tmpl.baseSurfaceBlockId;
+    tempPlanet.baseTerrain.subsurfaceBlock = tmpl.baseSubsurfaceBlockId;
     
     // Calcola i limiti (Bounding Box) in base a ciò che hai disegnato nel Canvas 2D
     int minX = 0, maxX = 0, minZ = 0, maxZ = 0;
@@ -147,11 +150,13 @@ void ChunkEditorState::RebuildChunkPreview() {
     baseRegion.gravityModifier = tmpl.baseGravityModifier;
     baseRegion.seed = tmpl.seed;
     baseRegion.isBackgroundFill = true;
+    baseRegion.water.enabled = false; // Disable water for the preview
     tempPlanet.regions.push_back(baseRegion);
 
     for (const auto& sub : tmpl.subRegions) {
         fw::MapRegion projectedSub = sub;
         projectedSub.eulerAngles = glm::vec3(0.0f);
+        projectedSub.water.enabled = false; // Disable water for the preview
         tempPlanet.regions.push_back(projectedSub);
     }
     tempDoc.planets.push_back(tempPlanet);

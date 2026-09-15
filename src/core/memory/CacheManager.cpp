@@ -42,6 +42,23 @@ void CacheManager::SyncMaterialGpuCache(uint8_t blockId, SharedContext* context)
         }
         context->engine->GetRenderManager()->InvalidateForgeCache();
     }
+    SyncAllBlockPropertiesSSBO(context);
+}
+
+void CacheManager::SyncAllBlockPropertiesSSBO(SharedContext* context) {
+    if (!context || !context->engine || !context->engine->GetRenderManager() || !context->materialRegistry) return;
+
+    std::vector<fw::BlockPropertiesGPU> properties(256);
+    for (uint32_t i = 0; i < 256; ++i) {
+        const auto& mat = context->materialRegistry->GetMaterial((uint8_t)i);
+        properties[i].pbr = glm::vec4(mat.roughnessFallback, mat.metallicFallback, mat.emissiveStrength, mat.alphaFallback);
+        properties[i].behaviors = mat.behaviors;
+        properties[i].visualMode = 0;
+        properties[i].physicalFlags = 0;
+        properties[i].reserved = 0;
+    }
+
+    context->engine->GetRenderManager()->UpdateBlockPropertiesSSBO(properties);
 }
 
 } // namespace fw

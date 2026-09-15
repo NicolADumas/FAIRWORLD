@@ -18,6 +18,7 @@ namespace {
         uint8_t surfaceBlock;
         uint8_t subsurfaceBlock;
         fw::MapRegionType dominantBiome;
+        fw::WaterSettings water;
     };
 
     SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, glm::vec3 noisePos, const PerlinNoise& terrainNoiseGen) {
@@ -33,6 +34,7 @@ namespace {
         uint8_t surfaceBlock = biome.baseTerrain.surfaceBlock;
         uint8_t subsurfaceBlock = biome.baseTerrain.subsurfaceBlock;
         fw::MapRegionType colBiome = biome.baseTerrain.biome;
+        fw::WaterSettings colWater = biome.baseTerrain.water;
         
         glm::vec3 colNormal = glm::normalize(biome.chunkCenterWorld);
         
@@ -121,6 +123,7 @@ namespace {
                             surfaceBlock = r.surfaceBlockId;
                             subsurfaceBlock = r.subsurfaceBlockId;
                             colBiome = r.type;
+                            colWater = r.water;
                         }
                     }
                 }
@@ -133,7 +136,7 @@ namespace {
             finalHeight = glm::mix(baseHeight, blendedHeight, normalizedWeight);
         }
         
-        return { finalHeight, surfaceBlock, subsurfaceBlock, colBiome };
+        return { finalHeight, surfaceBlock, subsurfaceBlock, colBiome, colWater };
     }
 }
 
@@ -202,13 +205,13 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     }
 
                     if (isCave) {
-                        if (y <= 16) chunk.blocks[x][y][z] = idWater;
+                        if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
                         else chunk.blocks[x][y][z] = idAir;
                     } else {
                         if (y < height - 3) chunk.blocks[x][y][z] = idStone;
                         else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                         else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                        else if (y <= 16) chunk.blocks[x][y][z] = idWater;
+                        else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
                         else chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 
@@ -217,7 +220,7 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
         }
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
-        registry.emplace<DecoratorGenTag>(entity);
+        registry.emplace_or_replace<DecoratorGenTag>(entity);
     }
 }
 
@@ -276,13 +279,15 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     }
 
                     if (isCave) {
-                        chunk.blocks[x][y][z] = idAir; // Niente acqua nel deserto
+                        if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                        else chunk.blocks[x][y][z] = idAir;
                     } else {
                         // Strato di sabbia molto più spesso
                         if (y < height - 6) chunk.blocks[x][y][z] = idStone;
                         else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                         else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                        else chunk.blocks[x][y][z] = idAir; // Niente oceano
+                        else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                        else chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 
                 }
@@ -290,7 +295,7 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
         }
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
-        registry.emplace<DecoratorGenTag>(entity);
+        registry.emplace_or_replace<DecoratorGenTag>(entity);
     }
 }
 
@@ -337,7 +342,7 @@ void OceanTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
                     if (y < height - 3) chunk.blocks[x][y][z] = idStone;
                     else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                     else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                    else if (y <= 20) chunk.blocks[x][y][z] = idWater; // Oceano più alto
+                    else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
                     else chunk.blocks[x][y][z] = idAir;
                     
                     chunk.light[x][y][z] = 255; 
@@ -346,7 +351,7 @@ void OceanTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
         }
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
-        registry.emplace<DecoratorGenTag>(entity);
+        registry.emplace_or_replace<DecoratorGenTag>(entity);
     }
 }
 
@@ -391,7 +396,7 @@ void TundraTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     if (y < height - 3) chunk.blocks[x][y][z] = idStone;
                     else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                     else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                    else if (y <= 16) chunk.blocks[x][y][z] = idWater; 
+                    else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
                     else chunk.blocks[x][y][z] = idAir;
                     chunk.light[x][y][z] = 255; 
                 }
@@ -399,7 +404,7 @@ void TundraTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
         }
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
-        registry.emplace<DecoratorGenTag>(entity);
+        registry.emplace_or_replace<DecoratorGenTag>(entity);
     }
 }
 
@@ -453,12 +458,13 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
                     }
 
                     if (isLavaTube) {
-                        if (y <= 12) chunk.blocks[x][y][z] = idWater; // Usiamo l'acqua come segnaposto finchè non avremo un ID lava
+                        if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
                         else chunk.blocks[x][y][z] = idAir;
                     } else {
                         if (y < height - 3) chunk.blocks[x][y][z] = idStone;
                         else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                         else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
+                        else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
                         else chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 
@@ -467,7 +473,7 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
         }
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
-        registry.emplace<DecoratorGenTag>(entity);
+        registry.emplace_or_replace<DecoratorGenTag>(entity);
     }
 }
 
@@ -629,7 +635,7 @@ void FlatTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame, 
         }
         chunk.isGenerated = true;
         registry.remove<TerrainGenTag>(entity);
-        registry.emplace<DecoratorGenTag>(entity);
+        registry.emplace_or_replace<DecoratorGenTag>(entity);
     }
 }
 
@@ -647,7 +653,7 @@ void FlatDecoratorSystem::Update(entt::registry& registry, int maxChunksPerFrame
     for (auto entity : toProcess) {
         // Nessun albero nel bioma flat, è completamente vuoto
         registry.remove<DecoratorGenTag>(entity);
-        registry.emplace<ChunkDirtyComponent>(entity);
+        registry.emplace_or_replace<ChunkDirtyComponent>(entity);
     }
 }
 

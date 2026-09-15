@@ -24,6 +24,7 @@ public:
     void FlushGpuRenderCaches(SharedContext* context);
     void FlushCpuTransientCaches(SharedContext* context);
     void SyncMaterialGpuCache(uint8_t blockId, SharedContext* context);
+    void SyncAllBlockPropertiesSSBO(SharedContext* context);
 };
 
 } // namespace fw

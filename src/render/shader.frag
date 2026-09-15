@@ -18,6 +18,21 @@ layout(location = 6) in float fragLight;
 
 layout(binding = 1) uniform sampler2DArray texSampler;
 
+struct BlockPropertiesGPU {
+    float roughness;
+    float metallic;
+    float emissive;
+    float alpha;
+    uint behaviors;
+    uint pad1;
+    uint pad2;
+    uint pad3;
+};
+
+layout(std140, binding = 2) readonly buffer BlockPropertiesBuffer {
+    BlockPropertiesGPU blockProps[];
+};
+
 layout(location = 0) out vec4 outColor;
 
 // --- BIOLOGICAL SEASONAL MODEL (GPU-SIDE) ---
@@ -53,9 +68,14 @@ void main() {
     vec3 baseColor = fragColor.rgb * texColor.rgb;
     
     int type = int(fragTexIndex);
+    uint safeType = clamp(uint(type), 0u, 255u);
+    BlockPropertiesGPU props = blockProps[safeType];
+
+    bool isSeasonal = (props.behaviors & 1u) != 0u;
+    bool isEmissive = (props.behaviors & 8u) != 0u;
 
     // --- BIOLOGICAL SEASONAL VEGETATION COLORING ---
-    if (type == 1 || type == 8) { // Grass, Leaves
+    if (isSeasonal) {
         // 1. Calcolo del Microclima Spaziale (Scala 0.05 per chiazze ampie ~20 blocchi)
         float noiseValue = getSmoothNoise(fragWorldPos.xz * 0.05) * 0.6 + getSmoothNoise(fragWorldPos.xz * 0.15) * 0.4;
         
@@ -122,25 +142,11 @@ void main() {
     }
 
     // --- PROCEDURAL PBR MATERIAL PROPERTIES ---
-    float roughness = 0.8;
-    float metallic = 0.0;
-    
-    if (type == 6 || type == 13) { // Water, Ice
-        roughness = 0.02; // Super liscio
-        metallic = 0.3;
-    } else if (type == 12 || type == 14) { // Ore, StargateFrame
-        roughness = 0.2;
-        metallic = 1.0; // Puro metallo
-    } else if (type == 3) { // Stone
-        roughness = 0.5;
-        metallic = 0.1;
-    } else if (type == 1 || type == 2 || type == 8) { // Grass, Dirt, Leaves
-        roughness = 0.9;
-        metallic = 0.0;
-    } else if (type == 7) { // Lava
-        roughness = 1.0;
-        metallic = 0.0;
-        baseColor *= 2.5; // Emissive boost estremo
+    float roughness = props.roughness;
+    float metallic = props.metallic;
+
+    if (isEmissive || props.emissive > 0.0) {
+        baseColor *= (1.0 + props.emissive); // Emissive boost
     }
 
     // --- PBR LIGHTING CALCULATION ---
@@ -172,9 +178,9 @@ void main() {
     // Combina illuminazione moltiplicata per l'Ambient Occlusion Voxel
     vec3 finalColor = (ambient * ao) + (diffuse + specular) * sunColor * ao * blockLight;
 
-    // Se è lava, aggiungi self-illumination (emissive)
-    if (type == 7) {
-        finalColor += baseColor * 1.5;
+    // Se la texture emette luce propria (emissive)
+    if (isEmissive || props.emissive > 0.0) {
+        finalColor += baseColor * props.emissive;
     }
 
     // Aggiungi un finto "Rim Light" sui bordi (angolo di Fresnel)
@@ -198,12 +204,8 @@ void main() {
         finalColor = finalColor.bgr;
     }
 
-    float finalAlpha = 1.0;
-    if (type == 6) { // Water transparency
-        finalAlpha = 0.80;
-    } else if (type == 13) { // Ice transparency
-        finalAlpha = 0.85;
-    } else if (fragColor.a < 0.99 && fragColor.a > 0.05) {
+    float finalAlpha = props.alpha;
+    if (fragColor.a < 0.99 && fragColor.a > 0.05) {
         finalAlpha = fragColor.a;
     }
 

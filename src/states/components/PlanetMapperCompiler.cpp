@@ -32,7 +32,9 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
     auto& doc = context->projectManager->GetDocumentMutable();
 
     for (const auto& inst : planet.chunkInstances) {
-            for (const auto& tmpl : doc.terrainLibrary) {
+        if (!inst.isActive) continue;
+
+        for (const auto& tmpl : doc.terrainLibrary) {
                 if (tmpl.id == inst.templateId) {
                     fw::MapRegion baseRegion;
                     baseRegion.eulerAngles = inst.eulerAngles;
@@ -45,6 +47,8 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
                     baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
                     baseRegion.gravityModifier = tmpl.baseGravityModifier;
                     baseRegion.seed = tmpl.seed;
+                    baseRegion.surfaceBlockId = tmpl.baseSurfaceBlockId;
+                    baseRegion.subsurfaceBlockId = tmpl.baseSubsurfaceBlockId;
 
                     if (inst.isGridAligned && inst.gridX != -1 && inst.gridY != -1) {
                         int radiusTiles = (int)std::max(1.0f, inst.angularRadius * 10.0f);
@@ -69,50 +73,10 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
     if (context->engine && context->engine->GetRenderManager()) {
         auto* rm = context->engine->GetRenderManager();
 
-        std::vector<fw::MapRegion> allRegions = planet.regions;
-        for (const auto& inst : planet.chunkInstances) {
-            for (const auto& tpl : doc.terrainLibrary) {
-                if (tpl.id == inst.templateId) {
-                    int baseX = inst.gridX;
-                    int baseZ = inst.gridY;
-                    
-                    fw::MapRegion baseR;
-                    baseR.eulerAngles = inst.eulerAngles;
-                    baseR.angularRadius = inst.angularRadius;
-                    baseR.isGridAligned = inst.isGridAligned;
-                    baseR.faceIndex = inst.faceIndex;
-                    baseR.gridX = baseX;
-                    baseR.gridY = baseZ;
-                    baseR.rectMin = glm::ivec2(baseX, baseZ);
-                    baseR.rectMax = glm::ivec2(baseX, baseZ);
-                    baseR.type = tpl.baseType;
-                    baseR.gravityModifier = tpl.baseGravityModifier;
-                    baseR.perlinFrequency = tpl.basePerlinFrequency;
-                    if (context->blockRegistry) {
-                        baseR.surfaceBlockId = context->blockRegistry->GetBlock("fairworld:grass").id;
-                        baseR.subsurfaceBlockId = context->blockRegistry->GetBlock("fairworld:dirt").id;
-                    }
-                    allRegions.push_back(baseR);
-                    
-                    for (const auto& sub : tpl.subRegions) {
-                        fw::MapRegion projected = sub;
-                        projected.faceIndex = inst.faceIndex;
-                        projected.isGridAligned = inst.isGridAligned;
-                        projected.gridX = baseX;
-                        projected.gridY = baseZ;
-                        projected.rectMin += glm::ivec2(baseX, baseZ);
-                        projected.rectMax += glm::ivec2(baseX, baseZ);
-                        allRegions.push_back(projected);
-                    }
-                    break;
-                }
-            }
-        }
-
         std::vector<fw::MapRegionGPU> gpuRegions;
-        gpuRegions.reserve(allRegions.size());
+        gpuRegions.reserve(planet.regions.size());
         int N_latoForRegion = fw::PlanetMath::GetFaceResolution(planet.planetSize);
-        for (const auto& r : allRegions) {
+        for (const auto& r : planet.regions) {
             fw::MapRegionGPU gr{};
             float pitch = glm::radians(r.eulerAngles.x);
             float yaw   = glm::radians(r.eulerAngles.y);
@@ -162,6 +126,7 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
         
         for (int i = 0; i < (int)planet.chunkInstances.size(); ++i) {
             const auto& inst = planet.chunkInstances[i];
+            if (!inst.isActive) continue;
             
             float u0 = (inst.gridX) / (float)N_lato * 2.0f - 1.0f;
             float u1 = (inst.gridX + 1) / (float)N_lato * 2.0f - 1.0f;
@@ -191,6 +156,7 @@ void PlanetMapperCompiler::CompileChunk(SharedContext* context, fw::PlanetMap& p
     if (!rm) return;
     
     const auto& inst = planet.chunkInstances[chunkIndex];
+    if (!inst.isActive) return;
     
     int N_lato = fw::PlanetMath::GetFaceResolution(planet.planetSize);
     float R = fw::PlanetMath::GetPlanetRadius(planet.planetSize);

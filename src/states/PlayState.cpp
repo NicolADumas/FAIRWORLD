@@ -386,6 +386,8 @@ void PlayState::Update(float dt) {
             baseTerrain = pMap.baseTerrain;
             
             for (const auto& inst : pMap.chunkInstances) {
+                if (!inst.isActive) continue;
+                
                 for (const auto& tpl : doc.terrainLibrary) {
                     if (tpl.id == inst.templateId) {
                         fw::MapRegion baseR;

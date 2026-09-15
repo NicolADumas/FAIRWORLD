@@ -13,6 +13,21 @@ layout(set = 0, binding = 0) uniform sampler2DArray albedoArray;
 layout(set = 0, binding = 1) uniform sampler2DArray normalArray;
 layout(set = 0, binding = 2) uniform sampler2DArray ormArray;
 
+struct BlockPropertiesGPU {
+    float roughness;
+    float metallic;
+    float emissive;
+    float alpha;
+    uint behaviors;
+    uint pad1;
+    uint pad2;
+    uint pad3;
+};
+
+layout(std140, set = 0, binding = 3) readonly buffer BlockPropertiesBuffer {
+    BlockPropertiesGPU blockProps[];
+};
+
 struct CellData {
     float heat;
     float pressure;
@@ -146,16 +161,21 @@ void main() {
     vec3 ambient = vec3(0.15) * albedo.rgb * ao;
     vec3 finalColor = ambient + Lo;
     
-    // Add glowing or colored overlays based on inEmissive
-    if (inEmissive > 0.0) {
-        finalColor = mix(finalColor, inVertexColor.rgb, inEmissive);
-        finalColor += inVertexColor.rgb * inEmissive * 1.5; // Additive glow
+    uint safeID = clamp(inMaterialID, 0u, 255u);
+    BlockPropertiesGPU props = blockProps[safeID];
+
+    // Add glowing or colored overlays based on inEmissive or block property
+    bool isEmissive = (props.behaviors & 8u) != 0u;
+    if (inEmissive > 0.0 || isEmissive || props.emissive > 0.0) {
+        float glowAmount = max(inEmissive, props.emissive);
+        finalColor = mix(finalColor, inVertexColor.rgb, glowAmount);
+        finalColor += inVertexColor.rgb * glowAmount * 1.5; // Additive glow
     }
 
     // --- ATMOSPHERIC FOG ---
     float dist = distance(push.cameraPos.xyz, inWorldPos);
-    vec3 viewDir = normalize(inWorldPos - push.cameraPos.xyz);
-    float sunScattering = max(dot(viewDir, normalize(push.lightDir.xyz)), 0.0);
+    vec3 viewDirFog = normalize(inWorldPos - push.cameraPos.xyz);
+    float sunScattering = max(dot(viewDirFog, normalize(push.lightDir.xyz)), 0.0);
     
     // Colore base atmosfera (azzurro orizzonte) sfumato con il sole (arancio) se guardiamo verso di esso
     vec3 fogColor = mix(vec3(0.4, 0.6, 0.9), vec3(1.0, 0.8, 0.5), pow(sunScattering, 8.0));
@@ -173,14 +193,10 @@ void main() {
     finalColor = finalColor / (finalColor + vec3(1.0));
     finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
-    float finalAlpha = 1.0;
+    float finalAlpha = props.alpha;
     if (push.useColorOverride == 1) {
         finalColor = push.colorOverride.rgb;
         finalAlpha = push.colorOverride.a;
-    } else if (inMaterialID == 6u) { // Trasparenza dell'acqua per vedere il fondale marino
-        finalAlpha = 0.80;
-    } else if (inMaterialID == 13u) { // Ghiaccio traslucido
-        finalAlpha = 0.85;
     } else if (inVertexColor.a < 0.99 && inVertexColor.a > 0.05) {
         finalAlpha = inVertexColor.a; // Supporto alpha dai vertici (Planet Mapper, ecc.)
     }

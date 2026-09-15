@@ -97,6 +97,7 @@ public:
     void InitImGui(void* hwnd);
     void UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIndex, uint32_t width, uint32_t height, const glm::vec4& color);
     void UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic);
+    void UpdateBlockPropertiesSSBO(const std::vector<struct fw::BlockPropertiesGPU>& properties);
 
     VkInstance GetVulkanInstance() const { return m_core ? m_core->GetInstance() : VK_NULL_HANDLE; }
     VkPhysicalDevice GetPhysicalDevice() const { return m_core ? m_core->GetPhysicalDevice() : VK_NULL_HANDLE; }
@@ -180,11 +181,9 @@ private:
     // --- COMPONENTI FASE 5 (UBO & Descriptors) ---
     VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
     
-    
-
-    
-    
-     // Puntatori per scrivere direttamente nella RAM
+    // --- SSBO PER BLOCK PROPERTIES (Data-Driven Architecture) ---
+    VkBuffer m_blockPropertiesBuffer{ VK_NULL_HANDLE };
+    VmaAllocation m_blockPropertiesAlloc{ VK_NULL_HANDLE };
 
     VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
     VkPipeline m_graphicsPipeline{ VK_NULL_HANDLE };

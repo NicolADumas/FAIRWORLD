@@ -28,6 +28,13 @@ enum class RegionShape : int {
     Star = 3
 };
 
+struct WaterSettings {
+    bool enabled = true;
+    int seaLevel = 16;
+    uint8_t liquidBlockId = 6; // Water
+    uint8_t oceanFloorBlockId = 2; // Sand
+};
+
 struct MapRegion {
     glm::vec3 eulerAngles = glm::vec3(0.0f); // X: Latitudine, Y: Longitudine, Z: Roll
     float angularRadius = 0.2f; // Raggio di influenza (in radianti)
@@ -45,6 +52,7 @@ struct MapRegion {
     // Configurazione Blocchi
     uint8_t surfaceBlockId = 1;     // Grass
     uint8_t subsurfaceBlockId = 3;  // Dirt
+    WaterSettings water;
     
     // Cube-Sphere Grid Mapping
     bool isGridAligned = false;
@@ -73,6 +81,7 @@ struct TerrainTemplate {
     float baseAngularRadius = 0.2f; // Estensione spaziale (Raggio Angolare)
     uint8_t baseSurfaceBlockId = 1;     // Valore di default (es. Erba)
     uint8_t baseSubsurfaceBlockId = 3;  // Valore di default (es. Terra)
+    WaterSettings water;
     std::vector<MapRegion> subRegions; // 2D layout (dettagli dipinti)
 };
 
@@ -87,6 +96,9 @@ struct PlanetChunkInstance {
     int faceIndex = -1; // 0: +Z (Front), 1: -Z (Back), 2: +X (Right), 3: -X (Left), 4: +Y (Top), 5: -Y (Bottom)
     int gridX = -1;
     int gridY = -1;
+    
+    // Validazione & Auto-Repair
+    bool isActive = true; // Se false, il chunk esiste nel salvataggio ma è fuori dai bounds (OOB) e non viene renderizzato
 };
 
 struct SpawnPoint {
@@ -99,11 +111,12 @@ struct SpawnPoint {
 };
 
 struct PlanetBaseTerrain {
-    MapRegionType biome = MapRegionType::Forest;
-    uint32_t surfaceBlock = 1;     // Erba/Grass
-    uint32_t subsurfaceBlock = 3;  // Terra/Dirt
+    MapRegionType biome = MapRegionType::Flat; // Updated biome
+    uint32_t surfaceBlock = 0;     // Air / Canvas Neutro
+    uint32_t subsurfaceBlock = 0;  // Air / Canvas Neutro
     float perlinFrequency = 0.5f;
     float gravityModifier = 1.0f;
+    WaterSettings water;
 };
 
 struct PlanetMap {
@@ -146,10 +159,21 @@ struct PlanetMap {
     }
 };
 
+struct DocumentValidationResult {
+    bool changed = false;
+    uint32_t outOfBoundsHidden = 0;
+    uint32_t outOfBoundsRestored = 0;
+    uint32_t missingTemplatesFixed = 0;
+    uint32_t duplicatesRemoved = 0;
+};
+
 struct MapDocument {
+    bool isCompiled = false;
     std::vector<TerrainTemplate> terrainLibrary;
     std::vector<PlanetMap> planets;
-    bool isCompiled = false;
+
+    // Validazione & Auto-Repair Intelligente
+    static DocumentValidationResult ValidateAndRepairDocument(MapDocument& doc);
 
     // Dichiarazione dei metodi di I/O
     bool SaveJSON(const std::string& path);

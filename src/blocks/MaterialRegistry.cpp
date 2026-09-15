@@ -26,6 +26,7 @@ void MaterialRegistry::RegisterDefaultMaterials() {
     m_materials[1].target_block_id = 1;
     m_materials[1].baseColorFallback = glm::vec3(0.2f, 0.8f, 0.2f);
     m_materials[1].roughnessFallback = 0.9f;
+    m_materials[1].behaviors |= BLOCK_BEHAVIOR_SEASONAL;
 
     // 2: Dirt
     m_materials[2].target_block_id = 2;
@@ -52,6 +53,7 @@ void MaterialRegistry::RegisterDefaultMaterials() {
     m_materials[6].baseColorFallback = glm::vec3(0.1f, 0.35f, 0.85f);
     m_materials[6].roughnessFallback = 0.02f; // Superficie marina specchiante e liscissima
     m_materials[6].metallicFallback = 0.25f;  // Riflesso solare (Fresnel PBR)
+    m_materials[6].alphaFallback = 0.80f;
 
     // 7: Lava
     m_materials[7].target_block_id = 7;
@@ -63,6 +65,7 @@ void MaterialRegistry::RegisterDefaultMaterials() {
     m_materials[8].target_block_id = 8;
     m_materials[8].baseColorFallback = glm::vec3(0.15f, 0.6f, 0.15f);
     m_materials[8].roughnessFallback = 0.85f;
+    m_materials[8].behaviors |= BLOCK_BEHAVIOR_SEASONAL;
 
     // 9: MobSpawner
     m_materials[9].target_block_id = 9;
@@ -81,6 +84,7 @@ void MaterialRegistry::RegisterDefaultMaterials() {
     m_materials[13].baseColorFallback = glm::vec3(0.75f, 0.88f, 0.95f);
     m_materials[13].roughnessFallback = 0.05f;
     m_materials[13].metallicFallback = 0.1f;
+    m_materials[13].alphaFallback = 0.85f;
 }
 
 bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
@@ -116,6 +120,8 @@ bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
             def.metallicFallback = jMat.value("metallicFallback", 0.0f);
             def.roughnessFallback = jMat.value("roughnessFallback", 1.0f);
             def.emissiveStrength = jMat.value("emissiveStrength", 0.0f);
+            def.alphaFallback = jMat.value("alphaFallback", 1.0f);
+            def.behaviors = jMat.value("behaviors", (uint32_t)BLOCK_BEHAVIOR_NONE);
             def.shapeType = jMat.value("shapeType", 0);
             def.superSphereN = jMat.value("superSphereN", 2.0f);
         }
@@ -144,6 +150,8 @@ bool MaterialRegistry::SaveToJson(const std::string& filepath) {
         jMat["metallicFallback"] = def.metallicFallback;
         jMat["roughnessFallback"] = def.roughnessFallback;
         jMat["emissiveStrength"] = def.emissiveStrength;
+        jMat["alphaFallback"] = def.alphaFallback;
+        jMat["behaviors"] = def.behaviors;
         jMat["shapeType"] = def.shapeType;
         jMat["superSphereN"] = def.superSphereN;
         

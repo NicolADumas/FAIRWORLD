@@ -32,6 +32,8 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
     
     std::vector<fw::MapRegion> combinedRegions = planet.regions;
     for (const auto& inst : planet.chunkInstances) {
+        if (!inst.isActive) continue;
+        
         for (const auto& tmpl : doc.terrainLibrary) {
             if (tmpl.id == inst.templateId) {
                 int baseX = inst.gridX;
@@ -51,6 +53,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                 baseR.perlinFrequency = tmpl.basePerlinFrequency;
                 baseR.surfaceBlockId = tmpl.baseSurfaceBlockId;
                 baseR.subsurfaceBlockId = tmpl.baseSubsurfaceBlockId;
+                baseR.water = tmpl.water;
                 combinedRegions.push_back(baseR);
                 
                 for (const auto& sub : tmpl.subRegions) {

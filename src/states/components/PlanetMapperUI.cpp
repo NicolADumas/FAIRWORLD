@@ -105,6 +105,14 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
         if (ImGui::Combo("Grandezza Pianeta", &currentSizeIndex, sizeNames, IM_ARRAYSIZE(sizeNames))) {
             p.planetSize = (fw::PlanetSize)currentSizeIndex;
             activeTemplateIndex = -1;
+            
+            // Auto-Repair al cambio dimensione
+            auto valResult = fw::MapDocument::ValidateAndRepairDocument(doc);
+            if (valResult.changed) {
+                m_saveFlashMsg = "OOB H=" + std::to_string(valResult.outOfBoundsHidden) + " R=" + std::to_string(valResult.outOfBoundsRestored);
+                m_saveFlashTimer = 3.0f;
+            }
+            
             result.requestRebuildRoots = true;
             result.requestSave = true;
         }
@@ -305,9 +313,83 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
 
         ImGui::SetNextWindowSize(ImVec2(1000, 600), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Tabella Collocamento Chunks - Excel Style", &m_showPlacementTable)) {
+            
+            // --- GLOBAL PLANET TOOLS ---
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "STRUMENTI GLOBALI PIANETA");
+            ImGui::BeginGroup();
+            if (ImGui::Button("Riempi Tutto il Pianeta", ImVec2(180, 30))) {
+                if (activeTemplateIndex >= 0 && activeTemplateIndex < (int)doc.terrainLibrary.size()) {
+                    std::map<int, int> gridLookup;
+                    for (int i = 0; i < (int)currentPlanet.chunkInstances.size(); ++i) {
+                        if (currentPlanet.chunkInstances[i].isGridAligned && currentPlanet.chunkInstances[i].isActive) {
+                            int key = currentPlanet.chunkInstances[i].faceIndex * 1000000 + currentPlanet.chunkInstances[i].gridY * 1000 + currentPlanet.chunkInstances[i].gridX;
+                            gridLookup[key] = i;
+                        }
+                    }
+                    
+                    int addedChunks = 0;
+                    for (int f = 0; f < 6; ++f) {
+                        for (int row = 0; row < N_lato; ++row) {
+                            for (int col = 0; col < N_lato; ++col) {
+                                int key = f * 1000000 + row * 1000 + col;
+                                if (gridLookup.find(key) == gridLookup.end()) {
+                                    fw::PlanetChunkInstance addInst;
+                                    addInst.name = "Chunk_" + std::to_string(f) + "_" + std::to_string(col) + "_" + std::to_string(row);
+                                    addInst.templateId = doc.terrainLibrary[activeTemplateIndex].id;
+                                    addInst.isGridAligned = true;
+                                    addInst.faceIndex = f;
+                                    addInst.gridX = col;
+                                    addInst.gridY = row;
+                                    addInst.isActive = true;
+                                    
+                                    float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
+                                    float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
+                                    glm::vec3 dir(0.0f);
+                                    switch(f) {
+                                        case 0: dir = glm::vec3(cx, cy, 1.0f); break;
+                                        case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
+                                        case 2: dir = glm::vec3(1.0f, cy, -cx); break;
+                                        case 3: dir = glm::vec3(-1.0f, cy, cx); break;
+                                        case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
+                                        case 5: dir = glm::vec3(cx, -1.0f, cy); break;
+                                    }
+                                    dir = glm::normalize(dir);
+                                    addInst.eulerAngles.x = glm::degrees(asin(dir.y));
+                                    addInst.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
+                                    addInst.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 0.6f;
+                                    currentPlanet.chunkInstances.push_back(addInst);
+                                    addedChunks++;
+                                }
+                            }
+                        }
+                    }
+                    if (addedChunks > 0) {
+                        fw::MapDocument::ValidateAndRepairDocument(doc); // Validate
+                        currentPlanet.structuralDirty = true;
+                        result.documentChanged = true;
+                        result.requestRebuildRoots = true;
+                        m_saveFlashMsg = "\xE2\x9C\x94 " + std::to_string(addedChunks) + " Chunk aggiunti.";
+                        m_saveFlashTimer = 3.0f;
+                    } else {
+                        m_saveFlashMsg = "\xE2\x9C\x94 Pianeta gia' completo (0 mod)";
+                        m_saveFlashTimer = 3.0f;
+                    }
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Svuota Tutto il Pianeta", ImVec2(180, 30))) {
+                currentPlanet.chunkInstances.clear();
+                currentPlanet.structuralDirty = true;
+                result.documentChanged = true;
+                result.requestRebuildRoots = true;
+            }
+            ImGui::EndGroup();
+            ImGui::Separator();
+            // --- END GLOBAL PLANET TOOLS ---
+
             std::map<int, int> gridLookup;
             for (int i = 0; i < (int)currentPlanet.chunkInstances.size(); ++i) {
-                if (currentPlanet.chunkInstances[i].isGridAligned) {
+                if (currentPlanet.chunkInstances[i].isGridAligned && currentPlanet.chunkInstances[i].isActive) {
                     int key = currentPlanet.chunkInstances[i].faceIndex * 1000000 + currentPlanet.chunkInstances[i].gridY * 1000 + currentPlanet.chunkInstances[i].gridX;
                     gridLookup[key] = i;
                 }
@@ -322,64 +404,6 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
                 for (int f = 0; f < 6; ++f) {
                     if (ImGui::BeginTabItem(faceNames[f])) {
                         ImGui::Text("Faccia %d - Risoluzione Griglia: %d x %d Cella", f, N_lato, N_lato);
-                        
-                        if (ImGui::Button("Riempi Tutti i Vuoti", ImVec2(150, 25))) {
-                            if (activeTemplateIndex >= 0 && activeTemplateIndex < (int)doc.terrainLibrary.size()) {
-                                for (int row = 0; row < N_lato; ++row) {
-                                    for (int col = 0; col < N_lato; ++col) {
-                                        int key = f * 1000000 + row * 1000 + col;
-                                        if (gridLookup.find(key) == gridLookup.end()) {
-                                            fw::PlanetChunkInstance addInst;
-                                            addInst.name = "Chunk_" + std::to_string(f) + "_" + std::to_string(col) + "_" + std::to_string(row);
-                                            addInst.templateId = doc.terrainLibrary[activeTemplateIndex].id;
-                                            addInst.isGridAligned = true;
-                                            addInst.faceIndex = f;
-                                            addInst.gridX = col;
-                                            addInst.gridY = row;
-                                            
-                                            float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
-                                            float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
-                                            glm::vec3 dir(0.0f);
-                                            switch(f) {
-                                                case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                                                case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                                                case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                                                case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                                                case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                                                case 5: dir = glm::vec3(cx, -1.0f, cy); break;
-                                            }
-                                            dir = glm::normalize(dir);
-                                            addInst.eulerAngles.x = glm::degrees(asin(dir.y));
-                                            addInst.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
-                                            addInst.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 0.6f;
-                                            currentPlanet.chunkInstances.push_back(addInst);
-                                            currentPlanet.MarkStructuralChange();
-                                            result.documentChanged = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        ImGui::SameLine();
-                          if (ImGui::Button("Svuota Tutta la Faccia", ImVec2(180, 25))) {
-                              auto newEnd = std::remove_if(currentPlanet.chunkInstances.begin(), currentPlanet.chunkInstances.end(), [f](const fw::PlanetChunkInstance& inst) {
-                                  return inst.isGridAligned && inst.faceIndex == f;
-                              });
-                              if (newEnd != currentPlanet.chunkInstances.end()) {
-                                  currentPlanet.chunkInstances.erase(newEnd, currentPlanet.chunkInstances.end());
-                                  currentPlanet.MarkStructuralChange();
-                                  result.documentChanged = true;
-                                  
-                                  // Ricalcola gridLookup perch gli indici sono cambiati!
-                                  gridLookup.clear();
-                                  for (int i = 0; i < (int)currentPlanet.chunkInstances.size(); ++i) {
-                                      if (currentPlanet.chunkInstances[i].isGridAligned) {
-                                          int key = currentPlanet.chunkInstances[i].faceIndex * 1000000 + currentPlanet.chunkInstances[i].gridY * 1000 + currentPlanet.chunkInstances[i].gridX;
-                                          gridLookup[key] = i;
-                                      }
-                                  }
-                              }
-                          }
                         ImGui::Spacing();
                         
                         ImGui::BeginChild(std::string("GridScroll_" + std::to_string(f)).c_str(), ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);

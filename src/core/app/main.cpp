@@ -127,6 +127,7 @@ int main() {
     context.projectManager = &projectManager;
 
     engine.SetSharedContext(&context);
+    cacheManager.SyncAllBlockPropertiesSSBO(&context);
 
     // 4. Bootstrap: Avvia lo stato selezionato con tutti i servizi connessi e sincronizzati
     if (choice == 1) {

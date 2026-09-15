@@ -170,6 +170,8 @@ void PlanetMapperState::UpdateApp(float dt) {
             activeRegions = pMap->regions;
             
             for (const auto& inst : pMap->chunkInstances) {
+                if (!inst.isActive) continue;
+                
                 for (const auto& tpl : doc.terrainLibrary) {
                     if (tpl.id == inst.templateId) {
                         int baseX = inst.gridX;

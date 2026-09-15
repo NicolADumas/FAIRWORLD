@@ -7,6 +7,23 @@
 
 namespace fw {
 
+enum BlockBehavior : uint32_t {
+    BLOCK_BEHAVIOR_NONE            = 0,
+    BLOCK_BEHAVIOR_SEASONAL        = 1u << 0,
+    BLOCK_BEHAVIOR_ANIMATED        = 1u << 1,
+    BLOCK_BEHAVIOR_WIND_AFFECTED   = 1u << 2,
+    BLOCK_BEHAVIOR_EMISSIVE        = 1u << 3,
+};
+
+// Struttura 16-byte allineata per l'SSBO GPU
+struct BlockPropertiesGPU {
+    glm::vec4 pbr;          // x: roughness, y: metallic, z: emissive, w: alpha
+    uint32_t behaviors;     // Bitmask (BlockBehavior)
+    uint32_t visualMode;
+    uint32_t physicalFlags;
+    uint32_t reserved;
+};
+
 struct PBRMaterialDef {
     uint8_t target_block_id = 0; // Maps back to the SimBlockDef id
     std::string albedoPath = "";
@@ -18,6 +35,9 @@ struct PBRMaterialDef {
     float roughnessFallback = 1.0f;
     float metallicFallback = 0.0f;
     float emissiveStrength = 0.0f;
+    float alphaFallback = 1.0f;
+
+    uint32_t behaviors = BLOCK_BEHAVIOR_NONE;
 
     // Parametric Geometry (Per-Block)
     int shapeType = 0;          // 0 = Standard Voxel Cube, 1 = SuperSphere (|x|^n + |y|^n + |z|^n = 1)

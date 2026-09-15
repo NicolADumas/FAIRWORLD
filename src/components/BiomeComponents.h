@@ -18,6 +18,7 @@ struct BiomeDataComponent {
     
     // Campi per SDF Blending su Chunk Voxel
     PlanetBaseTerrain baseTerrain;
+    WaterSettings water;
     std::vector<MapRegion> overlappingRegions;
     fw::PlanetSize planetSize = fw::PlanetSize::Medium;
     bool isFlat = false;

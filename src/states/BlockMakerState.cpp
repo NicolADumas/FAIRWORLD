@@ -425,6 +425,38 @@ void BlockMakerState::DrawUI() {
                 if (ImGui::SliderFloat("Metallic", &mat.metallicFallback, 0.0f, 1.0f)) isDirty = true;
                 if (ImGui::SliderFloat("Roughness", &mat.roughnessFallback, 0.0f, 1.0f)) isDirty = true;
                 if (ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 10.0f)) isDirty = true;
+                if (ImGui::SliderFloat("Alpha (Trasparenza)", &mat.alphaFallback, 0.0f, 1.0f)) isDirty = true;
+                
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Comportamenti GPU (Behaviors)");
+                
+                bool isSeasonal = (mat.behaviors & fw::BLOCK_BEHAVIOR_SEASONAL) != 0;
+                if (ImGui::Checkbox("Seasonal (Cambia colore in Inverno/Autunno)", &isSeasonal)) {
+                    if (isSeasonal) mat.behaviors |= fw::BLOCK_BEHAVIOR_SEASONAL;
+                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_SEASONAL;
+                    isDirty = true;
+                }
+                
+                bool isAnimated = (mat.behaviors & fw::BLOCK_BEHAVIOR_ANIMATED) != 0;
+                if (ImGui::Checkbox("Animated (Texture scorre / Vertex displace)", &isAnimated)) {
+                    if (isAnimated) mat.behaviors |= fw::BLOCK_BEHAVIOR_ANIMATED;
+                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_ANIMATED;
+                    isDirty = true;
+                }
+
+                bool isWindAffected = (mat.behaviors & fw::BLOCK_BEHAVIOR_WIND_AFFECTED) != 0;
+                if (ImGui::Checkbox("Wind Affected (Fogliame/Erba si muove col vento)", &isWindAffected)) {
+                    if (isWindAffected) mat.behaviors |= fw::BLOCK_BEHAVIOR_WIND_AFFECTED;
+                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_WIND_AFFECTED;
+                    isDirty = true;
+                }
+
+                bool isEmissiveBehavior = (mat.behaviors & fw::BLOCK_BEHAVIOR_EMISSIVE) != 0;
+                if (ImGui::Checkbox("Emissive (La texture emette luce propria in scena)", &isEmissiveBehavior)) {
+                    if (isEmissiveBehavior) mat.behaviors |= fw::BLOCK_BEHAVIOR_EMISSIVE;
+                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_EMISSIVE;
+                    isDirty = true;
+                }
                 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco (|x|^n + |y|^n + |z|^n = 1)");

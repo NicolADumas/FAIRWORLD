@@ -197,11 +197,13 @@ bool VulkanMemory::CreateUniformBuffers(size_t uniformBufferSize) {
 }
 bool VulkanMemory::CreateDescriptorPoolAndSets(VkDescriptorSetLayout descriptorSetLayout, VkDescriptorSetLayout forgeDescriptorSetLayout, size_t uniformBufferSize) {
     // Questo Ã¨ il legacy descriptor pool e set! Serve UBO e 1 Sampler (dummy)
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
