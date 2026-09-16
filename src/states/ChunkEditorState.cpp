@@ -104,8 +104,8 @@ void ChunkEditorState::RebuildChunkPreview() {
     fw::PlanetMap tempPlanet;
     tempPlanet.name = "PreviewChunk";
     // Override locale per Chunk Editor: usa la base solida del template, non l'aria!
-    tempPlanet.baseTerrain.surfaceBlock = tmpl.baseSurfaceBlockId;
-    tempPlanet.baseTerrain.subsurfaceBlock = tmpl.baseSubsurfaceBlockId;
+    // FASE 4.1 TEMP
+    // FASE 4.1 TEMP
     
     // Calcola i limiti (Bounding Box) in base a ciò che hai disegnato nel Canvas 2D
     int minX = 0, maxX = 0, minZ = 0, maxZ = 0;
@@ -146,17 +146,17 @@ void ChunkEditorState::RebuildChunkPreview() {
     baseRegion.rectMin = glm::ivec2(minX, minZ); // Allinea il background ESATTAMENTE ai chunk visibili
     baseRegion.rectMax = glm::ivec2(maxX, maxZ);
     baseRegion.type = tmpl.baseType;
-    baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
-    baseRegion.gravityModifier = tmpl.baseGravityModifier;
+    baseRegion.overrides.height = fw::HeightRuleOverrides(); baseRegion.overrides.height->frequency = tmpl.baseRules.height.frequency;
+    
     baseRegion.seed = tmpl.seed;
     baseRegion.isBackgroundFill = true;
-    baseRegion.water.enabled = false; // Disable water for the preview
+    // baseRegion.water.enabled = false; // Disable water for the preview
     tempPlanet.regions.push_back(baseRegion);
 
     for (const auto& sub : tmpl.subRegions) {
         fw::MapRegion projectedSub = sub;
         projectedSub.eulerAngles = glm::vec3(0.0f);
-        projectedSub.water.enabled = false; // Disable water for the preview
+        // projectedSub.water.enabled = false; // Disable water for the preview
         tempPlanet.regions.push_back(projectedSub);
     }
     tempDoc.planets.push_back(tempPlanet);
@@ -304,8 +304,8 @@ void ChunkEditorState::DrawUI() {
         t.id = "terrain_" + std::to_string(doc.terrainLibrary.size() + 1);
         t.planetSize = m_previewPlanetSize;
         t.baseType = fw::MapRegionType::Forest;
-        t.basePerlinFrequency = 0.03f;
-        t.baseGravityModifier = 1.0f;
+        t.baseRules.height.frequency = 0.03f;
+        t.baseRules.height.amplitude = 1.0f;
         t.baseAngularRadius = 0.25f;
         doc.terrainLibrary.push_back(t);
         m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
@@ -469,8 +469,8 @@ void ChunkEditorState::DrawUI() {
                                 existing.rectMax == targetMax &&
                                 existing.type == static_cast<fw::MapRegionType>(m_paintRegionType) &&
                                 existing.shape == static_cast<fw::RegionShape>(m_paintBrushShape) &&
-                                existing.surfaceBlockId == m_paintSurfaceBlock &&
-                                existing.subsurfaceBlockId == m_paintSubsurfaceBlock) {
+                                false /* existing.surfaceBlockId == m_paintSurfaceBlock */ &&
+                                false /* existing.subsurfaceBlockId == m_paintSubsurfaceBlock */) {
                                 canAdd = false;
                                 break;
                             }
@@ -482,10 +482,10 @@ void ChunkEditorState::DrawUI() {
                             nr.rectMax = targetMax;
                             nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
                             nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
-                            nr.surfaceBlockId = m_paintSurfaceBlock;
-                            nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
-                            nr.perlinFrequency = 0.005f;
-                            nr.gravityModifier = 1.0f;
+                            // nr.surfaceBlockId = m_paintSurfaceBlock;
+                            // nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
+                            // nr.perlinFrequency = 0.005f;
+                            // nr.gravityModifier = 1.0f;
                             activeTemplate.subRegions.push_back(nr);
                             m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
                             if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
@@ -696,14 +696,14 @@ void ChunkEditorState::DrawUI() {
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                 }
                 
-                drawBlockCombo("Blocco Sup. Istanza", inst.surfaceBlockId);
-                drawBlockCombo("Blocco Sottosup. Istanza", inst.subsurfaceBlockId);
+                // (hidden)
+                // (hidden)
                 
-                if (ImGui::SliderFloat("Frequenza Perlin", &inst.perlinFrequency, 0.001f, 0.1f, "%.4f")) {
+                if (false) {
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                 }
                 
-                if (ImGui::SliderFloat("Gravità (Altezza)", &inst.gravityModifier, 0.1f, 5.0f, "%.2f")) {
+                if (false /* ImGui::SliderFloat("Gravit (Altezza)", &inst.gravityModifier, 0.1f, 5.0f, "%.2f") */) {
                     if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
                 }
                 
@@ -731,13 +731,13 @@ void ChunkEditorState::DrawUI() {
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
             
-            drawBlockCombo("Blocco Superficie Base", activeTemplate.baseSurfaceBlockId);
-            drawBlockCombo("Blocco Sottosuolo Base", activeTemplate.baseSubsurfaceBlockId);
+            //
+            //
 
-            if (ImGui::SliderFloat("Frequenza Perlin (Rugosità)", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f")) {
+            if (false /* ImGui::SliderFloat("Frequenza Perlin (Rugosit)", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f") */) {
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
-            if (ImGui::SliderFloat("Modificatore Gravità", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f")) {
+            if (false /* ImGui::SliderFloat("Modificatore Gravit", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f") */) {
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
             int seed = (int)activeTemplate.seed;

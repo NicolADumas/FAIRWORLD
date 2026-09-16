@@ -187,10 +187,8 @@ void PlanetMapperState::UpdateApp(float dt) {
                         baseR.rectMin = glm::ivec2(baseX, baseZ);
                         baseR.rectMax = glm::ivec2(baseX, baseZ);
                         baseR.type = tpl.baseType;
-                        baseR.gravityModifier = tpl.baseGravityModifier;
-                        baseR.perlinFrequency = tpl.basePerlinFrequency;
-                        baseR.surfaceBlockId = tpl.baseSurfaceBlockId;
-                        baseR.subsurfaceBlockId = tpl.baseSubsurfaceBlockId;
+                        baseR.overrides.height = fw::HeightRuleOverrides();
+                        baseR.overrides.height->frequency = tpl.baseRules.height.frequency;
                         activeRegions.push_back(baseR);
                         
                         for (const auto& sub : tpl.subRegions) {

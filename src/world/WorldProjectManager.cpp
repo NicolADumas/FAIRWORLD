@@ -34,8 +34,6 @@ namespace fw {
             defaultTmpl.id = "default_terrain";
             defaultTmpl.name = "Terreno Standard";
             defaultTmpl.baseType = fw::MapRegionType::Forest;
-            defaultTmpl.basePerlinFrequency = 0.03f;
-            defaultTmpl.baseGravityModifier = 1.0f;
             defaultTmpl.baseAngularRadius = 0.25f;
             m_document.terrainLibrary.push_back(defaultTmpl);
             std::cout << "[WorldProjectManager] Libreria terreni vuota. Creato 'Terreno Standard'.\n";
@@ -63,15 +61,11 @@ namespace fw {
 
         for (auto& planet : m_document.planets) {
             for (auto& reg : planet.regions) {
-                checkAndFixBlock(reg.surfaceBlockId, idGrass);
-                checkAndFixBlock(reg.subsurfaceBlockId, idDirt);
             }
         }
 
         for (auto& tmpl : m_document.terrainLibrary) {
             for (auto& sub : tmpl.subRegions) {
-                checkAndFixBlock(sub.surfaceBlockId, idGrass);
-                checkAndFixBlock(sub.subsurfaceBlockId, idDirt);
             }
         }
         std::cout << "[WorldProjectManager] Validazione BlockRegistry completata con successo.\n";

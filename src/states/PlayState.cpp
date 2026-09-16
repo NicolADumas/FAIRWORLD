@@ -288,7 +288,7 @@ bool PlayState::Init() {
         pm.isFlat = false;
         fw::MapRegion baseReg;
         baseReg.type = fw::MapRegionType::Forest;
-        baseReg.perlinFrequency = 0.005f;
+        baseReg.overrides.height = fw::HeightRuleOverrides(); baseReg.overrides.height->frequency = 0.005f;
         pm.regions.push_back(baseReg);
         dummyDoc.planets.push_back(pm);
         // Limitiamo la generazione iniziale della fisica a 10 chunk di distanza
@@ -400,10 +400,8 @@ void PlayState::Update(float dt) {
                         baseR.rectMin = glm::ivec2(inst.gridX, inst.gridY);
                         baseR.rectMax = glm::ivec2(inst.gridX, inst.gridY);
                         baseR.type = tpl.baseType;
-                        baseR.gravityModifier = tpl.baseGravityModifier;
-                        baseR.perlinFrequency = tpl.basePerlinFrequency;
-                        baseR.surfaceBlockId = tpl.baseSurfaceBlockId;
-                        baseR.subsurfaceBlockId = tpl.baseSubsurfaceBlockId;
+                        baseR.overrides.height = fw::HeightRuleOverrides();
+                        baseR.overrides.height->frequency = tpl.baseRules.height.frequency;
                         activeRegions.push_back(baseR);
                         
                         for (const auto& sub : tpl.subRegions) {

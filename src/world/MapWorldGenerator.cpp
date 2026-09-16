@@ -49,11 +49,6 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                 baseR.rectMin = glm::ivec2(baseX, baseZ);
                 baseR.rectMax = glm::ivec2(baseX, baseZ);
                 baseR.type = tmpl.baseType;
-                baseR.gravityModifier = tmpl.baseGravityModifier;
-                baseR.perlinFrequency = tmpl.basePerlinFrequency;
-                baseR.surfaceBlockId = tmpl.baseSurfaceBlockId;
-                baseR.subsurfaceBlockId = tmpl.baseSubsurfaceBlockId;
-                baseR.water = tmpl.water;
                 combinedRegions.push_back(baseR);
                 
                 for (const auto& sub : tmpl.subRegions) {
@@ -142,8 +137,6 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             }
         }
 
-        biomeData.surfaceBlockId = biomeData.baseTerrain.surfaceBlock;
-        biomeData.subsurfaceBlockId = biomeData.baseTerrain.subsurfaceBlock;
         
         targetWorld.GetRegistry().emplace_or_replace<fw::BiomeDataComponent>(chunkEnt, biomeData);
         targetWorld.GetRegistry().emplace_or_replace<fw::TerrainGenTag>(chunkEnt);

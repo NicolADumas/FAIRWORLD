@@ -44,6 +44,9 @@ private:
     int m_brushSize = 1;
     int m_paintSurfaceBlock = 1;
     int m_paintSubsurfaceBlock = 2;
+    int m_paintCoreBlock = 2;
+    int m_paintSubsurfaceDepth = 3;
+    bool m_paintEnableCaves = false;
     int m_paintRegionType = 0;
     int m_paintBrushShape = 0;
     bool m_isBrushModeActive = false; // Nuovo toggle per uscire dal pennello continuo

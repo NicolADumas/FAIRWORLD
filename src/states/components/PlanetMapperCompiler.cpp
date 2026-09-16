@@ -44,11 +44,9 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
                     baseRegion.gridX = inst.gridX;
                     baseRegion.gridY = inst.gridY;
                     baseRegion.type = tmpl.baseType;
-                    baseRegion.perlinFrequency = tmpl.basePerlinFrequency;
-                    baseRegion.gravityModifier = tmpl.baseGravityModifier;
+                    baseRegion.overrides.height = fw::HeightRuleOverrides();
+                    baseRegion.overrides.height->frequency = tmpl.baseRules.height.frequency;
                     baseRegion.seed = tmpl.seed;
-                    baseRegion.surfaceBlockId = tmpl.baseSurfaceBlockId;
-                    baseRegion.subsurfaceBlockId = tmpl.baseSubsurfaceBlockId;
 
                     if (inst.isGridAligned && inst.gridX != -1 && inst.gridY != -1) {
                         int radiusTiles = (int)std::max(1.0f, inst.angularRadius * 10.0f);
@@ -97,12 +95,12 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
             }
             gr.shapeType      = (uint32_t)r.shape;
             gr.biomeType      = (uint32_t)r.type;
-            gr.perlinFreq     = r.perlinFrequency;
-            gr.gravityMod     = r.gravityModifier;
+            gr.perlinFreq     = r.overrides.height ? r.overrides.height->frequency.value_or(0.01f) : 0.01f;
+            gr.gravityMod     = 1.0f;
             gr.isGridAligned  = r.isGridAligned ? 1u : 0u;
             gr.faceIndex      = (uint32_t)r.faceIndex;
-            gr.surfaceBlock   = r.surfaceBlockId;
-            gr.subsurfaceBlock = r.subsurfaceBlockId;
+            gr.surfaceBlock   = 0;
+            gr.subsurfaceBlock = 0;
             gpuRegions.push_back(gr);
         }
 

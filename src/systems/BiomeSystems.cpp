@@ -17,24 +17,31 @@ namespace {
         float height;
         uint8_t surfaceBlock;
         uint8_t subsurfaceBlock;
+        uint8_t coreBlock;
+        int subsurfaceDepth;
+        bool enableCaves;
         fw::MapRegionType dominantBiome;
-        fw::WaterSettings water;
+        fw::WaterRules water;
     };
 
-    SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, glm::vec3 noisePos, const PerlinNoise& terrainNoiseGen) {
-        float freq = biome.baseTerrain.perlinFrequency;
+    SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, glm::vec3 noisePos, const PerlinNoise& terrainNoiseGen, const BlockRegistry* blockRegistry) {
+        const auto& rules = biome.baseTerrain.baseRules;
+        float freq = rules.height.frequency;
         float terrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
-        float baseHeight = 25.0f + (terrainVal * 25.0f * biome.baseTerrain.gravityModifier);
+        float baseHeight = rules.height.baseHeight + (terrainVal * rules.height.amplitude);
         
         if (biome.baseTerrain.biome == fw::MapRegionType::Ocean) {
             baseHeight = 8.0f + (terrainVal * 5.0f); // Oceano profondo
         }
         
         float finalHeight = baseHeight;
-        uint8_t surfaceBlock = biome.baseTerrain.surfaceBlock;
-        uint8_t subsurfaceBlock = biome.baseTerrain.subsurfaceBlock;
+        uint8_t surfaceBlock = blockRegistry ? blockRegistry->GetBlock(rules.layers.layers.empty() ? "fairworld:grass" : rules.layers.layers[0].blockName).id : 1;
+        uint8_t subsurfaceBlock = blockRegistry ? blockRegistry->GetBlock(rules.layers.layers.size() > 1 ? rules.layers.layers[1].blockName : "fairworld:dirt").id : 3;
+        uint8_t coreBlock = blockRegistry ? blockRegistry->GetBlock(rules.layers.coreBlockName).id : 2;
+        int subsurfaceDepth = rules.layers.layers.empty() ? 3 : (int)rules.layers.layers[0].maxDepth;
+        bool enableCaves = rules.caves.enabled;
         fw::MapRegionType colBiome = biome.baseTerrain.biome;
-        fw::WaterSettings colWater = biome.baseTerrain.water;
+        fw::WaterRules colWater = rules.water;
         
         glm::vec3 colNormal = glm::normalize(biome.chunkCenterWorld);
         
@@ -85,9 +92,9 @@ namespace {
             }
             
             if (sdf < blendDistance) {
-                float freq = r.perlinFrequency;
+                float freq = r.overrides.height.has_value() && r.overrides.height->frequency.has_value() ? r.overrides.height->frequency.value() : rules.height.frequency;
                 float rTerrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
-                float rHeight = 25.0f + (rTerrainVal * 25.0f * r.gravityModifier);
+                float rHeight = rules.height.baseHeight + (rTerrainVal * rules.height.amplitude);
                 
                 // Macro-shaping in base alla distanza dal centro (normalizedDist va da 0 al centro a 1 sui bordi)
                 if (r.type == fw::MapRegionType::Volcano) {
@@ -119,12 +126,14 @@ namespace {
                     
                     if (influence > maxInfluence) {
                         maxInfluence = influence;
-                        if (influence > 0.5f) { // Dominance threshold per i materiali
-                            surfaceBlock = r.surfaceBlockId;
-                            subsurfaceBlock = r.subsurfaceBlockId;
-                            colBiome = r.type;
-                            colWater = r.water;
-                        }
+                        // Regole Discrete: la regione dominante vince
+                        surfaceBlock = blockRegistry && r.overrides.layers.has_value() && r.overrides.layers->layers.has_value() && !r.overrides.layers->layers->empty() ? blockRegistry->GetBlock(r.overrides.layers->layers->at(0).blockName).id : surfaceBlock;
+                        subsurfaceBlock = blockRegistry && r.overrides.layers.has_value() && r.overrides.layers->layers.has_value() && r.overrides.layers->layers->size() > 1 ? blockRegistry->GetBlock(r.overrides.layers->layers->at(1).blockName).id : subsurfaceBlock;
+                        coreBlock = blockRegistry && r.overrides.layers.has_value() && r.overrides.layers->coreBlockName.has_value() ? blockRegistry->GetBlock(r.overrides.layers->coreBlockName.value()).id : coreBlock;
+                        subsurfaceDepth = r.overrides.layers.has_value() && r.overrides.layers->layers.has_value() && !r.overrides.layers->layers->empty() ? (int)r.overrides.layers->layers->at(0).maxDepth : subsurfaceDepth;
+                        enableCaves = r.overrides.caves.has_value() && r.overrides.caves->enabled.has_value() ? r.overrides.caves->enabled.value() : enableCaves;
+                        colBiome = r.type;
+                        colWater = r.overrides.water.has_value() ? fw::ResolveTerrainRules(rules, r.overrides, 1.0f, blockRegistry).rules.water : rules.water;
                     }
                 }
             }
@@ -136,7 +145,7 @@ namespace {
             finalHeight = glm::mix(baseHeight, blendedHeight, normalizedWeight);
         }
         
-        return { finalHeight, surfaceBlock, subsurfaceBlock, colBiome, colWater };
+        return { finalHeight, surfaceBlock, subsurfaceBlock, coreBlock, subsurfaceDepth, enableCaves, colBiome, colWater };
     }
 }
 
@@ -190,13 +199,18 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, cx, cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen, blockRegistry);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
+                    if (sdf.surfaceBlock == 0 && sdf.subsurfaceBlock == 0 && sdf.coreBlock == 0) {
+                        chunk.blocks[x][y][z] = idAir;
+                        chunk.light[x][y][z] = 255;
+                        continue;
+                    }
                     bool isCave = false;
                     
-                    if (y > 4 && y < height - 4) {
+                    if (sdf.enableCaves && y > 4 && y < height - 4) {
                         float caveFreq = 0.05f; 
                         float caveDensity = caveNoiseGen.octaveNoise(noisePos.x * caveFreq, (noisePos.y + y) * caveFreq * 1.5f, noisePos.z * caveFreq, 3, 0.5f);
                         if (caveDensity > 0.55f) {
@@ -205,13 +219,12 @@ void ForestTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     }
 
                     if (isCave) {
-                        if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
-                        else chunk.blocks[x][y][z] = idAir;
+                        chunk.blocks[x][y][z] = idAir;
                     } else {
-                        if (y < height - 3) chunk.blocks[x][y][z] = idStone;
+                        if (y < height - sdf.subsurfaceDepth) chunk.blocks[x][y][z] = sdf.coreBlock;
                         else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                         else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                        else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                        else if (sdf.water.enabled && y <= sdf.water.globalLevel) chunk.blocks[x][y][z] = (blockRegistry ? blockRegistry->GetBlock(sdf.water.liquidBlockName).id : 6);
                         else chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 
@@ -264,13 +277,18 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, cx, cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen, blockRegistry);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
+                    if (sdf.surfaceBlock == 0 && sdf.subsurfaceBlock == 0 && sdf.coreBlock == 0) {
+                        chunk.blocks[x][y][z] = idAir;
+                        chunk.light[x][y][z] = 255;
+                        continue;
+                    }
                     bool isCave = false;
                     
-                    if (y > 4 && y < height - 6) {
+                    if (sdf.enableCaves && y > 4 && y < height - 6) {
                         float caveFreq = 0.04f; // Caverne più larghe nel deserto
                         float caveDensity = caveNoiseGen.octaveNoise(noisePos.x * caveFreq, (noisePos.y + y) * caveFreq * 1.5f, noisePos.z * caveFreq, 3, 0.5f);
                         if (caveDensity > 0.60f) {
@@ -279,14 +297,13 @@ void DesertTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     }
 
                     if (isCave) {
-                        if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
-                        else chunk.blocks[x][y][z] = idAir;
+                        chunk.blocks[x][y][z] = idAir;
                     } else {
                         // Strato di sabbia molto più spesso
-                        if (y < height - 6) chunk.blocks[x][y][z] = idStone;
+                        if (y < height - sdf.subsurfaceDepth) chunk.blocks[x][y][z] = sdf.coreBlock;
                         else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                         else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                        else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                        else if (sdf.water.enabled && y <= sdf.water.globalLevel) chunk.blocks[x][y][z] = (blockRegistry ? blockRegistry->GetBlock(sdf.water.liquidBlockName).id : 6);
                         else chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 
@@ -334,15 +351,20 @@ void OceanTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame,
                     fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen, blockRegistry);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
+                    if (sdf.surfaceBlock == 0 && sdf.subsurfaceBlock == 0 && sdf.coreBlock == 0) {
+                        chunk.blocks[x][y][z] = idAir;
+                        chunk.light[x][y][z] = 255;
+                        continue;
+                    }
                     // Nessuna caverna nell'oceano
-                    if (y < height - 3) chunk.blocks[x][y][z] = idStone;
+                    if (y < height - sdf.subsurfaceDepth) chunk.blocks[x][y][z] = sdf.coreBlock;
                     else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                     else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                    else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                    else if (sdf.water.enabled && y <= sdf.water.globalLevel) chunk.blocks[x][y][z] = (blockRegistry ? blockRegistry->GetBlock(sdf.water.liquidBlockName).id : 6);
                     else chunk.blocks[x][y][z] = idAir;
                     
                     chunk.light[x][y][z] = 255; 
@@ -389,14 +411,19 @@ void TundraTerrainSystem::Update(entt::registry& registry, int maxChunksPerFrame
                     fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen, blockRegistry);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
-                    if (y < height - 3) chunk.blocks[x][y][z] = idStone;
+                    if (sdf.surfaceBlock == 0 && sdf.subsurfaceBlock == 0 && sdf.coreBlock == 0) {
+                        chunk.blocks[x][y][z] = idAir;
+                        chunk.light[x][y][z] = 255;
+                        continue;
+                    }
+                    if (y < height - sdf.subsurfaceDepth) chunk.blocks[x][y][z] = sdf.coreBlock;
                     else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                     else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                    else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                    else if (sdf.water.enabled && y <= sdf.water.globalLevel) chunk.blocks[x][y][z] = (blockRegistry ? blockRegistry->GetBlock(sdf.water.liquidBlockName).id : 6);
                     else chunk.blocks[x][y][z] = idAir;
                     chunk.light[x][y][z] = 255; 
                 }
@@ -443,13 +470,18 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
                     fw::MapWorldGenerator::GetTrueSphericalPosition(biome.planetSize, false, chunk.cx, chunk.cz, (float)x, 0.0f, (float)z, noisePos);
                 }
                 
-                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen);
+                SdfResult sdf = EvaluateSDF(biome, worldX, worldZ, noisePos, terrainNoiseGen, blockRegistry);
                 int height = (int)sdf.height;
                 
                 for (int y = 0; y < 128; ++y) {
+                    if (sdf.surfaceBlock == 0 && sdf.subsurfaceBlock == 0 && sdf.coreBlock == 0) {
+                        chunk.blocks[x][y][z] = idAir;
+                        chunk.light[x][y][z] = 255;
+                        continue;
+                    }
                     bool isLavaTube = false;
                     
-                    if (y > 4 && y < height - 2) {
+                    if (sdf.enableCaves && y > 4 && y < height - 2) {
                         float caveFreq = 0.08f; 
                         float caveDensity = lavaTubeNoise.octaveNoise(noisePos.x * caveFreq, (noisePos.y + y) * caveFreq * 2.0f, noisePos.z * caveFreq, 3, 0.5f);
                         if (caveDensity > 0.60f) {
@@ -458,13 +490,12 @@ void VolcanoTerrainSystem::Update(entt::registry& registry, int maxChunksPerFram
                     }
 
                     if (isLavaTube) {
-                        if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
-                        else chunk.blocks[x][y][z] = idAir;
+                        chunk.blocks[x][y][z] = idAir;
                     } else {
-                        if (y < height - 3) chunk.blocks[x][y][z] = idStone;
+                        if (y < height - sdf.subsurfaceDepth) chunk.blocks[x][y][z] = sdf.coreBlock;
                         else if (y < height) chunk.blocks[x][y][z] = sdf.subsurfaceBlock;
                         else if (y == height) chunk.blocks[x][y][z] = sdf.surfaceBlock;
-                        else if (sdf.water.enabled && y <= sdf.water.seaLevel) chunk.blocks[x][y][z] = sdf.water.liquidBlockId;
+                        else if (sdf.water.enabled && y <= sdf.water.globalLevel) chunk.blocks[x][y][z] = (blockRegistry ? blockRegistry->GetBlock(sdf.water.liquidBlockName).id : 6);
                         else chunk.blocks[x][y][z] = idAir;
                     }
                     chunk.light[x][y][z] = 255; 

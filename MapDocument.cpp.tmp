@@ -686,6 +686,11 @@ void writeRegion(std::ostream& s, const fw::MapRegion& r) {
     writeI32(s, (int32_t)r.shape);
     writeStr(s, r.label);
     writeU32(s, r.seed);
+    writeF32(s, r.gravityModifier);
+    writeF32(s, r.perlinFrequency);
+    writeF32(s, r.treeDensity);
+    writeU8(s, r.surfaceBlockId);
+    writeU8(s, r.subsurfaceBlockId);
     writeBool(s, r.isGridAligned);
     writeI32(s, r.faceIndex);
     writeI32(s, r.gridX);
@@ -702,6 +707,11 @@ fw::MapRegion readRegion(std::istream& s) {
     r.shape            = (fw::RegionShape)readI32(s);
     r.label            = readStr(s);
     r.seed             = readU32(s);
+    r.gravityModifier  = readF32(s);
+    r.perlinFrequency  = readF32(s);
+    r.treeDensity      = readF32(s);
+    r.surfaceBlockId   = readU8(s);
+    r.subsurfaceBlockId= readU8(s);
     r.isGridAligned    = readBool(s);
     r.faceIndex        = readI32(s);
     r.gridX            = readI32(s);
@@ -711,15 +721,316 @@ fw::MapRegion readRegion(std::istream& s) {
 
 } // anonymous namespace
 
-
 namespace fw {
+void to_json(nlohmann::json& j, const TerrainLayer& p) {
+    j["blockName"] = p.blockName;
+    j["minDepth"] = p.minDepth;
+    j["maxDepth"] = p.maxDepth;
+    j["noiseStrength"] = p.noiseStrength;
+    j["noiseScale"] = p.noiseScale;
+    j["blendMode"] = static_cast<int>(p.blendMode);
+}
+void from_json(const nlohmann::json& j, TerrainLayer& p) {
+    if (j.contains("blockName")) j.at("blockName").get_to(p.blockName);
+    if (j.contains("minDepth")) j.at("minDepth").get_to(p.minDepth);
+    if (j.contains("maxDepth")) j.at("maxDepth").get_to(p.maxDepth);
+    if (j.contains("noiseStrength")) j.at("noiseStrength").get_to(p.noiseStrength);
+    if (j.contains("noiseScale")) j.at("noiseScale").get_to(p.noiseScale);
+    if (j.contains("blendMode")) p.blendMode = static_cast<decltype(p.blendMode)>(j.at("blendMode").get<int>());
+}
+
+void to_json(nlohmann::json& j, const HeightRules& p) {
+    j["baseHeight"] = p.baseHeight;
+    j["amplitude"] = p.amplitude;
+    j["frequency"] = p.frequency;
+    j["persistence"] = p.persistence;
+    j["lacunarity"] = p.lacunarity;
+    j["macroScale"] = p.macroScale;
+    j["regionalScale"] = p.regionalScale;
+    j["detailScale"] = p.detailScale;
+    j["ridgeStrength"] = p.ridgeStrength;
+    j["valleyStrength"] = p.valleyStrength;
+    j["octaves"] = p.octaves;
+}
+void from_json(const nlohmann::json& j, HeightRules& p) {
+    if (j.contains("baseHeight")) j.at("baseHeight").get_to(p.baseHeight);
+    if (j.contains("amplitude")) j.at("amplitude").get_to(p.amplitude);
+    if (j.contains("frequency")) j.at("frequency").get_to(p.frequency);
+    if (j.contains("persistence")) j.at("persistence").get_to(p.persistence);
+    if (j.contains("lacunarity")) j.at("lacunarity").get_to(p.lacunarity);
+    if (j.contains("macroScale")) j.at("macroScale").get_to(p.macroScale);
+    if (j.contains("regionalScale")) j.at("regionalScale").get_to(p.regionalScale);
+    if (j.contains("detailScale")) j.at("detailScale").get_to(p.detailScale);
+    if (j.contains("ridgeStrength")) j.at("ridgeStrength").get_to(p.ridgeStrength);
+    if (j.contains("valleyStrength")) j.at("valleyStrength").get_to(p.valleyStrength);
+    if (j.contains("octaves")) j.at("octaves").get_to(p.octaves);
+}
+
+void to_json(nlohmann::json& j, const LayerRules& p) {
+    j["layers"] = p.layers;
+    j["coreBlockName"] = p.coreBlockName;
+}
+void from_json(const nlohmann::json& j, LayerRules& p) {
+    if (j.contains("layers")) j.at("layers").get_to(p.layers);
+    if (j.contains("coreBlockName")) j.at("coreBlockName").get_to(p.coreBlockName);
+}
+
+void to_json(nlohmann::json& j, const CaveTunnelRules& p) {
+    j["scale"] = p.scale;
+    j["frequency"] = p.frequency;
+    j["strength"] = p.strength;
+    j["threshold"] = p.threshold;
+}
+void from_json(const nlohmann::json& j, CaveTunnelRules& p) {
+    if (j.contains("scale")) j.at("scale").get_to(p.scale);
+    if (j.contains("frequency")) j.at("frequency").get_to(p.frequency);
+    if (j.contains("strength")) j.at("strength").get_to(p.strength);
+    if (j.contains("threshold")) j.at("threshold").get_to(p.threshold);
+}
+
+void to_json(nlohmann::json& j, const CaveChamberRules& p) {
+    j["scale"] = p.scale;
+    j["strength"] = p.strength;
+    j["frequency"] = p.frequency;
+}
+void from_json(const nlohmann::json& j, CaveChamberRules& p) {
+    if (j.contains("scale")) j.at("scale").get_to(p.scale);
+    if (j.contains("strength")) j.at("strength").get_to(p.strength);
+    if (j.contains("frequency")) j.at("frequency").get_to(p.frequency);
+}
+
+void to_json(nlohmann::json& j, const CaveRules& p) {
+    j["enabled"] = p.enabled;
+    j["tunnels"] = p.tunnels;
+    j["chambers"] = p.chambers;
+    j["verticalBias"] = p.verticalBias;
+    j["minDepth"] = p.minDepth;
+    j["maxDepth"] = p.maxDepth;
+}
+void from_json(const nlohmann::json& j, CaveRules& p) {
+    if (j.contains("enabled")) j.at("enabled").get_to(p.enabled);
+    if (j.contains("tunnels")) j.at("tunnels").get_to(p.tunnels);
+    if (j.contains("chambers")) j.at("chambers").get_to(p.chambers);
+    if (j.contains("verticalBias")) j.at("verticalBias").get_to(p.verticalBias);
+    if (j.contains("minDepth")) j.at("minDepth").get_to(p.minDepth);
+    if (j.contains("maxDepth")) j.at("maxDepth").get_to(p.maxDepth);
+}
+
+void to_json(nlohmann::json& j, const WaterRules& p) {
+    j["enabled"] = p.enabled;
+    j["globalLevel"] = p.globalLevel;
+    j["liquidBlockName"] = p.liquidBlockName;
+    j["floorBlockName"] = p.floorBlockName;
+    j["regionalVariation"] = p.regionalVariation;
+    j["basinStrength"] = p.basinStrength;
+    j["shorelineFalloff"] = p.shorelineFalloff;
+}
+void from_json(const nlohmann::json& j, WaterRules& p) {
+    if (j.contains("enabled")) j.at("enabled").get_to(p.enabled);
+    if (j.contains("globalLevel")) j.at("globalLevel").get_to(p.globalLevel);
+    if (j.contains("liquidBlockName")) j.at("liquidBlockName").get_to(p.liquidBlockName);
+    if (j.contains("floorBlockName")) j.at("floorBlockName").get_to(p.floorBlockName);
+    if (j.contains("regionalVariation")) j.at("regionalVariation").get_to(p.regionalVariation);
+    if (j.contains("basinStrength")) j.at("basinStrength").get_to(p.basinStrength);
+    if (j.contains("shorelineFalloff")) j.at("shorelineFalloff").get_to(p.shorelineFalloff);
+}
+
+void to_json(nlohmann::json& j, const BiomeEnvironment& p) {
+    j["temperature"] = p.temperature;
+    j["humidity"] = p.humidity;
+    j["moisture"] = p.moisture;
+    j["altitude"] = p.altitude;
+    j["slope"] = p.slope;
+    j["latitude"] = p.latitude;
+    j["waterProximity"] = p.waterProximity;
+}
+void from_json(const nlohmann::json& j, BiomeEnvironment& p) {
+    if (j.contains("temperature")) j.at("temperature").get_to(p.temperature);
+    if (j.contains("humidity")) j.at("humidity").get_to(p.humidity);
+    if (j.contains("moisture")) j.at("moisture").get_to(p.moisture);
+    if (j.contains("altitude")) j.at("altitude").get_to(p.altitude);
+    if (j.contains("slope")) j.at("slope").get_to(p.slope);
+    if (j.contains("latitude")) j.at("latitude").get_to(p.latitude);
+    if (j.contains("waterProximity")) j.at("waterProximity").get_to(p.waterProximity);
+}
+
+void to_json(nlohmann::json& j, const BiomeRules& p) {
+    j["environment"] = p.environment;
+}
+void from_json(const nlohmann::json& j, BiomeRules& p) {
+    if (j.contains("environment")) j.at("environment").get_to(p.environment);
+}
+
+void to_json(nlohmann::json& j, const ErosionRules& p) {
+    j["enabled"] = p.enabled;
+    j["hydraulicErosion"] = p.hydraulicErosion;
+    j["thermalErosion"] = p.thermalErosion;
+    j["sedimentation"] = p.sedimentation;
+    j["weathering"] = p.weathering;
+}
+void from_json(const nlohmann::json& j, ErosionRules& p) {
+    if (j.contains("enabled")) j.at("enabled").get_to(p.enabled);
+    if (j.contains("hydraulicErosion")) j.at("hydraulicErosion").get_to(p.hydraulicErosion);
+    if (j.contains("thermalErosion")) j.at("thermalErosion").get_to(p.thermalErosion);
+    if (j.contains("sedimentation")) j.at("sedimentation").get_to(p.sedimentation);
+    if (j.contains("weathering")) j.at("weathering").get_to(p.weathering);
+}
+
+void to_json(nlohmann::json& j, const TerrainGenerationRules& p) {
+    j["height"] = p.height;
+    j["layers"] = p.layers;
+    j["caves"] = p.caves;
+    j["water"] = p.water;
+    j["biome"] = p.biome;
+    j["erosion"] = p.erosion;
+}
+void from_json(const nlohmann::json& j, TerrainGenerationRules& p) {
+    if (j.contains("height")) j.at("height").get_to(p.height);
+    if (j.contains("layers")) j.at("layers").get_to(p.layers);
+    if (j.contains("caves")) j.at("caves").get_to(p.caves);
+    if (j.contains("water")) j.at("water").get_to(p.water);
+    if (j.contains("biome")) j.at("biome").get_to(p.biome);
+    if (j.contains("erosion")) j.at("erosion").get_to(p.erosion);
+}
+
+void to_json(nlohmann::json& j, const HeightRuleOverrides& p) {
+    if (p.baseHeight.has_value()) j["baseHeight"] = p.baseHeight.value();
+    if (p.amplitude.has_value()) j["amplitude"] = p.amplitude.value();
+    if (p.frequency.has_value()) j["frequency"] = p.frequency.value();
+    if (p.persistence.has_value()) j["persistence"] = p.persistence.value();
+    if (p.lacunarity.has_value()) j["lacunarity"] = p.lacunarity.value();
+    if (p.macroScale.has_value()) j["macroScale"] = p.macroScale.value();
+    if (p.regionalScale.has_value()) j["regionalScale"] = p.regionalScale.value();
+    if (p.detailScale.has_value()) j["detailScale"] = p.detailScale.value();
+    if (p.ridgeStrength.has_value()) j["ridgeStrength"] = p.ridgeStrength.value();
+    if (p.valleyStrength.has_value()) j["valleyStrength"] = p.valleyStrength.value();
+    if (p.octaves.has_value()) j["octaves"] = p.octaves.value();
+}
+void from_json(const nlohmann::json& j, HeightRuleOverrides& p) {
+    if (j.contains("baseHeight")) p.baseHeight = j.at("baseHeight").get<std::decay_t<decltype(p.baseHeight.value())>>();
+    if (j.contains("amplitude")) p.amplitude = j.at("amplitude").get<std::decay_t<decltype(p.amplitude.value())>>();
+    if (j.contains("frequency")) p.frequency = j.at("frequency").get<std::decay_t<decltype(p.frequency.value())>>();
+    if (j.contains("persistence")) p.persistence = j.at("persistence").get<std::decay_t<decltype(p.persistence.value())>>();
+    if (j.contains("lacunarity")) p.lacunarity = j.at("lacunarity").get<std::decay_t<decltype(p.lacunarity.value())>>();
+    if (j.contains("macroScale")) p.macroScale = j.at("macroScale").get<std::decay_t<decltype(p.macroScale.value())>>();
+    if (j.contains("regionalScale")) p.regionalScale = j.at("regionalScale").get<std::decay_t<decltype(p.regionalScale.value())>>();
+    if (j.contains("detailScale")) p.detailScale = j.at("detailScale").get<std::decay_t<decltype(p.detailScale.value())>>();
+    if (j.contains("ridgeStrength")) p.ridgeStrength = j.at("ridgeStrength").get<std::decay_t<decltype(p.ridgeStrength.value())>>();
+    if (j.contains("valleyStrength")) p.valleyStrength = j.at("valleyStrength").get<std::decay_t<decltype(p.valleyStrength.value())>>();
+    if (j.contains("octaves")) p.octaves = j.at("octaves").get<std::decay_t<decltype(p.octaves.value())>>();
+}
+
+void to_json(nlohmann::json& j, const LayerRuleOverrides& p) {
+    if (p.layers.has_value()) j["layers"] = p.layers.value();
+    if (p.coreBlockName.has_value()) j["coreBlockName"] = p.coreBlockName.value();
+}
+void from_json(const nlohmann::json& j, LayerRuleOverrides& p) {
+    if (j.contains("layers")) p.layers = j.at("layers").get<std::decay_t<decltype(p.layers.value())>>();
+    if (j.contains("coreBlockName")) p.coreBlockName = j.at("coreBlockName").get<std::decay_t<decltype(p.coreBlockName.value())>>();
+}
+
+void to_json(nlohmann::json& j, const CaveRuleOverrides& p) {
+    if (p.enabled.has_value()) j["enabled"] = p.enabled.value();
+    if (p.tunnels.has_value()) j["tunnels"] = p.tunnels.value();
+    if (p.chambers.has_value()) j["chambers"] = p.chambers.value();
+    if (p.verticalBias.has_value()) j["verticalBias"] = p.verticalBias.value();
+    if (p.minDepth.has_value()) j["minDepth"] = p.minDepth.value();
+    if (p.maxDepth.has_value()) j["maxDepth"] = p.maxDepth.value();
+}
+void from_json(const nlohmann::json& j, CaveRuleOverrides& p) {
+    if (j.contains("enabled")) p.enabled = j.at("enabled").get<std::decay_t<decltype(p.enabled.value())>>();
+    if (j.contains("tunnels")) p.tunnels = j.at("tunnels").get<std::decay_t<decltype(p.tunnels.value())>>();
+    if (j.contains("chambers")) p.chambers = j.at("chambers").get<std::decay_t<decltype(p.chambers.value())>>();
+    if (j.contains("verticalBias")) p.verticalBias = j.at("verticalBias").get<std::decay_t<decltype(p.verticalBias.value())>>();
+    if (j.contains("minDepth")) p.minDepth = j.at("minDepth").get<std::decay_t<decltype(p.minDepth.value())>>();
+    if (j.contains("maxDepth")) p.maxDepth = j.at("maxDepth").get<std::decay_t<decltype(p.maxDepth.value())>>();
+}
+
+void to_json(nlohmann::json& j, const WaterRuleOverrides& p) {
+    if (p.enabled.has_value()) j["enabled"] = p.enabled.value();
+    if (p.globalLevel.has_value()) j["globalLevel"] = p.globalLevel.value();
+    if (p.liquidBlockName.has_value()) j["liquidBlockName"] = p.liquidBlockName.value();
+    if (p.floorBlockName.has_value()) j["floorBlockName"] = p.floorBlockName.value();
+    if (p.regionalVariation.has_value()) j["regionalVariation"] = p.regionalVariation.value();
+    if (p.basinStrength.has_value()) j["basinStrength"] = p.basinStrength.value();
+    if (p.shorelineFalloff.has_value()) j["shorelineFalloff"] = p.shorelineFalloff.value();
+}
+void from_json(const nlohmann::json& j, WaterRuleOverrides& p) {
+    if (j.contains("enabled")) p.enabled = j.at("enabled").get<std::decay_t<decltype(p.enabled.value())>>();
+    if (j.contains("globalLevel")) p.globalLevel = j.at("globalLevel").get<std::decay_t<decltype(p.globalLevel.value())>>();
+    if (j.contains("liquidBlockName")) p.liquidBlockName = j.at("liquidBlockName").get<std::decay_t<decltype(p.liquidBlockName.value())>>();
+    if (j.contains("floorBlockName")) p.floorBlockName = j.at("floorBlockName").get<std::decay_t<decltype(p.floorBlockName.value())>>();
+    if (j.contains("regionalVariation")) p.regionalVariation = j.at("regionalVariation").get<std::decay_t<decltype(p.regionalVariation.value())>>();
+    if (j.contains("basinStrength")) p.basinStrength = j.at("basinStrength").get<std::decay_t<decltype(p.basinStrength.value())>>();
+    if (j.contains("shorelineFalloff")) p.shorelineFalloff = j.at("shorelineFalloff").get<std::decay_t<decltype(p.shorelineFalloff.value())>>();
+}
+
+void to_json(nlohmann::json& j, const BiomeEnvironmentOverrides& p) {
+    if (p.temperature.has_value()) j["temperature"] = p.temperature.value();
+    if (p.humidity.has_value()) j["humidity"] = p.humidity.value();
+    if (p.moisture.has_value()) j["moisture"] = p.moisture.value();
+    if (p.altitude.has_value()) j["altitude"] = p.altitude.value();
+    if (p.slope.has_value()) j["slope"] = p.slope.value();
+    if (p.latitude.has_value()) j["latitude"] = p.latitude.value();
+    if (p.waterProximity.has_value()) j["waterProximity"] = p.waterProximity.value();
+}
+void from_json(const nlohmann::json& j, BiomeEnvironmentOverrides& p) {
+    if (j.contains("temperature")) p.temperature = j.at("temperature").get<std::decay_t<decltype(p.temperature.value())>>();
+    if (j.contains("humidity")) p.humidity = j.at("humidity").get<std::decay_t<decltype(p.humidity.value())>>();
+    if (j.contains("moisture")) p.moisture = j.at("moisture").get<std::decay_t<decltype(p.moisture.value())>>();
+    if (j.contains("altitude")) p.altitude = j.at("altitude").get<std::decay_t<decltype(p.altitude.value())>>();
+    if (j.contains("slope")) p.slope = j.at("slope").get<std::decay_t<decltype(p.slope.value())>>();
+    if (j.contains("latitude")) p.latitude = j.at("latitude").get<std::decay_t<decltype(p.latitude.value())>>();
+    if (j.contains("waterProximity")) p.waterProximity = j.at("waterProximity").get<std::decay_t<decltype(p.waterProximity.value())>>();
+}
+
+void to_json(nlohmann::json& j, const BiomeRuleOverrides& p) {
+    if (p.environment.has_value()) j["environment"] = p.environment.value();
+}
+void from_json(const nlohmann::json& j, BiomeRuleOverrides& p) {
+    if (j.contains("environment")) p.environment = j.at("environment").get<std::decay_t<decltype(p.environment.value())>>();
+}
+
+void to_json(nlohmann::json& j, const ErosionRuleOverrides& p) {
+    if (p.enabled.has_value()) j["enabled"] = p.enabled.value();
+    if (p.hydraulicErosion.has_value()) j["hydraulicErosion"] = p.hydraulicErosion.value();
+    if (p.thermalErosion.has_value()) j["thermalErosion"] = p.thermalErosion.value();
+    if (p.sedimentation.has_value()) j["sedimentation"] = p.sedimentation.value();
+    if (p.weathering.has_value()) j["weathering"] = p.weathering.value();
+}
+void from_json(const nlohmann::json& j, ErosionRuleOverrides& p) {
+    if (j.contains("enabled")) p.enabled = j.at("enabled").get<std::decay_t<decltype(p.enabled.value())>>();
+    if (j.contains("hydraulicErosion")) p.hydraulicErosion = j.at("hydraulicErosion").get<std::decay_t<decltype(p.hydraulicErosion.value())>>();
+    if (j.contains("thermalErosion")) p.thermalErosion = j.at("thermalErosion").get<std::decay_t<decltype(p.thermalErosion.value())>>();
+    if (j.contains("sedimentation")) p.sedimentation = j.at("sedimentation").get<std::decay_t<decltype(p.sedimentation.value())>>();
+    if (j.contains("weathering")) p.weathering = j.at("weathering").get<std::decay_t<decltype(p.weathering.value())>>();
+}
+
+void to_json(nlohmann::json& j, const TerrainRuleOverrides& p) {
+    if (p.height.has_value()) j["height"] = p.height.value();
+    if (p.layers.has_value()) j["layers"] = p.layers.value();
+    if (p.caves.has_value()) j["caves"] = p.caves.value();
+    if (p.water.has_value()) j["water"] = p.water.value();
+    if (p.biome.has_value()) j["biome"] = p.biome.value();
+    if (p.erosion.has_value()) j["erosion"] = p.erosion.value();
+}
+void from_json(const nlohmann::json& j, TerrainRuleOverrides& p) {
+    if (j.contains("height")) p.height = j.at("height").get<std::decay_t<decltype(p.height.value())>>();
+    if (j.contains("layers")) p.layers = j.at("layers").get<std::decay_t<decltype(p.layers.value())>>();
+    if (j.contains("caves")) p.caves = j.at("caves").get<std::decay_t<decltype(p.caves.value())>>();
+    if (j.contains("water")) p.water = j.at("water").get<std::decay_t<decltype(p.water.value())>>();
+    if (j.contains("biome")) p.biome = j.at("biome").get<std::decay_t<decltype(p.biome.value())>>();
+    if (j.contains("erosion")) p.erosion = j.at("erosion").get<std::decay_t<decltype(p.erosion.value())>>();
+}
+
+}
+
 
 // Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
 static constexpr uint32_t FWB_MAGIC   = 0x46574231; // 'FWB1'
 static constexpr uint32_t FWB_VERSION = 5;
 
-bool MapDocument::SaveBinary
-(const std::string& path) const {
+bool MapDocument::SaveBinary(const std::string& path) const {
     try {
         std::filesystem::path fsPath(path);
         if (fsPath.has_parent_path())
@@ -739,7 +1050,11 @@ bool MapDocument::SaveBinary
             writeStr(f, t.name);
             writeI32(f, (int32_t)t.planetSize);
             writeI32(f, (int32_t)t.baseType);
+            writeF32(f, t.basePerlinFrequency);
+            writeF32(f, t.baseGravityModifier);
             writeF32(f, t.baseAngularRadius);
+            writeU8(f,  t.baseSurfaceBlockId);
+            writeU8(f,  t.baseSubsurfaceBlockId);
             writeU32(f, t.seed);
             writeU32(f, (uint32_t)t.subRegions.size());
             for (const auto& r : t.subRegions) writeRegion(f, r);
@@ -833,7 +1148,11 @@ bool MapDocument::LoadBinary(const std::string& path) {
             t.name                 = readStr(f);
             t.planetSize           = (fw::PlanetSize)readI32(f);
             t.baseType             = (MapRegionType)readI32(f);
+            t.basePerlinFrequency  = readF32(f);
+            t.baseGravityModifier  = readF32(f);
             t.baseAngularRadius    = readF32(f);
+            t.baseSurfaceBlockId   = readU8(f);
+            t.baseSubsurfaceBlockId= readU8(f);
             t.seed                 = readU32(f);
             uint32_t numSubs       = readU32(f);
             t.subRegions.reserve(numSubs);

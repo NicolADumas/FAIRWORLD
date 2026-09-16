@@ -3519,10 +3519,10 @@ void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
     pc.numRegions          = m_terrainNumRegions;
     pc.planetRadius        = m_terrainPlanetRadius;
     pc.baseBiomeType       = (uint32_t)m_terrainBaseTerrain.biome;
-    pc.baseSurfaceBlock    = m_terrainBaseTerrain.surfaceBlock;
-    pc.baseSubsurfaceBlock = m_terrainBaseTerrain.subsurfaceBlock;
-    pc.basePerlinFreq      = m_terrainBaseTerrain.perlinFrequency;
-    pc.baseGravityMod      = m_terrainBaseTerrain.gravityModifier;
+    pc.baseSurfaceBlock    = 1; // [FASE 4.1] Temporaneo, il compute shader usa legacy IDs
+    pc.baseSubsurfaceBlock = 3; // [FASE 4.1] Temporaneo, il compute shader usa legacy IDs
+    pc.basePerlinFreq      = m_terrainBaseTerrain.baseRules.height.frequency;
+    pc.baseGravityMod      = m_terrainBaseTerrain.baseRules.height.amplitude / 25.0f; // Approx compatibilità
     m_terrainPipeline->dispatch(cmd, pc);
 
     // 4. Prepara i comandi di draw indirect con valori validi

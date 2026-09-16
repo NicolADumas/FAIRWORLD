@@ -227,11 +227,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 // DATA-DRIVEN: Calcoliamo l'influenza delle regioni tramite Grid Mapping esatto e distanza angolare (Fallback)
                 MapRegion activeRegion;
                 activeRegion.seed = 12345;
-                activeRegion.gravityModifier = baseTerrain.gravityModifier;
-                activeRegion.perlinFrequency = baseTerrain.perlinFrequency;
                 activeRegion.type = baseTerrain.biome;
-                activeRegion.surfaceBlockId = baseTerrain.surfaceBlock;
-                activeRegion.subsurfaceBlockId = baseTerrain.subsurfaceBlock;
                 
                 // --- GRID MAPPING LOGIC (Legge Sferica Esatta) ---
                 int N_lato = fw::PlanetMath::GetFaceResolution(planetSize);
@@ -283,18 +279,14 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 
                 MapRegion baseRegion;
                 baseRegion.seed = 12345;
-                baseRegion.gravityModifier = baseTerrain.gravityModifier;
-                baseRegion.perlinFrequency = baseTerrain.perlinFrequency;
                 baseRegion.type = baseTerrain.biome;
-                baseRegion.surfaceBlockId = baseTerrain.surfaceBlock;
-                baseRegion.subsurfaceBlockId = baseTerrain.subsurfaceBlock;
                 
                 if (foundGridAligned) {
                     baseRegion = activeRegion;
                 }
                 
-                float baseTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, baseRegion, baseRegion.perlinFrequency);
-                float baseHeight = planetRadius + (baseTerrainVal * planetRadius * 0.05f * baseRegion.gravityModifier);
+                float baseTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, baseRegion, 0.05f);
+                float baseHeight = planetRadius + (baseTerrainVal * planetRadius * 0.05f * 1.0f);
                 if (baseRegion.type == MapRegionType::Ocean) {
                     baseHeight = planetRadius - (planetRadius * 0.02f) + (baseTerrainVal * planetRadius * 0.01f);
                 }
@@ -316,8 +308,8 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     float blendDistance = 0.08f; // Ampiezza della zona di transizione morbida
                     
                     if (sdf < blendDistance) {
-                        float rTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, r, r.perlinFrequency);
-                        float regionHeight = planetRadius + (rTerrainVal * planetRadius * 0.05f * r.gravityModifier);
+                        float rTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, r, 0.05f);
+                        float regionHeight = planetRadius + (rTerrainVal * planetRadius * 0.05f * 1.0f);
                         if (r.type == MapRegionType::Ocean) {
                             regionHeight = planetRadius - (planetRadius * 0.02f) + (rTerrainVal * planetRadius * 0.01f);
                         }
@@ -350,7 +342,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 const ::BiomeDef* biome = MapWorldGenerator::EvaluateBiome(tempFinal, humNoise, relHeight, assets);
                 glm::vec4 color(0.3f, 0.8f, 0.3f, 1.0f);
                 
-                uint32_t matId = dominantRegion.surfaceBlockId; 
+                uint32_t matId = 1; // Fallback 
                 
                 uint8_t idSand = 5;
                 uint8_t idWater = 6;
