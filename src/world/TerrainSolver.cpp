@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "TerrainSolver.h"
+#include "TerrainAlgorithms.h"
 #include "components/ForgeComponents.h"
 #include "world/MapWorldGenerator.h" // For PerlinNoise or similar utility
 #include "world/CubeSphereMapping.h"
@@ -100,49 +101,41 @@ void TerrainSolver::GenerateChunk(
 }
 
 void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws) {
-    // Deterministic coherent noise generators seeded by planet seed
-    // Using simple prime numbers for salts
-    uint32_t macroSeed = ctx.planetSeed ^ 0x1234567;
-    uint32_t regionalSeed = ctx.planetSeed ^ 0x89ABCDEF;
-    uint32_t detailSeed = ctx.planetSeed ^ 0xFEDCBA98;
+    TerrainAlgorithmContext algoCtx{ ctx, rules, ws, this };
+
+    switch (rules.rules.height.algorithm) {
+        case TerrainAlgorithmType::Plains:
+            GeneratePlains(algoCtx);
+            break;
+        case TerrainAlgorithmType::Hills:
+            GenerateHills(algoCtx);
+            break;
+        case TerrainAlgorithmType::Mountains:
+            GenerateMountains(algoCtx);
+            break;
+        case TerrainAlgorithmType::Dunes:
+            GenerateDunes(algoCtx);
+            break;
+        default:
+            GeneratePlains(algoCtx);
+            break;
+    }
     
-    const float radius = 100.0f; // Planet base radius (should come from context/rules)
+    // Diagnostic output per chunk
+    float minHeight = 9999.0f;
+    float maxHeight = -9999.0f;
+    for (int i = 0; i < ctx.voxelResolutionX * ctx.voxelResolutionZ; ++i) {
+        float h = ws.surfaceHeights[i];
+        if (h < minHeight) minHeight = h;
+        if (h > maxHeight) maxHeight = h;
+    }
     
-    for (int z = 0; z < ctx.voxelResolutionZ; ++z) {
-        for (int x = 0; x < ctx.voxelResolutionX; ++x) {
-            int idx2D = z * ctx.voxelResolutionX + x;
-            
-            glm::vec3 spherePos = GetVoxelSpherePos(ctx, x, 0, z);
-            
-            // In a real implementation we would sample Perlin/Simplex here
-            // float macroNoise = SampleNoise(spherePos, macroSeed, rules.height.macroScale);
-            // float regionalNoise = SampleNoise(spherePos, regionalSeed, rules.height.regionalScale);
-            // float detailNoise = SampleNoise(spherePos, detailSeed, rules.height.detailScale);
-            
-            // For now, placeholder math
-            float macroVal = 0.0f; 
-            float regionalVal = 0.0f;
-            float detailVal = 0.0f;
-            
-            ws.macroField[idx2D] = macroVal;
-            ws.regionalField[idx2D] = regionalVal;
-            ws.detailField[idx2D] = detailVal;
-            
-            // Morphology
-            float ridgeVal = 1.0f - std::abs(regionalVal); // Example ridge
-            ws.ridgeField[idx2D] = ridgeVal;
-            
-            float valleyVal = regionalVal * regionalVal; // Example valley
-            ws.valleyField[idx2D] = valleyVal;
-            
-            // Compose final height
-            float finalHeight = radius + rules.rules.height.baseHeight 
-                + (macroVal * rules.rules.height.amplitude)
-                + (regionalVal * rules.rules.height.amplitude * 0.5f)
-                + (detailVal * rules.rules.height.amplitude * 0.1f);
-                
-            ws.surfaceHeights[idx2D] = finalHeight;
-        }
+    if (ctx.diagnosticMode != TerrainDiagnosticMode::None) {
+        char diagMsg[256];
+        sprintf_s(diagMsg, "[TerrainDiagnostic] Surface Variation -> Min: %.2f, Max: %.2f, Delta: %.2f\n", 
+                  minHeight, maxHeight, maxHeight - minHeight);
+        OutputDebugStringA(diagMsg);
+        std::cout << diagMsg;
     }
 }
 

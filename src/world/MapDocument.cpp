@@ -27,6 +27,7 @@ void from_json(const nlohmann::json& j, TerrainLayer& p) {
 }
 
 void to_json(nlohmann::json& j, const HeightRules& p) {
+    j["algorithm"] = static_cast<int>(p.algorithm);
     j["baseHeight"] = p.baseHeight;
     j["amplitude"] = p.amplitude;
     j["frequency"] = p.frequency;
@@ -40,6 +41,7 @@ void to_json(nlohmann::json& j, const HeightRules& p) {
     j["octaves"] = p.octaves;
 }
 void from_json(const nlohmann::json& j, HeightRules& p) {
+    if (j.contains("algorithm")) p.algorithm = static_cast<TerrainAlgorithmType>(j.at("algorithm").get<int>());
     if (j.contains("baseHeight")) j.at("baseHeight").get_to(p.baseHeight);
     if (j.contains("amplitude")) j.at("amplitude").get_to(p.amplitude);
     if (j.contains("frequency")) j.at("frequency").get_to(p.frequency);
@@ -1068,8 +1070,10 @@ ResolvedTerrainRules ResolveTerrainRules(
             result.rules.height.valleyStrength = glm::mix(baseRules.height.valleyStrength, ho.valleyStrength.value(), influence);
         
         // DISCRETE PROPERTIES (Dominant if influence is high enough, e.g. > 0.5)
-        if (ho.octaves.has_value() && influence > 0.5f)
-            result.rules.height.octaves = ho.octaves.value();
+        if (influence > 0.5f) {
+            if (ho.algorithm.has_value()) result.rules.height.algorithm = ho.algorithm.value();
+            if (ho.octaves.has_value()) result.rules.height.octaves = ho.octaves.value();
+        }
     }
     
     // Layers
@@ -1171,6 +1175,65 @@ ResolvedTerrainRules ResolveTerrainRules(
     }
 
     return result;
+}
+
+uint64_t ComputeRuleHash(const ResolvedTerrainRules& resolved) {
+    uint64_t hash = 14695981039346656037ull;
+    auto add_data = [&hash](const void* data, size_t size) {
+        const uint8_t* p = static_cast<const uint8_t*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            hash ^= p[i];
+            hash *= 1099511628211ull;
+        }
+    };
+    
+    // Hash Height
+    add_data(&resolved.rules.height.algorithm, sizeof(resolved.rules.height.algorithm));
+    add_data(&resolved.rules.height.baseHeight, sizeof(float));
+    add_data(&resolved.rules.height.amplitude, sizeof(float));
+    add_data(&resolved.rules.height.frequency, sizeof(float));
+    add_data(&resolved.rules.height.persistence, sizeof(float));
+    add_data(&resolved.rules.height.lacunarity, sizeof(float));
+    add_data(&resolved.rules.height.macroScale, sizeof(float));
+    add_data(&resolved.rules.height.regionalScale, sizeof(float));
+    add_data(&resolved.rules.height.detailScale, sizeof(float));
+    add_data(&resolved.rules.height.ridgeStrength, sizeof(float));
+    add_data(&resolved.rules.height.valleyStrength, sizeof(float));
+    add_data(&resolved.rules.height.octaves, sizeof(int));
+    
+    // Hash Layers
+    add_data(&resolved.resolvedCoreBlock, sizeof(uint32_t));
+    for (uint32_t blockId : resolved.resolvedLayerBlocks) {
+        add_data(&blockId, sizeof(uint32_t));
+    }
+    for (const auto& layer : resolved.rules.layers.layers) {
+        add_data(&layer.minDepth, sizeof(float));
+        add_data(&layer.maxDepth, sizeof(float));
+        add_data(&layer.noiseStrength, sizeof(float));
+        add_data(&layer.noiseScale, sizeof(float));
+        add_data(&layer.blendMode, sizeof(LayerBlendMode));
+    }
+    
+    // Hash Caves
+    add_data(&resolved.rules.caves.enabled, sizeof(bool));
+    add_data(&resolved.rules.caves.tunnels.scale, sizeof(float));
+    add_data(&resolved.rules.caves.tunnels.frequency, sizeof(float));
+    add_data(&resolved.rules.caves.tunnels.strength, sizeof(float));
+    add_data(&resolved.rules.caves.tunnels.threshold, sizeof(float));
+    add_data(&resolved.rules.caves.chambers.scale, sizeof(float));
+    add_data(&resolved.rules.caves.chambers.strength, sizeof(float));
+    add_data(&resolved.rules.caves.chambers.frequency, sizeof(float));
+    
+    // Hash Water
+    add_data(&resolved.rules.water.enabled, sizeof(bool));
+    add_data(&resolved.rules.water.globalLevel, sizeof(int));
+    add_data(&resolved.resolvedWaterBlock, sizeof(uint32_t));
+    add_data(&resolved.resolvedWaterFloorBlock, sizeof(uint32_t));
+    add_data(&resolved.rules.water.regionalVariation, sizeof(float));
+    add_data(&resolved.rules.water.basinStrength, sizeof(float));
+    add_data(&resolved.rules.water.shorelineFalloff, sizeof(float));
+    
+    return hash;
 }
 
 } // namespace fw (binario)

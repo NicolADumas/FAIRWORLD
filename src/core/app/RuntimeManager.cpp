@@ -17,6 +17,10 @@ RuntimeManager::RuntimeManager(SharedContext* context) : m_context(context) {
 }
 
 RuntimeManager::~RuntimeManager() {
+    if (m_context && m_context->dmaManager) {
+        delete m_context->dmaManager;
+        m_context->dmaManager = nullptr;
+    }
     std::cout << "[RuntimeManager] Distrutto.\n";
 }
 

@@ -49,7 +49,16 @@ struct TerrainLayer {
     LayerBlendMode blendMode = LayerBlendMode::Solid;
 };
 
+enum class TerrainAlgorithmType : uint8_t {
+    Plains,
+    Hills,
+    Mountains,
+    Dunes
+};
+
 struct HeightRules {
+    TerrainAlgorithmType algorithm = TerrainAlgorithmType::Plains;
+    
     // CONTINUOUS (Blend)
     float baseHeight = 25.0f;
     float amplitude = 25.0f;
@@ -67,6 +76,7 @@ struct HeightRules {
 };
 
 struct HeightRuleOverrides {
+    std::optional<TerrainAlgorithmType> algorithm;
     std::optional<float> baseHeight;
     std::optional<float> amplitude;
     std::optional<float> frequency;
@@ -226,6 +236,9 @@ ResolvedTerrainRules ResolveTerrainRules(
     float influence,
     const BlockRegistry* registry
 );
+
+// Hash deterministico delle regole risolte
+uint64_t ComputeRuleHash(const ResolvedTerrainRules& resolved);
 
 // ==========================================
 

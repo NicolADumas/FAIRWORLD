@@ -13,6 +13,7 @@
 #include "world/TerrainSolver.h"
 #include "world/MapDocument.h"
 #include "components/ForgeComponents.h"
+#include "components/BiomeComponents.h"
 
 #if defined(_WIN32) && defined(_DEBUG)
 #define _CRTDBG_MAP_ALLOC
@@ -33,6 +34,10 @@ static size_t GetTotalAllocatedBytes() {
 
 static fw::ResolvedTerrainRules CreateValidationRules(float amplitudeMultiplier = 1.0f) {
     fw::ResolvedTerrainRules rules;
+    rules.algorithm = fw::TerrainAlgorithmType::Mountains;
+    rules.resolvedCoreBlock = 1;
+    rules.resolvedWaterBlock = 2;
+    rules.resolvedLayerBlocks = {3, 4};
     rules.rules.height.baseHeight = 30.0f;
     rules.rules.height.amplitude = 40.0f * amplitudeMultiplier;
     rules.rules.height.frequency = 0.05f;
@@ -90,6 +95,23 @@ static fw::VoxelChunkComponent GenerateChunkMock(int cx, int cz, uint32_t seed, 
 
 static bool CompareChunks(const fw::VoxelChunkComponent& a, const fw::VoxelChunkComponent& b) {
     return std::memcmp(a.blocks, b.blocks, sizeof(a.blocks)) == 0;
+}
+
+static uint64_t GetChunkVoxelHash(const fw::VoxelChunkComponent& chunk) {
+    uint64_t hash = 14695981039346656037ull;
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(chunk.blocks);
+    for (int i = 0; i < 16 * 128 * 16; ++i) {
+        hash ^= ptr[i];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+static int GetChunkSurfaceHeight(const fw::VoxelChunkComponent& chunk) {
+    for (int y = 127; y >= 0; --y) {
+        if (chunk.blocks[0][y][0] != 0) return y;
+    }
+    return 0;
 }
 
 void TerrainValidation::PrintResult(const char* testName, bool passed) {
@@ -248,11 +270,24 @@ bool TerrainValidation::TestInterleaving() {
 
 bool TerrainValidation::TestSeedSensitivity() {
     auto rules = CreateValidationRules();
+    uint64_t hash = fw::ComputeRuleHash(rules);
     auto c1 = GenerateChunkMock(0, 0, 100, rules);
     auto c2 = GenerateChunkMock(0, 0, 101, rules);
     
-    // Devono essere diversi
-    return !CompareChunks(c1, c2);
+    std::cout << "\n[SeedDiagnostic]\n";
+    std::cout << "Seed A: 100\n";
+    std::cout << "Seed B: 101\n";
+    std::cout << "RuleHash A: " << hash << "\n";
+    std::cout << "RuleHash B: " << hash << "\n";
+    std::cout << "Height A: " << GetChunkSurfaceHeight(c1) << "\n";
+    std::cout << "Height B: " << GetChunkSurfaceHeight(c2) << "\n";
+    std::cout << "VoxelHash A: " << GetChunkVoxelHash(c1) << "\n";
+    std::cout << "VoxelHash B: " << GetChunkVoxelHash(c2) << "\n";
+    
+    bool diff = !CompareChunks(c1, c2);
+    std::cout << "Different: " << (diff ? "YES" : "NO") << "\n";
+    
+    return diff;
 }
 
 bool TerrainValidation::TestRuleSensitivity() {
@@ -260,9 +295,26 @@ bool TerrainValidation::TestRuleSensitivity() {
     auto rulesB = CreateValidationRules(2.0f);
     uint32_t seed = 12345;
     
+    uint64_t hashA = fw::ComputeRuleHash(rulesA);
+    uint64_t hashB = fw::ComputeRuleHash(rulesB);
+    
     auto a1 = GenerateChunkMock(0, 0, seed, rulesA);
-    auto a2 = GenerateChunkMock(0, 0, seed, rulesA);
     auto b1 = GenerateChunkMock(0, 0, seed, rulesB);
+    
+    std::cout << "\n[RuleDiagnostic]\n";
+    std::cout << "Amplitude A: " << rulesA.rules.height.amplitude << "\n";
+    std::cout << "Amplitude B: " << rulesB.rules.height.amplitude << "\n";
+    std::cout << "RuleHash A: " << hashA << "\n";
+    std::cout << "RuleHash B: " << hashB << "\n";
+    std::cout << "Height A: " << GetChunkSurfaceHeight(a1) << "\n";
+    std::cout << "Height B: " << GetChunkSurfaceHeight(b1) << "\n";
+    std::cout << "VoxelHash A: " << GetChunkVoxelHash(a1) << "\n";
+    std::cout << "VoxelHash B: " << GetChunkVoxelHash(b1) << "\n";
+    
+    bool diff = !CompareChunks(a1, b1);
+    std::cout << "Different: " << (diff ? "YES" : "NO") << "\n";
+    
+    auto a2 = GenerateChunkMock(0, 0, seed, rulesA);
     auto b2 = GenerateChunkMock(0, 0, seed, rulesB);
     
     if (!CompareChunks(a1, a2)) return false;
@@ -396,9 +448,7 @@ void TerrainValidation::RunAll() {
     RunLegacyVoxelWriterAudit();
 
     std::cout << "\n[5/5] PIPELINE\n";
-    PrintResult("Stable rule hash", false);
-    PrintResult("Stable input regeneration", false);
-    PrintResult("Stable input GPU upload", false);
+    RunPipelineTest();
 
     std::cout << "\n====================================================\n";
     std::cout << " FREEZE STATUS: IN PROGRESS\n";
@@ -507,6 +557,72 @@ bool TerrainValidation::TestRepeatedGeneration() {
 #else
     return true; // Auto-pass if tracking is not available
 #endif
+}
+
+void TerrainValidation::RunPipelineTest() {
+    bool ruleHash = TestStableRuleHash();
+    PrintResult("Stable rule hash", ruleHash);
+    
+    bool stableRegen = TestStableRegeneration();
+    PrintResult("Stable input regeneration", stableRegen);
+    
+    bool stableGPU = TestStableGPUUpload();
+    PrintResult("Stable input GPU upload", stableGPU);
+}
+
+bool TerrainValidation::TestStableRuleHash() {
+    auto rulesA = CreateValidationRules(1.0f);
+    fw::TerrainRuleOverrides emptyOverrides;
+    auto resA = fw::ResolveTerrainRules(rulesA.rules, emptyOverrides, 1.0f, nullptr);
+    
+    auto rulesB = CreateValidationRules(1.0f);
+    auto resB = fw::ResolveTerrainRules(rulesB.rules, emptyOverrides, 1.0f, nullptr);
+    
+    auto rulesC = CreateValidationRules(1.2f); // Modifica l'amplitude
+    auto resC = fw::ResolveTerrainRules(rulesC.rules, emptyOverrides, 1.0f, nullptr);
+    
+    uint64_t hashA = fw::ComputeRuleHash(resA);
+    uint64_t hashB = fw::ComputeRuleHash(resB);
+    uint64_t hashC = fw::ComputeRuleHash(resC);
+    
+    if (hashA != hashB) return false; // Identical rules must have identical hash
+    if (hashA == hashC) return false; // Different rules must have different hash
+    
+    return true;
+}
+
+bool TerrainValidation::TestStableRegeneration() {
+    entt::registry registry;
+    auto entity = registry.create();
+    registry.emplace<fw::VoxelChunkComponent>(entity);
+    registry.emplace<BiomeDataComponent>(entity);
+    
+    int processed1 = fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    int processed2 = fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    int processed3 = fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    
+    return processed1 > 0 && processed2 == 0 && processed3 == 0;
+}
+
+bool TerrainValidation::TestStableGPUUpload() {
+    entt::registry registry;
+    auto entity = registry.create();
+    registry.emplace<fw::VoxelChunkComponent>(entity);
+    registry.emplace<BiomeDataComponent>(entity);
+    
+    // 1. Prima generazione: TerrainSolverSystem deve marcare il chunk come Dirty per la GPU
+    fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    if (!registry.all_of<fw::ChunkDirtyComponent>(entity)) return false;
+    
+    // 2. Simuliamo il Mesh Compiler (o PlanetMapperCompiler) che ha terminato il lavoro
+    // e rimuove il ChunkDirtyComponent
+    registry.remove<fw::ChunkDirtyComponent>(entity);
+    
+    // 3. Secondo tick: dato che le regole (BiomeData) non sono cambiate, Update() 
+    // non deve processarlo e non deve aggiungere di nuovo ChunkDirtyComponent
+    fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    
+    return !registry.all_of<fw::ChunkDirtyComponent>(entity);
 }
 
 } // namespace fw

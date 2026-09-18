@@ -11,9 +11,9 @@ VulkanDmaManager::VulkanDmaManager() {
 }
 
 VulkanDmaManager::~VulkanDmaManager() {
-    if (m_device && m_transferTimeline) {
-        // vkDestroySemaphore(m_device, m_transferTimeline, nullptr);
-        // Defer destroying semaphore to RenderManager or destroy it here
+    if (m_device != VK_NULL_HANDLE && m_transferTimeline != VK_NULL_HANDLE) {
+        vkDestroySemaphore(m_device, m_transferTimeline, nullptr);
+        m_transferTimeline = VK_NULL_HANDLE;
     }
 }
 

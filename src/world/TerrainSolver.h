@@ -35,6 +35,7 @@ struct TerrainGenerationContext {
     
     TerrainDiagnosticMode diagnosticMode = TerrainDiagnosticMode::None;
     uint64_t ruleHash; // For cache and invalidation purposes only
+    uint64_t oldRuleHash; // For diagnostics
     
     // Pure deterministic hash function for spatial sampling
     uint32_t GetDeterministicHash(const glm::vec3& worldPos, int salt) const;

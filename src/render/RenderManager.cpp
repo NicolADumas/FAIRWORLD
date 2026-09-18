@@ -286,7 +286,7 @@ bool RenderManager::CreateFramebuffers() {
         return false;
     }
 
-    char debugMsg[256];
+    char debugMsg[1024];
     sprintf_s(debugMsg, "[DEBUG] CreateFramebuffers chiamato! m_renderPass (RAW) = 0x%llx\n", (unsigned long long)(uintptr_t)m_renderPass);
     OutputDebugStringA(debugMsg);
     std::cout << debugMsg;
@@ -308,13 +308,26 @@ bool RenderManager::CreateFramebuffers() {
         framebufferInfo.height          = m_core->GetSwapchainExtent().height;
         framebufferInfo.layers          = 1;
         
-        sprintf_s(debugMsg, "[DEBUG] vkCreateFramebuffer loop %zu, framebufferInfo.renderPass (RAW) = 0x%llx\n", i, (unsigned long long)(uintptr_t)framebufferInfo.renderPass);
+        // --- INVESTIGATE RENDERPASS VALIDATION ANOMALY ---
+        sprintf_s(debugMsg, "[DEBUG-LIFECYCLE] CreateFramebuffer[%zu] Handles:\n"
+                            "  m_core->GetDevice()        = 0x%llx\n"
+                            "  m_renderPass               = 0x%llx\n"
+                            "  m_core->GetSwapchain()     = 0x%llx\n"
+                            "  ImageView[0]               = 0x%llx\n"
+                            "  DepthImageView             = 0x%llx\n"
+                            "  framebufferInfo.renderPass = 0x%llx\n",
+                            i,
+                            (unsigned long long)(uintptr_t)m_core->GetDevice(),
+                            (unsigned long long)(uintptr_t)m_renderPass,
+                            (unsigned long long)(uintptr_t)m_core->GetSwapchain(),
+                            (unsigned long long)(uintptr_t)attachments[0],
+                            (unsigned long long)(uintptr_t)attachments[1],
+                            (unsigned long long)(uintptr_t)framebufferInfo.renderPass);
         OutputDebugStringA(debugMsg);
         std::cout << debugMsg;
 
-        if (framebufferInfo.renderPass == VK_NULL_HANDLE) {
-            OutputDebugStringA("[CRITICAL ERROR] framebufferInfo.renderPass IS NULL RIGHT BEFORE CALL!\n");
-            std::cout << "[CRITICAL ERROR] framebufferInfo.renderPass IS NULL RIGHT BEFORE CALL!\n";
+        if (m_renderPass == VK_NULL_HANDLE || m_core->GetDevice() == VK_NULL_HANDLE) {
+            OutputDebugStringA("[CRITICAL ERROR] Device or RenderPass is NULL!\n");
             return false;
         }
 
@@ -1838,9 +1851,6 @@ void RenderManager::Shutdown() {
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
-        if (m_memory->GetImguiDescriptorPool() != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetImguiDescriptorPool(), nullptr);
-        }
 
         if (m_textureSampler != VK_NULL_HANDLE) {
             vkDestroySampler(m_core->GetDevice(), m_textureSampler, nullptr);
@@ -1852,17 +1862,16 @@ void RenderManager::Shutdown() {
         if (m_albedoImage != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_albedoImage, m_albedoImageAllocation); m_albedoImage = VK_NULL_HANDLE; }
         if (m_normalImage != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_normalImage, m_normalImageAllocation); m_normalImage = VK_NULL_HANDLE; }
         if (m_ormImage    != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_ormImage,    m_ormImageAllocation);    m_ormImage    = VK_NULL_HANDLE; }
-        if (m_memory->GetForgeDescriptorPool() != VK_NULL_HANDLE) { vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetForgeDescriptorPool(), nullptr); m_memory->GetForgeDescriptorPool() = VK_NULL_HANDLE; }
         if (m_forgeDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(m_core->GetDevice(), m_forgeDescriptorSetLayout, nullptr); m_forgeDescriptorSetLayout = VK_NULL_HANDLE; }
 
         // Depth buffer cleanup
         if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_core->GetDevice(), m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
         if (m_depthImage       != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
 
-    if (m_graphicsPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_graphicsPipeline, nullptr);
-    if (m_portalPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_portalPipeline, nullptr);
-    if (m_otherWorldPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_otherWorldPipeline, nullptr);
-    if (m_skyPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_core->GetDevice(), m_skyPipeline, nullptr);
+    if (m_graphicsPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(m_core->GetDevice(), m_graphicsPipeline, nullptr); m_graphicsPipeline = VK_NULL_HANDLE; }
+    if (m_portalPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(m_core->GetDevice(), m_portalPipeline, nullptr); m_portalPipeline = VK_NULL_HANDLE; }
+    if (m_otherWorldPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(m_core->GetDevice(), m_otherWorldPipeline, nullptr); m_otherWorldPipeline = VK_NULL_HANDLE; }
+    if (m_skyPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(m_core->GetDevice(), m_skyPipeline, nullptr); m_skyPipeline = VK_NULL_HANDLE; }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_core->GetDevice(), m_pipelineLayout, nullptr);
             m_pipelineLayout = VK_NULL_HANDLE;
@@ -1889,16 +1898,22 @@ void RenderManager::Shutdown() {
             m_glbPipelineLayout = VK_NULL_HANDLE;
         }
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroySemaphore(m_core->GetDevice(), m_imageAvailableSemaphores[i], nullptr);
-            vkDestroySemaphore(m_core->GetDevice(), m_renderFinishedSemaphores[i], nullptr);
-            vkDestroyFence(m_core->GetDevice(), m_inFlightFences[i], nullptr);
+        for (auto sem : m_imageAvailableSemaphores) {
+            if (sem != VK_NULL_HANDLE) vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
         }
+        m_imageAvailableSemaphores.clear();
 
-        if (m_memory->GetDescriptorPool() != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(m_core->GetDevice(), m_memory->GetDescriptorPool(), nullptr);
-            m_memory->GetDescriptorPool() = VK_NULL_HANDLE;
+        for (auto sem : m_renderFinishedSemaphores) {
+            if (sem != VK_NULL_HANDLE) vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
         }
+        m_renderFinishedSemaphores.clear();
+
+        for (auto fence : m_inFlightFences) {
+            if (fence != VK_NULL_HANDLE) vkDestroyFence(m_core->GetDevice(), fence, nullptr);
+        }
+        m_inFlightFences.clear();
+
+
 
         if (m_descriptorSetLayout != VK_NULL_HANDLE) {
             vkDestroyDescriptorSetLayout(m_core->GetDevice(), m_descriptorSetLayout, nullptr);
@@ -1915,9 +1930,6 @@ void RenderManager::Shutdown() {
             vkDestroyRenderPass(m_core->GetDevice(), m_renderPass, nullptr);
             m_renderPass = VK_NULL_HANDLE;
         }
-        for (auto imageView : m_core->GetSwapchainImageViews()) {
-            vkDestroyImageView(m_core->GetDevice(), imageView, nullptr);
-        }
         for (auto& pair : m_chunkBuffers) {
             if (pair.second.vertexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
             if (pair.second.indexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.indexBuffer, pair.second.indexBufferAllocation);
@@ -1925,19 +1937,34 @@ void RenderManager::Shutdown() {
         m_chunkBuffers.clear();
         if (m_ghostVertexBuffer != VK_NULL_HANDLE) {
             vmaDestroyBuffer(m_memory->GetAllocator(), m_ghostVertexBuffer, m_ghostVertexBufferAllocation);
+            m_ghostVertexBuffer = VK_NULL_HANDLE;
         }
         if (m_ghostIndexBuffer != VK_NULL_HANDLE) {
             vmaDestroyBuffer(m_memory->GetAllocator(), m_ghostIndexBuffer, m_ghostIndexBufferAllocation);
+            m_ghostIndexBuffer = VK_NULL_HANDLE;
         }
-        vkDestroySwapchainKHR(m_core->GetDevice(), m_core->GetSwapchain(), nullptr);
         
         if (m_transferCommandPool != VK_NULL_HANDLE) {
             vkDestroyCommandPool(m_core->GetDevice(), m_transferCommandPool, nullptr);
             m_transferCommandPool = VK_NULL_HANDLE;
         }
 
+        if (m_terrainStagingRingBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_core->GetDevice(), m_terrainStagingRingBuffer, nullptr);
+            m_terrainStagingRingBuffer = VK_NULL_HANDLE;
+        }
+        if (m_terrainStagingRingMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(m_core->GetDevice(), m_terrainStagingRingMemory, nullptr);
+            m_terrainStagingRingMemory = VK_NULL_HANDLE;
+        }
+
+        // 1. Destroy standalone pipelines (Terrain) BEFORE destroying core and memory
+        m_terrainPipeline.reset();
+
+        // 2. Destroy Memory Allocator & Descriptor Pools
         m_memory.reset();
 
+        // 3. Destroy Logical Device, Swapchain, Instance (Core owns these!)
         m_core.reset();
     }
 }
@@ -2264,6 +2291,10 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         legacyWrites[2].pBufferInfo = &ssboInfo;
 
         vkUpdateDescriptorSets(m_core->GetDevice(), static_cast<uint32_t>(legacyWrites.size()), legacyWrites.data(), 0, nullptr);
+    }
+    
+    if (tempPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(m_core->GetDevice(), tempPool, nullptr);
     }
 }
 

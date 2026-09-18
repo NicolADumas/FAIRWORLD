@@ -1,0 +1,22 @@
+[33ma3d910143a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mSPHERE-WORLD-EXPERIMENT[m[33m)[m feat: add terrain generation algorithms, noise wrapper, solvers, and validation framework
+ .gitignore                                         |    2 [32m+[m[31m-[m
+ imgui.ini                                          |   12 [32m+[m
+ src/components/ForgeComponents.h                   |    3 [32m+[m
+ src/core/app/RuntimeManager.cpp                    |    4 [32m+[m
+ src/render/RenderManager.cpp                       |   79 [32m+[m[31m-[m
+ src/render/VulkanDmaManager.cpp                    |    6 [32m+[m[31m-[m
+ src/states/ChunkEditorState.cpp                    |   56 [32m+[m[31m-[m
+ src/systems/TerrainSolverSystem.cpp                |   15 [32m+[m[31m-[m
+ src/systems/TerrainSolverSystem.h                  |    2 [32m+[m[31m-[m
+ src/world/MapDocument.cpp                          |   67 [32m+[m[31m-[m
+ src/world/MapDocument.h                            |   13 [32m+[m
+ src/world/TerrainAlgorithms.cpp                    |  113 [32m+[m
+ src/world/TerrainAlgorithms.h                      |   23 [32m+[m
+ src/world/TerrainSolver.cpp                        |   75 [32m+[m[31m-[m
+ src/world/TerrainSolver.h                          |    1 [32m+[m
+ src/world/noise/Noise.cpp                          |   91 [32m+[m
+ src/world/noise/Noise.h                            |   55 [32m+[m
+ src/world/terrain/validation/TerrainValidation.cpp |  128 [32m+[m[31m-[m
+ src/world/terrain/validation/TerrainValidation.h   |    8 [32m+[m
+ third_party/FastNoiseLite.h                        | 2586 [32m++++++++++++++++++++[m
+ 20 files changed, 3258 insertions(+), 81 deletions(-)

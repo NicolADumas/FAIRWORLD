@@ -90,7 +90,7 @@ void ChunkEditorState::RebuildChunkPreview() {
     std::cout << "[ChunkEditorState] Rigenerazione asincrona anteprima 3D Voxel per chunk corrente...\n";
     
     if (m_previewWorld) {
-        m_previewWorld->ClearWorld(false);
+        // Rimosso m_previewWorld->ClearWorld(false); per supportare l'aggiornamento incrementale dei chunk!
         auto pEnt = m_previewWorld->GetPlanetEntity();
         if (m_previewWorld->GetRegistry().valid(pEnt) && m_previewWorld->GetRegistry().all_of<fw::PlanetGeometryComponent>(pEnt)) {
             m_previewWorld->GetRegistry().get<fw::PlanetGeometryComponent>(pEnt).isLogicalSphere = false;
@@ -142,6 +142,7 @@ void ChunkEditorState::RebuildChunkPreview() {
     tempPlanet.maxX = maxX;
     tempPlanet.minZ = minZ;
     tempPlanet.maxZ = maxZ;
+    tempPlanet.baseTerrain.baseRules = tmpl.baseRules;
 
     fw::MapRegion baseRegion;
     baseRegion.eulerAngles = glm::vec3(0.0f);
@@ -173,6 +174,42 @@ void ChunkEditorState::RebuildChunkPreview() {
 }
 
 void ChunkEditorState::UpdateApp(float dt) {
+    static int testStep = 0;
+    static float timer = 0.0f;
+    if (m_context && m_context->projectManager && !m_context->projectManager->GetDocument().terrainLibrary.empty()) {
+        auto& tmpl = m_context->projectManager->GetDocumentMutable().terrainLibrary[m_activeTemplateIndex];
+        timer += dt;
+        if (timer > 3.0f && testStep < 4) {
+           if (testStep == 0) {
+               tmpl.baseRules.height.algorithm = fw::TerrainAlgorithmType::Plains;
+               m_needsRebuild = true;
+               fw::TerrainSolverSystem::s_DiagnosticMode = fw::TerrainDiagnosticMode::MacroField;
+               std::cout << "\n=======================================================\n";
+               std::cout << "[TEST] PLAINS Triggered\n";
+               std::cout << "=======================================================\n";
+           } else if (testStep == 1) {
+               tmpl.baseRules.height.algorithm = fw::TerrainAlgorithmType::Mountains;
+               m_needsRebuild = true;
+               std::cout << "\n=======================================================\n";
+               std::cout << "[TEST] MOUNTAINS Triggered\n";
+               std::cout << "=======================================================\n";
+           } else if (testStep == 2) {
+               tmpl.baseRules.height.algorithm = fw::TerrainAlgorithmType::Dunes;
+               m_needsRebuild = true;
+               std::cout << "\n=======================================================\n";
+               std::cout << "[TEST] DUNES Triggered\n";
+               std::cout << "=======================================================\n";
+           } else if (testStep == 3) {
+               std::cout << "\n=======================================================\n";
+               std::cout << "[TEST] TEST COMPLETO. USCITA.\n";
+               std::cout << "=======================================================\n";
+               exit(0);
+           }
+           testStep++;
+           timer = 0.0f;
+        }
+    }
+
     if (m_needsRebuild) {
         m_rebuildTimer -= dt;
         if (m_rebuildTimer <= 0.0f) {
@@ -743,6 +780,23 @@ void ChunkEditorState::DrawUI() {
             if (false /* ImGui::SliderFloat("Modificatore Gravit", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f") */) {
                 if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
             }
+
+            const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
+            int currentAlgo = static_cast<int>(activeTemplate.baseRules.height.algorithm);
+            if (ImGui::Combo("Algoritmo Terreno", &currentAlgo, algoNames, IM_ARRAYSIZE(algoNames))) {
+                activeTemplate.baseRules.height.algorithm = static_cast<fw::TerrainAlgorithmType>(currentAlgo);
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+            }
+            if (ImGui::SliderFloat("Altezza Base", &activeTemplate.baseRules.height.baseHeight, -100.0f, 200.0f, "%.1f")) {
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+            }
+            if (ImGui::SliderFloat("Ampiezza Base", &activeTemplate.baseRules.height.amplitude, 0.0f, 200.0f, "%.1f")) {
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+            }
+            if (ImGui::SliderFloat("Frequenza (Scala)", &activeTemplate.baseRules.height.frequency, 0.001f, 0.1f, "%.4f")) {
+                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+            }
+            
             int seed = (int)activeTemplate.seed;
             if (ImGui::InputInt("Seme Geologico (Seed)", &seed)) {
                 activeTemplate.seed = seed;

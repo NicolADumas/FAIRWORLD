@@ -12,7 +12,7 @@ namespace fw {
 TerrainDiagnosticMode TerrainSolverSystem::s_DiagnosticMode = TerrainDiagnosticMode::None;
 thread_local TerrainWorkspace TerrainSolverSystem::s_workspace;
 
-void TerrainSolverSystem::Update(entt::registry& registry, int maxChunksPerFrame, BlockRegistry* blockRegistry) {
+int TerrainSolverSystem::Update(entt::registry& registry, int maxChunksPerFrame, BlockRegistry* blockRegistry) {
     auto view = registry.view<VoxelChunkComponent, BiomeDataComponent>();
     int processed = 0;
     
@@ -38,14 +38,23 @@ void TerrainSolverSystem::Update(entt::registry& registry, int maxChunksPerFrame
         ctx.voxelResolutionZ = 16;
         
         ctx.diagnosticMode = s_DiagnosticMode;
-        ctx.ruleHash = 0; // TODO: Implement rule hash per caching
+        // ruleHash will be computed below
         
         // Ottieni le regole finali risolvendo i nomi dei blocchi
         TerrainRuleOverrides emptyOverrides;
         ResolvedTerrainRules rules = ResolveTerrainRules(biomeData.baseTerrain.baseRules, emptyOverrides, 1.0f, blockRegistry);
         
+        ctx.ruleHash = ComputeRuleHash(rules);
+        
+        if (chunk.isGenerated && chunk.lastRuleHash == ctx.ruleHash) {
+            registry.remove<BiomeDataComponent>(entity);
+            processed++;
+            continue;
+        }
+        
         // Esegui la generazione tramite il nuovo TerrainSolver
         GenerateChunk(ctx, rules, chunk);
+        chunk.lastRuleHash = ctx.ruleHash;
         
         // Rimuovi il BiomeDataComponent per segnalare che la generazione voxel e' completata
         registry.remove<BiomeDataComponent>(entity);
@@ -55,6 +64,8 @@ void TerrainSolverSystem::Update(entt::registry& registry, int maxChunksPerFrame
         
         processed++;
     }
+    
+    return processed;
 }
 
 void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context, const ResolvedTerrainRules& rules, VoxelChunkComponent& chunk) {

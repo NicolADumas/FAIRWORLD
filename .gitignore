@@ -27,4 +27,5 @@ imgui.ini
 ai_server/__pycache__/
 *.pyc
 
-packages/
+packages/assets/texture_cache.bin
+assets/texture_cache.bin

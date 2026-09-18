@@ -178,6 +178,9 @@ struct VoxelChunkComponent {
     
     // Indica se i dati procedurali sono già stati generati
     bool isGenerated = false;
+    
+    // Hash dell'ultima regola usata per generare questo chunk, per generazione incrementale
+    uint64_t lastRuleHash = 0;
 };
 
 // Tag Component: indica che il VoxelChunkComponent associato è stato modificato

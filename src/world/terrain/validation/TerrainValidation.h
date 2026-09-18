@@ -38,6 +38,14 @@ private:
     static bool TestGenerationAllocations();
     static bool TestRepeatedGeneration();
     
+    // Phase 5.3 Pipeline
+    static void RunPipelineTest();
+    
+private:
+    static bool TestStableRuleHash();
+    static bool TestStableRegeneration();
+    static bool TestStableGPUUpload();
+    
     static void PrintResult(const char* testName, bool passed);
 };
 
