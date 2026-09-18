@@ -15,6 +15,9 @@
 #include "ShapeMath.h"
 #include "imgui.h"
 #include <iostream>
+#include <fstream>
+#include <iomanip>
+#include "systems/TerrainSolverSystem.h"
 #include <algorithm>
 #include <cmath>
 
@@ -239,9 +242,9 @@ void ChunkEditorState::UpdateApp(float dt) {
     }
 
     if (m_previewWorld) {
+        // Esegui la generazione tramite il nuovo TerrainSolver
         if (m_context && m_context->blockRegistry) {
-            fw::BiomeTerrainSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
-            fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
+            fw::TerrainSolverSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
         }
         m_previewWorld->Update(dt);
     }
@@ -753,6 +756,17 @@ void ChunkEditorState::DrawUI() {
     } else {
         ImGui::TextDisabled("Nessun Modello Chunk selezionato.");
     }
+    
+    ImGui::Separator();
+    ImGui::Text("Diagnostic Preview Mode (TerrainSolver)");
+    const char* diagModes[] = { "None", "Macro Field", "Regional Field", "Detail Field", "Ridge Field", "Valley Field", "Cave Density", "Water Level", "Layer Index" };
+    int currentMode = (int)fw::TerrainSolverSystem::s_DiagnosticMode;
+    if (ImGui::Combo("Mode", &currentMode, diagModes, IM_ARRAYSIZE(diagModes))) {
+        fw::TerrainSolverSystem::s_DiagnosticMode = (fw::TerrainDiagnosticMode)currentMode;
+        m_needsRebuild = true; m_rebuildTimer = 0.05f;
+    }
+    ImGui::Separator();
+
     ImGui::Checkbox("Rigenera Voxel al volo ad ogni modifica", &m_autoRebuildPreview);
     if (!m_autoRebuildPreview) {
         if (ImGui::Button("🔄 RIGENERA ANTEPRIMA VOXEL 3D ORA", ImVec2(-1, 25))) {

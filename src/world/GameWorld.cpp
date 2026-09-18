@@ -17,13 +17,15 @@
 #include "MaterialRegistry.h"
 #include "MapWorldGenerator.h"
 #include "AssetManager.h"
+#include "systems/TerrainSolverSystem.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
 #include "Systems.h"
 #include <cmath>
 #include <vector>
-#include "BiomeSystems.h"
+#include "systems/BiomeSystems.h"
+#include "systems/TerrainSolverSystem.h"
 
 namespace fw {
 
@@ -266,10 +268,12 @@ void GameWorld::Update(float dt) {
         }
     }
 
-    // 2. Pipeline Biomi
+    // 2. Pipeline Terreno (Unico Voxel Writer autorizzato)
     int maxBatch = (m_context && m_context->engine && m_context->engine->GetGameMode() == GameMode::Map) ? 250 : 15;
-    fw::BiomeTerrainSystem::Update(m_registry, maxBatch, GetBlockRegistry());
-    fw::BiomeDecoratorSystem::Update(m_registry, maxBatch, GetBlockRegistry());
+    
+    // Fase 5 Freeze: Il nuovo TerrainSolver è l'esclusivo generatore procedurale per tutte le modalità.
+    // Nessun legacy BiomeSystem è autorizzato a sovrascrivere `output.blocks`.
+    fw::TerrainSolverSystem::Update(m_registry, maxBatch, GetBlockRegistry());
 
     // 3. Chunk System: Rigenerazione asincrona per chunk Dirty
     if (m_context && m_context->jobSystem) {
@@ -877,6 +881,8 @@ void GameWorld::MarkAllChunksDirty() {
 }
 
 void GameWorld::GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz) {
+    std::cerr << "[GameWorld] WARNING: Legacy GenerateChunkData invoked for chunk (" << cx << ", " << cz << "). This should be handled by TerrainSolverSystem!\n";
+    
     chunk.cx = cx;
     chunk.cz = cz;
     

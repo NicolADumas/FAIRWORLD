@@ -2,6 +2,9 @@
 #include "PlanetMapperState.h"
 #include "SharedContext.h"
 #include "StateManager.h"
+#include "systems/TerrainSolverSystem.h"
+#include "core/app/FAIRWORLD.h"
+#include "world/MapWorldGenerator.h"
 #include "HubState.h"
 #include "WorldProjectManager.h"
 #include "BlockRegistry.h"
@@ -217,9 +220,9 @@ void PlanetMapperState::UpdateApp(float dt) {
     }
 
     if (m_previewWorld) {
+        // Fase 5 Freeze: Usa esclusivamente il TerrainSolverSystem per la preview del pianeta.
         if (m_context && m_context->blockRegistry) {
-            fw::BiomeTerrainSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
-            fw::BiomeDecoratorSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
+            fw::TerrainSolverSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
         }
         m_previewWorld->Update(dt);
         

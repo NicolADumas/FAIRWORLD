@@ -22,6 +22,10 @@
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
 #include "CacheManager.h"
+#include "world/terrain/validation/TerrainValidation.h"
+
+// De-commenta questa riga (o definiscila nelle configurazioni di build) per eseguire la suite di test
+#define FAIRWORLD_VALIDATE_TERRAIN 1
 
 HANDLE hServerProcess = NULL;
 
@@ -108,6 +112,10 @@ int main() {
     
     blockRegistry.Initialize();
     blockRegistry.LoadFromJson("assets/definitions/blocks.json");
+    
+#ifdef FAIRWORLD_VALIDATE_TERRAIN
+    fw::TerrainValidation::RunAll();
+#endif
     
     materialRegistry.Initialize();
     materialRegistry.LoadFromJson("assets/definitions/materials.json");

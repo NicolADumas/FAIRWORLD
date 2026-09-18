@@ -88,6 +88,22 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
             }
             ImGui::EndCombo();
         }
+        
+        if (doc.planets.size() > 1) {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+            if (ImGui::Button("🗑 Elimina Pianeta", ImVec2(-1, 24))) {
+                doc.planets.erase(doc.planets.begin() + activePlanetIndex);
+                if (activePlanetIndex >= (int)doc.planets.size()) {
+                    activePlanetIndex = (int)doc.planets.size() - 1;
+                }
+                result.requestRebuildRoots = true;
+                result.requestSave = true;
+            }
+            ImGui::PopStyleColor(3);
+        }
         ImGui::Separator();
     }
 
@@ -124,6 +140,18 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
         }
         if (ImGui::SliderFloat("Durata Anno (Giorni)", &p.yearLength, 10.0f, 1000.0f, "%.0f")) {
             result.requestSave = true;
+        }
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.2f, 0.6f, 0.9f, 1.0f), "Parametri Geologici Globali (Oceani)");
+        if (ImGui::Checkbox("Presenza Oceani/Acqua Globale", &p.baseTerrain.baseRules.water.enabled)) {
+            result.requestRebuildRoots = true;
+            result.requestSave = true;
+        }
+        if (p.baseTerrain.baseRules.water.enabled) {
+            if (ImGui::SliderInt("Livello Mare Globale (Voxel Y)", &p.baseTerrain.baseRules.water.globalLevel, 0, 128)) {
+                result.requestRebuildRoots = true;
+                result.requestSave = true;
+            }
         }
         ImGui::Spacing();
 
