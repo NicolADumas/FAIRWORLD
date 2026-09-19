@@ -50,7 +50,7 @@ private:
     int m_paintRegionType = 0;
     int m_paintBrushShape = 0;
     bool m_isBrushModeActive = false; // Nuovo toggle per uscire dal pennello continuo
-    bool m_autoRebuildPreview = true;
+    bool m_autoRebuildPreview = false;
     bool m_showSaveConfirmPopup = false;
     
     // Orbital camera for right-hand 3D Voxel preview viewport

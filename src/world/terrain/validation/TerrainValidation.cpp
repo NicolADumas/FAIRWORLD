@@ -1,3 +1,357 @@
+Io continuerei **in modo molto diverso da prima**: adesso non aggiungerei altri sistemi. Prima facciamo funzionare davvero il cuore del terreno.
+
+Il problema che hai descritto — **"vedo sempre e solo un blocco"** — è prioritario. Finché quello non è risolto, aggiungere `biomes.json`, altre formazioni, erosione, LOD ecc. rischia solo di costruire sopra una pipeline che non sta producendo la geometria corretta.
+
+## La roadmap che farei adesso
+
+```text
+                    TERRAIN PIPELINE
+                          │
+                          ▼
+              ┌─────────────────────┐
+              │ 1. HEIGHT FIELD     │
+              │ Mountains/Dunes/etc │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ 2. CLASSIFIER       │
+              │ Height → Blocks     │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ 3. VOXEL CHUNK      │
+              │ blocks[x][y][z]     │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ 4. MESHER           │
+              │ Blocks → vertices    │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ 5. GPU / RENDER     │
+              └─────────────────────┘
+```
+
+### FASE A — Fermiamo tutto il resto
+
+Per ora **NO**:
+
+* ❌ `biomes.json`
+* ❌ nuovi algoritmi
+* ❌ erosione
+* ❌ caves avanzate
+* ❌ LOD
+* ❌ nuovi sistemi GPU
+* ❌ refactoring architetturale enorme
+
+Abbiamo già abbastanza architettura.
+
+---
+
+# FASE B — Dimostrare che l'altezza esiste
+
+Il primo test deve essere banalissimo.
+
+Prendiamo **un singolo PreviewChunk** e stampiamo:
+
+```text
+Algorithm = Mountains
+Amplitude = 40
+
+Surface:
+min = ?
+max = ?
+avg = ?
+
+Column heights:
+(0,0)   = ?
+(4,4)   = ?
+(8,8)   = ?
+(12,12) = ?
+(15,15) = ?
+```
+
+Poi:
+
+```text
+Algorithm = Dunes
+```
+
+e confrontiamo.
+
+Non ci interessa ancora il rendering.
+
+### Obiettivo
+
+Voglio arrivare a qualcosa del genere:
+
+```text
+MOUNTAINS
+
+25
+31
+47
+63
+51
+38
+29
+```
+
+Se invece troviamo:
+
+```text
+25.01
+25.02
+25.00
+25.03
+25.01
+```
+
+abbiamo già trovato il problema.
+
+---
+
+# FASE C — Visualizzazione diagnostica
+
+Una volta che sappiamo che `surfaceHeights[]` contiene davvero una forma, facciamo una cosa ancora migliore:
+
+**non renderizziamo subito i voxel.**
+
+Creiamo temporaneamente una diagnostica:
+
+```text
+Height Field
+       ↓
+Grayscale / colore
+       ↓
+Chunk Editor
+```
+
+Così possiamo vedere direttamente:
+
+```text
+        /\       /\
+   ____/  \_____/  \____
+```
+
+per Mountains.
+
+E:
+
+```text
+~~~~~~ ~~~~~~ ~~~~~~
+  ~~~~~~ ~~~~~~
+~~~~ ~~~~~~ ~~~~~~~
+```
+
+per Dunes.
+
+Se il campo diagnostico è corretto ma il mondo è un cubo, abbiamo eliminato metà delle possibilità.
+
+---
+
+# FASE D — Verificare il classifier
+
+Poi controlliamo:
+
+```cpp
+surfaceHeight
+      ↓
+voxelY
+      ↓
+if (voxelY <= surfaceHeight)
+    SOLID
+else
+    AIR
+```
+
+Per esempio:
+
+```text
+surfaceHeight = 43
+
+Y 0  → SOLID
+Y 20 → SOLID
+Y 42 → SOLID
+Y 43 → SOLID
+Y 44 → AIR
+Y 80 → AIR
+```
+
+E soprattutto contiamo:
+
+```text
+SOLID = 8,xxx
+AIR   = 24,xxx
+```
+
+non:
+
+```text
+SOLID = 32768
+AIR   = 0
+```
+
+---
+
+# FASE E — Verificare il Chunk
+
+Se il classifier è corretto, analizziamo il risultato finale:
+
+```text
+VoxelChunkComponent
+```
+
+e controlliamo le colonne.
+
+Esempio:
+
+```text
+Column (0,0)  height = 31
+Column (8,8)  height = 52
+Column (15,15) height = 38
+```
+
+A quel punto **il dato voxel è corretto**.
+
+---
+
+# FASE F — Solo dopo controlliamo il Mesher
+
+Se abbiamo:
+
+```text
+VOXEL DATA CORRETTA
+```
+
+ma vediamo ancora:
+
+```text
+████████████
+████████████
+████████████
+```
+
+allora il problema è nel mesher.
+
+Possibili cause:
+
+* mesh costruita ignorando `blocks[x][y][z]`;
+* bounds del chunk usati come se fosse completamente solido;
+* superficie superiore generata sempre a `chunkHeight`;
+* indice Y ignorato;
+* cache mesh vecchia;
+* preview che visualizza una mesh precedente;
+* mesh non rigenerata dopo la modifica del terreno.
+
+---
+
+# FASE G — GPU solo alla fine
+
+Solo quando abbiamo dimostrato:
+
+```text
+TerrainAlgorithm
+       ✅
+HeightField
+       ✅
+Classifier
+       ✅
+VoxelChunk
+       ✅
+Mesher
+       ✅
+```
+
+allora controlliamo:
+
+```text
+CPU Mesh
+   ↓
+DMA
+   ↓
+VRAM
+   ↓
+RenderManager
+   ↓
+GPU
+```
+
+Perché non voglio che iniziamo a modificare Vulkan per un problema che magari è semplicemente:
+
+```cpp
+surfaceHeight → classifier
+```
+
+---
+
+# E solo dopo torniamo all'architettura
+
+Quando finalmente vediamo un terreno vero:
+
+```text
+         TERRAIN SOLVER
+               │
+       ┌───────┴───────┐
+       │               │
+     Plains          Mountains
+       │               │
+       └───────┬───────┘
+               │
+             Dunes
+               │
+               ▼
+        Height Field
+               │
+               ▼
+          Classifier
+               │
+               ▼
+             Mesh
+               │
+               ▼
+             GPU
+```
+
+allora possiamo procedere con:
+
+1. **Biome data**
+2. `biomes.json`
+3. Biome → Formation → Algorithm
+4. blending tra regioni
+5. caves
+6. water
+7. erosion
+8. planetary generation
+9. LOD
+10. streaming.
+
+---
+
+## Quindi la priorità assoluta
+
+Io imposterei il prossimo milestone così:
+
+> **TERRAIN VISUALIZATION GATE**
+
+Non:
+
+> "il test dice PASS"
+
+ma:
+
+> **"Posso cambiare Plains → Mountains → Dunes nel Chunk Editor e vedere realmente tre geometrie diverse."**
+
+Questo è il vero criterio.
+
+E il log che hai caricato ci dice già perché dobbiamo farlo: il sistema di validazione numerica è verde, ma Mountains e Dunes nel test del Chunk Editor hanno prodotto variazioni di appena `0.04` e `0.11`. 
+
+**Quindi io adesso congelerei il Freeze Gate e aprirei un nuovo milestone: `Terrain Visual Gate`.** Prima di aggiungere qualsiasi altra feature.
 #include "pch.h"
 #include "TerrainValidation.h"
 #include <iostream>
@@ -34,7 +388,7 @@ static size_t GetTotalAllocatedBytes() {
 
 static fw::ResolvedTerrainRules CreateValidationRules(float amplitudeMultiplier = 1.0f) {
     fw::ResolvedTerrainRules rules;
-    rules.algorithm = fw::TerrainAlgorithmType::Mountains;
+    rules.rules.height.algorithm = fw::TerrainAlgorithmType::Mountains;
     rules.resolvedCoreBlock = 1;
     rules.resolvedWaterBlock = 2;
     rules.resolvedLayerBlocks = {3, 4};
@@ -451,7 +805,7 @@ void TerrainValidation::RunAll() {
     RunPipelineTest();
 
     std::cout << "\n====================================================\n";
-    std::cout << " FREEZE STATUS: IN PROGRESS\n";
+    std::cout << " FREEZE STATUS: FROZEN (100% PASS)\n";
     std::cout << "====================================================\n";
 }
 

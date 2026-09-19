@@ -174,42 +174,6 @@ void ChunkEditorState::RebuildChunkPreview() {
 }
 
 void ChunkEditorState::UpdateApp(float dt) {
-    static int testStep = 0;
-    static float timer = 0.0f;
-    if (m_context && m_context->projectManager && !m_context->projectManager->GetDocument().terrainLibrary.empty()) {
-        auto& tmpl = m_context->projectManager->GetDocumentMutable().terrainLibrary[m_activeTemplateIndex];
-        timer += dt;
-        if (timer > 3.0f && testStep < 4) {
-           if (testStep == 0) {
-               tmpl.baseRules.height.algorithm = fw::TerrainAlgorithmType::Plains;
-               m_needsRebuild = true;
-               fw::TerrainSolverSystem::s_DiagnosticMode = fw::TerrainDiagnosticMode::MacroField;
-               std::cout << "\n=======================================================\n";
-               std::cout << "[TEST] PLAINS Triggered\n";
-               std::cout << "=======================================================\n";
-           } else if (testStep == 1) {
-               tmpl.baseRules.height.algorithm = fw::TerrainAlgorithmType::Mountains;
-               m_needsRebuild = true;
-               std::cout << "\n=======================================================\n";
-               std::cout << "[TEST] MOUNTAINS Triggered\n";
-               std::cout << "=======================================================\n";
-           } else if (testStep == 2) {
-               tmpl.baseRules.height.algorithm = fw::TerrainAlgorithmType::Dunes;
-               m_needsRebuild = true;
-               std::cout << "\n=======================================================\n";
-               std::cout << "[TEST] DUNES Triggered\n";
-               std::cout << "=======================================================\n";
-           } else if (testStep == 3) {
-               std::cout << "\n=======================================================\n";
-               std::cout << "[TEST] TEST COMPLETO. USCITA.\n";
-               std::cout << "=======================================================\n";
-               exit(0);
-           }
-           testStep++;
-           timer = 0.0f;
-        }
-    }
-
     if (m_needsRebuild) {
         m_rebuildTimer -= dt;
         if (m_rebuildTimer <= 0.0f) {

@@ -413,11 +413,15 @@ void GameWorld::Update(float dt) {
                     return {vx, vy, vz};
                 };
 
+                int totalSolidVoxels = 0;
+
                 for (int x = 0; x < CHUNK_SIZE; x++) {
                     for (int y = 0; y < CHUNK_HEIGHT; y++) {
                         for (int z = 0; z < CHUNK_SIZE; z++) {
                             uint8_t block = chunkData->blocks[x][y][z];
                             if (block == 0) continue;
+                            
+                            totalSolidVoxels++;
 
                             float px = x; float py = y; float pz = z;
                             auto& mat = ctx->materialRegistry->GetMaterial(block);
@@ -523,6 +527,32 @@ void GameWorld::Update(float dt) {
                 auto allocInfo = ctx->vramAllocator->GetAllocation(vramAlloc);
                 VkBuffer destBuffer = ctx->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
                 ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, allocInfo, destBuffer);
+
+                if (fw::TerrainSolverSystem::s_DiagnosticMode == fw::TerrainDiagnosticMode::MacroField) {
+                    float minX = 9999.0f, minY = 9999.0f, minZ = 9999.0f;
+                    float maxX = -9999.0f, maxY = -9999.0f, maxZ = -9999.0f;
+                    for (const auto& v : vertices) {
+                        if (v.position.x < minX) minX = v.position.x;
+                        if (v.position.y < minY) minY = v.position.y;
+                        if (v.position.z < minZ) minZ = v.position.z;
+                        if (v.position.x > maxX) maxX = v.position.x;
+                        if (v.position.y > maxY) maxY = v.position.y;
+                        if (v.position.z > maxZ) maxZ = v.position.z;
+                    }
+                    std::cout << "\n[TerrainVisualGate][MESH]\n";
+                    std::cout << "Solid voxels: " << totalSolidVoxels << "\n";
+                    std::cout << "Exposed faces: " << (vertices.size() / 6) << "\n";
+                    std::cout << "Vertices: " << vertices.size() << "\n";
+                    std::cout << "Indices: 0 (non-indexed chunk mesh)\n";
+                    std::cout << "Bounds Y min: " << minY << "\n";
+                    std::cout << "Bounds Y max: " << maxY << "\n";
+                    
+                    std::cout << "\n[GPU]\n";
+                    std::cout << "Upload size: " << meshSizeBytes << " bytes\n";
+                    std::cout << "VRAM offset: " << allocInfo.offset << "\n";
+                    std::cout << "Compartment: " << allocInfo.compartmentIdx << "\n";
+                    std::cout << "=======================================================\n";
+                }
 
                 MeshComponent newMesh;
                 newMesh.name = chunkName + "_Mesh";
