@@ -1,357 +1,3 @@
-Io continuerei **in modo molto diverso da prima**: adesso non aggiungerei altri sistemi. Prima facciamo funzionare davvero il cuore del terreno.
-
-Il problema che hai descritto — **"vedo sempre e solo un blocco"** — è prioritario. Finché quello non è risolto, aggiungere `biomes.json`, altre formazioni, erosione, LOD ecc. rischia solo di costruire sopra una pipeline che non sta producendo la geometria corretta.
-
-## La roadmap che farei adesso
-
-```text
-                    TERRAIN PIPELINE
-                          │
-                          ▼
-              ┌─────────────────────┐
-              │ 1. HEIGHT FIELD     │
-              │ Mountains/Dunes/etc │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ 2. CLASSIFIER       │
-              │ Height → Blocks     │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ 3. VOXEL CHUNK      │
-              │ blocks[x][y][z]     │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ 4. MESHER           │
-              │ Blocks → vertices    │
-              └──────────┬──────────┘
-                         │
-                         ▼
-              ┌─────────────────────┐
-              │ 5. GPU / RENDER     │
-              └─────────────────────┘
-```
-
-### FASE A — Fermiamo tutto il resto
-
-Per ora **NO**:
-
-* ❌ `biomes.json`
-* ❌ nuovi algoritmi
-* ❌ erosione
-* ❌ caves avanzate
-* ❌ LOD
-* ❌ nuovi sistemi GPU
-* ❌ refactoring architetturale enorme
-
-Abbiamo già abbastanza architettura.
-
----
-
-# FASE B — Dimostrare che l'altezza esiste
-
-Il primo test deve essere banalissimo.
-
-Prendiamo **un singolo PreviewChunk** e stampiamo:
-
-```text
-Algorithm = Mountains
-Amplitude = 40
-
-Surface:
-min = ?
-max = ?
-avg = ?
-
-Column heights:
-(0,0)   = ?
-(4,4)   = ?
-(8,8)   = ?
-(12,12) = ?
-(15,15) = ?
-```
-
-Poi:
-
-```text
-Algorithm = Dunes
-```
-
-e confrontiamo.
-
-Non ci interessa ancora il rendering.
-
-### Obiettivo
-
-Voglio arrivare a qualcosa del genere:
-
-```text
-MOUNTAINS
-
-25
-31
-47
-63
-51
-38
-29
-```
-
-Se invece troviamo:
-
-```text
-25.01
-25.02
-25.00
-25.03
-25.01
-```
-
-abbiamo già trovato il problema.
-
----
-
-# FASE C — Visualizzazione diagnostica
-
-Una volta che sappiamo che `surfaceHeights[]` contiene davvero una forma, facciamo una cosa ancora migliore:
-
-**non renderizziamo subito i voxel.**
-
-Creiamo temporaneamente una diagnostica:
-
-```text
-Height Field
-       ↓
-Grayscale / colore
-       ↓
-Chunk Editor
-```
-
-Così possiamo vedere direttamente:
-
-```text
-        /\       /\
-   ____/  \_____/  \____
-```
-
-per Mountains.
-
-E:
-
-```text
-~~~~~~ ~~~~~~ ~~~~~~
-  ~~~~~~ ~~~~~~
-~~~~ ~~~~~~ ~~~~~~~
-```
-
-per Dunes.
-
-Se il campo diagnostico è corretto ma il mondo è un cubo, abbiamo eliminato metà delle possibilità.
-
----
-
-# FASE D — Verificare il classifier
-
-Poi controlliamo:
-
-```cpp
-surfaceHeight
-      ↓
-voxelY
-      ↓
-if (voxelY <= surfaceHeight)
-    SOLID
-else
-    AIR
-```
-
-Per esempio:
-
-```text
-surfaceHeight = 43
-
-Y 0  → SOLID
-Y 20 → SOLID
-Y 42 → SOLID
-Y 43 → SOLID
-Y 44 → AIR
-Y 80 → AIR
-```
-
-E soprattutto contiamo:
-
-```text
-SOLID = 8,xxx
-AIR   = 24,xxx
-```
-
-non:
-
-```text
-SOLID = 32768
-AIR   = 0
-```
-
----
-
-# FASE E — Verificare il Chunk
-
-Se il classifier è corretto, analizziamo il risultato finale:
-
-```text
-VoxelChunkComponent
-```
-
-e controlliamo le colonne.
-
-Esempio:
-
-```text
-Column (0,0)  height = 31
-Column (8,8)  height = 52
-Column (15,15) height = 38
-```
-
-A quel punto **il dato voxel è corretto**.
-
----
-
-# FASE F — Solo dopo controlliamo il Mesher
-
-Se abbiamo:
-
-```text
-VOXEL DATA CORRETTA
-```
-
-ma vediamo ancora:
-
-```text
-████████████
-████████████
-████████████
-```
-
-allora il problema è nel mesher.
-
-Possibili cause:
-
-* mesh costruita ignorando `blocks[x][y][z]`;
-* bounds del chunk usati come se fosse completamente solido;
-* superficie superiore generata sempre a `chunkHeight`;
-* indice Y ignorato;
-* cache mesh vecchia;
-* preview che visualizza una mesh precedente;
-* mesh non rigenerata dopo la modifica del terreno.
-
----
-
-# FASE G — GPU solo alla fine
-
-Solo quando abbiamo dimostrato:
-
-```text
-TerrainAlgorithm
-       ✅
-HeightField
-       ✅
-Classifier
-       ✅
-VoxelChunk
-       ✅
-Mesher
-       ✅
-```
-
-allora controlliamo:
-
-```text
-CPU Mesh
-   ↓
-DMA
-   ↓
-VRAM
-   ↓
-RenderManager
-   ↓
-GPU
-```
-
-Perché non voglio che iniziamo a modificare Vulkan per un problema che magari è semplicemente:
-
-```cpp
-surfaceHeight → classifier
-```
-
----
-
-# E solo dopo torniamo all'architettura
-
-Quando finalmente vediamo un terreno vero:
-
-```text
-         TERRAIN SOLVER
-               │
-       ┌───────┴───────┐
-       │               │
-     Plains          Mountains
-       │               │
-       └───────┬───────┘
-               │
-             Dunes
-               │
-               ▼
-        Height Field
-               │
-               ▼
-          Classifier
-               │
-               ▼
-             Mesh
-               │
-               ▼
-             GPU
-```
-
-allora possiamo procedere con:
-
-1. **Biome data**
-2. `biomes.json`
-3. Biome → Formation → Algorithm
-4. blending tra regioni
-5. caves
-6. water
-7. erosion
-8. planetary generation
-9. LOD
-10. streaming.
-
----
-
-## Quindi la priorità assoluta
-
-Io imposterei il prossimo milestone così:
-
-> **TERRAIN VISUALIZATION GATE**
-
-Non:
-
-> "il test dice PASS"
-
-ma:
-
-> **"Posso cambiare Plains → Mountains → Dunes nel Chunk Editor e vedere realmente tre geometrie diverse."**
-
-Questo è il vero criterio.
-
-E il log che hai caricato ci dice già perché dobbiamo farlo: il sistema di validazione numerica è verde, ma Mountains e Dunes nel test del Chunk Editor hanno prodotto variazioni di appena `0.04` e `0.11`. 
-
-**Quindi io adesso congelerei il Freeze Gate e aprirei un nuovo milestone: `Terrain Visual Gate`.** Prima di aggiungere qualsiasi altra feature.
 #include "pch.h"
 #include "TerrainValidation.h"
 #include <iostream>
@@ -678,7 +324,7 @@ bool TerrainValidation::TestRuleSensitivity() {
     return true;
 }
 
-void TerrainValidation::RunDeterminismTest() {
+bool TerrainValidation::RunDeterminismTest() {
     std::cout << "\n[1/5] DETERMINISM\n";
     bool reuse = TestSameThreadReuse();
     PrintResult("Same-thread repeat", reuse);
@@ -697,6 +343,8 @@ void TerrainValidation::RunDeterminismTest() {
     
     bool ruleSens = TestRuleSensitivity();
     PrintResult("Rule sensitivity", ruleSens);
+    
+    return reuse && order && parallel && interleaving && seedSens && ruleSens;
 }
 
 // Phase 5.1 Helpers and Tests
@@ -717,20 +365,50 @@ bool TerrainValidation::TestIntraFacePosition() {
     glm::vec3 posB0 = solver.GetVoxelSpherePos(ctxB, 0, 0, 5);
     
     float dist = glm::distance(posA15, posB0);
-    if (dist > 0.05f || dist < 0.001f) return false;
+    
+    std::cout << "\n[Diagnostic] TestIntraFacePosition\n";
+    std::cout << "planetRadius: " << ctxA.planetRadius << "\n";
+    std::cout << "faceGridResolution: " << ctxA.faceGridResolution << "\n";
+    std::cout << "Sample A(15): {" << posA15.x << ", " << posA15.y << ", " << posA15.z << "}\n";
+    std::cout << "Sample B(0):  {" << posB0.x << ", " << posB0.y << ", " << posB0.z << "}\n";
+    std::cout << "Distance: " << dist << "\n";
+    
+    // Expected spacing per uv cell is roughly (2 / faceGridResolution) * radius. At center, it's (2/100)*1000 = 20.
+    // The distance should be approximately 20 for this test.
+    if (dist > 30.0f || dist < 10.0f) return false;
     
     return true;
 }
 
 bool TerrainValidation::TestCrossFacePosition() {
     fw::TerrainSolver solver;
-    auto ctxA = CreateContinuityContext(0, 0, 6, 12345); // Bordo superiore Face 0
-    auto ctxB = CreateContinuityContext(4, 0, 0, 12345); // Bordo inferiore Face 4
+    auto ctxA_temp = CreateContinuityContext(0, 0, 0, 12345);
     
-    glm::vec3 posFace0 = solver.GetVoxelSpherePos(ctxA, 8, 0, 15);
-    glm::vec3 posFace4 = solver.GetVoxelSpherePos(ctxB, 8, 0, 0); 
+    // Face 0 top edge is v = 0 (globalZ = 0)
+    auto ctxA = CreateContinuityContext(0, 0, 0, 12345); 
+    
+    // Face 4 bottom edge is v = 1 (globalZ = faceGridResolution)
+    // The closest voxel is globalZ = faceGridResolution - 1
+    int top_global_z = ctxA_temp.faceGridResolution - 1;
+    int top_cz = top_global_z / 16;
+    int top_z = top_global_z % 16;
+    auto ctxB = CreateContinuityContext(4, 0, top_cz, 12345); 
+    
+    glm::vec3 posFace0 = solver.GetVoxelSpherePos(ctxA, 8, 0, 0); // Face 0, v = 0
+    glm::vec3 posFace4 = solver.GetVoxelSpherePos(ctxB, 8, 0, top_z); // Face 4, v = 0.99
+    
+    float dist = glm::distance(posFace0, posFace4);
+    
+    std::cout << "\n[Diagnostic] TestCrossFacePosition\n";
+    std::cout << "planetRadius: " << ctxA.planetRadius << "\n";
+    std::cout << "faceGridResolution: " << ctxA.faceGridResolution << "\n";
+    std::cout << "Sample Face0(8,0): {" << posFace0.x << ", " << posFace0.y << ", " << posFace0.z << "}\n";
+    std::cout << "Sample Face4(8," << top_z << "):  {" << posFace4.x << ", " << posFace4.y << ", " << posFace4.z << "}\n";
+    std::cout << "Distance: " << dist << "\n";
     
     if (glm::any(glm::isnan(posFace0)) || glm::any(glm::isnan(posFace4))) return false;
+    // Expected distance is approx one voxel width, around 11.76 for these params.
+    if (dist > 30.0f || dist < 1.0f) return false;
     
     return true;
 }
@@ -771,7 +449,7 @@ bool TerrainValidation::TestCrossFaceField() {
     return true;
 }
 
-void TerrainValidation::RunCubeSphereContinuityTest() {
+bool TerrainValidation::RunCubeSphereContinuityTest() {
     std::cout << "\n[2/5] CUBE-SPHERE CONTINUITY\n";
     bool intraPos = TestIntraFacePosition();
     PrintResult("Intra-face positions", intraPos);
@@ -784,39 +462,49 @@ void TerrainValidation::RunCubeSphereContinuityTest() {
     
     bool crossField = TestCrossFaceField();
     PrintResult("Cross-face fields", crossField);
+    
+    return intraPos && crossPos && intraField && crossField;
 }
 
-void TerrainValidation::RunAll() {
+bool TerrainValidation::RunAll() {
+    fw::TerrainSolverSystem::s_enableVisualGateLog = false;
     std::cout << "====================================================\n";
     std::cout << " FAIRWORLD TERRAIN FREEZE GATE\n";
     std::cout << "====================================================\n";
     
-    RunDeterminismTest();
+    bool pass = true;
+    pass &= RunDeterminismTest();
     
-    RunCubeSphereContinuityTest();
+    pass &= RunCubeSphereContinuityTest();
 
     std::cout << "\n[3/5] WORKSPACE\n";
-    RunWorkspaceTest();
+    pass &= RunWorkspaceTest();
 
     std::cout << "\n[4/5] LEGACY PATHS\n";
-    RunLegacyVoxelWriterAudit();
+    pass &= RunLegacyVoxelWriterAudit();
 
     std::cout << "\n[5/5] PIPELINE\n";
-    RunPipelineTest();
+    pass &= RunPipelineTest();
 
     std::cout << "\n====================================================\n";
-    std::cout << " FREEZE STATUS: FROZEN (100% PASS)\n";
+    if (pass) {
+        std::cout << " FREEZE STATUS: FROZEN (100% PASS)\n";
+    } else {
+        std::cout << " FREEZE STATUS: UNSTABLE (FAIL)\n";
+    }
     std::cout << "====================================================\n";
+    return pass;
 }
 
-void TerrainValidation::RunLegacyVoxelWriterAudit() {
+bool TerrainValidation::RunLegacyVoxelWriterAudit() {
     PrintResult("Legacy voxel writers", true);
     PrintResult("BiomeTerrainSystem", true); // DISABLED
     PrintResult("BiomeDecoratorSystem", true); // DISABLED
     PrintResult("Unexpected fallback", true);
+    return true;
 }
 
-void TerrainValidation::RunWorkspaceTest() {
+bool TerrainValidation::RunWorkspaceTest() {
     bool footprint = TestMemoryFootprint();
     PrintResult("Memory footprint", footprint);
     
@@ -834,6 +522,8 @@ void TerrainValidation::RunWorkspaceTest() {
     
     bool repGen = TestRepeatedGeneration();
     PrintResult("Repeated generation", repGen);
+    
+    return footprint && cap2D && cap3D && capGrowth && genAlloc && repGen;
 }
 
 bool TerrainValidation::TestMemoryFootprint() {
@@ -913,7 +603,7 @@ bool TerrainValidation::TestRepeatedGeneration() {
 #endif
 }
 
-void TerrainValidation::RunPipelineTest() {
+bool TerrainValidation::RunPipelineTest() {
     bool ruleHash = TestStableRuleHash();
     PrintResult("Stable rule hash", ruleHash);
     
@@ -922,6 +612,8 @@ void TerrainValidation::RunPipelineTest() {
     
     bool stableGPU = TestStableGPUUpload();
     PrintResult("Stable input GPU upload", stableGPU);
+    
+    return ruleHash && stableRegen && stableGPU;
 }
 
 bool TerrainValidation::TestStableRuleHash() {
@@ -950,10 +642,12 @@ bool TerrainValidation::TestStableRegeneration() {
     auto entity = registry.create();
     registry.emplace<fw::VoxelChunkComponent>(entity);
     registry.emplace<BiomeDataComponent>(entity);
-    
-    int processed1 = fw::TerrainSolverSystem::Update(registry, 100, nullptr);
-    int processed2 = fw::TerrainSolverSystem::Update(registry, 100, nullptr);
-    int processed3 = fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    std::vector<entt::entity> q1 = {entity};
+    int processed1 = fw::TerrainSolverSystem::Update(registry, q1, 100, nullptr);
+    std::vector<entt::entity> q2 = {entity};
+    int processed2 = fw::TerrainSolverSystem::Update(registry, q2, 100, nullptr);
+    std::vector<entt::entity> q3 = {entity};
+    int processed3 = fw::TerrainSolverSystem::Update(registry, q3, 100, nullptr);
     
     return processed1 > 0 && processed2 == 0 && processed3 == 0;
 }
@@ -964,19 +658,26 @@ bool TerrainValidation::TestStableGPUUpload() {
     registry.emplace<fw::VoxelChunkComponent>(entity);
     registry.emplace<BiomeDataComponent>(entity);
     
+    bool meshMarked = false;
+    auto markMeshLambda = [&](entt::entity e) {
+        meshMarked = true;
+    };
+    
     // 1. Prima generazione: TerrainSolverSystem deve marcare il chunk come Dirty per la GPU
-    fw::TerrainSolverSystem::Update(registry, 100, nullptr);
-    if (!registry.all_of<fw::ChunkDirtyComponent>(entity)) return false;
+    std::vector<entt::entity> q = {entity};
+    fw::TerrainSolverSystem::Update(registry, q, 100, markMeshLambda, nullptr);
+    if (!meshMarked) return false;
     
-    // 2. Simuliamo il Mesh Compiler (o PlanetMapperCompiler) che ha terminato il lavoro
-    // e rimuove il ChunkDirtyComponent
-    registry.remove<fw::ChunkDirtyComponent>(entity);
+    // 2. Simuliamo che la generazione continui ma la regola sia "falsamente" cambiata (hash resettato).
+    // Questo costringe il TerrainSolver a ri-eseguire il job.
+    meshMarked = false;
+    registry.get<fw::VoxelChunkComponent>(entity).lastRuleHash = 0;
     
-    // 3. Secondo tick: dato che le regole (BiomeData) non sono cambiate, Update() 
-    // non deve processarlo e non deve aggiungere di nuovo ChunkDirtyComponent
-    fw::TerrainSolverSystem::Update(registry, 100, nullptr);
+    // 3. Secondo tick: dato che l'output VoxelHash e' identico, non deve invocare markMeshLambda.
+    q = {entity};
+    fw::TerrainSolverSystem::Update(registry, q, 100, markMeshLambda, nullptr);
     
-    return !registry.all_of<fw::ChunkDirtyComponent>(entity);
+    return !meshMarked;
 }
 
 } // namespace fw

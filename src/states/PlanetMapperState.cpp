@@ -221,9 +221,6 @@ void PlanetMapperState::UpdateApp(float dt) {
 
     if (m_previewWorld) {
         // Fase 5 Freeze: Usa esclusivamente il TerrainSolverSystem per la preview del pianeta.
-        if (m_context && m_context->blockRegistry) {
-            fw::TerrainSolverSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
-        }
         m_previewWorld->Update(dt);
         
         if (!doc.planets.empty() && m_activePlanetIndex >= 0 && m_activePlanetIndex < (int)doc.planets.size()) {

@@ -1,0 +1,16 @@
+cmake : Termine 'cmake' non riconosciuto come nome di cmdlet, funzione, programma eseguibile o file script. 
+Controllare l'ortografia del nome o verificare che il percorso sia incluso e corretto, quindi riprovare.
+In riga:1 car:1
++ cmake --build . --config Debug; bin\Debug\FAIRWORLD.exe
++ ~~~~~
+    + CategoryInfo          : ObjectNotFound: (cmake:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+bin\Debug\FAIRWORLD.exe : Impossibile caricare il modulo 'bin'. Per ulteriori informazioni, eseguire 'Import-Module 
+bin'.
+In riga:1 car:33
++ cmake --build . --config Debug; bin\Debug\FAIRWORLD.exe
++                                 ~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (bin\Debug\FAIRWORLD.exe:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CouldNotAutoLoadModule
+ 

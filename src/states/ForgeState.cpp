@@ -710,7 +710,7 @@ void ForgeState::UpdatePreviewMesh(int colorIndex) {
     if (m_previewEntity != entt::null && registry.valid(m_previewEntity)) {
         auto& mesh = registry.get<fw::MeshComponent>(m_previewEntity);
         mesh.vertices = std::move(previewMesh.vertices);
-        m_context->forgeWorld->MarkChunkDirty(m_previewEntity);
+        m_context->forgeWorld->MarkMeshDirty(m_previewEntity);
     } else {
         // Fallback if not cached yet
         auto view = registry.view<fw::MeshComponent, fw::MetadataComponent>();
@@ -720,7 +720,7 @@ void ForgeState::UpdatePreviewMesh(int colorIndex) {
                 m_previewEntity = e;
                 auto& mesh = registry.get<fw::MeshComponent>(e);
                 mesh.vertices = std::move(previewMesh.vertices);
-                m_context->forgeWorld->MarkChunkDirty(e);
+                m_context->forgeWorld->MarkMeshDirty(e);
                 break;
             }
         }

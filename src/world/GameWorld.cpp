@@ -273,19 +273,32 @@ void GameWorld::Update(float dt) {
     
     // Fase 5 Freeze: Il nuovo TerrainSolver è l'esclusivo generatore procedurale per tutte le modalità.
     // Nessun legacy BiomeSystem è autorizzato a sovrascrivere `output.blocks`.
-    fw::TerrainSolverSystem::Update(m_registry, maxBatch, GetBlockRegistry());
+    fw::TerrainSolverSystem::Update(m_registry, m_dirtyTerrainChunks, maxBatch, [this](entt::entity e) {
+        this->MarkMeshDirty(e);
+    }, GetBlockRegistry());
 
     // 3. Chunk System: Rigenerazione asincrona per chunk Dirty
     if (m_context && m_context->jobSystem) {
-        auto dirtyChunks = m_registry.view<VoxelChunkComponent, ChunkDirtyComponent>();
         int jobsDispatchedThisFrame = 0;
         int maxJobsPerFrame = 15;
+        
+        std::vector<entt::entity> remainingMesh;
 
-        for (auto entity : dirtyChunks) {
-            if (jobsDispatchedThisFrame >= maxJobsPerFrame) break;
+        for (auto entity : m_dirtyMeshChunks) {
+            if (!m_registry.valid(entity) || !m_registry.all_of<VoxelChunkComponent, ChunkDirtyComponent>(entity)) {
+                continue;
+            }
 
-            auto& dirty = dirtyChunks.get<ChunkDirtyComponent>(entity);
-            if (dirty.pendingJob) continue;
+            if (jobsDispatchedThisFrame >= maxJobsPerFrame) {
+                remainingMesh.push_back(entity);
+                continue;
+            }
+
+            auto& dirty = m_registry.get<ChunkDirtyComponent>(entity);
+            if (dirty.pendingJob) {
+                remainingMesh.push_back(entity);
+                continue;
+            }
 
             // In PlanetMapper mode, we only need CPU data for raycasting, NOT for rendering.
             // So we remove ChunkDirtyComponent and skip mesh generation entirely to save VRAM and CPU time.
@@ -296,7 +309,7 @@ void GameWorld::Update(float dt) {
 
             dirty.pendingJob = true;
             jobsDispatchedThisFrame++;
-            auto& chunk = dirtyChunks.get<VoxelChunkComponent>(entity);
+            auto& chunk = m_registry.get<VoxelChunkComponent>(entity);
             std::string chunkName = "Chunk_" + std::to_string(chunk.cx) + "_" + std::to_string(chunk.cz);
             auto chunkData = std::shared_ptr<VoxelChunkComponent>(new VoxelChunkComponent());
             *chunkData = chunk;
@@ -528,24 +541,19 @@ void GameWorld::Update(float dt) {
                 VkBuffer destBuffer = ctx->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
                 ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, allocInfo, destBuffer);
 
-                if (fw::TerrainSolverSystem::s_DiagnosticMode == fw::TerrainDiagnosticMode::MacroField) {
-                    float minX = 9999.0f, minY = 9999.0f, minZ = 9999.0f;
-                    float maxX = -9999.0f, maxY = -9999.0f, maxZ = -9999.0f;
-                    for (const auto& v : vertices) {
-                        if (v.position.x < minX) minX = v.position.x;
-                        if (v.position.y < minY) minY = v.position.y;
-                        if (v.position.z < minZ) minZ = v.position.z;
-                        if (v.position.x > maxX) maxX = v.position.x;
-                        if (v.position.y > maxY) maxY = v.position.y;
-                        if (v.position.z > maxZ) maxZ = v.position.z;
-                    }
+                MeshComponent newMesh;
+                newMesh.name = chunkName + "_Mesh";
+                newMesh.type = MeshType::Chunk;
+                newMesh.vertices = std::move(vertices);
+                newMesh.vramAlloc = vramAlloc;
+                auto b = newMesh.bounds();
+
+                if (fw::TerrainSolverSystem::s_enableVisualGateLog) {
                     std::cout << "\n[TerrainVisualGate][MESH]\n";
-                    std::cout << "Solid voxels: " << totalSolidVoxels << "\n";
-                    std::cout << "Exposed faces: " << (vertices.size() / 6) << "\n";
-                    std::cout << "Vertices: " << vertices.size() << "\n";
+                    std::cout << "Vertices: " << newMesh.vertices.size() << "\n";
                     std::cout << "Indices: 0 (non-indexed chunk mesh)\n";
-                    std::cout << "Bounds Y min: " << minY << "\n";
-                    std::cout << "Bounds Y max: " << maxY << "\n";
+                    std::cout << "BoundsMin: {" << b.min.x << ", " << b.min.y << ", " << b.min.z << "}\n";
+                    std::cout << "BoundsMax: {" << b.max.x << ", " << b.max.y << ", " << b.max.z << "}\n";
                     
                     std::cout << "\n[GPU]\n";
                     std::cout << "Upload size: " << meshSizeBytes << " bytes\n";
@@ -554,11 +562,7 @@ void GameWorld::Update(float dt) {
                     std::cout << "=======================================================\n";
                 }
 
-                MeshComponent newMesh;
-                newMesh.name = chunkName + "_Mesh";
-                newMesh.type = MeshType::Chunk;
-                newMesh.vertices = std::move(vertices);
-                newMesh.vramAlloc = vramAlloc;
+
 
                 std::lock_guard<std::mutex> lock(self->m_deferredMutex);
                 self->m_deferredMeshes.push_back({
@@ -570,9 +574,9 @@ void GameWorld::Update(float dt) {
                     newlyGen
                 });
             });
-
-            jobsDispatchedThisFrame++;
         }
+        
+        m_dirtyMeshChunks = std::move(remainingMesh);
     }
 
     // 4. Reset frame allocator
@@ -623,7 +627,7 @@ entt::entity GameWorld::CreateChunkEntity(const std::string& name, const Vec3& p
     }
     
     m_chunkManager.RegisterChunkEntity(cx, cz, entity);
-    MarkChunkDirty(entity);
+    MarkTerrainDirty(entity);
     return entity;
 }
 
@@ -757,7 +761,7 @@ void GameWorld::SetBlockFlat(int flatX, int y, int flatZ, BlockType type) {
         uint8_t oldType = chunk.blocks[lx][ly][lz];
         if (oldType != static_cast<uint8_t>(type)) {
             chunk.blocks[lx][ly][lz] = static_cast<uint8_t>(type);
-            MarkChunkDirty(chunkEnt);
+            MarkTerrainDirty(chunkEnt);
 
             // Per ora usiamo posizioni flat per gli aggiornamenti fluido
             EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(flatX, y, flatZ)));
@@ -810,7 +814,7 @@ void GameWorld::SetBlock(int x, int y, int z, BlockType type) {
         uint8_t oldType = chunk.blocks[lx][ly][lz];
         if (oldType != static_cast<uint8_t>(type)) {
             chunk.blocks[lx][ly][lz] = static_cast<uint8_t>(type);
-            MarkChunkDirty(chunkEnt);
+            MarkTerrainDirty(chunkEnt);
 
             EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x, y, z)));
             EventManager::Get().QueueEvent(Event_BlockUpdated(glm::ivec3(x+1, y, z)));
@@ -892,7 +896,15 @@ void GameWorld::DestroyEntity(entt::entity e) {
     }
 }
 
-void GameWorld::MarkChunkDirty(entt::entity chunkEntity) {
+void GameWorld::MarkTerrainDirty(entt::entity chunkEntity) {
+    if (m_registry.valid(chunkEntity)) {
+        if (std::find(m_dirtyTerrainChunks.begin(), m_dirtyTerrainChunks.end(), chunkEntity) == m_dirtyTerrainChunks.end()) {
+            m_dirtyTerrainChunks.push_back(chunkEntity);
+        }
+    }
+}
+
+void GameWorld::MarkMeshDirty(entt::entity chunkEntity) {
     if (m_registry.valid(chunkEntity)) {
         if (m_registry.all_of<ChunkDirtyComponent>(chunkEntity)) {
             auto& dirty = m_registry.get<ChunkDirtyComponent>(chunkEntity);
@@ -900,13 +912,17 @@ void GameWorld::MarkChunkDirty(entt::entity chunkEntity) {
         } else {
             m_registry.emplace<ChunkDirtyComponent>(chunkEntity);
         }
+        
+        if (std::find(m_dirtyMeshChunks.begin(), m_dirtyMeshChunks.end(), chunkEntity) == m_dirtyMeshChunks.end()) {
+            m_dirtyMeshChunks.push_back(chunkEntity);
+        }
     }
 }
 
 void GameWorld::MarkAllChunksDirty() {
     auto view = m_registry.view<VoxelChunkComponent>();
     for (auto entity : view) {
-        MarkChunkDirty(entity);
+        MarkTerrainDirty(entity);
     }
 }
 

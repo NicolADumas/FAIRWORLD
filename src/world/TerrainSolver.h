@@ -33,6 +33,10 @@ struct TerrainGenerationContext {
     int voxelResolutionY;
     int voxelResolutionZ;
     
+    // Configurazione Architetturale del Mondo
+    bool isFlat = false;
+    float planetRadius = 1000.0f; // Usato se isFlat == false per scalare le frequenze
+    
     TerrainDiagnosticMode diagnosticMode = TerrainDiagnosticMode::None;
     uint64_t ruleHash; // For cache and invalidation purposes only
     uint64_t oldRuleHash; // For diagnostics

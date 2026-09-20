@@ -25,7 +25,7 @@ protected:
 
 private:
     void DrawUI();
-    void RebuildChunkPreview();
+    void RebuildChunkPreview(const char* reason = "unknown");
     void ClampBrushToMacroChunk(glm::ivec2& targetMin, glm::ivec2& targetMax) {
         int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
         targetMin.x = std::max(targetMin.x, -extents);
@@ -60,8 +60,6 @@ private:
     glm::vec3 m_orbitTarget = glm::vec3(0.0f, 15.0f, 0.0f);
     
     bool m_needsRebuild = false;
-    float m_rebuildTimer = 0.0f;
-
     // Stroke tracking
     std::unordered_set<glm::ivec2> m_strokeProcessedCells;
     bool m_isStrokeActive = false;

@@ -85,6 +85,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         }
 
         auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
+        chunk.isGenerated = false; // Force regeneration when map rules are applied
         
         fw::BiomeDataComponent biomeData;
         biomeData.planetSize = planet.planetSize;

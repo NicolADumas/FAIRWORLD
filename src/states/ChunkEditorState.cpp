@@ -63,12 +63,15 @@ bool ChunkEditorState::InitApp() {
         m_context->activeRegistry = &m_previewWorld->GetRegistry();
         m_context->forgeWorld = m_previewWorld.get();
     }
+    
+    fw::TerrainSolverSystem::s_enableVisualGateLog = true;
 
-    RebuildChunkPreview();
+    RebuildChunkPreview("Enter");
     return true;
 }
 
-void ChunkEditorState::RebuildChunkPreview() {
+void ChunkEditorState::RebuildChunkPreview(const char* reason) {
+    std::cout << "[PreviewRebuild] reason=" << (reason ? reason : "unknown") << "\n";
     if (!m_context || !m_context->projectManager || !m_previewWorld) return;
     auto& doc = m_context->projectManager->GetDocument();
     
@@ -143,6 +146,7 @@ void ChunkEditorState::RebuildChunkPreview() {
     tempPlanet.minZ = minZ;
     tempPlanet.maxZ = maxZ;
     tempPlanet.baseTerrain.baseRules = tmpl.baseRules;
+    std::cout << "[PreviewRebuild] SOURCE Amplitude = " << tmpl.baseRules.height.amplitude << "\n";
 
     fw::MapRegion baseRegion;
     baseRegion.eulerAngles = glm::vec3(0.0f);
@@ -166,6 +170,13 @@ void ChunkEditorState::RebuildChunkPreview() {
     tempDoc.planets.push_back(tempPlanet);
 
     fw::MapWorldGenerator::Generate(tempDoc, 0, *m_previewWorld, m_context->jobSystem);
+    std::cout << "[TRACE] MapWorldGenerator DONE\n";
+    
+    // Accoda tutti i chunk appena creati nel TerrainSolver (Zero-Work Phase B)
+    auto view = m_previewWorld->GetRegistry().view<fw::VoxelChunkComponent>();
+    for (auto e : view) {
+        m_previewWorld->MarkTerrainDirty(e);
+    }
     
     // Centra la telecamera 3D perfettamente sul blocco di chunk appena rigenerato
     float centerX = ((minX + maxX) / 2.0f) * 16.0f;
@@ -175,11 +186,8 @@ void ChunkEditorState::RebuildChunkPreview() {
 
 void ChunkEditorState::UpdateApp(float dt) {
     if (m_needsRebuild) {
-        m_rebuildTimer -= dt;
-        if (m_rebuildTimer <= 0.0f) {
-            m_needsRebuild = false;
-            RebuildChunkPreview();
-        }
+        m_needsRebuild = false;
+        RebuildChunkPreview("Rule Changed");
     }
 
     if (m_context) {
@@ -244,9 +252,6 @@ void ChunkEditorState::UpdateApp(float dt) {
 
     if (m_previewWorld) {
         // Esegui la generazione tramite il nuovo TerrainSolver
-        if (m_context && m_context->blockRegistry) {
-            fw::TerrainSolverSystem::Update(m_previewWorld->GetRegistry(), 15, m_context->blockRegistry);
-        }
         m_previewWorld->Update(dt);
     }
 }
@@ -288,7 +293,7 @@ void ChunkEditorState::DrawUI() {
                     bool isSelected = (idInt == b.id);
                     if (ImGui::Selectable((b.displayName + " [" + b.stringId + "]").c_str(), isSelected)) {
                         blockId = static_cast<std::decay_t<decltype(blockId)>>(b.id);
-                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                        if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                     }
                     if (isSelected) ImGui::SetItemDefaultFocus();
                 }
@@ -313,7 +318,7 @@ void ChunkEditorState::DrawUI() {
         t.baseAngularRadius = 0.25f;
         doc.terrainLibrary.push_back(t);
         m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
-        m_needsRebuild = true; m_rebuildTimer = 0.2f;
+        m_needsRebuild = true; 
     }
     ImGui::PopStyleColor(2);
 
@@ -339,7 +344,7 @@ void ChunkEditorState::DrawUI() {
         if (m_activeTemplateIndex >= (int)doc.terrainLibrary.size()) {
             m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
         }
-        m_needsRebuild = true; m_rebuildTimer = 0.2f;
+        m_needsRebuild = true; 
     }
     ImGui::PopStyleColor(3);
     if (!canDelete) ImGui::EndDisabled();
@@ -361,7 +366,7 @@ void ChunkEditorState::DrawUI() {
             m_canvasPan = glm::vec2(0.0f, 0.0f);
             // ---------------------
             
-            m_needsRebuild = true; m_rebuildTimer = 0.2f;
+            m_needsRebuild = true; 
         }
     }
     ImGui::EndChild();
@@ -492,7 +497,7 @@ void ChunkEditorState::DrawUI() {
                             // nr.gravityModifier = 1.0f;
                             activeTemplate.subRegions.push_back(nr);
                             m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
-                            if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                            if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                         }
                     }
                 } else if (m_isBrushModeActive && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
@@ -517,7 +522,7 @@ void ChunkEditorState::DrawUI() {
                         }
                         if (erased) {
                             m_selectedSubRegionIndex = -1; // Deseleziona
-                            if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                            if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                         }
                     }
                 } else if (!m_isBrushModeActive && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -545,7 +550,7 @@ void ChunkEditorState::DrawUI() {
                     if (deltaChunk.x != 0 || deltaChunk.y != 0) {
                         activeTemplate.subRegions[m_selectedSubRegionIndex].rectMin = s_dragStartRectMin + deltaChunk;
                         activeTemplate.subRegions[m_selectedSubRegionIndex].rectMax = s_dragStartRectMax + deltaChunk;
-                        if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.5f; }
+                        if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                     }
                 }
             }
@@ -606,7 +611,7 @@ void ChunkEditorState::DrawUI() {
                 activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + hoveredInstance);
                 if (m_selectedSubRegionIndex == hoveredInstance) m_selectedSubRegionIndex = -1;
                 else if (m_selectedSubRegionIndex > hoveredInstance) m_selectedSubRegionIndex--;
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.5f; }
+                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
 
             if (canvasHovered && io.KeyShift) {
@@ -672,13 +677,13 @@ void ChunkEditorState::DrawUI() {
                 m_canvasPan = glm::vec2(0.0f, 0.0f); // Resetta la traslazione
                 // ---------------------
                 
-                m_needsRebuild = true; m_rebuildTimer = 0.2f;
+                m_needsRebuild = true; 
             }
             ImGui::Spacing();
 
             if (ImGui::Button("PULISCI SOTTO-REGIONI", ImVec2(-1, 25))) {
                 activeTemplate.subRegions.clear();
-                m_needsRebuild = true; m_rebuildTimer = 0.2f;
+                m_needsRebuild = true; 
             }
         }
 
@@ -690,32 +695,32 @@ void ChunkEditorState::DrawUI() {
                 int shapeIdx = static_cast<int>(inst.shape);
                 if (ImGui::Combo("Forma", &shapeIdx, shapeNames, IM_ARRAYSIZE(shapeNames))) {
                     inst.shape = static_cast<fw::RegionShape>(shapeIdx);
-                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                 }
                 
                 const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
                 int typeIdx = static_cast<int>(inst.type);
                 if (ImGui::Combo("Bioma Istanza", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
                     inst.type = static_cast<fw::MapRegionType>(typeIdx);
-                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                 }
                 
                 // (hidden)
                 // (hidden)
                 
                 if (false) {
-                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                 }
                 
                 if (false /* ImGui::SliderFloat("Gravit (Altezza)", &inst.gravityModifier, 0.1f, 5.0f, "%.2f") */) {
-                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                 }
                 
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
                 if (ImGui::Button("Elimina Istanza", ImVec2(-1, 0))) {
                     activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + m_selectedSubRegionIndex);
                     m_selectedSubRegionIndex = -1;
-                    if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                 }
                 ImGui::PopStyleColor();
             }
@@ -732,43 +737,39 @@ void ChunkEditorState::DrawUI() {
             int typeIdx = static_cast<int>(activeTemplate.baseType);
             if (ImGui::Combo("Bioma Base", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
                 activeTemplate.baseType = static_cast<fw::MapRegionType>(typeIdx);
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
             
             //
             //
 
             if (false /* ImGui::SliderFloat("Frequenza Perlin (Rugosit)", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f") */) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
             if (false /* ImGui::SliderFloat("Modificatore Gravit", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f") */) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
 
             const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
             int currentAlgo = static_cast<int>(activeTemplate.baseRules.height.algorithm);
             if (ImGui::Combo("Algoritmo Terreno", &currentAlgo, algoNames, IM_ARRAYSIZE(algoNames))) {
                 activeTemplate.baseRules.height.algorithm = static_cast<fw::TerrainAlgorithmType>(currentAlgo);
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
-            if (ImGui::SliderFloat("Altezza Base", &activeTemplate.baseRules.height.baseHeight, -100.0f, 200.0f, "%.1f")) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
-            }
-            if (ImGui::SliderFloat("Ampiezza Base", &activeTemplate.baseRules.height.amplitude, 0.0f, 200.0f, "%.1f")) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
-            }
-            if (ImGui::SliderFloat("Frequenza (Scala)", &activeTemplate.baseRules.height.frequency, 0.001f, 0.1f, "%.4f")) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
-            }
+            ImGui::SliderFloat("Altezza Base", &activeTemplate.baseRules.height.baseHeight, -100.0f, 200.0f, "%.1f");
+            if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            ImGui::SliderFloat("Ampiezza Base", &activeTemplate.baseRules.height.amplitude, 0.0f, 200.0f, "%.1f");
+            if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            ImGui::SliderFloat("Frequenza (Scala)", &activeTemplate.baseRules.height.frequency, 0.001f, 0.1f, "%.4f");
+            if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
             
             int seed = (int)activeTemplate.seed;
             if (ImGui::InputInt("Seme Geologico (Seed)", &seed)) {
                 activeTemplate.seed = seed;
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
+                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
-            if (ImGui::SliderFloat("Estensione Base (Raggio Angolare)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f")) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true; m_rebuildTimer = 0.2f; }
-            }
+            ImGui::SliderFloat("Estensione Base (Raggio Angolare)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f");
+            if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
         }
 
     } else {
@@ -781,14 +782,14 @@ void ChunkEditorState::DrawUI() {
     int currentMode = (int)fw::TerrainSolverSystem::s_DiagnosticMode;
     if (ImGui::Combo("Mode", &currentMode, diagModes, IM_ARRAYSIZE(diagModes))) {
         fw::TerrainSolverSystem::s_DiagnosticMode = (fw::TerrainDiagnosticMode)currentMode;
-        m_needsRebuild = true; m_rebuildTimer = 0.05f;
+        m_needsRebuild = true; 
     }
     ImGui::Separator();
 
     ImGui::Checkbox("Rigenera Voxel al volo ad ogni modifica", &m_autoRebuildPreview);
     if (!m_autoRebuildPreview) {
         if (ImGui::Button("🔄 RIGENERA ANTEPRIMA VOXEL 3D ORA", ImVec2(-1, 25))) {
-            m_needsRebuild = true; m_rebuildTimer = 0.2f;
+            m_needsRebuild = true; 
         }
     }
     if (ImGui::Button("💾 SALVA LIBRO CHUNK (WORLD PROJECT)", ImVec2(-1, 30))) {

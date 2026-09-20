@@ -4,17 +4,17 @@ namespace fw {
 
 class TerrainValidation {
 public:
-    static void RunAll();
-    static void RunLegacyVoxelWriterAudit();
+    static bool RunAll();
+    static bool RunLegacyVoxelWriterAudit();
     
     // Phase 5 Determinism Freeze Gate
-    static void RunDeterminismTest();
+    static bool RunDeterminismTest();
     
     // Phase 5.1 Cube-Sphere Continuity Freeze Gate
-    static void RunCubeSphereContinuityTest();
+    static bool RunCubeSphereContinuityTest();
     
     // Phase 5.2 Workspace Freeze Gate
-    static void RunWorkspaceTest();
+    static bool RunWorkspaceTest();
 
 private:
     static bool TestSameThreadReuse();
@@ -39,7 +39,7 @@ private:
     static bool TestRepeatedGeneration();
     
     // Phase 5.3 Pipeline
-    static void RunPipelineTest();
+    static bool RunPipelineTest();
     
 private:
     static bool TestStableRuleHash();

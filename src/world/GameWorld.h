@@ -86,7 +86,8 @@ public:
     // Ritorna l'entità centrale del Pianeta (Singleton Entity)
     entt::entity GetPlanetEntity() const { return m_planetEntity; }
     
-    void MarkChunkDirty(entt::entity chunkEntity);
+    void MarkTerrainDirty(entt::entity chunkEntity);
+    void MarkMeshDirty(entt::entity chunkEntity);
     void MarkAllChunksDirty();
     void GenerateChunkData(VoxelChunkComponent& chunk, int cx, int cz);
 
@@ -148,6 +149,9 @@ private:
     };
     std::vector<DeferredMeshSpawn> m_deferredMeshes;
     std::mutex m_deferredMutex;
+    
+    std::vector<entt::entity> m_dirtyTerrainChunks;
+    std::vector<entt::entity> m_dirtyMeshChunks;
 };
 
 // Retrocompatibilità completa per forward declaration di ForgeWorld

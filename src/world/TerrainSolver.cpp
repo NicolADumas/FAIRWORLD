@@ -66,16 +66,22 @@ glm::vec3 TerrainSolver::GetVoxelSpherePos(const TerrainGenerationContext& ctx, 
     int globalX = ctx.chunkCoord.x * ctx.voxelResolutionX + x;
     int globalZ = ctx.chunkCoord.z * ctx.voxelResolutionZ + z;
     
+    // Se la mappa e' piatta (es. Chunk Editor), usiamo le coordinate reali dirette come campionamento
+    if (ctx.isFlat) {
+        return glm::vec3(static_cast<float>(globalX), 0.0f, static_cast<float>(globalZ));
+    }
+    
     // 2. Map to UV [0, 1] across the face.
-    // If faceGridResolution is the total number of voxels across a face (e.g. chunks * chunk_size)
-    // we divide by faceGridResolution to get UV.
+    // faceGridResolution is the total number of voxels across a face (chunks * chunk_size)
     float u = (float)globalX / (float)ctx.faceGridResolution;
     float v = (float)globalZ / (float)ctx.faceGridResolution;
     
     // 3. Convert Face+UV to spherical direction
     glm::vec3 pos = CubeSphereMapping::FaceUVToDirection(ctx.faceIndex, glm::vec2(u, v));
     
-    return glm::normalize(pos);
+    // Moltiplichiamo il vettore normalizzato per il raggio del pianeta
+    // in modo che 1 unita' spaziale = 1 blocco
+    return glm::normalize(pos) * ctx.planetRadius;
 }
 
 void TerrainSolver::GenerateChunk(

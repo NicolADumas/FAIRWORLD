@@ -181,6 +181,9 @@ struct VoxelChunkComponent {
     
     // Hash dell'ultima regola usata per generare questo chunk, per generazione incrementale
     uint64_t lastRuleHash = 0;
+    
+    // Hash deterministico (FNV-1a) del contenuto voxel attuale (blocks)
+    uint64_t voxelHash = 0;
 };
 
 // Tag Component: indica che il VoxelChunkComponent associato è stato modificato

@@ -717,8 +717,8 @@ fw::MapRegion readRegion(std::istream& s) {
 namespace fw {
 
 // Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
-static constexpr uint32_t FWB_MAGIC   = 0x46574231; // 'FWB1'
-static constexpr uint32_t FWB_VERSION = 5;
+static constexpr uint32_t FWB_MAGIC = 0x46574231; // 'FWB1'
+static constexpr uint32_t FWB_VERSION = 6;
 
 bool MapDocument::SaveBinary
 (const std::string& path) const {
@@ -743,6 +743,10 @@ bool MapDocument::SaveBinary
             writeI32(f, (int32_t)t.baseType);
             writeF32(f, t.baseAngularRadius);
             writeU32(f, t.seed);
+            
+            nlohmann::json rulesJson = t.baseRules;
+            writeStr(f, rulesJson.dump());
+            
             writeU32(f, (uint32_t)t.subRegions.size());
             for (const auto& r : t.subRegions) writeRegion(f, r);
         }
@@ -837,6 +841,16 @@ bool MapDocument::LoadBinary(const std::string& path) {
             t.baseType             = (MapRegionType)readI32(f);
             t.baseAngularRadius    = readF32(f);
             t.seed                 = readU32(f);
+            
+            if (version >= 6) {
+                std::string rulesStr = readStr(f);
+                if (!rulesStr.empty()) {
+                    try {
+                        t.baseRules = nlohmann::json::parse(rulesStr).get<TerrainGenerationRules>();
+                    } catch (...) {}
+                }
+            }
+            
             uint32_t numSubs       = readU32(f);
             t.subRegions.reserve(numSubs);
             for (uint32_t s = 0; s < numSubs; ++s) t.subRegions.push_back(readRegion(f));
