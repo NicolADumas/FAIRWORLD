@@ -15,6 +15,7 @@
 #include "StateManager.h"
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
+#include "VulkanResourceTracker.h"
 #include <algorithm>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
@@ -51,6 +52,9 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
 
     m_core = std::make_unique<fw::VulkanCore>();
     if (!m_core->Initialize(isVRMode, xrManager, hwnd, hinstance)) return false;
+    
+    fw::VulkanResourceTracker::Get().Initialize(m_core->GetDevice());
+    
     m_memory = std::make_unique<fw::VulkanMemory>(m_core.get());
     if (!m_memory->Initialize()) return false;
 
@@ -877,11 +881,13 @@ bool RenderManager::CreateSyncObjects() {
             vkCreateFence(m_core->GetDevice(), &fenceInfo, nullptr, &m_inFlightFences[i]) != VK_SUCCESS) {
             return false;
         }
+        fw::VulkanResourceTracker::Get().TrackCreate(m_imageAvailableSemaphores[i], "ImageAvailableSem_" + std::to_string(i), "RenderManager");
     }
     for (size_t i = 0; i < swapchainImageCount; i++) {
         if (vkCreateSemaphore(m_core->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
             return false;
         }
+        fw::VulkanResourceTracker::Get().TrackCreate(m_renderFinishedSemaphores[i], "RenderFinishedSem_" + std::to_string(i), "RenderManager");
     }
     return true;
 }
@@ -1840,7 +1846,7 @@ void RenderManager::LoadGLBMesh(const std::string& filepath) {
 
 void RenderManager::Shutdown() {
     m_isFullyInitialized = false; // Blocca RecreateSwapchain durante lo shutdown
-    if (m_core->GetDevice() != VK_NULL_HANDLE) {
+    if (m_core && m_core->GetDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_core->GetDevice());
 
         if (m_blockPropertiesBuffer != VK_NULL_HANDLE) {
@@ -1899,12 +1905,18 @@ void RenderManager::Shutdown() {
         }
 
         for (auto sem : m_imageAvailableSemaphores) {
-            if (sem != VK_NULL_HANDLE) vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
+            if (sem != VK_NULL_HANDLE) {
+                vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
+                fw::VulkanResourceTracker::Get().TrackDestroy(sem);
+            }
         }
         m_imageAvailableSemaphores.clear();
 
         for (auto sem : m_renderFinishedSemaphores) {
-            if (sem != VK_NULL_HANDLE) vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
+            if (sem != VK_NULL_HANDLE) {
+                vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
+                fw::VulkanResourceTracker::Get().TrackDestroy(sem);
+            }
         }
         m_renderFinishedSemaphores.clear();
 
@@ -1926,6 +1938,7 @@ void RenderManager::Shutdown() {
         for (auto framebuffer : m_framebuffers) {
             vkDestroyFramebuffer(m_core->GetDevice(), framebuffer, nullptr);
         }
+        m_framebuffers.clear();
         if (m_renderPass != VK_NULL_HANDLE) {
             vkDestroyRenderPass(m_core->GetDevice(), m_renderPass, nullptr);
             m_renderPass = VK_NULL_HANDLE;

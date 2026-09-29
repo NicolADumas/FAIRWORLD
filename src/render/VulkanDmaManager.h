@@ -41,6 +41,7 @@ public:
     }
 
     void Cleanup();
+    void Drain();
 
     // Funzione chiamata dal Worker Thread (Job System).
     // Esegue una copia Zero-Copy in RAM (Write-Combine burst) verso lo Staging Buffer,

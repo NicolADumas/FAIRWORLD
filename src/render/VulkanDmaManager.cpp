@@ -2,6 +2,7 @@
 #include "VulkanDmaManager.h"
 #include <iostream>
 #include <cstring> // per memcpy
+#include "VulkanResourceTracker.h"
 
 #include <vulkan/vulkan.h>
 
@@ -11,8 +12,15 @@ VulkanDmaManager::VulkanDmaManager() {
 }
 
 VulkanDmaManager::~VulkanDmaManager() {
+    if (!m_pendingTransfers.empty()) {
+        std::cerr << "[VulkanDmaManager] ERROR: Destructor called with pending transfers! Call Drain() first!\n";
+    }
+
     if (m_device != VK_NULL_HANDLE && m_transferTimeline != VK_NULL_HANDLE) {
+        std::cout << "\n[DMA]\nDestroy timeline semaphore\n";
         vkDestroySemaphore(m_device, m_transferTimeline, nullptr);
+        fw::VulkanResourceTracker::Get().TrackDestroy(m_transferTimeline);
+        std::cout << "Timeline semaphore destroyed\n";
         m_transferTimeline = VK_NULL_HANDLE;
     }
 }
@@ -47,7 +55,33 @@ void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkComm
         std::cerr << "[Vulkan DMA] Errore: Impossibile creare Timeline Semaphore!\n";
     } else {
         std::cout << "[Vulkan DMA] Transfer Timeline Semaphore creato e inizializzato a 0.\n";
+        fw::VulkanResourceTracker::Get().TrackCreate(m_transferTimeline, "DMATransferTimeline", "VulkanDmaManager");
     }
+}
+
+void VulkanDmaManager::Drain() {
+    if (m_device == VK_NULL_HANDLE) return;
+
+    std::cout << "\n[DMA]\nDrain begin\nPending transfers : " << m_pendingTransfers.size() << "\n";
+
+    if (m_transferQueue != VK_NULL_HANDLE) {
+        if (m_queueMutex) {
+            std::lock_guard<std::mutex> lock(*m_queueMutex);
+            vkQueueWaitIdle(m_transferQueue);
+        } else {
+            vkQueueWaitIdle(m_transferQueue);
+        }
+    }
+
+    std::cout << "\n[DMA]\nTransfer queue idle\nPending transfers : 0\n";
+
+    for (auto& transfer : m_pendingTransfers) {
+        if (transfer.cmd != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(m_device, m_transferPool, 1, &transfer.cmd);
+            transfer.cmd = VK_NULL_HANDLE;
+        }
+    }
+    m_pendingTransfers.clear();
 }
 
 uint32_t VulkanDmaManager::AllocateStagingSpace(uint32_t size) {

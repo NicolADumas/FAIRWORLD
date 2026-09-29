@@ -17,11 +17,39 @@ RuntimeManager::RuntimeManager(SharedContext* context) : m_context(context) {
 }
 
 RuntimeManager::~RuntimeManager() {
-    if (m_context && m_context->dmaManager) {
-        delete m_context->dmaManager;
-        m_context->dmaManager = nullptr;
-    }
+    ShutdownGpuRuntime();
     std::cout << "[RuntimeManager] Distrutto.\n";
+}
+
+void RuntimeManager::ShutdownGpuRuntime() {
+    if (m_gpuRuntimeShutdown) return;
+    m_gpuRuntimeShutdown = true;
+
+    if (m_context) {
+        if (m_context->jobSystem) {
+            std::cout << "\n[RuntimeShutdown]\nStop accepting jobs\n";
+            m_context->jobSystem->StopAcceptingJobs();
+            
+            m_context->jobSystem->Shutdown();
+            std::cout << "\n[RuntimeShutdown]\nWorkers joined\nPending jobs : " << m_context->jobSystem->GetPendingJobCount() << "\n";
+            
+            delete m_context->jobSystem;
+            m_context->jobSystem = nullptr;
+        }
+        
+        if (m_context->dmaManager) {
+            m_context->dmaManager->Drain();
+            delete m_context->dmaManager;
+            m_context->dmaManager = nullptr;
+        }
+
+        if (m_context->vramAllocator) {
+            delete m_context->vramAllocator;
+            m_context->vramAllocator = nullptr;
+        }
+    }
+    
+    std::cout << "\n[RuntimeShutdown]\nGPU resources destroyed\n";
 }
 
 void RuntimeManager::RequireFeaturesAsync(RuntimeFeature featureMask) {

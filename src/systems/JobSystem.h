@@ -16,8 +16,14 @@ public:
     // Avvia il pool di thread basato sui core hardware disponibili
     void Initialize();
     
+    // Ferma l'accettazione di nuovi job
+    void StopAcceptingJobs();
+
     // Ferma i worker e svuota la coda
     void Shutdown();
+    
+    // Ottiene il numero di job pendenti (per log)
+    size_t GetPendingJobCount();
 
     // Attende che tutti i job in coda e in esecuzione siano completati
     void WaitAll();

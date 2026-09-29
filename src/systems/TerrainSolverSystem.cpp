@@ -80,7 +80,6 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
         
         if (chunk.isGenerated && chunk.lastRuleHash == ctx.ruleHash) {
             // registry.remove<BiomeDataComponent>(entity); // Keep for editor live preview
-            processed++;
             continue;
         }
         
@@ -104,8 +103,9 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
                 markMeshDirty(entity);
             }
         }
-        
-        std::cout << "[TRACE] GENERATING chunk visualGate=" << (s_enableVisualGateLog ? "TRUE" : "FALSE") << '\n';
+        if (s_enableVisualGateLog) {
+            std::cout << "[TRACE] GENERATING chunk visualGate=TRUE\n";
+        }
         processed++;
     }
     

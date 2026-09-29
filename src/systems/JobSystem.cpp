@@ -36,10 +36,19 @@ public:
         }
     }
 
+    void StopAcceptingJobs() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_shutdown = true;
+    }
+
+    size_t GetPendingJobCount() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        return m_jobs.size();
+    }
+
     void Shutdown() {
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            if (m_shutdown) return;
             m_shutdown = true;
         }
         m_condition.notify_all();
@@ -55,6 +64,7 @@ public:
     void Enqueue(std::function<void()> job) {
         {
             std::unique_lock<std::mutex> lock(m_mutex);
+            if (m_shutdown) return;
             m_jobs.push(std::move(job));
             // std::cout << "[JobSystem] Job accodato. Coda attuale: " << m_jobs.size() << " job.\n";
         }
@@ -121,8 +131,16 @@ void JobSystem::Initialize() {
     m_queueImpl->Initialize();
 }
 
+void JobSystem::StopAcceptingJobs() {
+    if (m_queueImpl) m_queueImpl->StopAcceptingJobs();
+}
+
 void JobSystem::Shutdown() {
-    m_queueImpl->Shutdown();
+    if (m_queueImpl) m_queueImpl->Shutdown();
+}
+
+size_t JobSystem::GetPendingJobCount() {
+    return m_queueImpl ? m_queueImpl->GetPendingJobCount() : 0;
 }
 
 void JobSystem::WaitAll() {

@@ -18,6 +18,7 @@
 #include "HubState.h"
 #include "TexturePacker.h"
 #include "MaterialRegistry.h"
+#include "../render/VulkanResourceTracker.h"
 #include "GameWorld.h"
 #include <chrono>
 #include <thread>
@@ -1883,18 +1884,8 @@ void FairWorldEngine::Shutdown() {
     }
 
     if (m_sharedContext) {
-        if (m_sharedContext->jobSystem) {
-            m_sharedContext->jobSystem->Shutdown();
-            delete m_sharedContext->jobSystem;
-            m_sharedContext->jobSystem = nullptr;
-        }
-        if (m_sharedContext->dmaManager) {
-            delete m_sharedContext->dmaManager;
-            m_sharedContext->dmaManager = nullptr;
-        }
-        if (m_sharedContext->vramAllocator) {
-            delete m_sharedContext->vramAllocator;
-            m_sharedContext->vramAllocator = nullptr;
+        if (m_sharedContext->runtimeManager) {
+            m_sharedContext->runtimeManager->ShutdownGpuRuntime();
         }
     }
 
@@ -1903,6 +1894,8 @@ void FairWorldEngine::Shutdown() {
     }
     m_windowManager->Shutdown();
     m_renderManager->Shutdown();
+    
+    fw::VulkanResourceTracker::Get().Shutdown();
     m_isRunning = false;
 }
 

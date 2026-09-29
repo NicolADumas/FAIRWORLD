@@ -38,6 +38,8 @@ public:
     
     // Controlla se l'operazione in background è terminata
     bool IsReady() const;
+    
+    void ShutdownGpuRuntime();
 
     RuntimeFeature GetActiveFeatures() const { return m_activeFeatures; }
 
@@ -51,6 +53,7 @@ private:
     
     std::future<void> m_asyncLoadTask;
     std::atomic<bool> m_isLoading{false};
+    bool m_gpuRuntimeShutdown = false;
 };
 
 } // namespace fw
