@@ -51,7 +51,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     m_hwnd = hwnd;
 
     m_core = std::make_unique<fw::VulkanCore>();
-    if (!m_core->Initialize(isVRMode, xrManager, hwnd, hinstance)) return false;
+    if (!m_core->InitDevice(isVRMode, xrManager, hwnd, hinstance)) return false;
     
     fw::VulkanResourceTracker::Get().Initialize(m_core->GetDevice());
     
@@ -86,7 +86,9 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
 
     // FASE 3.3: Creazione della Swapchain (Gia' gestita da VulkanCore)
     // FASE 3.4, 4 e 5: Creazione del Render Loop, Pipeline e UBO
-    if (!CreateRenderPass()) return false;
+    fw::SwapchainConfig swapConfig = m_core->BuildSwapchainConfig(m_hwnd);
+    if (!CreateRenderPass(swapConfig.surfaceFormat.format)) return false;
+    if (!m_core->InitSwapchain(swapConfig)) return false;
     
     if (!CreateCommandPoolAndBuffer()) return false;
 
@@ -214,10 +216,10 @@ bool RenderManager::CreateDepthResources() {
 // ---------------------------------------------------------
 // STEP 1: RENDER PASS (Cosa fare con i pixel)
 // ---------------------------------------------------------
-bool RenderManager::CreateRenderPass() {
+bool RenderManager::CreateRenderPass(VkFormat swapchainImageFormat) {
     // --- Attachment colore ---
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = m_core->GetSwapchainImageFormat();
+    colorAttachment.format         = swapchainImageFormat;
     colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2676,7 +2678,9 @@ void RenderManager::RecreateSwapchain() {
 
     CleanupSwapchain();
 
-    m_core->RecreateSwapchain(m_hwnd);
+    m_core->DestroySwapchain();
+    fw::SwapchainConfig swapConfig = m_core->BuildSwapchainConfig(m_hwnd);
+    m_core->InitSwapchain(swapConfig);
     
     CreateDepthResources();
     CreateFramebuffers();

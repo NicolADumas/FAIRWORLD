@@ -19,6 +19,10 @@ public:
 
     void PrintReport() const;
 
+    // C4 Diagnostic getters — read-only
+    uint32_t GetLiveSemaphoreCount() const;
+    bool     IsShutdownComplete() const;
+
 private:
     VulkanResourceTracker() = default;
     ~VulkanResourceTracker() = default;
@@ -41,6 +45,7 @@ private:
 
     uint32_t m_semaphoresCreated = 0;
     uint32_t m_semaphoresDestroyed = 0;
+    bool     m_shutdownCalled = false;
 };
 
 } // namespace fw

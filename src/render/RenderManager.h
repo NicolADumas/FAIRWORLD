@@ -408,7 +408,7 @@ public:
     
 
     // --- NUOVI METODI (FASE 3 - ULTIMA PARTE) ---
-    bool CreateRenderPass();
+    bool CreateRenderPass(VkFormat swapchainImageFormat);
     bool CreateDescriptorSetLayout();
     bool CreateGraphicsPipeline();
     bool CreateForgePipeline();

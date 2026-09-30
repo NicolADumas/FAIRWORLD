@@ -20,14 +20,35 @@ struct QueueFamilyIndices {
     }
 };
 
+struct SwapchainSupportDetails {
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> presentModes;
+};
+
+struct SwapchainConfig {
+    VkSurfaceFormatKHR surfaceFormat;
+    VkPresentModeKHR presentMode;
+    VkExtent2D extent;
+    uint32_t imageCount;
+    VkSharingMode imageSharingMode;
+    uint32_t queueFamilyIndexCount;
+    uint32_t queueFamilyIndices[2];
+};
+
 class VulkanCore {
 public:
     VulkanCore();
     ~VulkanCore();
 
-    bool Initialize(bool isVRMode, XrManager* xrManager, void* hwnd, void* hinstance);
+    bool InitDevice(bool isVRMode, XrManager* xrManager, void* hwnd, void* hinstance);
     void Cleanup();
     void RecreateSwapchain(void* hwnd);
+
+    SwapchainSupportDetails QuerySwapchainSupport() const;
+    SwapchainConfig BuildSwapchainConfig(void* hwnd) const;
+    bool InitSwapchain(const SwapchainConfig& config);
+    void DestroySwapchain();
 
     // Getters per l'Ape Regina (RenderManager)
     VkInstance GetInstance() const { return m_instance; }
@@ -83,7 +104,6 @@ private:
     int RateDeviceSuitability(VkPhysicalDevice device);
     bool CreateLogicalDevice();
     bool CreateSurface(void* hwnd, void* hinstance);
-    bool CreateSwapchain(void* hwnd);
     bool CreateImageViews();
 };
 

@@ -46,6 +46,16 @@ public:
         return m_jobs.size();
     }
 
+    size_t GetActiveWorkerCount() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        return static_cast<size_t>(m_activeJobs);
+    }
+
+    bool IsAcceptingJobs() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        return !m_shutdown;
+    }
+
     void Shutdown() {
         {
             std::unique_lock<std::mutex> lock(m_mutex);
@@ -141,6 +151,14 @@ void JobSystem::Shutdown() {
 
 size_t JobSystem::GetPendingJobCount() {
     return m_queueImpl ? m_queueImpl->GetPendingJobCount() : 0;
+}
+
+size_t JobSystem::GetActiveWorkerCount() {
+    return m_queueImpl ? m_queueImpl->GetActiveWorkerCount() : 0;
+}
+
+bool JobSystem::IsAcceptingJobs() {
+    return m_queueImpl ? m_queueImpl->IsAcceptingJobs() : false;
 }
 
 void JobSystem::WaitAll() {

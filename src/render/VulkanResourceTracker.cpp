@@ -20,6 +20,7 @@ void VulkanResourceTracker::Initialize(VkDevice device) {
 }
 
 void VulkanResourceTracker::Shutdown() {
+    m_shutdownCalled = true;
     PrintReport();
 }
 
@@ -78,6 +79,15 @@ void VulkanResourceTracker::PrintReport() const {
         }
     }
     std::cout << "====================================================\n\n";
+}
+
+uint32_t VulkanResourceTracker::GetLiveSemaphoreCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return static_cast<uint32_t>(m_semaphores.size());
+}
+
+bool VulkanResourceTracker::IsShutdownComplete() const {
+    return m_shutdownCalled;
 }
 
 } // namespace fw

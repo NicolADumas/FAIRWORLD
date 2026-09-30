@@ -43,6 +43,14 @@ public:
     void Cleanup();
     void Drain();
 
+    // C4 Diagnostic getters — read-only, zero runtime overhead
+    // Numero di trasferimenti DMA ancora in volo (prima di Drain)
+    size_t GetPendingTransferCount() const;
+    // Dopo Drain+Cleanup, m_device viene invalidato: nessuna nuova submission possibile
+    bool   IsAcceptingSubmissions() const { return m_device != nullptr; }
+    // I command buffer live corrispondono 1:1 ai pending transfers
+    size_t GetLiveCommandBufferCount() const { return GetPendingTransferCount(); }
+
     // Funzione chiamata dal Worker Thread (Job System).
     // Esegue una copia Zero-Copy in RAM (Write-Combine burst) verso lo Staging Buffer,
     // e accoda un Job di trasferimento DMA sulla Transfer Queue di Vulkan.
@@ -53,7 +61,7 @@ public:
     VkSemaphore GetTimelineSemaphore() const { return m_transferTimeline; }
 
 private:
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
 
     // -- Staging Ring Buffer --
     uint32_t m_stagingBufferSize;

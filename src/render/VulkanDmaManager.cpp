@@ -59,6 +59,11 @@ void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkComm
     }
 }
 
+size_t VulkanDmaManager::GetPendingTransferCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_pendingTransfers.size();
+}
+
 void VulkanDmaManager::Drain() {
     if (m_device == VK_NULL_HANDLE) return;
 

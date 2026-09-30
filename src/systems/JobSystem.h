@@ -22,8 +22,12 @@ public:
     // Ferma i worker e svuota la coda
     void Shutdown();
     
-    // Ottiene il numero di job pendenti (per log)
+    // Ottiene il numero di job pendenti nella coda
     size_t GetPendingJobCount();
+
+    // C4 Diagnostic getters — read-only, zero runtime overhead
+    size_t GetActiveWorkerCount();
+    bool   IsAcceptingJobs();
 
     // Attende che tutti i job in coda e in esecuzione siano completati
     void WaitAll();

@@ -43,6 +43,9 @@ public:
 
     RuntimeFeature GetActiveFeatures() const { return m_activeFeatures; }
 
+    // C4 Diagnostic getter — read-only
+    bool IsShutdownComplete() const { return m_gpuRuntimeShutdown; }
+
 private:
     void EnsureGlobalVRAM();
     void EnsureJobSystem();
