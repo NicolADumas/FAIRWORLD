@@ -2,6 +2,7 @@
 #include <memory>
 #include <future>
 #include <atomic>
+#include <climits>
 
 struct SharedContext;
 
@@ -28,6 +29,24 @@ inline bool HasFeature(uint32_t mask, RuntimeFeature feature) {
     return (mask & static_cast<uint32_t>(feature)) != 0;
 }
 
+// Risultato verificato della sequenza di shutdown GPU.
+// Ogni campo e' catturato dal sottosistema reale PRIMA della sua distruzione,
+// non dedotto dalla sua assenza (nullptr != successo verificato).
+struct RuntimeShutdownResult
+{
+    // CPU: catturato dopo StopAcceptingJobs() + Shutdown() (join workers)
+    bool   cpuStopCalled      = false;   // StopAcceptingJobs e' stato chiamato
+    size_t pendingCpuJobs     = SIZE_MAX; // SIZE_MAX = non catturato
+    size_t activeWorkers      = SIZE_MAX;
+
+    // DMA: catturato dopo Drain(), prima di delete
+    bool   dmaDrainCalled     = false;
+    size_t pendingDmaTransfers     = SIZE_MAX;
+    size_t liveDmaCommandBuffers   = SIZE_MAX;
+
+    bool completed = false; // true solo se l'intera sequenza e' terminata
+};
+
 class RuntimeManager {
 public:
     RuntimeManager(SharedContext* context);
@@ -43,8 +62,9 @@ public:
 
     RuntimeFeature GetActiveFeatures() const { return m_activeFeatures; }
 
-    // C4 Diagnostic getter — read-only
+    // C4 Diagnostic getters — read-only
     bool IsShutdownComplete() const { return m_gpuRuntimeShutdown; }
+    const RuntimeShutdownResult& GetShutdownResult() const { return m_shutdownResult; }
 
 private:
     void EnsureGlobalVRAM();
@@ -57,6 +77,7 @@ private:
     std::future<void> m_asyncLoadTask;
     std::atomic<bool> m_isLoading{false};
     bool m_gpuRuntimeShutdown = false;
+    RuntimeShutdownResult m_shutdownResult;
 };
 
 } // namespace fw

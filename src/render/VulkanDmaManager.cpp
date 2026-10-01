@@ -82,6 +82,7 @@ void VulkanDmaManager::Drain() {
 
     for (auto& transfer : m_pendingTransfers) {
         if (transfer.cmd != VK_NULL_HANDLE) {
+            --m_liveCommandBuffers;  // C4: decrementa al momento della reale liberazione
             vkFreeCommandBuffers(m_device, m_transferPool, 1, &transfer.cmd);
             transfer.cmd = VK_NULL_HANDLE;
         }
@@ -121,6 +122,7 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
     while (it != m_pendingTransfers.end()) {
         if (completedValue >= it->timelineId) {
             vkFreeCommandBuffers(m_device, m_transferPool, 1, &it->cmd);
+            --m_liveCommandBuffers;  // C4: decrementa al momento della reale liberazione
             it = m_pendingTransfers.erase(it);
         } else {
             ++it;
@@ -157,6 +159,7 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
         std::cerr << "[VulkanDmaManager] ERROR: vkAllocateCommandBuffers fallito con codice " << resAlloc << "!\n";
         return 0;
     }
+    ++m_liveCommandBuffers;  // C4: incrementa solo dopo allocazione verificata
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;

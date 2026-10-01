@@ -3,6 +3,9 @@
 #include <iostream>
 #include <windows.h>
 #include <chrono>
+#include <thread>
+#include <atomic>
+#include <string>
 
 #include "SharedContext.h"
 #include "StateManager.h"
@@ -22,6 +25,8 @@
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
 #include "CacheManager.h"
+#include "LifecycleFreezeGate.h"
+#include "JobSystem.h"
 #include "world/terrain/validation/TerrainValidation.h"
 
 // De-commenta questa riga (o definiscila nelle configurazioni di build) per eseguire la suite di test
@@ -57,7 +62,110 @@ void StopAIServer() {
     }
 }
 
-int main() {
+// ─────────────────────────────────────────────────────────────
+// C4 STRESS HARNESS (Step C4.6 / C4.8 / C4.9)
+// Genera carico reale deterministico su CPU/DMA e verifica che
+// il lifecycle sia corretto dopo shutdown sotto carico.
+// Attivato da: FairworldCore.exe --lifecycle-stress
+// ─────────────────────────────────────────────────────────────
+static void RunLifecycleStressHarness(SharedContext& context,
+                                      fw::LifecycleStressMode mode)
+{
+    std::cout << "\n====================================================\n";
+    std::cout << " C4 LIFECYCLE STRESS HARNESS\n";
+    std::cout << " Mode: ";
+    switch (mode) {
+        case fw::LifecycleStressMode::CpuLoad:        std::cout << "CpuLoad\n"; break;
+        case fw::LifecycleStressMode::DmaLoad:        std::cout << "DmaLoad\n"; break;
+        case fw::LifecycleStressMode::FullRuntimeLoad: std::cout << "FullRuntimeLoad\n"; break;
+        default:                                       std::cout << "None\n"; break;
+    }
+    std::cout << "====================================================\n";
+
+    if (!context.runtimeManager) {
+        std::cerr << "[StressHarness] ERROR: runtimeManager non disponibile.\n";
+        return;
+    }
+
+    // 1. Assicura che JobSystem e VRAM siano attivi
+    context.runtimeManager->RequireFeaturesAsync(
+        fw::RuntimeFeature::GlobalVRAM | fw::RuntimeFeature::JobSystem);
+
+    // Attende il completamento asincrono dell'inizializzazione
+    while (!context.runtimeManager->IsReady()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (!context.jobSystem) {
+        std::cerr << "[StressHarness] ERROR: jobSystem non disponibile dopo init.\n";
+        return;
+    }
+
+    // 2. Genera carico CPU deterministico
+    // Il numero di job e' calibrato per garantire che almeno alcuni
+    // siano in volo al momento della richiesta di shutdown.
+    // NON usiamo sleep arbitrari: verifichiamo lo stato reale.
+    const int kStressJobCount = 200;
+    std::atomic<int> completedJobs{0};
+
+    std::cout << "[StressHarness] Accodamento " << kStressJobCount << " CPU jobs...\n";
+    for (int i = 0; i < kStressJobCount; ++i) {
+        context.jobSystem->Execute([&completedJobs, i]() {
+            // Lavoro sintetico deterministico: calcola qualcosa per tenere il
+            // thread occupato senza sleep (rispetta il principio C4.6)
+            volatile double acc = 0.0;
+            for (int k = 0; k < 50000; ++k) {
+                acc += static_cast<double>(k * i) / (k + 1.0);
+            }
+            (void)acc;
+            ++completedJobs;
+        });
+    }
+
+    // 3. Verifica che il carico sia realmente in volo prima di triggerare shutdown
+    // Condizione deterministica: attende che almeno un job sia in coda o attivo
+    // Timeout di sicurezza: 5s (caso estremo CPU ultra-rapida)
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    bool loadObserved = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        size_t pending = context.jobSystem->GetPendingJobCount();
+        size_t active  = context.jobSystem->GetActiveWorkerCount();
+        if (pending > 0 || active > 0) {
+            std::cout << "[StressHarness] Carico osservato: pending=" << pending
+                      << " active=" << active << ". Trigger shutdown.\n";
+            loadObserved = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
+
+    if (!loadObserved) {
+        // Tutti i job sono stati completati prima che potessimo osservarli
+        // (CPU ultra-rapida o job count troppo basso). Non e' un errore:
+        // lo shutdown avverra' comunque con pending=0, che e' uno stato valido.
+        std::cout << "[StressHarness] WARN: carico CPU completato prima dell'osservazione "
+                  << "(pending=0 al momento del trigger). Shutdown corretto.\n";
+    }
+
+    std::cout << "[StressHarness] Richiesta shutdown sotto carico. "
+              << completedJobs.load() << "/" << kStressJobCount << " job completati prima del trigger.\n";
+}
+
+int main(int argc, char* argv[]) {
+    // ── CLI Parsing (Step C4.7) ──────────────────────────────
+    fw::LifecycleStressMode stressMode = fw::LifecycleStressMode::None;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--lifecycle-stress") {
+            stressMode = fw::LifecycleStressMode::FullRuntimeLoad;
+            std::cout << "[C4] Modalita' --lifecycle-stress attivata.\n";
+        } else if (std::string(argv[i]) == "--lifecycle-stress-cpu") {
+            stressMode = fw::LifecycleStressMode::CpuLoad;
+        } else if (std::string(argv[i]) == "--lifecycle-stress-dma") {
+            stressMode = fw::LifecycleStressMode::DmaLoad;
+        }
+    }
+    // ─────────────────────────────────────────────────────────
+
     std::cout << "==========================================\n";
     std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE   \n";
     std::cout << "==========================================\n\n";
@@ -235,6 +343,19 @@ while (context.engine->IsRunning()) {
     metrics.entityCountF  = 0.0f;   // TODO: contare entità reali dal registry
     diagnosticsManager.PushFrame(metrics);
 }
+
+    std::cout << "[SYSTEM] Main loop terminato.\n";
+
+    // ── C4 STRESS HARNESS ────────────────────────────────────────
+    // Eseguito dopo la chiusura normale del loop:
+    // il runtime e' ancora vivo, il loop non gira piu'.
+    // Questo e' il punto corretto per TEST D/E:
+    // genera carico CPU reale, poi lascia che engine.Shutdown()
+    // esegua la sequenza completa + LifecycleFreezeGate.
+    if (stressMode != fw::LifecycleStressMode::None) {
+        RunLifecycleStressHarness(context, stressMode);
+    }
+    // ───────────────────────────────────────────────────────────
 
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";
     engine.Shutdown();

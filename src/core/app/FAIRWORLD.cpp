@@ -19,6 +19,7 @@
 #include "TexturePacker.h"
 #include "MaterialRegistry.h"
 #include "../render/VulkanResourceTracker.h"
+#include "LifecycleFreezeGate.h"
 #include "GameWorld.h"
 #include <chrono>
 #include <thread>
@@ -1885,19 +1886,51 @@ void FairWorldEngine::Shutdown() {
 
     if (m_sharedContext) {
         if (m_sharedContext->runtimeManager) {
+            // Sequenza interna:
+            //   StopAcceptingJobs -> Join -> CAPTURE CPU STATE -> delete jobSystem
+            //   Drain DMA         -> CAPTURE DMA STATE -> delete dmaManager
             m_sharedContext->runtimeManager->ShutdownGpuRuntime();
         }
     }
+
+    // Nullifica i puntatori GameWorld nel context PRIMA del Runtime Gate
+    // per rendere gameWorldReleased osservabile.
+    // (m_forgeMaster e' ancora vivo come unique_ptr: viene distrutto nel ~FairWorldEngine
+    //  DOPO Shutdown, ma il context non deve avere un puntatore dangling.)
+    if (m_sharedContext) {
+        m_sharedContext->gameWorld  = nullptr;
+        m_sharedContext->forgeWorld = nullptr;
+    }
+
+    // ── RUNTIME LIFECYCLE GATE (C4) ───────────────────────────
+    // Posizione: DOPO ShutdownGpuRuntime() -> CPU/DMA state catturato
+    //            PRIMA di RenderManager::Shutdown() -> semaphore RenderManager
+    //            ancora legittimamente vivi (NON inclusi in questo gate)
+    // Legge RuntimeShutdownResult: nessun nullptr == PASS implicito.
+    fw::LifecycleFreezeGate::RunRuntimeGate(m_sharedContext);
+    // ─────────────────────────────────────────────────────────
 
     if (m_isVrMode) {
         m_xrManager->Shutdown();
     }
     m_windowManager->Shutdown();
     m_renderManager->Shutdown();
-    
+    // A questo punto i semaphore del RenderManager sono stati distrutti
+    // e TrackDestroy e' stato chiamato per ciascuno.
+
+    // ── FINAL VULKAN OWNERSHIP GATE (C4) ─────────────────────
+    // Posizione: DOPO RenderManager::Shutdown() -> tutti i semaphore FAIRWORLD distrutti
+    //            PRIMA di VulkanResourceTracker::Shutdown() -> tracker ancora vivo
+    // Verifica: GetLiveSemaphoreCount() == 0
+    fw::LifecycleFreezeGate::RunVulkanFinalGate();
+    // ─────────────────────────────────────────────────────────
+
+    // VulkanResourceTracker::Shutdown() stampa il report dettagliato finale
+    // (BY OWNER, LIVE OBJECTS se presenti) -- complementare ai due gate sopra.
     fw::VulkanResourceTracker::Get().Shutdown();
     m_isRunning = false;
 }
+
 
 void FairWorldEngine::SetRenderCallback(std::function<void()> callback) {
     if (m_windowManager) {

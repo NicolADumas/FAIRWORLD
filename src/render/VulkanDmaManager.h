@@ -2,6 +2,7 @@
 #include <vector>
 #include <cstdint>
 #include <mutex>
+#include <atomic>
 #include "VramSlabAllocator.h"
 
 // Forward declaration per i tipi Vulkan
@@ -48,8 +49,9 @@ public:
     size_t GetPendingTransferCount() const;
     // Dopo Drain+Cleanup, m_device viene invalidato: nessuna nuova submission possibile
     bool   IsAcceptingSubmissions() const { return m_device != nullptr; }
-    // I command buffer live corrispondono 1:1 ai pending transfers
-    size_t GetLiveCommandBufferCount() const { return GetPendingTransferCount(); }
+    // Vero counter atomico: incrementato dopo vkAllocateCommandBuffers riuscita,
+    // decrementato in ogni vkFreeCommandBuffers (Drain e GC in UploadMeshAsync).
+    size_t GetLiveCommandBufferCount() const { return m_liveCommandBuffers.load(); }
 
     // Funzione chiamata dal Worker Thread (Job System).
     // Esegue una copia Zero-Copy in RAM (Write-Combine burst) verso lo Staging Buffer,
@@ -93,6 +95,10 @@ private:
         VkCommandBuffer cmd;
     };
     std::vector<PendingTransfer> m_pendingTransfers;
+
+    // C4: vero counter dei command buffer live — incrementato/decrementato
+    // in ogni percorso di alloc/free (nessun percorso alternativo esiste).
+    std::atomic<uint32_t> m_liveCommandBuffers{0};
 };
 
 } // namespace fw
