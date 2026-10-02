@@ -319,6 +319,7 @@ struct SpawnPoint {
 struct PlanetBaseTerrain {
     MapRegionType biome = MapRegionType::Flat; // Updated biome
     TerrainGenerationRules baseRules;
+    uint32_t resolvedSurfaceBlock = 1;
 };
 
 struct PlanetMap {

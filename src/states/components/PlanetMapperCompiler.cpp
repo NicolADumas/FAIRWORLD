@@ -32,6 +32,14 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
     planet.regions.clear();
     auto& doc = context->projectManager->GetDocumentMutable();
 
+    if (context && context->blockRegistry) {
+        if (!planet.baseTerrain.baseRules.layers.layers.empty()) {
+            planet.baseTerrain.resolvedSurfaceBlock = context->blockRegistry->GetBlock(planet.baseTerrain.baseRules.layers.layers[0].blockName).id;
+        } else {
+            planet.baseTerrain.resolvedSurfaceBlock = 1;
+        }
+    }
+
     for (const auto& inst : planet.chunkInstances) {
         if (!inst.isActive) continue;
 
@@ -47,6 +55,10 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
                     baseRegion.type = tmpl.baseType;
                     baseRegion.overrides.height = fw::HeightRuleOverrides();
                     baseRegion.overrides.height->frequency = tmpl.baseRules.height.frequency;
+                    
+                    baseRegion.overrides.layers = fw::LayerRuleOverrides();
+                    baseRegion.overrides.layers->layers = tmpl.baseRules.layers.layers;
+                    
                     baseRegion.seed = tmpl.seed;
 
                     if (inst.isGridAligned && inst.gridX != -1 && inst.gridY != -1) {
@@ -100,8 +112,21 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
             gr.gravityMod     = 1.0f;
             gr.isGridAligned  = r.isGridAligned ? 1u : 0u;
             gr.faceIndex      = (uint32_t)r.faceIndex;
-            gr.surfaceBlock   = 0;
-            gr.subsurfaceBlock = 0;
+            
+            uint32_t surfaceId = 1;
+            uint32_t subSurfaceId = 1;
+            if (r.overrides.layers && r.overrides.layers->layers && !r.overrides.layers->layers->empty()) {
+                if (context && context->blockRegistry) {
+                    surfaceId = context->blockRegistry->GetBlock(r.overrides.layers->layers->at(0).blockName).id;
+                    if (r.overrides.layers->layers->size() > 1) {
+                        subSurfaceId = context->blockRegistry->GetBlock(r.overrides.layers->layers->at(1).blockName).id;
+                    } else {
+                        subSurfaceId = surfaceId;
+                    }
+                }
+            }
+            gr.surfaceBlock   = surfaceId;
+            gr.subsurfaceBlock = subSurfaceId;
             gpuRegions.push_back(gr);
         }
 
