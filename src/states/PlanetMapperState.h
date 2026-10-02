@@ -35,6 +35,7 @@ private:
 
     std::vector<fw::ChunkNode> m_planetRootNodes;
     std::vector<entt::entity> m_spawnPointMarkers;
+    std::vector<entt::entity> m_debugOrientationMarkers;
     entt::entity m_cursorMarker = entt::null;
     fw::SphericalLODSystem m_lodSystem;
 

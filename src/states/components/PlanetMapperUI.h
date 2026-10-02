@@ -17,6 +17,7 @@ struct PlanetMapperUIResult {
     bool goToPlayState = false;
     bool goToHubState = false;
     bool recenterCamera = false;
+    bool showOrientationDebug = false;
 };
 
 class PlanetMapperUI {
@@ -38,6 +39,7 @@ public:
 private:
     bool m_showPlacementTable = false;
     bool m_showSaveConfirmPopup = false;
+    bool m_showOrientationDebug = false;
     float m_saveFlashTimer = 0.0f;
     std::string m_saveFlashMsg;
 

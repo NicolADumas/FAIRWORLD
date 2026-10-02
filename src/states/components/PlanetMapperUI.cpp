@@ -291,6 +291,10 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
     ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 0.8f), "Drag mouse: ruota  |  Rotellina: zoom  |  W/S: zoom  |  A/D: ruota");
     ImGui::Separator();
     
+    ImGui::Checkbox("Show Orientation Debug", &m_showOrientationDebug);
+    result.showOrientationDebug = m_showOrientationDebug;
+    ImGui::Separator();
+    
     float pitchRad = glm::radians(orbitPitch);
     float yawRad   = glm::radians(orbitYaw);
     glm::vec3 camNorm;
@@ -372,16 +376,8 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
                                     
                                     float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
                                     float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
-                                    glm::vec3 dir(0.0f);
-                                    switch(f) {
-                                        case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                                        case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                                        case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                                        case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                                        case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                                        case 5: dir = glm::vec3(cx, -1.0f, cy); break;
-                                    }
-                                    dir = glm::normalize(dir);
+                                    glm::vec2 uv((cx + 1.0f) * 0.5f, (1.0f - cy) * 0.5f);
+                                    glm::vec3 dir = fw::CubeSphereMapping::FaceUVToDirection(f, uv);
                                     addInst.eulerAngles.x = glm::degrees(asin(dir.y));
                                     addInst.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
                                     addInst.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 0.6f;
@@ -468,16 +464,8 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
                                                 
                                                 float cx = (col + 0.5f) / N_lato * 2.0f - 1.0f;
                                                 float cy = 1.0f - (row + 0.5f) / N_lato * 2.0f;
-                                                glm::vec3 dir(0.0f);
-                                                switch(f) {
-                                                    case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                                                    case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                                                    case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                                                    case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                                                    case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                                                    case 5: dir = glm::vec3(cx, -1.0f, cy); break;
-                                                }
-                                                dir = glm::normalize(dir);
+                                                glm::vec2 uv((cx + 1.0f) * 0.5f, (1.0f - cy) * 0.5f);
+                                                glm::vec3 dir = fw::CubeSphereMapping::FaceUVToDirection(f, uv);
                                                 toAdd.eulerAngles.x = glm::degrees(asin(dir.y));
                                                 toAdd.eulerAngles.y = glm::degrees(atan2(dir.z, dir.x));
                                                 toAdd.angularRadius = (glm::pi<float>() / 2.0f) / N_lato * 0.6f;

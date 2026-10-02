@@ -1,7 +1,57 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 
 namespace fw {
+
+    struct PlanetID {
+        uint32_t value;
+        bool operator==(const PlanetID& other) const { return value == other.value; }
+        bool operator!=(const PlanetID& other) const { return value != other.value; }
+        static constexpr PlanetID Invalid() { return {0xFFFFFFFF}; }
+        bool IsValid() const { return value != 0xFFFFFFFF; }
+    };
+
+    enum class CubeFace : uint8_t {
+        PositiveZ = 0,
+        NegativeZ = 1,
+        PositiveX = 2,
+        NegativeX = 3,
+        PositiveY = 4,
+        NegativeY = 5
+    };
+
+    struct PlanetChunkCoord {
+        PlanetID planet;
+        CubeFace face;
+        int32_t col;
+        int32_t row;
+        int32_t layer;
+
+        bool operator==(const PlanetChunkCoord& other) const {
+            return planet == other.planet &&
+                   face == other.face &&
+                   col == other.col &&
+                   row == other.row &&
+                   layer == other.layer;
+        }
+
+        bool operator!=(const PlanetChunkCoord& other) const {
+            return !(*this == other);
+        }
+    };
+
+    struct PlanetChunkCoordHash {
+        std::size_t operator()(const PlanetChunkCoord& coord) const {
+            std::size_t h = 17;
+            h = h * 31 + std::hash<uint32_t>()(coord.planet.value);
+            h = h * 31 + std::hash<uint8_t>()(static_cast<uint8_t>(coord.face));
+            h = h * 31 + std::hash<int32_t>()(coord.col);
+            h = h * 31 + std::hash<int32_t>()(coord.row);
+            h = h * 31 + std::hash<int32_t>()(coord.layer);
+            return h;
+        }
+    };
 
     enum class PlanetSize : uint8_t {
         Tiny = 0,   // 3x3

@@ -246,16 +246,8 @@ void PlanetMapperState::UpdateApp(float dt) {
                 float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
                 float cx = sp.localX / R;
                 float cy = sp.localZ / R;
-                glm::vec3 dir(0.0f);
-                switch (sp.faceIndex) {
-                    case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                    case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                    case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                    case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                    case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                    case 5: dir = glm::vec3(cx, -1.0f, cy); break;
-                }
-                dir = glm::normalize(dir);
+                glm::vec2 uv((cx + 1.0f) * 0.5f, (1.0f - cy) * 0.5f);
+                glm::vec3 dir = fw::CubeSphereMapping::FaceUVToDirection(sp.faceIndex, uv);
                 glm::vec3 pos = dir * (R + sp.heightOffset);
                 
                 auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(ent);
@@ -283,6 +275,70 @@ void PlanetMapperState::UpdateApp(float dt) {
                 auto& mesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(m_cursorMarker);
                 mesh.type = fw::MeshType::Standard;
                 m_previewWorld->UploadMeshToVram(m_cursorMarker);
+            }
+            
+            // D4 Debug Orientation Markers
+            if (uiResult.showOrientationDebug) {
+                if (m_debugOrientationMarkers.empty()) {
+                    const char* markerNames[] = { "NORD (+Y)", "SUD (-Y)", "EST (+X)", "OVEST (-X)", "+Z", "-Z" };
+                    glm::vec3 markerDirs[] = {
+                        glm::vec3(0, 1, 0), glm::vec3(0, -1, 0),
+                        glm::vec3(1, 0, 0), glm::vec3(-1, 0, 0),
+                        glm::vec3(0, 0, 1), glm::vec3(0, 0, -1)
+                    };
+                    glm::vec4 markerColors[] = {
+                        glm::vec4(0,1,0,1), glm::vec4(0,0.5,0,1),
+                        glm::vec4(1,0,0,1), glm::vec4(0.5,0,0,1),
+                        glm::vec4(0,0,1,1), glm::vec4(0,0,0.5,1)
+                    };
+                    
+                    for (int i = 0; i < 6; ++i) {
+                        entt::entity newMarker = m_previewWorld->CreatePrimitive(markerNames[i], fw::Vec3(0,0,0), "obelisk");
+                        auto& mesh = m_previewWorld->GetRegistry().get<fw::MeshComponent>(newMarker);
+                        mesh.type = fw::MeshType::Standard;
+                        mesh.colorOverride[0] = markerColors[i].r;
+                        mesh.colorOverride[1] = markerColors[i].g;
+                        mesh.colorOverride[2] = markerColors[i].b;
+                        mesh.colorOverride[3] = markerColors[i].a;
+                        m_previewWorld->UploadMeshToVram(newMarker);
+                        m_debugOrientationMarkers.push_back(newMarker);
+                        
+                        auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(newMarker);
+                        float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
+                        glm::vec3 pos = markerDirs[i] * (R + 10.0f);
+                        trans.location = fw::Vec3(pos.x, pos.y, pos.z);
+                        
+                        glm::vec3 worldUp = markerDirs[i];
+                        glm::vec3 forward(1.0f, 0.0f, 0.0f);
+                        if (glm::abs(glm::dot(worldUp, forward)) > 0.99f) forward = glm::vec3(0.0f, 0.0f, 1.0f);
+                        glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
+                        forward = glm::normalize(glm::cross(right, worldUp));
+                        glm::mat3 rotMat(right, worldUp, forward);
+                        glm::quat oq = glm::quat_cast(rotMat);
+                        trans.rotation = fw::Quat(oq.x, oq.y, oq.z, oq.w);
+                        trans.scale = fw::Vec3(2.0f, 10.0f, 2.0f);
+                    }
+                } else {
+                    float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
+                    glm::vec3 markerDirs[] = {
+                        glm::vec3(0, 1, 0), glm::vec3(0, -1, 0),
+                        glm::vec3(1, 0, 0), glm::vec3(-1, 0, 0),
+                        glm::vec3(0, 0, 1), glm::vec3(0, 0, -1)
+                    };
+                    for (int i = 0; i < 6; ++i) {
+                        if (!m_previewWorld->GetRegistry().valid(m_debugOrientationMarkers[i])) continue;
+                        auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(m_debugOrientationMarkers[i]);
+                        glm::vec3 pos = markerDirs[i] * (R + 10.0f);
+                        trans.location = fw::Vec3(pos.x, pos.y, pos.z);
+                    }
+                }
+            } else {
+                if (!m_debugOrientationMarkers.empty()) {
+                    for (auto ent : m_debugOrientationMarkers) {
+                        if (m_previewWorld->GetRegistry().valid(ent)) m_previewWorld->DestroyEntity(ent);
+                    }
+                    m_debugOrientationMarkers.clear();
+                }
             }
             
             if (m_previewWorld->GetRegistry().valid(m_cursorMarker)) {

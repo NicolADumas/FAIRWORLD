@@ -5,6 +5,7 @@
 #include "vulkan/ChunkCullingTypes.h"
 #include "BlockRegistry.h"
 #include "JobSystem.h"
+#include "world/CubeSphereMapping.h"
 
 PlanetMapperCompiler::PlanetMapperCompiler() {}
 
@@ -110,32 +111,20 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
         int N_lato = fw::PlanetMath::GetFaceResolution(planet.planetSize);
         float R = fw::PlanetMath::GetPlanetRadius(planet.planetSize);
         
-        auto getFacePos = [](int face, float u, float v) -> glm::vec3 {
-            switch (face) {
-                case 0: return glm::vec3(u, v, 1.0f);
-                case 1: return glm::vec3(-u, v, -1.0f);
-                case 2: return glm::vec3(1.0f, v, -u);
-                case 3: return glm::vec3(-1.0f, v, u);
-                case 4: return glm::vec3(u, 1.0f, -v);
-                case 5: return glm::vec3(u, -1.0f, v);
-            }
-            return glm::vec3(0.0f);
-        };
-        
         for (int i = 0; i < (int)planet.chunkInstances.size(); ++i) {
             const auto& inst = planet.chunkInstances[i];
             if (!inst.isActive) continue;
             
-            float u0 = (inst.gridX) / (float)N_lato * 2.0f - 1.0f;
-            float u1 = (inst.gridX + 1) / (float)N_lato * 2.0f - 1.0f;
-            float v0 = 1.0f - (inst.gridY + 1) / (float)N_lato * 2.0f;
-            float v1 = 1.0f - (inst.gridY) / (float)N_lato * 2.0f;
+            float uv_x0 = (inst.gridX) / (float)N_lato;
+            float uv_x1 = (inst.gridX + 1) / (float)N_lato;
+            float uv_y0 = (inst.gridY + 1) / (float)N_lato;
+            float uv_y1 = (inst.gridY) / (float)N_lato;
             
             ChunkData cd{};
-            cd.p00 = glm::vec4(getFacePos(inst.faceIndex, u0, v0) * R, 0.0f);
-            cd.p10 = glm::vec4(getFacePos(inst.faceIndex, u1, v0) * R, 0.0f);
-            cd.p01 = glm::vec4(getFacePos(inst.faceIndex, u0, v1) * R, 0.0f);
-            cd.p11 = glm::vec4(getFacePos(inst.faceIndex, u1, v1) * R, 0.0f);
+            cd.p00 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x0, uv_y0)) * R, 0.0f);
+            cd.p10 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x1, uv_y0)) * R, 0.0f);
+            cd.p01 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x0, uv_y1)) * R, 0.0f);
+            cd.p11 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x1, uv_y1)) * R, 0.0f);
             cd.center = glm::vec3(cd.p00 + cd.p10 + cd.p01 + cd.p11) * 0.25f;
             cd.radius = glm::distance(glm::vec3(cd.p00), cd.center);
             cd.chunkID = (uint32_t)i;
@@ -159,28 +148,16 @@ void PlanetMapperCompiler::CompileChunk(SharedContext* context, fw::PlanetMap& p
     int N_lato = fw::PlanetMath::GetFaceResolution(planet.planetSize);
     float R = fw::PlanetMath::GetPlanetRadius(planet.planetSize);
     
-    auto getFacePos = [](int face, float u, float v) -> glm::vec3 {
-        switch (face) {
-            case 0: return glm::vec3(u, v, 1.0f);
-            case 1: return glm::vec3(-u, v, -1.0f);
-            case 2: return glm::vec3(1.0f, v, -u);
-            case 3: return glm::vec3(-1.0f, v, u);
-            case 4: return glm::vec3(u, 1.0f, -v);
-            case 5: return glm::vec3(u, -1.0f, v);
-        }
-        return glm::vec3(0.0f);
-    };
-    
-    float u0 = (inst.gridX) / (float)N_lato * 2.0f - 1.0f;
-    float u1 = (inst.gridX + 1) / (float)N_lato * 2.0f - 1.0f;
-    float v0 = 1.0f - (inst.gridY + 1) / (float)N_lato * 2.0f;
-    float v1 = 1.0f - (inst.gridY) / (float)N_lato * 2.0f;
+    float uv_x0 = (inst.gridX) / (float)N_lato;
+    float uv_x1 = (inst.gridX + 1) / (float)N_lato;
+    float uv_y0 = (inst.gridY + 1) / (float)N_lato;
+    float uv_y1 = (inst.gridY) / (float)N_lato;
     
     ChunkData cd{};
-    cd.p00 = glm::vec4(getFacePos(inst.faceIndex, u0, v0) * R, 0.0f);
-    cd.p10 = glm::vec4(getFacePos(inst.faceIndex, u1, v0) * R, 0.0f);
-    cd.p01 = glm::vec4(getFacePos(inst.faceIndex, u0, v1) * R, 0.0f);
-    cd.p11 = glm::vec4(getFacePos(inst.faceIndex, u1, v1) * R, 0.0f);
+    cd.p00 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x0, uv_y0)) * R, 0.0f);
+    cd.p10 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x1, uv_y0)) * R, 0.0f);
+    cd.p01 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x0, uv_y1)) * R, 0.0f);
+    cd.p11 = glm::vec4(fw::CubeSphereMapping::FaceUVToCubeDir(inst.faceIndex, glm::vec2(uv_x1, uv_y1)) * R, 0.0f);
     cd.center = glm::vec3(cd.p00 + cd.p10 + cd.p01 + cd.p11) * 0.25f;
     cd.radius = glm::distance(glm::vec3(cd.p00), cd.center);
     cd.chunkID = chunkIndex;
