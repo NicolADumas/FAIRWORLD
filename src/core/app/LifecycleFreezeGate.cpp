@@ -39,6 +39,13 @@ static void PrintRowBool(const char* label, bool value, bool passWhenTrue)
               << "   " << PassFail(value == passWhenTrue) << "\n";
 }
 
+static void PrintRowNotCreated(const char* label, const char* reason = "not created")
+{
+    std::cout << "      " << std::left << std::setw(30) << label
+              << std::right << std::setw(5) << "N/A"
+              << "   " << PASS << " (" << reason << ")\n";
+}
+
 // ─────────────────────────────────────────────────────────────
 //  RUNTIME GATE — CollectRuntime
 //
@@ -76,6 +83,8 @@ RuntimeLifecycleSnapshot LifecycleFreezeGate::CollectRuntime(SharedContext* cont
     }
 
     // ── [1] PRODUCERS ──────────────────────────────────────────
+    snap.jobSystemWasCreated = result.jobSystemWasCreated;
+    snap.dmaManagerWasCreated = result.dmaManagerWasCreated;
     snap.cpuStopCalled  = result.cpuStopCalled;
     snap.dmaDrainCalled = result.dmaDrainCalled;
 
@@ -104,14 +113,16 @@ bool LifecycleFreezeGate::EvaluateRuntime(const RuntimeLifecycleSnapshot& snap)
 {
     if (!snap.shutdownResultAvailable) return false;
 
+    bool cpuPass = !snap.jobSystemWasCreated || 
+                   (snap.cpuStopCalled && snap.pendingCpuJobs == 0 && snap.activeWorkers == 0);
+                   
+    bool dmaPass = !snap.dmaManagerWasCreated || 
+                   (snap.dmaDrainCalled && snap.pendingDmaTransfers == 0 && snap.liveDmaCommandBuffers == 0);
+
     return
-        snap.cpuStopCalled                    &&
-        snap.dmaDrainCalled                   &&
-        snap.pendingCpuJobs        == 0       &&
-        snap.activeWorkers         == 0       &&
-        snap.pendingDmaTransfers   == 0       &&
-        snap.liveDmaCommandBuffers == 0       &&
-        snap.runtimeShutdownComplete          &&
+        cpuPass &&
+        dmaPass &&
+        snap.runtimeShutdownComplete &&
         snap.gameWorldReleased;
     // cacheInvalidated escluso intenzionalmente: invariante non misurabile
 }
@@ -138,16 +149,34 @@ void LifecycleFreezeGate::PrintRuntimeReport(const RuntimeLifecycleSnapshot& sna
 
     // ── [1/3] PRODUCERS
     std::cout << "[1/3] PRODUCERS\n";
-    PrintRowBool("CPU StopAcceptingJobs called", snap.cpuStopCalled,  true);
-    PrintRowBool("DMA Drain called",             snap.dmaDrainCalled, true);
+    if (snap.jobSystemWasCreated) {
+        PrintRowBool("CPU StopAcceptingJobs called", snap.cpuStopCalled,  true);
+    } else {
+        PrintRowNotCreated("CPU JobSystem");
+    }
+    if (snap.dmaManagerWasCreated) {
+        PrintRowBool("DMA Drain called",             snap.dmaDrainCalled, true);
+    } else {
+        PrintRowNotCreated("DMA Manager");
+    }
     std::cout << "\n";
 
     // ── [2/3] ASYNC SUBSYSTEMS
     std::cout << "[2/3] ASYNC SUBSYSTEMS (captured before delete)\n";
-    PrintRow("Pending CPU jobs",         snap.pendingCpuJobs,        snap.pendingCpuJobs == 0);
-    PrintRow("Active workers",           snap.activeWorkers,         snap.activeWorkers == 0);
-    PrintRow("Pending DMA transfers",    snap.pendingDmaTransfers,   snap.pendingDmaTransfers == 0);
-    PrintRow("Live DMA command buffers", snap.liveDmaCommandBuffers, snap.liveDmaCommandBuffers == 0);
+    if (snap.jobSystemWasCreated) {
+        PrintRow("Pending CPU jobs",         snap.pendingCpuJobs,        snap.pendingCpuJobs == 0);
+        PrintRow("Active workers",           snap.activeWorkers,         snap.activeWorkers == 0);
+    } else {
+        PrintRowNotCreated("Pending CPU jobs", "subsystem inactive");
+        PrintRowNotCreated("Active workers", "subsystem inactive");
+    }
+    if (snap.dmaManagerWasCreated) {
+        PrintRow("Pending DMA transfers",    snap.pendingDmaTransfers,   snap.pendingDmaTransfers == 0);
+        PrintRow("Live DMA command buffers", snap.liveDmaCommandBuffers, snap.liveDmaCommandBuffers == 0);
+    } else {
+        PrintRowNotCreated("Pending DMA transfers", "subsystem inactive");
+        PrintRowNotCreated("Live DMA command buffers", "subsystem inactive");
+    }
     std::cout << "\n";
 
     // ── [3/3] RUNTIME STATE
@@ -169,7 +198,7 @@ void LifecycleFreezeGate::PrintRuntimeReport(const RuntimeLifecycleSnapshot& sna
     // ── RISULTATO
     std::cout << "====================================================\n";
     if (frozen) {
-        std::cout << " RUNTIME LIFECYCLE: FROZEN (100% PASS)\n";
+        std::cout << " RUNTIME LIFECYCLE: FROZEN (100% APPLICABLE CHECKS PASS)\n";
     } else {
         std::cout << " RUNTIME LIFECYCLE: UNSTABLE (FAIL)\n";
     }

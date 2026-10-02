@@ -36,6 +36,9 @@ struct RuntimeShutdownResult;  // forward — definito in RuntimeManager.h
 // ─────────────────────────────────────────────────────────────
 struct RuntimeLifecycleSnapshot
 {
+    bool   jobSystemWasCreated       = false;
+    bool   dmaManagerWasCreated      = false;
+
     // [1] PRODUCERS — dallo stato reale catturato
     bool   cpuStopCalled             = false;  // StopAcceptingJobs fu chiamato
     bool   dmaDrainCalled            = false;  // Drain() fu chiamato

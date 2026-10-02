@@ -25,6 +25,9 @@ void RuntimeManager::ShutdownGpuRuntime() {
     if (m_gpuRuntimeShutdown) return;
     m_gpuRuntimeShutdown = true;
 
+    m_shutdownResult.jobSystemWasCreated = m_jobSystemWasCreated;
+    m_shutdownResult.dmaManagerWasCreated = m_dmaManagerWasCreated;
+
     if (m_context) {
         if (m_context->jobSystem) {
             std::cout << "\n[RuntimeShutdown]\nStop accepting jobs\n";
@@ -110,6 +113,7 @@ bool RuntimeManager::IsReady() const {
 void RuntimeManager::EnsureGlobalVRAM() {
     std::cout << "[RuntimeManager] Inizializzazione Lazy VRAM Allocator...\n";
     if (m_context && !m_context->dmaManager) {
+        m_dmaManagerWasCreated = true;
         m_context->dmaManager = new fw::VulkanDmaManager();
         if (m_context->engine && m_context->engine->GetRenderManager()) {
             auto* rm = m_context->engine->GetRenderManager();
@@ -149,6 +153,7 @@ void RuntimeManager::EnsureGlobalVRAM() {
 void RuntimeManager::EnsureJobSystem() {
     std::cout << "[RuntimeManager] Inizializzazione Pool Thread Asincroni...\n";
     if (m_context && !m_context->jobSystem) {
+        m_jobSystemWasCreated = true;
         m_context->jobSystem = new fw::JobSystem();
         m_context->jobSystem->Initialize();
     }

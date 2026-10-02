@@ -35,11 +35,13 @@ inline bool HasFeature(uint32_t mask, RuntimeFeature feature) {
 struct RuntimeShutdownResult
 {
     // CPU: catturato dopo StopAcceptingJobs() + Shutdown() (join workers)
+    bool   jobSystemWasCreated = false;
     bool   cpuStopCalled      = false;   // StopAcceptingJobs e' stato chiamato
     size_t pendingCpuJobs     = SIZE_MAX; // SIZE_MAX = non catturato
     size_t activeWorkers      = SIZE_MAX;
 
     // DMA: catturato dopo Drain(), prima di delete
+    bool   dmaManagerWasCreated = false;
     bool   dmaDrainCalled     = false;
     size_t pendingDmaTransfers     = SIZE_MAX;
     size_t liveDmaCommandBuffers   = SIZE_MAX;
@@ -77,6 +79,8 @@ private:
     std::future<void> m_asyncLoadTask;
     std::atomic<bool> m_isLoading{false};
     bool m_gpuRuntimeShutdown = false;
+    bool m_jobSystemWasCreated = false;
+    bool m_dmaManagerWasCreated = false;
     RuntimeShutdownResult m_shutdownResult;
 };
 
