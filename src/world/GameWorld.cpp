@@ -122,6 +122,11 @@ void GameWorld::ClearWorld(bool saveToDisk) {
         m_context->jobSystem->WaitAll();
     }
     
+    // B5.4D3.1P2: Reset the cancellation token so that subsequent async meshing jobs are not aborted immediately
+    if (m_cancelToken) {
+        *m_cancelToken = false;
+    }
+    
     {
         std::lock_guard<std::mutex> lock(m_deferredMutex);
         for (auto& def : m_deferredMeshes) {

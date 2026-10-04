@@ -45,6 +45,7 @@ private:
     int m_brushSize = 1;
     fw::MapRegion m_brushSettings;
     bool m_isBrushModeActive = false; // Nuovo toggle per uscire dal pennello continuo
+    bool m_zoomModeActive = false;
     bool m_autoRebuildPreview = false;
     bool m_showSaveConfirmPopup = false;
     
@@ -58,6 +59,11 @@ private:
     std::string m_rebuildReason = "Rule Changed";
     // Stroke tracking
     std::unordered_set<glm::ivec2> m_strokeProcessedCells;
+
+    // B5.4D3.1P3b: Real preview bounds
+    glm::vec2 m_previewMin = glm::vec2(0.0f);
+    glm::vec2 m_previewMax = glm::vec2(0.0f);
+    bool m_previewBoundsValid = false;
     bool m_isStrokeActive = false;
     fw::PlanetSize m_previewPlanetSize = fw::PlanetSize::Medium;
 };

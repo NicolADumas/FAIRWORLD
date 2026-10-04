@@ -7,7 +7,18 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 LRESULT CALLBACK WindowManager::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam))
+    if (uMsg == WM_MOUSEWHEEL) {
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        std::cout << "[WheelTrace][WIN32] delta=" << delta << "\n";
+    }
+
+    LRESULT imguiRes = ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
+    
+    if (uMsg == WM_MOUSEWHEEL) {
+        std::cout << "[WheelTrace][IMGUI_BACKEND] forwarded delta=" << GET_WHEEL_DELTA_WPARAM(wParam) << " res=" << imguiRes << "\n";
+    }
+
+    if (imguiRes)
         return true;
 
     WindowManager* wm = reinterpret_cast<WindowManager*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));

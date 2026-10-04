@@ -214,6 +214,15 @@ void ChunkEditorState::UpdateApp(float dt) {
         }
     }
 
+
+
+    if (m_previewWorld) {
+        // Esegui la generazione tramite il nuovo TerrainSolver
+        m_previewWorld->Update(dt);
+    }
+}
+
+void ChunkEditorState::RenderApp() {
     ImGuiIO& io = ImGui::GetIO();
     uint32_t w = 1920;
     uint32_t h = 1080;
@@ -222,7 +231,22 @@ void ChunkEditorState::UpdateApp(float dt) {
         h = m_context->engine->GetRenderManager()->GetWindowHeight();
     }
 
-    if (!io.WantCaptureMouse && io.MousePos.x >= w * 0.45f) {
+    // B5.4D3.1P3b: Real preview boundaries
+    bool previewHovered = false;
+    if (m_previewBoundsValid) {
+        previewHovered = io.MousePos.x >= m_previewMin.x && io.MousePos.x <= m_previewMax.x &&
+                         io.MousePos.y >= m_previewMin.y && io.MousePos.y <= m_previewMax.y;
+    }
+
+    if (io.MouseWheel != 0.0f) {
+        std::cout << "[ZoomWheelRaw] wheel=" << io.MouseWheel 
+                  << " mouse=(" << io.MousePos.x << ", " << io.MousePos.y << ")"
+                  << " zoomMode=" << m_zoomModeActive 
+                  << " wantCaptureMouse=" << io.WantCaptureMouse 
+                  << " previewHovered=" << previewHovered << "\n";
+    }
+
+    if (!io.WantCaptureMouse && previewHovered) {
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
             m_orbitYaw -= io.MouseDelta.x * 0.5f;
             m_orbitPitch += io.MouseDelta.y * 0.5f;
@@ -237,12 +261,19 @@ void ChunkEditorState::UpdateApp(float dt) {
             m_orbitTarget += right * io.MouseDelta.x * 0.1f;
             m_orbitTarget -= up * io.MouseDelta.y * 0.1f;
         }
-        if (io.MouseWheel != 0.0f) {
+    }
+
+    // Explicit separate zoom routing
+    if (m_zoomModeActive && previewHovered && io.MouseWheel != 0.0f) {
+        if (!io.WantCaptureMouse) { // Only zoom if ImGui hasn't explicitly captured it for a slider/button
             float scrollSpeed = std::max(m_orbitDistance * 0.1f, 5.0f);
+            float oldDist = m_orbitDistance;
             m_orbitDistance -= io.MouseWheel * scrollSpeed;
-            m_orbitDistance = std::max(m_orbitDistance, 5.0f);
+            m_orbitDistance = std::clamp(m_orbitDistance, 5.0f, 2000.0f); 
+            std::cout << "[ZoomInput] wheel=" << io.MouseWheel << " distance=" << oldDist << " -> " << m_orbitDistance << "\n";
         }
     }
+
 
     float pitchRad = glm::radians(m_orbitPitch);
     float yawRad = glm::radians(m_orbitYaw);
@@ -262,13 +293,6 @@ void ChunkEditorState::UpdateApp(float dt) {
         m_context->activeCameraView.projectionMatrix[1][1] *= -1;
     }
 
-    if (m_previewWorld) {
-        // Esegui la generazione tramite il nuovo TerrainSolver
-        m_previewWorld->Update(dt);
-    }
-}
-
-void ChunkEditorState::RenderApp() {
     DrawUI();
 }
 
@@ -284,6 +308,11 @@ void ChunkEditorState::DrawUI() {
     ImGui::SetNextWindowSize(ImVec2(leftWidth, viewport->Size.y));
     ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | 
                                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
+
+    // B5.4D3.1P3b: Store precise bounds for the remaining 3D viewport area
+    m_previewMin = glm::vec2(viewport->Pos.x + leftWidth, viewport->Pos.y);
+    m_previewMax = glm::vec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y);
+    m_previewBoundsValid = true;
 
     ImGui::Begin("ChunkEditorLeftPanel", nullptr, windowFlags);
     
@@ -1039,9 +1068,31 @@ void ChunkEditorState::DrawUI() {
     ImGui::End();
 
     ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + leftWidth + 20.0f, viewport->Pos.y + 20.0f));
-    ImGui::Begin("OverlayVoxelPreview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBackground);
+    ImGui::Begin("OverlayVoxelPreview", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings);
     ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), ">>> ANTEPRIMA VOXEL 3D IN TEMPO REALE (CHUNK SELEZIONATO) <<<");
-    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 0.8f), "Trascina col mouse per ruotare ed esaminare | Rotellina per lo Zoom");
+    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 0.8f), "Trascina col mouse per ruotare ed esaminare | Rotellina per lo Zoom (se ZOOM ON)");
+    ImGui::End();
+
+    // B5.4D3.1P2: Explicit Zoom Mode Button
+    float zoomBtnWidth = 100.0f;
+    float zoomBtnHeight = 40.0f;
+    ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x - zoomBtnWidth - 20.0f, viewport->Pos.y + viewport->Size.y - zoomBtnHeight - 20.0f));
+    ImGui::Begin("OverlayZoomButton", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground);
+    
+    bool wasZoomActive = m_zoomModeActive;
+    if (wasZoomActive) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.6f, 0.15f, 1.0f));
+    }
+    
+    if (ImGui::Button(wasZoomActive ? "ZOOM ON" : "ZOOM OFF", ImVec2(zoomBtnWidth, zoomBtnHeight))) {
+        m_zoomModeActive = !m_zoomModeActive;
+    }
+    
+    if (wasZoomActive) {
+        ImGui::PopStyleColor(3);
+    }
     ImGui::End();
 
     if (m_showSaveConfirmPopup) {
