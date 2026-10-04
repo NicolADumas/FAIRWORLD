@@ -1363,7 +1363,7 @@ uint64_t ComputeRuleHash(const ResolvedTerrainRules& resolved) {
         add_data(&plains->octaves, sizeof(int));
     } else if (auto* hills = std::get_if<HillsRules>(&resolved.rules.height.specialized)) {
         add_data(&hills->octaves, sizeof(int));
-        // roundness is NOT hashed because it's not yet consumed by GenerateHills
+        add_data(&hills->roundness, sizeof(float));
     } else if (auto* mountains = std::get_if<MountainRules>(&resolved.rules.height.specialized)) {
         add_data(&mountains->octaves, sizeof(int));
         add_data(&mountains->persistence, sizeof(float));

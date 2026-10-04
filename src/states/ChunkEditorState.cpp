@@ -768,8 +768,27 @@ void ChunkEditorState::DrawUI() {
                         int octaves = plainsOvr->octaves.value_or(defaultOctaves);
                         if (ImGui::SliderInt("Plains: Octaves", &octaves, 1, 8)) {
                             plainsOvr->octaves = octaves;
-                            if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                         }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                    } else if (auto* hillsOvr = std::get_if<fw::HillsRuleOverrides>(&inst.overrides.height->specialized.value())) {
+                        int defaultOctaves = 4;
+                        float defaultRoundness = 0.5f;
+                        if (auto* spec = std::get_if<fw::HillsRules>(&activeTemplate.baseRules.height.specialized)) {
+                            defaultOctaves = spec->octaves;
+                            defaultRoundness = spec->roundness;
+                        }
+                        
+                        int octaves = hillsOvr->octaves.value_or(defaultOctaves);
+                        if (ImGui::SliderInt("Hills: Octaves", &octaves, 1, 8)) {
+                            hillsOvr->octaves = octaves;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                        
+                        float roundness = hillsOvr->roundness.value_or(defaultRoundness);
+                        if (ImGui::SliderFloat("Hills: Roundness (Arrotondamento)", &roundness, 0.0f, 1.0f, "%.2f")) {
+                            hillsOvr->roundness = roundness;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                     }
                 }
                 ImGui::Unindent();
@@ -848,6 +867,16 @@ void ChunkEditorState::DrawUI() {
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
             ImGui::SliderFloat("Scala Macro Base (Template)", &activeTemplate.baseRules.height.common.macroScale, 0.1f, 10.0f, "%.2f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            
+            if (auto* plainsBase = std::get_if<fw::PlainsRules>(&activeTemplate.baseRules.height.specialized)) {
+                ImGui::SliderInt("Plains: Octaves (Template)", &plainsBase->octaves, 1, 8);
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            } else if (auto* hillsBase = std::get_if<fw::HillsRules>(&activeTemplate.baseRules.height.specialized)) {
+                ImGui::SliderInt("Hills: Octaves (Template)", &hillsBase->octaves, 1, 8);
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                ImGui::SliderFloat("Hills: Roundness (Template)", &hillsBase->roundness, 0.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            }
             
             int seed = (int)activeTemplate.seed;
             if (ImGui::InputInt("Seme Geologico Base (Template)", &seed)) {

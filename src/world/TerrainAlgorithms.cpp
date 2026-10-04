@@ -111,8 +111,73 @@ void GenerateDunes(const TerrainAlgorithmContext& ctx) {
 }
 
 void GenerateHills(const TerrainAlgorithmContext& ctx) {
-    // Similar to Plains but higher amplitude/frequency
-    GeneratePlains(ctx); 
+    const auto& hr = ctx.rules.rules.height;
+    const auto* spec = std::get_if<HillsRules>(&hr.specialized);
+    int octaves = spec ? spec->octaves : 4;
+    float roundness = spec ? spec->roundness : 0.5f;
+
+    Noise rawNoise(ctx.context.planetSeed);
+    rawNoise.SetNoiseType(NoiseType::OpenSimplex2);
+    rawNoise.SetFractalType(FractalType::None); 
+    rawNoise.SetFrequency(1.0f); // Frequency mapped manually
+
+    // Map roundness [0, 1] to k [0.1, 0.001]
+    // A high roundness creates very distinct hills with sharp but mathematically continuous valleys.
+    // A low roundness uses a larger k, which flattens the bottom of the valleys, making the terrain broader and softer.
+    float clampedRoundness = glm::clamp(roundness, 0.0f, 1.0f);
+    float k = glm::mix(0.1f, 0.001f, clampedRoundness);
+    
+    // maxAbs is the maximum possible value of the smoothed absolute function, occurring when v = 1 or -1.
+    float maxAbs = std::sqrt(1.0f + k) - std::sqrt(k);
+
+    for (int z = 0; z < ctx.context.voxelResolutionZ; ++z) {
+        for (int x = 0; x < ctx.context.voxelResolutionX; ++x) {
+            int idx2D = z * ctx.context.voxelResolutionX + x;
+            glm::vec3 pos = ctx.solver->GetVoxelSpherePos(ctx.context, x, 0, z);
+
+            float sampleX = pos.x * hr.common.macroScale;
+            float sampleY = pos.y * hr.common.macroScale;
+            float sampleZ = pos.z * hr.common.macroScale;
+
+            float freq = hr.common.frequency;
+            float amp = 1.0f;
+            float n = 0.0f;
+            float maxAmplitude = 0.0f;
+            float firstOctaveRaw = 0.0f;
+
+            for (int i = 0; i < octaves; ++i) {
+                // Get base noise in [-1, 1]
+                float v = rawNoise.GetNoise(sampleX * freq, sampleY * freq, sampleZ * freq);
+                
+                if (i == 0) {
+                    firstOctaveRaw = v;
+                }
+                
+                // Smoothed billow response: 
+                float smoothedAbs = std::sqrt(v * v + k) - std::sqrt(k);
+                float octaveVal = smoothedAbs / maxAbs; // normalized to [0, 1] approx
+                
+                n += octaveVal * amp;
+                maxAmplitude += amp;
+                
+                freq *= 2.0f;
+                amp *= 0.5f;
+            }
+
+            // Normalize accumulation to [0, 1]
+            float hillsResponse = n / maxAmplitude;
+
+            // Apply transparent amplitude
+            float finalHeight = hr.common.baseHeight + (hr.common.amplitude * hillsResponse);
+            
+            ctx.workspace.surfaceHeights[idx2D] = finalHeight;
+            
+            // Store fields for diagnostics
+            ctx.workspace.macroField[idx2D] = hillsResponse;
+            ctx.workspace.detailField[idx2D] = firstOctaveRaw; // Raw noise for diagnostic output
+            ctx.workspace.regionalField[idx2D] = 0.0f;
+        }
+    }
 }
 
 } // namespace fw

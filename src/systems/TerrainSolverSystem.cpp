@@ -256,6 +256,36 @@ void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context,
         std::cout << "FINAL HEIGHT:\n";
         std::cout << "Min: " << hMin << "\nMax: " << hMax << "\nDelta: " << (hMax - hMin) << "\n\n";
         
+        bool isHillsActive = (baseRules.rules.height.algorithm == fw::TerrainAlgorithmType::Hills);
+        for (const auto& r : regions) {
+            if (r.second.rules.height.algorithm == fw::TerrainAlgorithmType::Hills) {
+                isHillsActive = true;
+            }
+        }
+        
+        if (isHillsActive) {
+            std::cout << "[TerrainVisualGate][HILLS]\n";
+            std::cout << "BaseHeight: " << baseRules.rules.height.common.baseHeight << "\n";
+            std::cout << "Amplitude: " << baseRules.rules.height.common.amplitude << "\n";
+            std::cout << "Frequency: " << baseRules.rules.height.common.frequency << "\n";
+            std::cout << "MacroScale: " << baseRules.rules.height.common.macroScale << "\n";
+            
+            if (auto* spec = std::get_if<fw::HillsRules>(&baseRules.rules.height.specialized)) {
+                std::cout << "Octaves: " << spec->octaves << "\n";
+                std::cout << "Roundness: " << spec->roundness << "\n\n";
+            } else {
+                std::cout << "Octaves: N/A\nRoundness: N/A\n\n";
+            }
+            
+            std::cout << "Raw/Noise Min: " << dMin << "\n";
+            std::cout << "Raw/Noise Max: " << dMax << "\n\n";
+            std::cout << "Response Min: " << mMin << "\n";
+            std::cout << "Response Max: " << mMax << "\n\n";
+            std::cout << "Final Height Min: " << hMin << "\n";
+            std::cout << "Final Height Max: " << hMax << "\n";
+            std::cout << "Final Height Delta: " << (hMax - hMin) << "\n\n";
+        }
+        
         std::cout << "[TerrainVisualGate][HEIGHT]\n";
         std::cout << "Min: " << hMin << "\n";
         std::cout << "Max: " << hMax << "\n";
