@@ -286,6 +286,38 @@ void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context,
             std::cout << "Final Height Delta: " << (hMax - hMin) << "\n\n";
         }
         
+        bool isMountainsActive = (baseRules.rules.height.algorithm == fw::TerrainAlgorithmType::Mountains);
+        for (const auto& r : regions) {
+            if (r.second.rules.height.algorithm == fw::TerrainAlgorithmType::Mountains) {
+                isMountainsActive = true;
+            }
+        }
+        
+        if (isMountainsActive) {
+            std::cout << "[TerrainVisualGate][MOUNTAINS]\n";
+            std::cout << "BaseHeight: " << baseRules.rules.height.common.baseHeight << "\n";
+            std::cout << "Amplitude: " << baseRules.rules.height.common.amplitude << "\n";
+            std::cout << "Frequency: " << baseRules.rules.height.common.frequency << "\n";
+            std::cout << "MacroScale: " << baseRules.rules.height.common.macroScale << "\n";
+            
+            if (auto* spec = std::get_if<fw::MountainRules>(&baseRules.rules.height.specialized)) {
+                std::cout << "Octaves: " << spec->octaves << "\n";
+                std::cout << "Persistence: " << spec->persistence << "\n";
+                std::cout << "RidgeStrength: " << spec->ridgeStrength << "\n\n";
+            } else {
+                std::cout << "Octaves: N/A\nPersistence: N/A\nRidgeStrength: N/A\n\n";
+            }
+            
+            std::cout << "Mountain Mass Min: " << mMin << "\n";
+            std::cout << "Mountain Mass Max: " << mMax << "\n\n";
+            std::cout << "Ridge Response Min: " << riMin << "\n";
+            std::cout << "Ridge Response Max: " << riMax << "\n\n";
+            std::cout << "Final Response Min: " << dMin << "\n";
+            std::cout << "Final Response Max: " << dMax << "\n\n";
+            std::cout << "Final Height Min: " << hMin << "\n";
+            std::cout << "Final Height Max: " << hMax << "\n";
+            std::cout << "Final Height Delta: " << (hMax - hMin) << "\n\n";
+        }
         std::cout << "[TerrainVisualGate][HEIGHT]\n";
         std::cout << "Min: " << hMin << "\n";
         std::cout << "Max: " << hMax << "\n";

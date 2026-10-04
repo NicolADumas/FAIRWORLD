@@ -50,30 +50,82 @@ void GenerateMountains(const TerrainAlgorithmContext& ctx) {
     const auto* spec = std::get_if<MountainRules>(&hr.specialized);
     int octaves = spec ? spec->octaves : 4;
     float persistence = spec ? spec->persistence : 0.5f;
-    float ridgeStrength = spec ? spec->ridgeStrength : 0.0f;
+    float ridgeStrength = spec ? spec->ridgeStrength : 0.5f;
 
-    Noise mountainNoise(ctx.context.planetSeed);
-    mountainNoise.SetNoiseType(NoiseType::OpenSimplex2);
-    mountainNoise.SetFractalType(FractalType::Ridged);
-    mountainNoise.SetFractalOctaves(octaves);
-    mountainNoise.SetFrequency(hr.common.frequency);
-    mountainNoise.SetFractalGain(persistence);
+    Noise rawNoise(ctx.context.planetSeed);
+    rawNoise.SetNoiseType(NoiseType::OpenSimplex2);
+    rawNoise.SetFractalType(FractalType::None);
+    rawNoise.SetFrequency(1.0f);
+
+    float clampedRidge = glm::clamp(ridgeStrength, 0.0f, 1.0f);
+    // ridgeStrength = 0.0 -> k = 0.05 (rounded peaks), exponent = 1.0 (standard valleys)
+    // ridgeStrength = 1.0 -> k = 0.0001 (sharp peaks), exponent = 3.0 (wide flat valleys)
+    float k = glm::mix(0.05f, 0.0001f, clampedRidge);
+    float exponent = glm::mix(1.0f, 3.0f, clampedRidge);
+    float maxAbs = std::sqrt(1.0f + k) - std::sqrt(k);
 
     for (int z = 0; z < ctx.context.voxelResolutionZ; ++z) {
         for (int x = 0; x < ctx.context.voxelResolutionX; ++x) {
             int idx2D = z * ctx.context.voxelResolutionX + x;
             glm::vec3 pos = ctx.solver->GetVoxelSpherePos(ctx.context, x, 0, z);
 
-            float n = mountainNoise.GetNoise(pos.x * hr.common.macroScale, pos.y * hr.common.macroScale, pos.z * hr.common.macroScale);
-            float normalizedNoise = (n + 1.0f) * 0.5f;
+            float sampleX = pos.x * hr.common.macroScale;
+            float sampleY = pos.y * hr.common.macroScale;
+            float sampleZ = pos.z * hr.common.macroScale;
 
-            float ridgeInfluence = glm::mix(1.0f, normalizedNoise, ridgeStrength);
-            float finalHeight = hr.common.baseHeight + (normalizedNoise * hr.common.amplitude * ridgeInfluence);
+            float freq = hr.common.frequency;
+            float amp = 1.0f;
+            float n = 0.0f;
+            float maxAmplitude = 0.0f;
+
+            // --- OCTAVE 0: BROAD MOUNTAIN MASS ---
+            float v0 = rawNoise.GetNoise(sampleX * freq, sampleY * freq, sampleZ * freq);
+            float massNoise = (v0 + 1.0f) * 0.5f; // [0, 1]
+            float massField = massNoise * massNoise; // Parabolic broad masses with flat valleys
+            
+            n += massField * amp;
+            maxAmplitude += amp;
+            
+            // Ridges will only prominently form where the mass field is elevated
+            float weight = massField;
+            float ridgeSum = 0.0f;
+            float ridgeMaxAmp = 0.0f;
+
+            freq *= 2.0f;
+            amp *= persistence;
+
+            // --- OCTAVES 1+: RIDGED MULTIFRACTAL DETAIL ---
+            for (int i = 1; i < octaves; ++i) {
+                float v = rawNoise.GetNoise(sampleX * freq, sampleY * freq, sampleZ * freq);
+                
+                float smoothedAbs = std::sqrt(v * v + k) - std::sqrt(k);
+                float ridge = (maxAbs - smoothedAbs) / maxAbs; // [0, 1]
+                
+                ridge = std::pow(ridge, exponent);
+                ridge *= weight;
+                
+                // Weight for subsequent octaves creates multifractal behavior (details on ridges, smooth valleys)
+                weight = glm::clamp(ridge * 2.0f, 0.0f, 1.0f);
+                
+                n += ridge * amp;
+                ridgeSum += ridge * amp;
+                maxAmplitude += amp;
+                ridgeMaxAmp += amp;
+                
+                freq *= 2.0f;
+                amp *= persistence;
+            }
+
+            float mountainResponse = n / maxAmplitude; // Normalized to [0, 1]
+            float ridgeResponse = (ridgeMaxAmp > 0.0f) ? (ridgeSum / ridgeMaxAmp) : 0.0f;
+
+            float finalHeight = hr.common.baseHeight + (mountainResponse * hr.common.amplitude);
             
             ctx.workspace.surfaceHeights[idx2D] = finalHeight;
             
-            ctx.workspace.macroField[idx2D] = n;
-            ctx.workspace.ridgeField[idx2D] = ridgeInfluence;
+            ctx.workspace.macroField[idx2D] = massField;
+            ctx.workspace.ridgeField[idx2D] = ridgeResponse;
+            ctx.workspace.detailField[idx2D] = mountainResponse;
         }
     }
 }

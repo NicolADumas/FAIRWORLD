@@ -178,13 +178,28 @@ void ChunkEditorState::RebuildChunkPreview(const char* reason) {
     // Centra la telecamera 3D perfettamente sul blocco di chunk appena rigenerato
     float centerX = ((minX + maxX) / 2.0f) * 16.0f;
     float centerZ = ((minZ + maxZ) / 2.0f) * 16.0f;
-    // Rimozione reset forzato della camera (orbitTarget e orbitDistance) per permettere all'utente di mantenere lo zoom e la posizione desiderati.
+    
+    if (std::string(reason) == "Chunk Changed" || std::string(reason) == "Enter") {
+        m_orbitTarget = glm::vec3(centerX, 15.0f, centerZ);
+        // Lasciamo inalterato lo zoom (m_orbitDistance) come richiesto per il flusso di lavoro B5.4D3.1P
+    } else {
+        // Rimozione reset forzato della camera (orbitTarget e orbitDistance) per permettere all'utente di mantenere lo zoom e la posizione desiderati.
+    }
 }
 
 void ChunkEditorState::UpdateApp(float dt) {
     if (m_needsRebuild) {
         m_needsRebuild = false;
-        RebuildChunkPreview("Rule Changed");
+        if (m_rebuildReason == "Chunk Changed" && m_previewWorld) {
+            m_previewWorld->CancelJobs();
+            if (m_context && m_context->jobSystem) {
+                m_context->jobSystem->WaitAll();
+            }
+            m_previewWorld->ClearWorld(false);
+        }
+        std::string currentReason = m_rebuildReason;
+        m_rebuildReason = "Rule Changed"; // Reset to default
+        RebuildChunkPreview(currentReason.c_str());
     }
 
     if (m_context) {
@@ -243,7 +258,7 @@ void ChunkEditorState::UpdateApp(float dt) {
         m_context->activeCameraView.viewMatrix = glm::lookAt(camPos, m_orbitTarget, glm::vec3(0, 1, 0));
         
         float aspect = (w * 0.55f) / (float)(std::max((uint32_t)1, h));
-        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+        m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(45.0f), aspect, 1.0f, 20000.0f);
         m_context->activeCameraView.projectionMatrix[1][1] *= -1;
     }
 
@@ -331,6 +346,7 @@ void ChunkEditorState::DrawUI() {
         doc.terrainLibrary.push_back(t);
         m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
         m_needsRebuild = true; 
+        m_rebuildReason = "Chunk Changed";
     }
     ImGui::PopStyleColor(2);
 
@@ -357,6 +373,7 @@ void ChunkEditorState::DrawUI() {
             m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
         }
         m_needsRebuild = true; 
+        m_rebuildReason = "Chunk Changed";
     }
     ImGui::PopStyleColor(3);
     if (!canDelete) ImGui::EndDisabled();
@@ -365,20 +382,23 @@ void ChunkEditorState::DrawUI() {
     for (int i = 0; i < (int)doc.terrainLibrary.size(); ++i) {
         bool isSelected = (m_activeTemplateIndex == i);
         if (ImGui::Selectable((std::to_string(i+1) + ". " + doc.terrainLibrary[i].name).c_str(), isSelected)) {
-            m_activeTemplateIndex = i;
-            m_previewPlanetSize = doc.terrainLibrary[i].planetSize;
-            int newMaxBrush = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
-            m_brushSize = std::clamp(m_brushSize, 1, newMaxBrush);
-            
-            // --- Auto-fit Zoom ---
-            int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
-            int cells = 2 * extents + 1;
-            float targetZoom = (280.0f * 0.8f) / (cells * 10.0f);
-            m_canvasZoom = std::clamp(targetZoom, 0.1f, 20.0f);
-            m_canvasPan = glm::vec2(0.0f, 0.0f);
-            // ---------------------
-            
-            m_needsRebuild = true; 
+            if (m_activeTemplateIndex != i) {
+                m_activeTemplateIndex = i;
+                m_previewPlanetSize = doc.terrainLibrary[i].planetSize;
+                int newMaxBrush = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
+                m_brushSize = std::clamp(m_brushSize, 1, newMaxBrush);
+                
+                // --- Auto-fit Zoom ---
+                int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
+                int cells = 2 * extents + 1;
+                float targetZoom = (280.0f * 0.8f) / (cells * 10.0f);
+                m_canvasZoom = std::clamp(targetZoom, 0.1f, 20.0f);
+                m_canvasPan = glm::vec2(0.0f, 0.0f);
+                // ---------------------
+                
+                m_needsRebuild = true; 
+                m_rebuildReason = "Chunk Changed";
+            }
         }
     }
     ImGui::EndChild();
@@ -617,7 +637,7 @@ void ChunkEditorState::DrawUI() {
             drawList->PopClipRect();
             
             bool isRightClicked = ImGui::IsItemClicked(1);
-            if (isRightClicked && hoveredInstance >= 0) {
+            if (!m_isBrushModeActive && isRightClicked && hoveredInstance >= 0 && hoveredInstance < (int)activeTemplate.subRegions.size()) {
                 activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + hoveredInstance);
                 if (m_selectedSubRegionIndex == hoveredInstance) m_selectedSubRegionIndex = -1;
                 else if (m_selectedSubRegionIndex > hoveredInstance) m_selectedSubRegionIndex--;
@@ -789,6 +809,33 @@ void ChunkEditorState::DrawUI() {
                             hillsOvr->roundness = roundness;
                         }
                         if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                    } else if (auto* mountainOvr = std::get_if<fw::MountainRuleOverrides>(&inst.overrides.height->specialized.value())) {
+                        int defaultOctaves = 4;
+                        float defaultPersistence = 0.5f;
+                        float defaultRidgeStrength = 0.5f;
+                        if (auto* spec = std::get_if<fw::MountainRules>(&activeTemplate.baseRules.height.specialized)) {
+                            defaultOctaves = spec->octaves;
+                            defaultPersistence = spec->persistence;
+                            defaultRidgeStrength = spec->ridgeStrength;
+                        }
+                        
+                        int octaves = mountainOvr->octaves.value_or(defaultOctaves);
+                        if (ImGui::SliderInt("Mountains: Octaves", &octaves, 1, 8)) {
+                            mountainOvr->octaves = octaves;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                        
+                        float persistence = mountainOvr->persistence.value_or(defaultPersistence);
+                        if (ImGui::SliderFloat("Mountains: Persistence", &persistence, 0.1f, 1.0f, "%.2f")) {
+                            mountainOvr->persistence = persistence;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                        
+                        float ridgeStrength = mountainOvr->ridgeStrength.value_or(defaultRidgeStrength);
+                        if (ImGui::SliderFloat("Mountains: Ridge Strength", &ridgeStrength, 0.0f, 1.0f, "%.2f")) {
+                            mountainOvr->ridgeStrength = ridgeStrength;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                     }
                 }
                 ImGui::Unindent();
@@ -875,6 +922,13 @@ void ChunkEditorState::DrawUI() {
                 ImGui::SliderInt("Hills: Octaves (Template)", &hillsBase->octaves, 1, 8);
                 if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
                 ImGui::SliderFloat("Hills: Roundness (Template)", &hillsBase->roundness, 0.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            } else if (auto* mountainBase = std::get_if<fw::MountainRules>(&activeTemplate.baseRules.height.specialized)) {
+                ImGui::SliderInt("Mountains: Octaves (Template)", &mountainBase->octaves, 1, 8);
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                ImGui::SliderFloat("Mountains: Persistence (Template)", &mountainBase->persistence, 0.1f, 1.0f, "%.2f");
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                ImGui::SliderFloat("Mountains: Ridge Strength (Template)", &mountainBase->ridgeStrength, 0.0f, 1.0f, "%.2f");
                 if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
             }
             

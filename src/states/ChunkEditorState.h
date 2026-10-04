@@ -55,6 +55,7 @@ private:
     glm::vec3 m_orbitTarget = glm::vec3(0.0f, 15.0f, 0.0f);
     
     bool m_needsRebuild = false;
+    std::string m_rebuildReason = "Rule Changed";
     // Stroke tracking
     std::unordered_set<glm::ivec2> m_strokeProcessedCells;
     bool m_isStrokeActive = false;
