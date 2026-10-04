@@ -9,6 +9,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
+#include "../world/MapDocument.h"
 #include "../core/utils/PlanetMath.h"
 
 struct SharedContext;
@@ -42,13 +43,7 @@ private:
     glm::vec2 m_canvasPan = glm::vec2(0.0f);
     float m_canvasZoom = 1.0f;
     int m_brushSize = 1;
-    int m_paintSurfaceBlock = 1;
-    int m_paintSubsurfaceBlock = 2;
-    int m_paintCoreBlock = 2;
-    int m_paintSubsurfaceDepth = 3;
-    bool m_paintEnableCaves = false;
-    int m_paintRegionType = 0;
-    int m_paintBrushShape = 0;
+    fw::MapRegion m_brushSettings;
     bool m_isBrushModeActive = false; // Nuovo toggle per uscire dal pennello continuo
     bool m_autoRebuildPreview = false;
     bool m_showSaveConfirmPopup = false;

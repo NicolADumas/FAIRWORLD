@@ -36,20 +36,18 @@ static size_t GetTotalAllocatedBytes() {
 
 static fw::ResolvedTerrainRules CreateValidationRules(float amplitudeMultiplier = 1.0f) {
     fw::ResolvedTerrainRules rules;
-    rules.rules.height.algorithm = fw::TerrainAlgorithmType::Mountains;
+    rules.rules.height = fw::MakeMorphologyRules(fw::TerrainAlgorithmType::Mountains);
     rules.resolvedCoreBlock = 1;
     rules.resolvedWaterBlock = 2;
     rules.resolvedLayerBlocks = {3, 4};
-    rules.rules.height.baseHeight = 30.0f;
-    rules.rules.height.amplitude = 40.0f * amplitudeMultiplier;
-    rules.rules.height.frequency = 0.05f;
-    rules.rules.height.persistence = 0.5f;
-    rules.rules.height.lacunarity = 2.0f;
-    rules.rules.height.macroScale = 1.0f;
-    rules.rules.height.regionalScale = 1.0f;
-    rules.rules.height.detailScale = 1.0f;
-    rules.rules.height.ridgeStrength = 0.5f;
-    rules.rules.height.valleyStrength = 0.5f;
+    rules.rules.height.common.baseHeight = 30.0f;
+    rules.rules.height.common.amplitude = 40.0f * amplitudeMultiplier;
+    rules.rules.height.common.frequency = 0.05f;
+    rules.rules.height.common.macroScale = 1.0f;
+    if (auto* m = std::get_if<fw::MountainRules>(&rules.rules.height.specialized)) {
+        m->persistence = 0.5f;
+        m->ridgeStrength = 0.5f;
+    }
     rules.rules.water.enabled = true;
     rules.rules.water.globalLevel = 10;
     rules.rules.caves.enabled = true;
@@ -85,14 +83,13 @@ static fw::TerrainGenerationContext CreateValidationContext(int cx, int cz, uint
     return ctx;
 }
 
-static fw::VoxelChunkComponent GenerateChunkMock(int cx, int cz, uint32_t seed, const fw::ResolvedTerrainRules& rules) {
-    fw::VoxelChunkComponent chunk;
-    chunk.cx = cx;
-    chunk.cz = cz;
+static void GenerateChunkMock(int cx, int cz, uint32_t seed, const fw::ResolvedTerrainRules& rules, fw::VoxelChunkComponent& outChunk) {
+    outChunk.cx = cx;
+    outChunk.cz = cz;
     
     auto ctx = CreateValidationContext(cx, cz, seed);
-    fw::TerrainSolverSystem::GenerateChunk(ctx, rules, chunk);
-    return chunk;
+    std::vector<std::pair<fw::MapRegion, fw::ResolvedTerrainRules>> emptyRegions;
+    fw::TerrainSolverSystem::GenerateChunk(ctx, rules, emptyRegions, outChunk);
 }
 
 static bool CompareChunks(const fw::VoxelChunkComponent& a, const fw::VoxelChunkComponent& b) {
@@ -125,16 +122,23 @@ bool TerrainValidation::TestSameThreadReuse() {
     auto rules = CreateValidationRules();
     uint32_t seed = 12345;
     
-    auto A1 = GenerateChunkMock(0, 0, seed, rules);
-    auto B  = GenerateChunkMock(1, 0, seed, rules);
-    auto C  = GenerateChunkMock(0, 1, seed, rules);
-    auto A2 = GenerateChunkMock(0, 0, seed, rules);
-    auto B2 = GenerateChunkMock(1, 0, seed, rules);
-    auto C2 = GenerateChunkMock(0, 1, seed, rules);
+    auto A1 = std::make_unique<fw::VoxelChunkComponent>();
+    auto B  = std::make_unique<fw::VoxelChunkComponent>();
+    auto C  = std::make_unique<fw::VoxelChunkComponent>();
+    auto A2 = std::make_unique<fw::VoxelChunkComponent>();
+    auto B2 = std::make_unique<fw::VoxelChunkComponent>();
+    auto C2 = std::make_unique<fw::VoxelChunkComponent>();
     
-    if (!CompareChunks(A1, A2)) return false;
-    if (!CompareChunks(B, B2)) return false;
-    if (!CompareChunks(C, C2)) return false;
+    GenerateChunkMock(0, 0, seed, rules, *A1);
+    GenerateChunkMock(1, 0, seed, rules, *B);
+    GenerateChunkMock(0, 1, seed, rules, *C);
+    GenerateChunkMock(0, 0, seed, rules, *A2);
+    GenerateChunkMock(1, 0, seed, rules, *B2);
+    GenerateChunkMock(0, 1, seed, rules, *C2);
+    
+    if (!CompareChunks(*A1, *A2)) return false;
+    if (!CompareChunks(*B, *B2)) return false;
+    if (!CompareChunks(*C, *C2)) return false;
     return true;
 }
 
@@ -142,10 +146,11 @@ bool TerrainValidation::TestOrderIndependence() {
     auto rules = CreateValidationRules();
     uint32_t seed = 12345;
     
-    std::vector<fw::VoxelChunkComponent> reference;
+    std::vector<fw::VoxelChunkComponent> reference(9);
+    int refIdx = 0;
     for (int cx = -1; cx <= 1; ++cx) {
         for (int cz = -1; cz <= 1; ++cz) {
-            reference.push_back(GenerateChunkMock(cx, cz, seed, rules));
+            GenerateChunkMock(cx, cz, seed, rules, reference[refIdx++]);
         }
     }
     
@@ -161,7 +166,7 @@ bool TerrainValidation::TestOrderIndependence() {
         std::shuffle(coords.begin(), coords.end(), rng);
         std::vector<fw::VoxelChunkComponent> passResults(9);
         for (int i = 0; i < 9; ++i) {
-            passResults[i] = GenerateChunkMock(coords[i].first, coords[i].second, seed, rules);
+            GenerateChunkMock(coords[i].first, coords[i].second, seed, rules, passResults[i]);
         }
         
         // Verifica con il reference
@@ -181,10 +186,11 @@ bool TerrainValidation::TestParallelDeterminism() {
     auto rules = CreateValidationRules();
     uint32_t seed = 12345;
     
-    std::vector<fw::VoxelChunkComponent> reference;
+    std::vector<fw::VoxelChunkComponent> reference(9);
+    int refIdx = 0;
     for (int cx = -1; cx <= 1; ++cx) {
         for (int cz = -1; cz <= 1; ++cz) {
-            reference.push_back(GenerateChunkMock(cx, cz, seed, rules));
+            GenerateChunkMock(cx, cz, seed, rules, reference[refIdx++]);
         }
     }
     
@@ -203,7 +209,7 @@ bool TerrainValidation::TestParallelDeterminism() {
                     
                     int cx = (job / 3) - 1;
                     int cz = (job % 3) - 1;
-                    results[job] = GenerateChunkMock(cx, cz, seed, rules);
+                    GenerateChunkMock(cx, cz, seed, rules, results[job]);
                 }
             });
         }
@@ -229,7 +235,7 @@ bool TerrainValidation::TestInterleaving() {
     for (int i = 0; i < 64; ++i) {
         int cx = (i % 8) - 4;
         int cz = (i / 8) - 4;
-        reference[i] = GenerateChunkMock(cx, cz, seed, rules);
+        GenerateChunkMock(cx, cz, seed, rules, reference[i]);
     }
     
     std::vector<int> jobs(64);
@@ -252,8 +258,7 @@ bool TerrainValidation::TestInterleaving() {
                 int job = jobs[index];
                 int cx = (job % 8) - 4;
                 int cz = (job / 8) - 4;
-                
-                results[job] = GenerateChunkMock(cx, cz, seed, rules);
+                GenerateChunkMock(cx, cz, seed, rules, results[job]);
             }
         });
     }
@@ -273,20 +278,22 @@ bool TerrainValidation::TestInterleaving() {
 bool TerrainValidation::TestSeedSensitivity() {
     auto rules = CreateValidationRules();
     uint64_t hash = fw::ComputeRuleHash(rules);
-    auto c1 = GenerateChunkMock(0, 0, 100, rules);
-    auto c2 = GenerateChunkMock(0, 0, 101, rules);
+    auto c1 = std::make_unique<fw::VoxelChunkComponent>();
+    auto c2 = std::make_unique<fw::VoxelChunkComponent>();
+    GenerateChunkMock(0, 0, 100, rules, *c1);
+    GenerateChunkMock(0, 0, 101, rules, *c2);
     
     std::cout << "\n[SeedDiagnostic]\n";
     std::cout << "Seed A: 100\n";
     std::cout << "Seed B: 101\n";
     std::cout << "RuleHash A: " << hash << "\n";
     std::cout << "RuleHash B: " << hash << "\n";
-    std::cout << "Height A: " << GetChunkSurfaceHeight(c1) << "\n";
-    std::cout << "Height B: " << GetChunkSurfaceHeight(c2) << "\n";
-    std::cout << "VoxelHash A: " << GetChunkVoxelHash(c1) << "\n";
-    std::cout << "VoxelHash B: " << GetChunkVoxelHash(c2) << "\n";
+    std::cout << "Height A: " << GetChunkSurfaceHeight(*c1) << "\n";
+    std::cout << "Height B: " << GetChunkSurfaceHeight(*c2) << "\n";
+    std::cout << "VoxelHash A: " << GetChunkVoxelHash(*c1) << "\n";
+    std::cout << "VoxelHash B: " << GetChunkVoxelHash(*c2) << "\n";
     
-    bool diff = !CompareChunks(c1, c2);
+    bool diff = !CompareChunks(*c1, *c2);
     std::cout << "Different: " << (diff ? "YES" : "NO") << "\n";
     
     return diff;
@@ -300,28 +307,32 @@ bool TerrainValidation::TestRuleSensitivity() {
     uint64_t hashA = fw::ComputeRuleHash(rulesA);
     uint64_t hashB = fw::ComputeRuleHash(rulesB);
     
-    auto a1 = GenerateChunkMock(0, 0, seed, rulesA);
-    auto b1 = GenerateChunkMock(0, 0, seed, rulesB);
+    auto a1 = std::make_unique<fw::VoxelChunkComponent>();
+    auto b1 = std::make_unique<fw::VoxelChunkComponent>();
+    GenerateChunkMock(0, 0, seed, rulesA, *a1);
+    GenerateChunkMock(0, 0, seed, rulesB, *b1);
     
     std::cout << "\n[RuleDiagnostic]\n";
-    std::cout << "Amplitude A: " << rulesA.rules.height.amplitude << "\n";
-    std::cout << "Amplitude B: " << rulesB.rules.height.amplitude << "\n";
+    std::cout << "Amplitude A: " << rulesA.rules.height.common.amplitude << "\n";
+    std::cout << "Amplitude B: " << rulesB.rules.height.common.amplitude << "\n";
     std::cout << "RuleHash A: " << hashA << "\n";
     std::cout << "RuleHash B: " << hashB << "\n";
-    std::cout << "Height A: " << GetChunkSurfaceHeight(a1) << "\n";
-    std::cout << "Height B: " << GetChunkSurfaceHeight(b1) << "\n";
-    std::cout << "VoxelHash A: " << GetChunkVoxelHash(a1) << "\n";
-    std::cout << "VoxelHash B: " << GetChunkVoxelHash(b1) << "\n";
+    std::cout << "Height A: " << GetChunkSurfaceHeight(*a1) << "\n";
+    std::cout << "Height B: " << GetChunkSurfaceHeight(*b1) << "\n";
+    std::cout << "VoxelHash A: " << GetChunkVoxelHash(*a1) << "\n";
+    std::cout << "VoxelHash B: " << GetChunkVoxelHash(*b1) << "\n";
     
-    bool diff = !CompareChunks(a1, b1);
+    bool diff = !CompareChunks(*a1, *b1);
     std::cout << "Different: " << (diff ? "YES" : "NO") << "\n";
     
-    auto a2 = GenerateChunkMock(0, 0, seed, rulesA);
-    auto b2 = GenerateChunkMock(0, 0, seed, rulesB);
+    auto a2 = std::make_unique<fw::VoxelChunkComponent>();
+    auto b2 = std::make_unique<fw::VoxelChunkComponent>();
+    GenerateChunkMock(0, 0, seed, rulesA, *a2);
+    GenerateChunkMock(0, 0, seed, rulesB, *b2);
     
-    if (!CompareChunks(a1, a2)) return false;
-    if (!CompareChunks(b1, b2)) return false;
-    if (CompareChunks(a1, b1)) return false;
+    if (!CompareChunks(*a1, *a2)) return false;
+    if (!CompareChunks(*b1, *b2)) return false;
+    if (CompareChunks(*a1, *b1)) return false;
     
     return true;
 }
@@ -422,13 +433,14 @@ bool TerrainValidation::TestIntraFaceField() {
     auto ctxA = CreateContinuityContext(0, 0, 0, seed);
     auto ctxB = CreateContinuityContext(0, 1, 0, seed);
     
-    fw::VoxelChunkComponent chunkA;
-    fw::VoxelChunkComponent chunkB;
-    chunkA.cx = 0; chunkA.cz = 0;
-    chunkB.cx = 1; chunkB.cz = 0;
+    auto chunkA = std::make_unique<fw::VoxelChunkComponent>();
+    auto chunkB = std::make_unique<fw::VoxelChunkComponent>();
+    chunkA->cx = 0; chunkA->cz = 0;
+    chunkB->cx = 1; chunkB->cz = 0;
     
-    fw::TerrainSolverSystem::GenerateChunk(ctxA, rules, chunkA);
-    fw::TerrainSolverSystem::GenerateChunk(ctxB, rules, chunkB);
+    std::vector<std::pair<fw::MapRegion, fw::ResolvedTerrainRules>> emptyRegions;
+    fw::TerrainSolverSystem::GenerateChunk(ctxA, rules, emptyRegions, *chunkA);
+    fw::TerrainSolverSystem::GenerateChunk(ctxB, rules, emptyRegions, *chunkB);
     
     return true; 
 }
@@ -440,13 +452,14 @@ bool TerrainValidation::TestCrossFaceField() {
     auto ctxA = CreateContinuityContext(0, 0, 6, seed);
     auto ctxB = CreateContinuityContext(4, 0, 0, seed);
     
-    fw::VoxelChunkComponent chunkA;
-    fw::VoxelChunkComponent chunkB;
-    chunkA.cx = 0; chunkA.cz = 6;
-    chunkB.cx = 0; chunkB.cz = 0;
+    auto chunkA = std::make_unique<fw::VoxelChunkComponent>();
+    auto chunkB = std::make_unique<fw::VoxelChunkComponent>();
+    chunkA->cx = 0; chunkA->cz = 6;
+    chunkB->cx = 0; chunkB->cz = 0;
     
-    fw::TerrainSolverSystem::GenerateChunk(ctxA, rules, chunkA);
-    fw::TerrainSolverSystem::GenerateChunk(ctxB, rules, chunkB);
+    std::vector<std::pair<fw::MapRegion, fw::ResolvedTerrainRules>> emptyRegions;
+    fw::TerrainSolverSystem::GenerateChunk(ctxA, rules, emptyRegions, *chunkA);
+    fw::TerrainSolverSystem::GenerateChunk(ctxB, rules, emptyRegions, *chunkB);
     
     return true;
 }
@@ -572,11 +585,12 @@ bool TerrainValidation::TestGenerationAllocations() {
     auto rules = CreateValidationRules();
     uint32_t seed = 12345;
     
+    auto dummyChunk = std::make_unique<fw::VoxelChunkComponent>();
     // Warm-up (allocates workspace thread-local vectors)
-    GenerateChunkMock(0, 0, seed, rules);
+    GenerateChunkMock(0, 0, seed, rules, *dummyChunk);
     
     size_t startAlloc = GetTotalAllocatedBytes();
-    GenerateChunkMock(0, 0, seed, rules);
+    GenerateChunkMock(0, 0, seed, rules, *dummyChunk);
     size_t endAlloc = GetTotalAllocatedBytes();
     
 #if defined(_WIN32) && defined(_DEBUG)
@@ -590,16 +604,17 @@ bool TerrainValidation::TestRepeatedGeneration() {
     auto rules = CreateValidationRules();
     uint32_t seed = 12345;
     
+    auto dummyChunk = std::make_unique<fw::VoxelChunkComponent>();
     // Warm-up diverse chunks
-    GenerateChunkMock(0, 0, seed, rules);
-    GenerateChunkMock(1, 0, seed, rules);
-    GenerateChunkMock(2, 0, seed, rules);
+    GenerateChunkMock(0, 0, seed, rules, *dummyChunk);
+    GenerateChunkMock(1, 0, seed, rules, *dummyChunk);
+    GenerateChunkMock(2, 0, seed, rules, *dummyChunk);
     
     size_t startAlloc = GetTotalAllocatedBytes();
-    GenerateChunkMock(0, 0, seed, rules);
-    GenerateChunkMock(1, 0, seed, rules);
-    GenerateChunkMock(2, 0, seed, rules);
-    GenerateChunkMock(0, 0, seed, rules);
+    GenerateChunkMock(0, 0, seed, rules, *dummyChunk);
+    GenerateChunkMock(1, 0, seed, rules, *dummyChunk);
+    GenerateChunkMock(2, 0, seed, rules, *dummyChunk);
+    GenerateChunkMock(0, 0, seed, rules, *dummyChunk);
     size_t endAlloc = GetTotalAllocatedBytes();
     
 #if defined(_WIN32) && defined(_DEBUG)

@@ -4,31 +4,40 @@
 namespace fw {
 
 void GeneratePlains(const TerrainAlgorithmContext& ctx) {
+    const auto& hr = ctx.rules.rules.height;
+    const auto* spec = std::get_if<PlainsRules>(&hr.specialized);
+    int octaves = spec ? spec->octaves : 4;
+
     Noise plainsNoise(ctx.context.planetSeed);
     plainsNoise.SetNoiseType(NoiseType::OpenSimplex2);
     plainsNoise.SetFractalType(FractalType::FBm);
-    plainsNoise.SetFractalOctaves(ctx.rules.rules.height.octaves);
-    plainsNoise.SetFrequency(ctx.rules.rules.height.frequency);
-
-    const auto& hr = ctx.rules.rules.height;
+    plainsNoise.SetFractalOctaves(octaves);
+    plainsNoise.SetFrequency(hr.common.frequency);
 
     for (int z = 0; z < ctx.context.voxelResolutionZ; ++z) {
         for (int x = 0; x < ctx.context.voxelResolutionX; ++x) {
             int idx2D = z * ctx.context.voxelResolutionX + x;
             glm::vec3 pos = ctx.solver->GetVoxelSpherePos(ctx.context, x, 0, z);
 
-            // Very low amplitude, smooth rolling shapes
-            float n = plainsNoise.GetNoise(pos.x * hr.macroScale, pos.y * hr.macroScale, pos.z * hr.macroScale);
+            // World-coordinate based sampling
+            float sampleX = pos.x * hr.common.macroScale;
+            float sampleY = pos.y * hr.common.macroScale;
+            float sampleZ = pos.z * hr.common.macroScale;
+
+            // Base coherent fractal field (approx range [-1, 1])
+            float n = plainsNoise.GetNoise(sampleX, sampleY, sampleZ);
             
-            // Map -1..1 to 0..1 for easier height reasoning
-            float normalizedNoise = (n + 1.0f) * 0.5f;
+            // Normalization to [0, 1]
+            float normalizedNoise = glm::clamp((n + 1.0f) * 0.5f, 0.0f, 1.0f);
             
-            // Plains: small amplitude variation, no ridges or sharp valleys
-            float finalHeight = hr.baseHeight + (normalizedNoise * hr.amplitude * 0.5f);
+            // Plains response: smooth hermite interpolation flattens valleys and peaks, creating broad plains
+            float plainsResponse = normalizedNoise * normalizedNoise * (3.0f - 2.0f * normalizedNoise);
+
+            // Transparent amplitude relationship: amplitude is the exact max vertical variation
+            float finalHeight = hr.common.baseHeight + (hr.common.amplitude * plainsResponse);
             
             ctx.workspace.surfaceHeights[idx2D] = finalHeight;
             
-            // Write debug fields if needed
             ctx.workspace.macroField[idx2D] = n;
             ctx.workspace.regionalField[idx2D] = 0.0f;
             ctx.workspace.detailField[idx2D] = 0.0f;
@@ -37,28 +46,29 @@ void GeneratePlains(const TerrainAlgorithmContext& ctx) {
 }
 
 void GenerateMountains(const TerrainAlgorithmContext& ctx) {
+    const auto& hr = ctx.rules.rules.height;
+    const auto* spec = std::get_if<MountainRules>(&hr.specialized);
+    int octaves = spec ? spec->octaves : 4;
+    float persistence = spec ? spec->persistence : 0.5f;
+    float ridgeStrength = spec ? spec->ridgeStrength : 0.0f;
+
     Noise mountainNoise(ctx.context.planetSeed);
     mountainNoise.SetNoiseType(NoiseType::OpenSimplex2);
     mountainNoise.SetFractalType(FractalType::Ridged);
-    mountainNoise.SetFractalOctaves(ctx.rules.rules.height.octaves);
-    mountainNoise.SetFrequency(ctx.rules.rules.height.frequency);
-    mountainNoise.SetFractalGain(ctx.rules.rules.height.persistence);
-
-    const auto& hr = ctx.rules.rules.height;
+    mountainNoise.SetFractalOctaves(octaves);
+    mountainNoise.SetFrequency(hr.common.frequency);
+    mountainNoise.SetFractalGain(persistence);
 
     for (int z = 0; z < ctx.context.voxelResolutionZ; ++z) {
         for (int x = 0; x < ctx.context.voxelResolutionX; ++x) {
             int idx2D = z * ctx.context.voxelResolutionX + x;
             glm::vec3 pos = ctx.solver->GetVoxelSpherePos(ctx.context, x, 0, z);
 
-            float n = mountainNoise.GetNoise(pos.x * hr.macroScale, pos.y * hr.macroScale, pos.z * hr.macroScale);
+            float n = mountainNoise.GetNoise(pos.x * hr.common.macroScale, pos.y * hr.common.macroScale, pos.z * hr.common.macroScale);
             float normalizedNoise = (n + 1.0f) * 0.5f;
 
-            // Ridged fractal is usually returned already ridged in FNL, or we can use ridge strength
-            // FNL Ridged returns values between -1 and 1. Peaks are near 1, valleys near -1.
-            float ridgeInfluence = glm::mix(1.0f, normalizedNoise, hr.ridgeStrength);
-            
-            float finalHeight = hr.baseHeight + (normalizedNoise * hr.amplitude * ridgeInfluence);
+            float ridgeInfluence = glm::mix(1.0f, normalizedNoise, ridgeStrength);
+            float finalHeight = hr.common.baseHeight + (normalizedNoise * hr.common.amplitude * ridgeInfluence);
             
             ctx.workspace.surfaceHeights[idx2D] = finalHeight;
             
@@ -69,35 +79,30 @@ void GenerateMountains(const TerrainAlgorithmContext& ctx) {
 }
 
 void GenerateDunes(const TerrainAlgorithmContext& ctx) {
+    const auto& hr = ctx.rules.rules.height;
+
     Noise duneNoise(ctx.context.planetSeed);
     duneNoise.SetNoiseType(NoiseType::OpenSimplex2);
     duneNoise.SetFractalType(FractalType::DomainWarpProgressive);
     duneNoise.SetDomainWarpAmp(30.0f);
-    duneNoise.SetFrequency(ctx.rules.rules.height.frequency);
-
-    const auto& hr = ctx.rules.rules.height;
+    duneNoise.SetFrequency(hr.common.frequency);
 
     for (int z = 0; z < ctx.context.voxelResolutionZ; ++z) {
         for (int x = 0; x < ctx.context.voxelResolutionX; ++x) {
             int idx2D = z * ctx.context.voxelResolutionX + x;
             glm::vec3 pos = ctx.solver->GetVoxelSpherePos(ctx.context, x, 0, z);
 
-            float wx = pos.x * hr.macroScale;
-            float wy = pos.y * hr.macroScale;
-            float wz = pos.z * hr.macroScale;
+            float wx = pos.x * hr.common.macroScale;
+            float wy = pos.y * hr.common.macroScale;
+            float wz = pos.z * hr.common.macroScale;
 
             duneNoise.DomainWarp(wx, wy, wz);
             
-            // After domain warp, evaluate a simple directional sine wave
-            // or another noise to form dune ridges.
-            float duneValue = std::sin(wx * hr.frequency + wz * hr.frequency);
-            
-            // Sharpen the peaks of the sine wave to look like dunes
+            float duneValue = std::sin(wx * hr.common.frequency + wz * hr.common.frequency);
             duneValue = 1.0f - std::abs(duneValue);
-            // Power curve to shape the dune peak
             duneValue = std::pow(duneValue, 2.0f);
 
-            float finalHeight = hr.baseHeight + (duneValue * hr.amplitude);
+            float finalHeight = hr.common.baseHeight + (duneValue * hr.common.amplitude);
             
             ctx.workspace.surfaceHeights[idx2D] = finalHeight;
             ctx.workspace.macroField[idx2D] = duneValue;

@@ -13,7 +13,7 @@ public:
     static int Update(entt::registry& registry, std::vector<entt::entity>& dirtyQueue, int maxChunksPerFrame, std::function<void(entt::entity)> markMeshDirty = nullptr, class BlockRegistry* blockRegistry = nullptr);
     
     // Explicit API for deterministic generation sharing the thread_local workspace
-    static void GenerateChunk(const TerrainGenerationContext& context, const ResolvedTerrainRules& rules, VoxelChunkComponent& chunk);
+    static void GenerateChunk(const TerrainGenerationContext& context, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, VoxelChunkComponent& chunk);
 
     static bool s_enableVisualGateLog;
     

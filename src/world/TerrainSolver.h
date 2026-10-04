@@ -56,6 +56,7 @@ struct TerrainWorkspace {
     std::vector<float> caveDensity;
     std::vector<float> waterLevel;
     std::vector<uint8_t> layerIndices; // Store layer evaluations for final classification
+    std::vector<int> dominantRegionIndex; // 2D array mapping each (x,z) to the winning region index (-1 for base)
     
     void Reset(int width, int height, int depth);
     void EnsureCapacity(size_t size2D, size_t size3D);
@@ -69,7 +70,8 @@ public:
     // Main entry point for the Job System
     void GenerateChunk(
         const TerrainGenerationContext& context,
-        const ResolvedTerrainRules& rules,
+        const ResolvedTerrainRules& baseRules,
+        const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions,
         TerrainWorkspace& workspace,
         fw::VoxelChunkComponent& outputChunk
     );
@@ -79,12 +81,15 @@ public:
 
 private:
     // Modular Generation Stages
-    void EvaluateHeightFields(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws);
-    void EvaluateCavesAndWater(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws);
-    void EvaluateLayers(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws);
+    void EvaluateHeightFields(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws);
+    void EvaluateCavesAndWater(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws);
+    void EvaluateLayers(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws);
     
     // Final classification step: Data to Voxel
-    void ClassifyVoxels(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws, fw::VoxelChunkComponent& output);
+    void ClassifyVoxels(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws, fw::VoxelChunkComponent& output);
+    
+    // Helper to evaluate one specific algorithm into a workspace
+    void EvaluateAlgorithmIntoWorkspace(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws);
 };
 
 } // namespace fw

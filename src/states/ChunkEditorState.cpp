@@ -43,10 +43,7 @@ bool ChunkEditorState::InitApp() {
         m_context->isMapBuilderMode = true;
         m_context->isForgeMode = false;
         if (m_context->blockRegistry) {
-            m_paintSurfaceBlock = m_context->blockRegistry->GetBlock("fairworld:grass").id;
-            m_paintSubsurfaceBlock = m_context->blockRegistry->GetBlock("fairworld:dirt").id;
-            if (m_paintSurfaceBlock == 0) m_paintSurfaceBlock = 1;
-            if (m_paintSubsurfaceBlock == 0) m_paintSubsurfaceBlock = 2;
+            // I blocchi di superficie e sottosuolo sono ora configurati nella UI (LayerRules)
         }
     }
 
@@ -146,7 +143,7 @@ void ChunkEditorState::RebuildChunkPreview(const char* reason) {
     tempPlanet.minZ = minZ;
     tempPlanet.maxZ = maxZ;
     tempPlanet.baseTerrain.baseRules = tmpl.baseRules;
-    std::cout << "[PreviewRebuild] SOURCE Amplitude = " << tmpl.baseRules.height.amplitude << "\n";
+    std::cout << "[PreviewRebuild] SOURCE Amplitude = " << tmpl.baseRules.height.common.amplitude << "\n";
 
     fw::MapRegion baseRegion;
     baseRegion.eulerAngles = glm::vec3(0.0f);
@@ -154,7 +151,7 @@ void ChunkEditorState::RebuildChunkPreview(const char* reason) {
     baseRegion.rectMin = glm::ivec2(minX, minZ); // Allinea il background ESATTAMENTE ai chunk visibili
     baseRegion.rectMax = glm::ivec2(maxX, maxZ);
     baseRegion.type = tmpl.baseType;
-    baseRegion.overrides.height = fw::HeightRuleOverrides(); baseRegion.overrides.height->frequency = tmpl.baseRules.height.frequency;
+    baseRegion.overrides.height = fw::HeightRuleOverrides(); baseRegion.overrides.height->common.frequency = tmpl.baseRules.height.common.frequency;
     
     baseRegion.seed = tmpl.seed;
     baseRegion.isBackgroundFill = true;
@@ -313,9 +310,24 @@ void ChunkEditorState::DrawUI() {
         t.id = "terrain_" + std::to_string(doc.terrainLibrary.size() + 1);
         t.planetSize = m_previewPlanetSize;
         t.baseType = fw::MapRegionType::Forest;
-        t.baseRules.height.frequency = 0.03f;
-        t.baseRules.height.amplitude = 1.0f;
+        t.baseRules.height.common.frequency = 0.03f;
+        t.baseRules.height.common.amplitude = 1.0f;
         t.baseAngularRadius = 0.25f;
+
+        fw::TerrainLayer surfaceLayer;
+        surfaceLayer.blockName = "fairworld:grass";
+        surfaceLayer.minDepth = 0.0f;
+        surfaceLayer.maxDepth = 1.0f;
+        
+        fw::TerrainLayer subLayer;
+        subLayer.blockName = "fairworld:dirt";
+        subLayer.minDepth = 1.0f;
+        subLayer.maxDepth = 4.0f;
+        
+        t.baseRules.layers.layers.push_back(surfaceLayer);
+        t.baseRules.layers.layers.push_back(subLayer);
+        t.baseRules.layers.coreBlockName = "fairworld:stone";
+
         doc.terrainLibrary.push_back(t);
         m_activeTemplateIndex = (int)doc.terrainLibrary.size() - 1;
         m_needsRebuild = true; 
@@ -472,29 +484,27 @@ void ChunkEditorState::DrawUI() {
                     
                     if (targetMin.x <= targetMax.x && targetMin.y <= targetMax.y && m_strokeProcessedCells.find(targetMin) == m_strokeProcessedCells.end()) {
                         m_strokeProcessedCells.insert(targetMin);
-                        bool canAdd = true;
-                        for (const auto& existing : activeTemplate.subRegions) {
-                            if (existing.rectMin == targetMin &&
-                                existing.rectMax == targetMax &&
-                                existing.type == static_cast<fw::MapRegionType>(m_paintRegionType) &&
-                                existing.shape == static_cast<fw::RegionShape>(m_paintBrushShape) &&
-                                false /* existing.surfaceBlockId == m_paintSurfaceBlock */ &&
-                                false /* existing.subsurfaceBlockId == m_paintSubsurfaceBlock */) {
-                                canAdd = false;
+                        int existingIdx = -1;
+                        for (size_t i = 0; i < activeTemplate.subRegions.size(); ++i) {
+                            const auto& existing = activeTemplate.subRegions[i];
+                            if (existing.rectMin == targetMin && existing.rectMax == targetMax) {
+                                existingIdx = (int)i;
                                 break;
                             }
                         }
 
-                        if (canAdd) {
-                            fw::MapRegion nr;
+                        if (existingIdx >= 0) {
+                            fw::MapRegion& nr = activeTemplate.subRegions[existingIdx];
+                            nr.type = m_brushSettings.type;
+                            nr.shape = m_brushSettings.shape;
+                            nr.overrides = m_brushSettings.overrides;
+                            nr.angularRadius = 0.0f; // Fix: Ensure canvas regions are always evaluated as 2D flat footprints
+                            if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+                        } else {
+                            fw::MapRegion nr = m_brushSettings;
                             nr.rectMin = targetMin;
                             nr.rectMax = targetMax;
-                            nr.type = static_cast<fw::MapRegionType>(m_paintRegionType);
-                            nr.shape = static_cast<fw::RegionShape>(m_paintBrushShape);
-                            // nr.surfaceBlockId = m_paintSurfaceBlock;
-                            // nr.subsurfaceBlockId = m_paintSubsurfaceBlock;
-                            // nr.perlinFrequency = 0.005f;
-                            // nr.gravityModifier = 1.0f;
+                            nr.angularRadius = 0.0f; // Fix: Ensure canvas regions are always evaluated as 2D flat footprints
                             activeTemplate.subRegions.push_back(nr);
                             m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
                             if (m_autoRebuildPreview) { m_needsRebuild = true;  }
@@ -636,15 +646,6 @@ void ChunkEditorState::DrawUI() {
         }
 
         if (ImGui::CollapsingHeader("Strumenti Disegno (Pennello)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const char* shapeNames[] = { "Rettangolo", "Cerchio", "Rombo", "Stella" };
-            ImGui::Combo("Forma Strumento", &m_paintBrushShape, shapeNames, IM_ARRAYSIZE(shapeNames));
-            
-            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
-            ImGui::Combo("Tipo Sotto-Regione", &m_paintRegionType, biomeNames, IM_ARRAYSIZE(biomeNames));
-
-            drawBlockCombo("Blocco Superficie Pennello", m_paintSurfaceBlock);
-            drawBlockCombo("Blocco Sottosuolo Pennello", m_paintSubsurfaceBlock);
-            
             int maxBrushSize = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
             m_brushSize = std::clamp(m_brushSize, 1, maxBrushSize);
             ImGui::SliderInt("Dimensione Pennello", &m_brushSize, 1, maxBrushSize);
@@ -669,64 +670,153 @@ void ChunkEditorState::DrawUI() {
                 int newMaxBrush = fw::PlanetMath::GetFaceResolution(m_previewPlanetSize);
                 m_brushSize = std::clamp(m_brushSize, 1, newMaxBrush);
                 
-                // --- Auto-fit Zoom ---
                 int extents = fw::PlanetMath::GetEditorCanvasExtents(m_previewPlanetSize);
                 int cells = 2 * extents + 1;
-                float targetZoom = (280.0f * 0.8f) / (cells * 10.0f); // 280 = Canvas height, 10 = BASE_CHUNK_SIZE
+                float targetZoom = (280.0f * 0.8f) / (cells * 10.0f);
                 m_canvasZoom = std::clamp(targetZoom, 0.1f, 20.0f);
-                m_canvasPan = glm::vec2(0.0f, 0.0f); // Resetta la traslazione
-                // ---------------------
-                
+                m_canvasPan = glm::vec2(0.0f, 0.0f);
                 m_needsRebuild = true; 
             }
             ImGui::Spacing();
 
             if (ImGui::Button("PULISCI SOTTO-REGIONI", ImVec2(-1, 25))) {
                 activeTemplate.subRegions.clear();
+                m_selectedSubRegionIndex = -1;
                 m_needsRebuild = true; 
             }
         }
 
-        if (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size()) {
-            if (ImGui::CollapsingHeader("Proprietà Istanza Selezionata", ImGuiTreeNodeFlags_DefaultOpen)) {
-                auto& inst = activeTemplate.subRegions[m_selectedSubRegionIndex];
-                
-                const char* shapeNames[] = { "Rectangle", "Circle", "Rhombus", "Star" };
-                int shapeIdx = static_cast<int>(inst.shape);
-                if (ImGui::Combo("Forma", &shapeIdx, shapeNames, IM_ARRAYSIZE(shapeNames))) {
-                    inst.shape = static_cast<fw::RegionShape>(shapeIdx);
-                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+        bool editingSelected = (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size() && !m_isBrushModeActive);
+        const char* headerTitle = editingSelected ? "Proprietà Regione Selezionata" : "Impostazioni Pennello (Nuova Regione)";
+        
+        if (ImGui::CollapsingHeader(headerTitle, ImGuiTreeNodeFlags_DefaultOpen)) {
+            fw::MapRegion& inst = editingSelected ? activeTemplate.subRegions[m_selectedSubRegionIndex] : m_brushSettings;
+            
+            const char* shapeNames[] = { "Rectangle", "Circle", "Rhombus", "Star" };
+            int shapeIdx = static_cast<int>(inst.shape);
+            if (ImGui::Combo("Forma (WHERE)", &shapeIdx, shapeNames, IM_ARRAYSIZE(shapeNames))) {
+                inst.shape = static_cast<fw::RegionShape>(shapeIdx);
+                if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+            }
+            
+            int seed = (int)inst.seed;
+            if (ImGui::InputInt("Seme Geologico (Seed) Regione", &seed)) {
+                inst.seed = seed;
+                if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+            }
+            
+            const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
+            int typeIdx = static_cast<int>(inst.type);
+            if (ImGui::Combo("Bioma (WHAT: Content)", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
+                inst.type = static_cast<fw::MapRegionType>(typeIdx);
+                if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+            }
+
+            bool hasMorphologyOverride = inst.overrides.height.has_value();
+            if (ImGui::Checkbox("Sovrascrivi Morfologia (WHAT: Shape)", &hasMorphologyOverride)) {
+                if (hasMorphologyOverride) {
+                    inst.overrides.height = fw::MakeMorphologyOverrides(activeTemplate.baseRules.height.algorithm);
+                } else {
+                    inst.overrides.height.reset();
+                }
+                if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+            }
+
+            if (inst.overrides.height.has_value()) {
+                ImGui::Indent();
+                const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
+                int algoIdx = inst.overrides.height->algorithm.has_value() ? static_cast<int>(inst.overrides.height->algorithm.value()) : static_cast<int>(activeTemplate.baseRules.height.algorithm);
+                if (ImGui::Combo("Algoritmo", &algoIdx, algoNames, IM_ARRAYSIZE(algoNames))) {
+                    if (inst.overrides.height->algorithm != static_cast<fw::TerrainAlgorithmType>(algoIdx)) {
+                        auto backupCommon = inst.overrides.height->common;
+                        *inst.overrides.height = fw::MakeMorphologyOverrides(static_cast<fw::TerrainAlgorithmType>(algoIdx));
+                        inst.overrides.height->common = backupCommon;
+                    }
+                    if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                 }
                 
-                const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
-                int typeIdx = static_cast<int>(inst.type);
-                if (ImGui::Combo("Bioma Istanza", &typeIdx, biomeNames, IM_ARRAYSIZE(biomeNames))) {
-                    inst.type = static_cast<fw::MapRegionType>(typeIdx);
-                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+                float bHeight = inst.overrides.height->common.baseHeight.value_or(activeTemplate.baseRules.height.common.baseHeight);
+                if (ImGui::SliderFloat("Altezza Base", &bHeight, -100.0f, 200.0f, "%.1f")) {
+                    inst.overrides.height->common.baseHeight = bHeight;
                 }
-                
-                // (hidden)
-                // (hidden)
-                
-                if (false) {
-                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+                if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+
+                float amp = inst.overrides.height->common.amplitude.value_or(activeTemplate.baseRules.height.common.amplitude);
+                if (ImGui::SliderFloat("Ampiezza", &amp, 0.0f, 200.0f, "%.1f")) {
+                    inst.overrides.height->common.amplitude = amp;
                 }
+                if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                 
-                if (false /* ImGui::SliderFloat("Gravit (Altezza)", &inst.gravityModifier, 0.1f, 5.0f, "%.2f") */) {
-                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+                float freq = inst.overrides.height->common.frequency.value_or(activeTemplate.baseRules.height.common.frequency);
+                if (ImGui::SliderFloat("Frequenza (Scala)", &freq, 0.001f, 0.1f, "%.4f")) {
+                    inst.overrides.height->common.frequency = freq;
                 }
+                if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                 
+                float mScale = inst.overrides.height->common.macroScale.value_or(activeTemplate.baseRules.height.common.macroScale);
+                if (ImGui::SliderFloat("Scala Macro", &mScale, 0.1f, 10.0f, "%.2f")) {
+                    inst.overrides.height->common.macroScale = mScale;
+                }
+                if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+
+                if (inst.overrides.height->specialized.has_value()) {
+                    if (auto* plainsOvr = std::get_if<fw::PlainsRuleOverrides>(&inst.overrides.height->specialized.value())) {
+                        int defaultOctaves = 4;
+                        if (auto* spec = std::get_if<fw::PlainsRules>(&activeTemplate.baseRules.height.specialized)) {
+                            defaultOctaves = spec->octaves;
+                        }
+                        int octaves = plainsOvr->octaves.value_or(defaultOctaves);
+                        if (ImGui::SliderInt("Plains: Octaves", &octaves, 1, 8)) {
+                            plainsOvr->octaves = octaves;
+                            if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                        }
+                    }
+                }
+                ImGui::Unindent();
+            }
+
+            bool hasLayerOverride = inst.overrides.layers.has_value();
+            if (ImGui::Checkbox("Sovrascrivi Strati (WHAT: Layers)", &hasLayerOverride)) {
+                if (hasLayerOverride) {
+                    inst.overrides.layers = fw::LayerRuleOverrides();
+                } else {
+                    inst.overrides.layers.reset();
+                }
+                if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+            }
+
+            if (inst.overrides.layers.has_value()) {
+                ImGui::Indent();
+                ImGui::TextDisabled("Sovrascrittura Strati abilitata.");
+                bool hasCoreOverride = inst.overrides.layers->coreBlockName.has_value();
+                if (ImGui::Checkbox("Sovrascrivi Blocco Core", &hasCoreOverride)) {
+                    if (hasCoreOverride) {
+                        inst.overrides.layers->coreBlockName = "fairworld:stone";
+                    } else {
+                        inst.overrides.layers->coreBlockName.reset();
+                    }
+                    if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                }
+                ImGui::Unindent();
+            }
+
+            if (editingSelected) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
                 if (ImGui::Button("Elimina Istanza", ImVec2(-1, 0))) {
                     activeTemplate.subRegions.erase(activeTemplate.subRegions.begin() + m_selectedSubRegionIndex);
                     m_selectedSubRegionIndex = -1;
-                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; }
                 }
                 ImGui::PopStyleColor();
             }
         }
 
-        if (ImGui::CollapsingHeader("Proprietà Geologiche e di Bioma", ImGuiTreeNodeFlags_DefaultOpen)) {
+        int templatePanelFlags = editingSelected ? 0 : ImGuiTreeNodeFlags_DefaultOpen;
+        if (ImGui::CollapsingHeader("Default del Template", templatePanelFlags)) {
+            if (editingSelected) {
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "ATTENZIONE: Modifiche qui si applicano all'intero modello!");
+            }
+            
             char labelBuf[128];
             strncpy_s(labelBuf, activeTemplate.name.c_str(), sizeof(labelBuf));
             if (ImGui::InputText("Nome Modello", labelBuf, sizeof(labelBuf))) {
@@ -740,36 +830,96 @@ void ChunkEditorState::DrawUI() {
                 if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
             
-            //
-            //
-
-            if (false /* ImGui::SliderFloat("Frequenza Perlin (Rugosit)", &activeTemplate.basePerlinFrequency, 0.001f, 0.1f, "%.4f") */) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
-            }
-            if (false /* ImGui::SliderFloat("Modificatore Gravit", &activeTemplate.baseGravityModifier, 0.1f, 5.0f, "%.2f") */) {
-                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
-            }
-
             const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
             int currentAlgo = static_cast<int>(activeTemplate.baseRules.height.algorithm);
             if (ImGui::Combo("Algoritmo Terreno", &currentAlgo, algoNames, IM_ARRAYSIZE(algoNames))) {
-                activeTemplate.baseRules.height.algorithm = static_cast<fw::TerrainAlgorithmType>(currentAlgo);
+                if (activeTemplate.baseRules.height.algorithm != static_cast<fw::TerrainAlgorithmType>(currentAlgo)) {
+                    auto backupCommon = activeTemplate.baseRules.height.common;
+                    activeTemplate.baseRules.height = fw::MakeMorphologyRules(static_cast<fw::TerrainAlgorithmType>(currentAlgo));
+                    activeTemplate.baseRules.height.common = backupCommon;
+                }
                 if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
-            ImGui::SliderFloat("Altezza Base", &activeTemplate.baseRules.height.baseHeight, -100.0f, 200.0f, "%.1f");
+            ImGui::SliderFloat("Altezza Base (Template)", &activeTemplate.baseRules.height.common.baseHeight, -100.0f, 200.0f, "%.1f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
-            ImGui::SliderFloat("Ampiezza Base", &activeTemplate.baseRules.height.amplitude, 0.0f, 200.0f, "%.1f");
+            ImGui::SliderFloat("Ampiezza Base (Template)", &activeTemplate.baseRules.height.common.amplitude, 0.0f, 200.0f, "%.1f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
-            ImGui::SliderFloat("Frequenza (Scala)", &activeTemplate.baseRules.height.frequency, 0.001f, 0.1f, "%.4f");
+            ImGui::SliderFloat("Frequenza Base (Template)", &activeTemplate.baseRules.height.common.frequency, 0.001f, 0.1f, "%.4f");
+            if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            ImGui::SliderFloat("Scala Macro Base (Template)", &activeTemplate.baseRules.height.common.macroScale, 0.1f, 10.0f, "%.2f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
             
             int seed = (int)activeTemplate.seed;
-            if (ImGui::InputInt("Seme Geologico (Seed)", &seed)) {
+            if (ImGui::InputInt("Seme Geologico Base (Template)", &seed)) {
                 activeTemplate.seed = seed;
                 if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
-            ImGui::SliderFloat("Estensione Base (Raggio Angolare)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f");
+            ImGui::SliderFloat("Estensione Base (Raggio)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+        }
+
+
+        if (ImGui::CollapsingHeader("Strati Terreno (LayerRules)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto drawStringBlockCombo = [&](const char* label, std::string& blockNameStr) {
+                int idInt = 1; 
+                if (m_context && m_context->blockRegistry) {
+                    const auto& def = m_context->blockRegistry->GetBlock(blockNameStr);
+                    idInt = def.id;
+                }
+                std::string comboPreview = "Sconosciuto";
+                if (m_context && m_context->blockRegistry) {
+                    const auto& def = m_context->blockRegistry->GetBlock((uint8_t)idInt);
+                    comboPreview = def.displayName + " (" + def.stringId + ")";
+                }
+                if (ImGui::BeginCombo(label, comboPreview.c_str())) {
+                    if (m_context && m_context->blockRegistry) {
+                        for (const auto& b : m_context->blockRegistry->GetAllBlocks()) {
+                            bool isSelected = (idInt == b.id);
+                            if (ImGui::Selectable((b.displayName + " [" + b.stringId + "]").c_str(), isSelected)) {
+                                blockNameStr = b.stringId;
+                                if (m_autoRebuildPreview) { m_needsRebuild = true; }
+                            }
+                            if (isSelected) ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            };
+
+            if (activeTemplate.baseRules.layers.layers.empty()) {
+                ImGui::TextDisabled("Nessuno strato di superficie definito (Core puro).");
+                if (ImGui::Button("Inizializza Strati Superficie & Sottosuolo")) {
+                    fw::TerrainLayer surfaceLayer;
+                    surfaceLayer.blockName = "fairworld:grass";
+                    surfaceLayer.minDepth = 0.0f;
+                    surfaceLayer.maxDepth = 1.0f;
+                    
+                    fw::TerrainLayer subLayer;
+                    subLayer.blockName = "fairworld:dirt";
+                    subLayer.minDepth = 1.0f;
+                    subLayer.maxDepth = 4.0f;
+                    
+                    activeTemplate.baseRules.layers.layers.push_back(surfaceLayer);
+                    activeTemplate.baseRules.layers.layers.push_back(subLayer);
+                    
+                    if (m_autoRebuildPreview) { m_needsRebuild = true; }
+                }
+            } else {
+                if (activeTemplate.baseRules.layers.layers.size() > 0) {
+                    drawStringBlockCombo("Blocco Superficie", activeTemplate.baseRules.layers.layers[0].blockName);
+                    ImGui::SliderFloat("Profondita' Superficie", &activeTemplate.baseRules.layers.layers[0].maxDepth, 0.5f, 5.0f, "%.1f");
+                    if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                }
+                
+                if (activeTemplate.baseRules.layers.layers.size() > 1) {
+                    activeTemplate.baseRules.layers.layers[1].minDepth = activeTemplate.baseRules.layers.layers[0].maxDepth;
+                    drawStringBlockCombo("Blocco Sottosuolo", activeTemplate.baseRules.layers.layers[1].blockName);
+                    ImGui::SliderFloat("Profondita' Sottosuolo (Max)", &activeTemplate.baseRules.layers.layers[1].maxDepth, activeTemplate.baseRules.layers.layers[1].minDepth + 0.5f, 20.0f, "%.1f");
+                    if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                }
+            }
+            
+            drawStringBlockCombo("Blocco Core (Profondo)", activeTemplate.baseRules.layers.coreBlockName);
         }
 
     } else {

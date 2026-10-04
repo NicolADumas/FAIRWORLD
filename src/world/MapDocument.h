@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <variant>
 #include <glm/glm.hpp>
 #include "World.h" // Assicurati che PlanetType sia definito qui
 
@@ -56,39 +57,93 @@ enum class TerrainAlgorithmType : uint8_t {
     Dunes
 };
 
-struct HeightRules {
-    TerrainAlgorithmType algorithm = TerrainAlgorithmType::Plains;
-    
-    // CONTINUOUS (Blend)
+struct CommonMorphologyRules {
     float baseHeight = 25.0f;
     float amplitude = 25.0f;
     float frequency = 0.03f;
-    float persistence = 0.5f;
-    float lacunarity = 2.0f;
     float macroScale = 1.0f;
-    float regionalScale = 1.0f;
-    float detailScale = 1.0f;
-    float ridgeStrength = 0.0f;
-    float valleyStrength = 0.0f;
-    
-    // DISCRETE (Dominant/Override)
+};
+
+struct PlainsRules {
     int octaves = 4;
 };
 
-struct HeightRuleOverrides {
-    std::optional<TerrainAlgorithmType> algorithm;
+struct HillsRules {
+    int octaves = 4;
+    float roundness = 1.0f;
+};
+
+struct MountainRules {
+    int octaves = 4;
+    float persistence = 0.5f;
+    float ridgeStrength = 0.0f;
+};
+
+struct DuneRules {
+    float directionAngle = 45.0f;
+    float warpAmplitude = 30.0f;
+    float crestSharpness = 2.0f;
+};
+
+using SpecializedMorphologyRules = std::variant<
+    PlainsRules,
+    HillsRules,
+    MountainRules,
+    DuneRules
+>;
+
+struct HeightRules {
+    TerrainAlgorithmType algorithm = TerrainAlgorithmType::Plains;
+    CommonMorphologyRules common;
+    SpecializedMorphologyRules specialized = PlainsRules{};
+};
+
+struct CommonMorphologyOverrides {
     std::optional<float> baseHeight;
     std::optional<float> amplitude;
     std::optional<float> frequency;
-    std::optional<float> persistence;
-    std::optional<float> lacunarity;
     std::optional<float> macroScale;
-    std::optional<float> regionalScale;
-    std::optional<float> detailScale;
-    std::optional<float> ridgeStrength;
-    std::optional<float> valleyStrength;
+};
+
+struct PlainsRuleOverrides {
     std::optional<int> octaves;
 };
+
+struct HillsRuleOverrides {
+    std::optional<int> octaves;
+    std::optional<float> roundness;
+};
+
+struct MountainRuleOverrides {
+    std::optional<int> octaves;
+    std::optional<float> persistence;
+    std::optional<float> ridgeStrength;
+};
+
+struct DuneRuleOverrides {
+    std::optional<float> directionAngle;
+    std::optional<float> warpAmplitude;
+    std::optional<float> crestSharpness;
+};
+
+using SpecializedMorphologyOverrides = std::variant<
+    PlainsRuleOverrides,
+    HillsRuleOverrides,
+    MountainRuleOverrides,
+    DuneRuleOverrides
+>;
+
+struct HeightRuleOverrides {
+    std::optional<TerrainAlgorithmType> algorithm;
+    CommonMorphologyOverrides common;
+    std::optional<SpecializedMorphologyOverrides> specialized;
+};
+
+bool ValidateMorphologyRules(const HeightRules& rules);
+bool ValidateMorphologyOverrides(const HeightRuleOverrides& overrides);
+
+HeightRules MakeMorphologyRules(TerrainAlgorithmType algo);
+HeightRuleOverrides MakeMorphologyOverrides(TerrainAlgorithmType algo);
 
 struct LayerRules {
     std::vector<TerrainLayer> layers;

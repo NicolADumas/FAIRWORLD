@@ -68,15 +68,45 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
         ctx.diagnosticMode = s_DiagnosticMode;
         // ruleHash will be computed below
         
-        // Ottieni le regole finali risolvendo i nomi dei blocchi
+        // Ottieni le regole finali risolvendo i nomi dei blocchi per le base rules
         TerrainRuleOverrides emptyOverrides;
-        ResolvedTerrainRules rules = ResolveTerrainRules(biomeData.baseTerrain.baseRules, emptyOverrides, 1.0f, blockRegistry);
+        ResolvedTerrainRules baseRules = ResolveTerrainRules(biomeData.baseTerrain.baseRules, emptyOverrides, 1.0f, blockRegistry);
         
-        // --- FORZATURA PER IL TEST MOUNTAINS RIMOSSA ---
-        // Adesso utilizza i valori originali da regole UI/JSON
-        // ---------------------------------------
+        uint64_t combinedHash = ComputeRuleHash(baseRules);
         
-        ctx.ruleHash = ComputeRuleHash(rules);
+        // Risolvi le regole per ogni regione e calcola l'hash composto
+        std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>> resolvedRegions;
+        resolvedRegions.reserve(biomeData.overlappingRegions.size());
+        
+        for (const auto& r : biomeData.overlappingRegions) {
+            // Risolviamo usando la logica B4 esistente
+            ResolvedTerrainRules rRules = ResolveTerrainRules(baseRules.rules, r.overrides, 1.0f, blockRegistry);
+            resolvedRegions.push_back({r, rRules});
+            
+            // Hash dei dati WHAT (regole risultanti)
+            uint64_t rHash = ComputeRuleHash(rRules);
+            
+            // Hash dei dati WHERE (impronta spaziale)
+            uint64_t whereHash = 14695981039346656037ull;
+            auto mix = [&whereHash](auto val) {
+                const uint8_t* p = reinterpret_cast<const uint8_t*>(&val);
+                for (size_t i = 0; i < sizeof(val); ++i) {
+                    whereHash ^= p[i];
+                    whereHash *= 1099511628211ull;
+                }
+            };
+            mix(r.rectMin.x); mix(r.rectMin.y);
+            mix(r.rectMax.x); mix(r.rectMax.y);
+            mix((int)r.shape);
+            mix(r.angularRadius);
+            mix(r.influence); // falloff
+            
+            // Combine hash
+            combinedHash ^= (rHash + 0x9e3779b9 + (combinedHash << 6) + (combinedHash >> 2));
+            combinedHash ^= (whereHash + 0x9e3779b9 + (combinedHash << 6) + (combinedHash >> 2));
+        }
+        
+        ctx.ruleHash = combinedHash;
         
         if (chunk.isGenerated && chunk.lastRuleHash == ctx.ruleHash) {
             // registry.remove<BiomeDataComponent>(entity); // Keep for editor live preview
@@ -87,7 +117,7 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
         uint64_t oldVoxelHash = chunk.voxelHash;
         
         // Esegui la generazione tramite il nuovo TerrainSolver
-        GenerateChunk(ctx, rules, chunk);
+        GenerateChunk(ctx, baseRules, resolvedRegions, chunk);
         chunk.lastRuleHash = ctx.ruleHash;
         chunk.isGenerated = true;
         
@@ -117,11 +147,11 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
     return processed;
 }
 
-void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context, const ResolvedTerrainRules& rules, VoxelChunkComponent& chunk) {
+void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, VoxelChunkComponent& chunk) {
     TerrainSolver solver;
     
     // Esegui la generazione passando il workspace thread_local
-    solver.GenerateChunk(context, rules, s_workspace, chunk);
+    solver.GenerateChunk(context, baseRules, regions, s_workspace, chunk);
     
     if (s_enableVisualGateLog) {
         std::cout << "[TRACE] ENTER VISUAL GATE BLOCK\n";
@@ -172,7 +202,7 @@ void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context,
                 for (int y = 0; y < 128; ++y) {
                     uint8_t block = chunk.blocks[x][y][z];
                     if (block == 0) airVoxels++;
-                    else if (block == rules.resolvedWaterBlock && rules.rules.water.enabled) waterVoxels++;
+                    else if (block == baseRules.resolvedWaterBlock && baseRules.rules.water.enabled) waterVoxels++;
                     else {
                         solidVoxels++;
                         colSolidCount++;
@@ -188,14 +218,24 @@ void TerrainSolverSystem::GenerateChunk(const TerrainGenerationContext& context,
         }
         
         std::cout << "\n=======================================================\n";
-        std::cout << "[TerrainVisualGate][FIELDS]\n";
-        std::cout << "Algorithm: " << (int)rules.rules.height.algorithm << "\n";
-        std::cout << "Amplitude: " << rules.rules.height.amplitude << "\n";
-        std::cout << "MacroScale: " << rules.rules.height.macroScale << "\n";
-        std::cout << "Frequency: " << rules.rules.height.frequency << "\n";
-        std::cout << "Octaves: " << rules.rules.height.octaves << "\n";
-        std::cout << "Persistence: " << rules.rules.height.persistence << "\n";
-        std::cout << "Lacunarity: " << rules.rules.height.lacunarity << "\n\n";
+        std::cout << "[TerrainVisualGate][BASE]\n";
+        std::cout << "Algorithm: " << (int)baseRules.rules.height.algorithm << "\n";
+        std::cout << "Amplitude: " << baseRules.rules.height.common.amplitude << "\n";
+        std::cout << "Frequency: " << baseRules.rules.height.common.frequency << "\n";
+        std::cout << "MacroScale: " << baseRules.rules.height.common.macroScale << "\n\n";
+        
+        for (size_t i = 0; i < regions.size(); ++i) {
+            const auto& r = regions[i].first;
+            const auto& rRules = regions[i].second;
+            std::cout << "[TerrainVisualGate][REGION]\n";
+            std::cout << "Region index: " << i << "\n";
+            std::cout << "Biome/type: " << (int)r.type << "\n";
+            std::cout << "Algorithm: " << (int)rRules.rules.height.algorithm << "\n";
+            std::cout << "Amplitude: " << rRules.rules.height.common.amplitude << "\n";
+            std::cout << "Frequency: " << rRules.rules.height.common.frequency << "\n";
+            std::cout << "MacroScale: " << rRules.rules.height.common.macroScale << "\n";
+            std::cout << "Influence / relevant spatial data: " << r.influence << " (Rect: " << r.rectMin.x << "," << r.rectMin.y << " to " << r.rectMax.x << "," << r.rectMax.y << ")\n\n";
+        }
         
         std::cout << "Coordinates:\n";
         std::cout << "Chunk X: " << context.chunkCoord.x << "\n";

@@ -9,6 +9,52 @@
 using json = nlohmann::json;
 
 namespace fw {
+
+HeightRules MakeMorphologyRules(TerrainAlgorithmType algo) {
+    HeightRules r;
+    r.algorithm = algo;
+    switch (algo) {
+        case TerrainAlgorithmType::Plains: r.specialized = PlainsRules{}; break;
+        case TerrainAlgorithmType::Hills: r.specialized = HillsRules{}; break;
+        case TerrainAlgorithmType::Mountains: r.specialized = MountainRules{}; break;
+        case TerrainAlgorithmType::Dunes: r.specialized = DuneRules{}; break;
+    }
+    return r;
+}
+
+HeightRuleOverrides MakeMorphologyOverrides(TerrainAlgorithmType algo) {
+    HeightRuleOverrides r;
+    r.algorithm = algo;
+    switch (algo) {
+        case TerrainAlgorithmType::Plains: r.specialized = PlainsRuleOverrides{}; break;
+        case TerrainAlgorithmType::Hills: r.specialized = HillsRuleOverrides{}; break;
+        case TerrainAlgorithmType::Mountains: r.specialized = MountainRuleOverrides{}; break;
+        case TerrainAlgorithmType::Dunes: r.specialized = DuneRuleOverrides{}; break;
+    }
+    return r;
+}
+
+bool ValidateMorphologyRules(const HeightRules& rules) {
+    switch (rules.algorithm) {
+        case TerrainAlgorithmType::Plains: return std::holds_alternative<PlainsRules>(rules.specialized);
+        case TerrainAlgorithmType::Hills: return std::holds_alternative<HillsRules>(rules.specialized);
+        case TerrainAlgorithmType::Mountains: return std::holds_alternative<MountainRules>(rules.specialized);
+        case TerrainAlgorithmType::Dunes: return std::holds_alternative<DuneRules>(rules.specialized);
+    }
+    return false;
+}
+
+bool ValidateMorphologyOverrides(const HeightRuleOverrides& overrides) {
+    if (!overrides.algorithm.has_value() || !overrides.specialized.has_value()) return true;
+    switch (overrides.algorithm.value()) {
+        case TerrainAlgorithmType::Plains: return std::holds_alternative<PlainsRuleOverrides>(overrides.specialized.value());
+        case TerrainAlgorithmType::Hills: return std::holds_alternative<HillsRuleOverrides>(overrides.specialized.value());
+        case TerrainAlgorithmType::Mountains: return std::holds_alternative<MountainRuleOverrides>(overrides.specialized.value());
+        case TerrainAlgorithmType::Dunes: return std::holds_alternative<DuneRuleOverrides>(overrides.specialized.value());
+    }
+    return false;
+}
+
 void to_json(nlohmann::json& j, const TerrainLayer& p) {
     j["blockName"] = p.blockName;
     j["minDepth"] = p.minDepth;
@@ -28,31 +74,66 @@ void from_json(const nlohmann::json& j, TerrainLayer& p) {
 
 void to_json(nlohmann::json& j, const HeightRules& p) {
     j["algorithm"] = static_cast<int>(p.algorithm);
-    j["baseHeight"] = p.baseHeight;
-    j["amplitude"] = p.amplitude;
-    j["frequency"] = p.frequency;
-    j["persistence"] = p.persistence;
-    j["lacunarity"] = p.lacunarity;
-    j["macroScale"] = p.macroScale;
-    j["regionalScale"] = p.regionalScale;
-    j["detailScale"] = p.detailScale;
-    j["ridgeStrength"] = p.ridgeStrength;
-    j["valleyStrength"] = p.valleyStrength;
-    j["octaves"] = p.octaves;
+    j["common"]["baseHeight"] = p.common.baseHeight;
+    j["common"]["amplitude"] = p.common.amplitude;
+    j["common"]["frequency"] = p.common.frequency;
+    j["common"]["macroScale"] = p.common.macroScale;
+
+    if (auto* plains = std::get_if<PlainsRules>(&p.specialized)) {
+        j["specialized"]["octaves"] = plains->octaves;
+    } else if (auto* hills = std::get_if<HillsRules>(&p.specialized)) {
+        j["specialized"]["octaves"] = hills->octaves;
+        j["specialized"]["roundness"] = hills->roundness;
+    } else if (auto* mountains = std::get_if<MountainRules>(&p.specialized)) {
+        j["specialized"]["octaves"] = mountains->octaves;
+        j["specialized"]["persistence"] = mountains->persistence;
+        j["specialized"]["ridgeStrength"] = mountains->ridgeStrength;
+    } else if (auto* dunes = std::get_if<DuneRules>(&p.specialized)) {
+        j["specialized"]["directionAngle"] = dunes->directionAngle;
+        j["specialized"]["warpAmplitude"] = dunes->warpAmplitude;
+        j["specialized"]["crestSharpness"] = dunes->crestSharpness;
+    }
 }
 void from_json(const nlohmann::json& j, HeightRules& p) {
-    if (j.contains("algorithm")) p.algorithm = static_cast<TerrainAlgorithmType>(j.at("algorithm").get<int>());
-    if (j.contains("baseHeight")) j.at("baseHeight").get_to(p.baseHeight);
-    if (j.contains("amplitude")) j.at("amplitude").get_to(p.amplitude);
-    if (j.contains("frequency")) j.at("frequency").get_to(p.frequency);
-    if (j.contains("persistence")) j.at("persistence").get_to(p.persistence);
-    if (j.contains("lacunarity")) j.at("lacunarity").get_to(p.lacunarity);
-    if (j.contains("macroScale")) j.at("macroScale").get_to(p.macroScale);
-    if (j.contains("regionalScale")) j.at("regionalScale").get_to(p.regionalScale);
-    if (j.contains("detailScale")) j.at("detailScale").get_to(p.detailScale);
-    if (j.contains("ridgeStrength")) j.at("ridgeStrength").get_to(p.ridgeStrength);
-    if (j.contains("valleyStrength")) j.at("valleyStrength").get_to(p.valleyStrength);
-    if (j.contains("octaves")) j.at("octaves").get_to(p.octaves);
+    TerrainAlgorithmType algo = TerrainAlgorithmType::Plains;
+    if (j.contains("algorithm")) algo = static_cast<TerrainAlgorithmType>(j.at("algorithm").get<int>());
+    
+    p = MakeMorphologyRules(algo); // Structural default
+    
+    if (j.contains("common")) {
+        const auto& c = j["common"];
+        if (c.contains("baseHeight")) c.at("baseHeight").get_to(p.common.baseHeight);
+        if (c.contains("amplitude")) c.at("amplitude").get_to(p.common.amplitude);
+        if (c.contains("frequency")) c.at("frequency").get_to(p.common.frequency);
+        if (c.contains("macroScale")) c.at("macroScale").get_to(p.common.macroScale);
+    } else { // Legacy Migration
+        if (j.contains("baseHeight")) j.at("baseHeight").get_to(p.common.baseHeight);
+        if (j.contains("amplitude")) j.at("amplitude").get_to(p.common.amplitude);
+        if (j.contains("frequency")) j.at("frequency").get_to(p.common.frequency);
+        if (j.contains("macroScale")) j.at("macroScale").get_to(p.common.macroScale);
+    }
+
+    const nlohmann::json* specJson = nullptr;
+    if (j.contains("specialized")) {
+        specJson = &j["specialized"];
+    } else {
+        specJson = &j; // Legacy Migration
+    }
+
+    if (auto* plains = std::get_if<PlainsRules>(&p.specialized)) {
+        if (specJson->contains("octaves")) specJson->at("octaves").get_to(plains->octaves);
+    } else if (auto* hills = std::get_if<HillsRules>(&p.specialized)) {
+        if (specJson->contains("octaves")) specJson->at("octaves").get_to(hills->octaves);
+        if (specJson->contains("roundness")) specJson->at("roundness").get_to(hills->roundness);
+    } else if (auto* mountains = std::get_if<MountainRules>(&p.specialized)) {
+        if (specJson->contains("octaves")) specJson->at("octaves").get_to(mountains->octaves);
+        if (specJson->contains("persistence")) specJson->at("persistence").get_to(mountains->persistence);
+        if (specJson->contains("ridgeStrength")) specJson->at("ridgeStrength").get_to(mountains->ridgeStrength);
+    } else if (auto* dunes = std::get_if<DuneRules>(&p.specialized)) {
+        if (specJson->contains("directionAngle")) specJson->at("directionAngle").get_to(dunes->directionAngle);
+        if (specJson->contains("warpAmplitude")) specJson->at("warpAmplitude").get_to(dunes->warpAmplitude);
+        if (specJson->contains("crestSharpness")) specJson->at("crestSharpness").get_to(dunes->crestSharpness);
+    }
 }
 
 void to_json(nlohmann::json& j, const LayerRules& p) {
@@ -183,30 +264,73 @@ void from_json(const nlohmann::json& j, TerrainGenerationRules& p) {
 }
 
 void to_json(nlohmann::json& j, const HeightRuleOverrides& p) {
-    if (p.baseHeight.has_value()) j["baseHeight"] = p.baseHeight.value();
-    if (p.amplitude.has_value()) j["amplitude"] = p.amplitude.value();
-    if (p.frequency.has_value()) j["frequency"] = p.frequency.value();
-    if (p.persistence.has_value()) j["persistence"] = p.persistence.value();
-    if (p.lacunarity.has_value()) j["lacunarity"] = p.lacunarity.value();
-    if (p.macroScale.has_value()) j["macroScale"] = p.macroScale.value();
-    if (p.regionalScale.has_value()) j["regionalScale"] = p.regionalScale.value();
-    if (p.detailScale.has_value()) j["detailScale"] = p.detailScale.value();
-    if (p.ridgeStrength.has_value()) j["ridgeStrength"] = p.ridgeStrength.value();
-    if (p.valleyStrength.has_value()) j["valleyStrength"] = p.valleyStrength.value();
-    if (p.octaves.has_value()) j["octaves"] = p.octaves.value();
+    if (p.algorithm.has_value()) j["algorithm"] = static_cast<int>(p.algorithm.value());
+    
+    if (p.common.baseHeight.has_value()) j["common"]["baseHeight"] = p.common.baseHeight.value();
+    if (p.common.amplitude.has_value()) j["common"]["amplitude"] = p.common.amplitude.value();
+    if (p.common.frequency.has_value()) j["common"]["frequency"] = p.common.frequency.value();
+    if (p.common.macroScale.has_value()) j["common"]["macroScale"] = p.common.macroScale.value();
+
+    if (p.specialized.has_value()) {
+        if (auto* plains = std::get_if<PlainsRuleOverrides>(&p.specialized.value())) {
+            if (plains->octaves.has_value()) j["specialized"]["octaves"] = plains->octaves.value();
+        } else if (auto* hills = std::get_if<HillsRuleOverrides>(&p.specialized.value())) {
+            if (hills->octaves.has_value()) j["specialized"]["octaves"] = hills->octaves.value();
+            if (hills->roundness.has_value()) j["specialized"]["roundness"] = hills->roundness.value();
+        } else if (auto* mountains = std::get_if<MountainRuleOverrides>(&p.specialized.value())) {
+            if (mountains->octaves.has_value()) j["specialized"]["octaves"] = mountains->octaves.value();
+            if (mountains->persistence.has_value()) j["specialized"]["persistence"] = mountains->persistence.value();
+            if (mountains->ridgeStrength.has_value()) j["specialized"]["ridgeStrength"] = mountains->ridgeStrength.value();
+        } else if (auto* dunes = std::get_if<DuneRuleOverrides>(&p.specialized.value())) {
+            if (dunes->directionAngle.has_value()) j["specialized"]["directionAngle"] = dunes->directionAngle.value();
+            if (dunes->warpAmplitude.has_value()) j["specialized"]["warpAmplitude"] = dunes->warpAmplitude.value();
+            if (dunes->crestSharpness.has_value()) j["specialized"]["crestSharpness"] = dunes->crestSharpness.value();
+        }
+    }
 }
 void from_json(const nlohmann::json& j, HeightRuleOverrides& p) {
-    if (j.contains("baseHeight")) p.baseHeight = j.at("baseHeight").get<std::decay_t<decltype(p.baseHeight.value())>>();
-    if (j.contains("amplitude")) p.amplitude = j.at("amplitude").get<std::decay_t<decltype(p.amplitude.value())>>();
-    if (j.contains("frequency")) p.frequency = j.at("frequency").get<std::decay_t<decltype(p.frequency.value())>>();
-    if (j.contains("persistence")) p.persistence = j.at("persistence").get<std::decay_t<decltype(p.persistence.value())>>();
-    if (j.contains("lacunarity")) p.lacunarity = j.at("lacunarity").get<std::decay_t<decltype(p.lacunarity.value())>>();
-    if (j.contains("macroScale")) p.macroScale = j.at("macroScale").get<std::decay_t<decltype(p.macroScale.value())>>();
-    if (j.contains("regionalScale")) p.regionalScale = j.at("regionalScale").get<std::decay_t<decltype(p.regionalScale.value())>>();
-    if (j.contains("detailScale")) p.detailScale = j.at("detailScale").get<std::decay_t<decltype(p.detailScale.value())>>();
-    if (j.contains("ridgeStrength")) p.ridgeStrength = j.at("ridgeStrength").get<std::decay_t<decltype(p.ridgeStrength.value())>>();
-    if (j.contains("valleyStrength")) p.valleyStrength = j.at("valleyStrength").get<std::decay_t<decltype(p.valleyStrength.value())>>();
-    if (j.contains("octaves")) p.octaves = j.at("octaves").get<std::decay_t<decltype(p.octaves.value())>>();
+    if (j.contains("algorithm")) p.algorithm = static_cast<TerrainAlgorithmType>(j.at("algorithm").get<int>());
+
+    if (p.algorithm.has_value()) {
+        p.specialized = MakeMorphologyOverrides(p.algorithm.value()).specialized;
+    }
+    
+    if (j.contains("common")) {
+        const auto& c = j["common"];
+        if (c.contains("baseHeight")) p.common.baseHeight = c.at("baseHeight").get<float>();
+        if (c.contains("amplitude")) p.common.amplitude = c.at("amplitude").get<float>();
+        if (c.contains("frequency")) p.common.frequency = c.at("frequency").get<float>();
+        if (c.contains("macroScale")) p.common.macroScale = c.at("macroScale").get<float>();
+    } else { // Legacy Migration
+        if (j.contains("baseHeight")) p.common.baseHeight = j.at("baseHeight").get<float>();
+        if (j.contains("amplitude")) p.common.amplitude = j.at("amplitude").get<float>();
+        if (j.contains("frequency")) p.common.frequency = j.at("frequency").get<float>();
+        if (j.contains("macroScale")) p.common.macroScale = j.at("macroScale").get<float>();
+    }
+
+    if (p.specialized.has_value()) {
+        const nlohmann::json* specJson = nullptr;
+        if (j.contains("specialized")) {
+            specJson = &j["specialized"];
+        } else {
+            specJson = &j; // Legacy Migration
+        }
+
+        if (auto* plains = std::get_if<PlainsRuleOverrides>(&p.specialized.value())) {
+            if (specJson->contains("octaves")) plains->octaves = specJson->at("octaves").get<int>();
+        } else if (auto* hills = std::get_if<HillsRuleOverrides>(&p.specialized.value())) {
+            if (specJson->contains("octaves")) hills->octaves = specJson->at("octaves").get<int>();
+            if (specJson->contains("roundness")) hills->roundness = specJson->at("roundness").get<float>();
+        } else if (auto* mountains = std::get_if<MountainRuleOverrides>(&p.specialized.value())) {
+            if (specJson->contains("octaves")) mountains->octaves = specJson->at("octaves").get<int>();
+            if (specJson->contains("persistence")) mountains->persistence = specJson->at("persistence").get<float>();
+            if (specJson->contains("ridgeStrength")) mountains->ridgeStrength = specJson->at("ridgeStrength").get<float>();
+        } else if (auto* dunes = std::get_if<DuneRuleOverrides>(&p.specialized.value())) {
+            if (specJson->contains("directionAngle")) dunes->directionAngle = specJson->at("directionAngle").get<float>();
+            if (specJson->contains("warpAmplitude")) dunes->warpAmplitude = specJson->at("warpAmplitude").get<float>();
+            if (specJson->contains("crestSharpness")) dunes->crestSharpness = specJson->at("crestSharpness").get<float>();
+        }
+    }
 }
 
 void to_json(nlohmann::json& j, const LayerRuleOverrides& p) {
@@ -1062,31 +1186,58 @@ ResolvedTerrainRules ResolveTerrainRules(
     // Example: blend baseHeight based on influence
     if (overrides.height.has_value()) {
         const auto& ho = overrides.height.value();
-        if (ho.baseHeight.has_value()) 
-            result.rules.height.baseHeight = glm::mix(baseRules.height.baseHeight, ho.baseHeight.value(), influence);
-        if (ho.amplitude.has_value()) 
-            result.rules.height.amplitude = glm::mix(baseRules.height.amplitude, ho.amplitude.value(), influence);
-        if (ho.frequency.has_value()) 
-            result.rules.height.frequency = glm::mix(baseRules.height.frequency, ho.frequency.value(), influence);
-        if (ho.persistence.has_value()) 
-            result.rules.height.persistence = glm::mix(baseRules.height.persistence, ho.persistence.value(), influence);
-        if (ho.lacunarity.has_value()) 
-            result.rules.height.lacunarity = glm::mix(baseRules.height.lacunarity, ho.lacunarity.value(), influence);
-        if (ho.macroScale.has_value()) 
-            result.rules.height.macroScale = glm::mix(baseRules.height.macroScale, ho.macroScale.value(), influence);
-        if (ho.regionalScale.has_value()) 
-            result.rules.height.regionalScale = glm::mix(baseRules.height.regionalScale, ho.regionalScale.value(), influence);
-        if (ho.detailScale.has_value()) 
-            result.rules.height.detailScale = glm::mix(baseRules.height.detailScale, ho.detailScale.value(), influence);
-        if (ho.ridgeStrength.has_value()) 
-            result.rules.height.ridgeStrength = glm::mix(baseRules.height.ridgeStrength, ho.ridgeStrength.value(), influence);
-        if (ho.valleyStrength.has_value()) 
-            result.rules.height.valleyStrength = glm::mix(baseRules.height.valleyStrength, ho.valleyStrength.value(), influence);
         
-        // DISCRETE PROPERTIES (Dominant if influence is high enough, e.g. > 0.5)
-        if (influence > 0.5f) {
-            if (ho.algorithm.has_value()) result.rules.height.algorithm = ho.algorithm.value();
-            if (ho.octaves.has_value()) result.rules.height.octaves = ho.octaves.value();
+        TerrainAlgorithmType targetAlgo = baseRules.height.algorithm;
+        if (influence > 0.5f && ho.algorithm.has_value()) {
+            targetAlgo = ho.algorithm.value();
+        }
+        
+        if (result.rules.height.algorithm != targetAlgo) {
+            auto commonBackup = result.rules.height.common;
+            result.rules.height = MakeMorphologyRules(targetAlgo);
+            result.rules.height.common = commonBackup;
+        }
+
+        if (ho.common.baseHeight.has_value()) 
+            result.rules.height.common.baseHeight = glm::mix(baseRules.height.common.baseHeight, ho.common.baseHeight.value(), influence);
+        if (ho.common.amplitude.has_value()) 
+            result.rules.height.common.amplitude = glm::mix(baseRules.height.common.amplitude, ho.common.amplitude.value(), influence);
+        if (ho.common.frequency.has_value()) 
+            result.rules.height.common.frequency = glm::mix(baseRules.height.common.frequency, ho.common.frequency.value(), influence);
+        if (ho.common.macroScale.has_value()) 
+            result.rules.height.common.macroScale = glm::mix(baseRules.height.common.macroScale, ho.common.macroScale.value(), influence);
+
+        if (influence > 0.5f && ho.specialized.has_value()) {
+            if (targetAlgo == TerrainAlgorithmType::Plains) {
+                if (auto* specOverride = std::get_if<PlainsRuleOverrides>(&ho.specialized.value())) {
+                    if (auto* targetSpec = std::get_if<PlainsRules>(&result.rules.height.specialized)) {
+                        if (specOverride->octaves.has_value()) targetSpec->octaves = specOverride->octaves.value();
+                    }
+                }
+            } else if (targetAlgo == TerrainAlgorithmType::Hills) {
+                if (auto* specOverride = std::get_if<HillsRuleOverrides>(&ho.specialized.value())) {
+                    if (auto* targetSpec = std::get_if<HillsRules>(&result.rules.height.specialized)) {
+                        if (specOverride->octaves.has_value()) targetSpec->octaves = specOverride->octaves.value();
+                        if (specOverride->roundness.has_value()) targetSpec->roundness = specOverride->roundness.value();
+                    }
+                }
+            } else if (targetAlgo == TerrainAlgorithmType::Mountains) {
+                if (auto* specOverride = std::get_if<MountainRuleOverrides>(&ho.specialized.value())) {
+                    if (auto* targetSpec = std::get_if<MountainRules>(&result.rules.height.specialized)) {
+                        if (specOverride->octaves.has_value()) targetSpec->octaves = specOverride->octaves.value();
+                        if (specOverride->persistence.has_value()) targetSpec->persistence = specOverride->persistence.value();
+                        if (specOverride->ridgeStrength.has_value()) targetSpec->ridgeStrength = specOverride->ridgeStrength.value();
+                    }
+                }
+            } else if (targetAlgo == TerrainAlgorithmType::Dunes) {
+                if (auto* specOverride = std::get_if<DuneRuleOverrides>(&ho.specialized.value())) {
+                    if (auto* targetSpec = std::get_if<DuneRules>(&result.rules.height.specialized)) {
+                        if (specOverride->directionAngle.has_value()) targetSpec->directionAngle = specOverride->directionAngle.value();
+                        if (specOverride->warpAmplitude.has_value()) targetSpec->warpAmplitude = specOverride->warpAmplitude.value();
+                        if (specOverride->crestSharpness.has_value()) targetSpec->crestSharpness = specOverride->crestSharpness.value();
+                    }
+                }
+            }
         }
     }
     
@@ -1203,17 +1354,23 @@ uint64_t ComputeRuleHash(const ResolvedTerrainRules& resolved) {
     
     // Hash Height
     add_data(&resolved.rules.height.algorithm, sizeof(resolved.rules.height.algorithm));
-    add_data(&resolved.rules.height.baseHeight, sizeof(float));
-    add_data(&resolved.rules.height.amplitude, sizeof(float));
-    add_data(&resolved.rules.height.frequency, sizeof(float));
-    add_data(&resolved.rules.height.persistence, sizeof(float));
-    add_data(&resolved.rules.height.lacunarity, sizeof(float));
-    add_data(&resolved.rules.height.macroScale, sizeof(float));
-    add_data(&resolved.rules.height.regionalScale, sizeof(float));
-    add_data(&resolved.rules.height.detailScale, sizeof(float));
-    add_data(&resolved.rules.height.ridgeStrength, sizeof(float));
-    add_data(&resolved.rules.height.valleyStrength, sizeof(float));
-    add_data(&resolved.rules.height.octaves, sizeof(int));
+    add_data(&resolved.rules.height.common.baseHeight, sizeof(float));
+    add_data(&resolved.rules.height.common.amplitude, sizeof(float));
+    add_data(&resolved.rules.height.common.frequency, sizeof(float));
+    add_data(&resolved.rules.height.common.macroScale, sizeof(float));
+    
+    if (auto* plains = std::get_if<PlainsRules>(&resolved.rules.height.specialized)) {
+        add_data(&plains->octaves, sizeof(int));
+    } else if (auto* hills = std::get_if<HillsRules>(&resolved.rules.height.specialized)) {
+        add_data(&hills->octaves, sizeof(int));
+        // roundness is NOT hashed because it's not yet consumed by GenerateHills
+    } else if (auto* mountains = std::get_if<MountainRules>(&resolved.rules.height.specialized)) {
+        add_data(&mountains->octaves, sizeof(int));
+        add_data(&mountains->persistence, sizeof(float));
+        add_data(&mountains->ridgeStrength, sizeof(float));
+    } else if (auto* dunes = std::get_if<DuneRules>(&resolved.rules.height.specialized)) {
+        // Dune future parameters (directionAngle, warpAmplitude, crestSharpness) are NOT hashed yet
+    }
     
     // Hash Layers
     add_data(&resolved.resolvedCoreBlock, sizeof(uint32_t));

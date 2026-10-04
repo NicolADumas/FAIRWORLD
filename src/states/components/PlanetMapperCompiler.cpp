@@ -54,7 +54,7 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
                     baseRegion.gridY = inst.gridY;
                     baseRegion.type = tmpl.baseType;
                     baseRegion.overrides.height = fw::HeightRuleOverrides();
-                    baseRegion.overrides.height->frequency = tmpl.baseRules.height.frequency;
+                    baseRegion.overrides.height->common.frequency = tmpl.baseRules.height.common.frequency;
                     
                     baseRegion.overrides.layers = fw::LayerRuleOverrides();
                     baseRegion.overrides.layers->layers = tmpl.baseRules.layers.layers;
@@ -108,7 +108,7 @@ void PlanetMapperCompiler::CompileEverything(SharedContext* context, fw::PlanetM
             }
             gr.shapeType      = (uint32_t)r.shape;
             gr.biomeType      = (uint32_t)r.type;
-            gr.perlinFreq     = r.overrides.height ? r.overrides.height->frequency.value_or(0.01f) : 0.01f;
+            gr.perlinFreq     = r.overrides.height ? r.overrides.height->common.frequency.value_or(0.01f) : 0.01f;
             gr.gravityMod     = 1.0f;
             gr.isGridAligned  = r.isGridAligned ? 1u : 0u;
             gr.faceIndex      = (uint32_t)r.faceIndex;

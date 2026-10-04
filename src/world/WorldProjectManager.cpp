@@ -35,8 +35,23 @@ namespace fw {
             defaultTmpl.name = "Terreno Standard";
             defaultTmpl.baseType = fw::MapRegionType::Forest;
             defaultTmpl.baseAngularRadius = 0.25f;
+
+            fw::TerrainLayer surfaceLayer;
+            surfaceLayer.blockName = "fairworld:grass";
+            surfaceLayer.minDepth = 0.0f;
+            surfaceLayer.maxDepth = 1.0f;
+            
+            fw::TerrainLayer subLayer;
+            subLayer.blockName = "fairworld:dirt";
+            subLayer.minDepth = 1.0f;
+            subLayer.maxDepth = 4.0f;
+            
+            defaultTmpl.baseRules.layers.layers.push_back(surfaceLayer);
+            defaultTmpl.baseRules.layers.layers.push_back(subLayer);
+            defaultTmpl.baseRules.layers.coreBlockName = "fairworld:stone";
+
             m_document.terrainLibrary.push_back(defaultTmpl);
-            std::cout << "[WorldProjectManager] Libreria terreni vuota. Creato 'Terreno Standard'.\n";
+            std::cout << "[WorldProjectManager] Libreria terreni vuota. Creato 'Terreno Standard' con strati.\n";
             m_isDirty = true;
         }
     }

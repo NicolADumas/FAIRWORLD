@@ -26,9 +26,9 @@ namespace {
 
     SdfResult EvaluateSDF(const fw::BiomeDataComponent& biome, float worldX, float worldZ, glm::vec3 noisePos, const PerlinNoise& terrainNoiseGen, const BlockRegistry* blockRegistry) {
         const auto& rules = biome.baseTerrain.baseRules;
-        float freq = rules.height.frequency;
+        float freq = rules.height.common.frequency;
         float terrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
-        float baseHeight = rules.height.baseHeight + (terrainVal * rules.height.amplitude);
+        float baseHeight = rules.height.common.baseHeight + (terrainVal * rules.height.common.amplitude);
         
         if (biome.baseTerrain.biome == fw::MapRegionType::Ocean) {
             baseHeight = 8.0f + (terrainVal * 5.0f); // Oceano profondo
@@ -92,9 +92,9 @@ namespace {
             }
             
             if (sdf < blendDistance) {
-                float freq = r.overrides.height.has_value() && r.overrides.height->frequency.has_value() ? r.overrides.height->frequency.value() : rules.height.frequency;
+                float freq = r.overrides.height.has_value() && r.overrides.height->common.frequency.has_value() ? r.overrides.height->common.frequency.value() : rules.height.common.frequency;
                 float rTerrainVal = terrainNoiseGen.octaveNoise(noisePos.x * freq, noisePos.y * freq, noisePos.z * freq, 4, 0.5);
-                float rHeight = rules.height.baseHeight + (rTerrainVal * rules.height.amplitude);
+                float rHeight = rules.height.common.baseHeight + (rTerrainVal * rules.height.common.amplitude);
                 
                 // Macro-shaping in base alla distanza dal centro (normalizedDist va da 0 al centro a 1 sui bordi)
                 if (r.type == fw::MapRegionType::Volcano) {

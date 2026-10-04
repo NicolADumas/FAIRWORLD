@@ -2787,18 +2787,20 @@ bool RenderManager::CreateForgePipeline() {
     // Vertex Input — legge dalla struttura Vertex definita in RenderManager.h
     VkVertexInputBindingDescription bindingDesc{};
     bindingDesc.binding   = 0;
-    bindingDesc.stride    = sizeof(Vertex);
+    bindingDesc.stride    = sizeof(fw::Vertex);
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
+    static_assert(std::is_standard_layout_v<fw::Vertex>, "fw::Vertex must be standard layout for Vulkan offsets");
+
     std::array<VkVertexInputAttributeDescription, 8> attrDescs{};
-    attrDescs[0].binding  = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
-    attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
-    attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, roughMetal);
-    attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32_UINT;         attrDescs[3].offset = offsetof(Vertex, materialID);
-    attrDescs[4].binding  = 0; attrDescs[4].location = 4; attrDescs[4].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[4].offset = offsetof(Vertex, normal);
-    attrDescs[5].binding  = 0; attrDescs[5].location = 5; attrDescs[5].format = VK_FORMAT_R32_SFLOAT;       attrDescs[5].offset = offsetof(Vertex, ao);
-    attrDescs[6].binding  = 0; attrDescs[6].location = 6; attrDescs[6].format = VK_FORMAT_R32_SFLOAT;       attrDescs[6].offset = offsetof(Vertex, light);
-    attrDescs[7].binding  = 0; attrDescs[7].location = 7; attrDescs[7].format = VK_FORMAT_R32_SFLOAT;       attrDescs[7].offset = offsetof(Vertex, emissive);
+    attrDescs[0].binding  = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(fw::Vertex, position);
+    attrDescs[1].binding  = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; attrDescs[1].offset = offsetof(fw::Vertex, color);
+    attrDescs[2].binding  = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(fw::Vertex, roughMetal);
+    attrDescs[3].binding  = 0; attrDescs[3].location = 3; attrDescs[3].format = VK_FORMAT_R32_UINT;         attrDescs[3].offset = offsetof(fw::Vertex, materialID);
+    attrDescs[4].binding  = 0; attrDescs[4].location = 4; attrDescs[4].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[4].offset = offsetof(fw::Vertex, normal);
+    attrDescs[5].binding  = 0; attrDescs[5].location = 5; attrDescs[5].format = VK_FORMAT_R32_SFLOAT;       attrDescs[5].offset = offsetof(fw::Vertex, ao);
+    attrDescs[6].binding  = 0; attrDescs[6].location = 6; attrDescs[6].format = VK_FORMAT_R32_SFLOAT;       attrDescs[6].offset = offsetof(fw::Vertex, light);
+    attrDescs[7].binding  = 0; attrDescs[7].location = 7; attrDescs[7].format = VK_FORMAT_R32_SFLOAT;       attrDescs[7].offset = offsetof(fw::Vertex, emissive);
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -3569,8 +3571,8 @@ void RenderManager::DispatchTerrainComputeIfDirty(VkCommandBuffer cmd) {
     pc.baseBiomeType       = (uint32_t)m_terrainBaseTerrain.biome;
     pc.baseSurfaceBlock    = m_terrainBaseTerrain.resolvedSurfaceBlock;
     pc.baseSubsurfaceBlock = m_terrainBaseTerrain.resolvedSurfaceBlock; // Fallback to surface block for now
-    pc.basePerlinFreq      = m_terrainBaseTerrain.baseRules.height.frequency;
-    pc.baseGravityMod      = m_terrainBaseTerrain.baseRules.height.amplitude / 25.0f; // Approx compatibilità
+    pc.basePerlinFreq      = m_terrainBaseTerrain.baseRules.height.common.frequency;
+    pc.baseGravityMod      = m_terrainBaseTerrain.baseRules.height.common.amplitude / 25.0f; // Approx compatibilità
     m_terrainPipeline->dispatch(cmd, pc);
 
     // 4. Prepara i comandi di draw indirect con valori validi

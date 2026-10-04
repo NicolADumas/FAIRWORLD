@@ -4,6 +4,7 @@
 #include "components/ForgeComponents.h"
 #include "world/MapWorldGenerator.h" // For PerlinNoise or similar utility
 #include "world/CubeSphereMapping.h"
+#include "core/utils/ShapeMath.h"
 
 namespace fw {
 
@@ -40,6 +41,10 @@ void TerrainWorkspace::EnsureCapacity(size_t size2D, size_t size3D) {
         waterLevel.reserve(size3D);
         layerIndices.reserve(size3D);
     }
+    
+    if (dominantRegionIndex.capacity() < size2D) {
+        dominantRegionIndex.reserve(size2D);
+    }
 }
 
 void TerrainWorkspace::Reset(int width, int height, int depth) {
@@ -53,6 +58,7 @@ void TerrainWorkspace::Reset(int width, int height, int depth) {
     ridgeField.assign(size2D, 0.0f);
     valleyField.assign(size2D, 0.0f);
     surfaceHeights.assign(size2D, 0.0f);
+    dominantRegionIndex.assign(size2D, -1);
     
     caveDensity.assign(size3D, 0.0f);
     waterLevel.assign(size3D, 0.0f);
@@ -86,7 +92,8 @@ glm::vec3 TerrainSolver::GetVoxelSpherePos(const TerrainGenerationContext& ctx, 
 
 void TerrainSolver::GenerateChunk(
     const TerrainGenerationContext& context,
-    const ResolvedTerrainRules& rules,
+    const ResolvedTerrainRules& baseRules,
+    const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions,
     TerrainWorkspace& workspace,
     fw::VoxelChunkComponent& outputChunk) 
 {
@@ -94,19 +101,19 @@ void TerrainSolver::GenerateChunk(
     workspace.Reset(context.voxelResolutionX, context.voxelResolutionY, context.voxelResolutionZ);
     
     // 2. Evaluate Height Fields (Macro, Regional, Detail, Morphology)
-    EvaluateHeightFields(context, rules, workspace);
+    EvaluateHeightFields(context, baseRules, regions, workspace);
     
     // 3. Evaluate volumetric fields (Caves, Water)
-    EvaluateCavesAndWater(context, rules, workspace);
+    EvaluateCavesAndWater(context, baseRules, regions, workspace);
     
     // 4. Evaluate layers (relative depth based)
-    EvaluateLayers(context, rules, workspace);
+    EvaluateLayers(context, baseRules, regions, workspace);
     
     // 5. Final Materialization (Voxel Classifier)
-    ClassifyVoxels(context, rules, workspace, outputChunk);
+    ClassifyVoxels(context, baseRules, regions, workspace, outputChunk);
 }
 
-void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws) {
+void TerrainSolver::EvaluateAlgorithmIntoWorkspace(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws) {
     TerrainAlgorithmContext algoCtx{ ctx, rules, ws, this };
 
     switch (rules.rules.height.algorithm) {
@@ -125,6 +132,55 @@ void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, co
         default:
             GeneratePlains(algoCtx);
             break;
+    }
+}
+
+void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws) {
+    // 1. Evaluate base rules into primary workspace
+    EvaluateAlgorithmIntoWorkspace(ctx, baseRules, ws);
+    
+    // 2. Blend regional overrides
+    if (!regions.empty()) {
+        TerrainWorkspace regionWs;
+        regionWs.Reset(ctx.voxelResolutionX, ctx.voxelResolutionY, ctx.voxelResolutionZ);
+        
+        for (int rIdx = 0; rIdx < (int)regions.size(); ++rIdx) {
+            const auto& [region, regionRules] = regions[rIdx];
+            
+            // Generate full chunk for this region rules
+            EvaluateAlgorithmIntoWorkspace(ctx, regionRules, regionWs);
+            
+            for (int z = 0; z < ctx.voxelResolutionZ; ++z) {
+                for (int x = 0; x < ctx.voxelResolutionX; ++x) {
+                    int idx2D = z * ctx.voxelResolutionX + x;
+                    glm::vec3 pos = GetVoxelSpherePos(ctx, x, 0, z);
+                    
+                    // Evaluate Shape SDF
+                    glm::vec2 localPos(pos.x - (region.rectMin.x + region.rectMax.x) * 8.0f, 
+                                       pos.z - (region.rectMin.y + region.rectMax.y) * 8.0f);
+                    glm::vec2 halfExtents((region.rectMax.x - region.rectMin.x) * 8.0f,
+                                          (region.rectMax.y - region.rectMin.y) * 8.0f);
+                    
+                    float sdf = ShapeMath::EvaluateSDF(region.shape, localPos, halfExtents);
+                    
+                    float blendDistance = 16.0f; // Softness margin
+                    float influence = std::clamp(1.0f - (sdf / blendDistance), 0.0f, 1.0f);
+                    influence = influence * influence * (3.0f - 2.0f * influence); // Smoothstep
+                    
+                    if (influence > 0.001f) {
+                        // Continuous blend
+                        ws.surfaceHeights[idx2D] = glm::mix(ws.surfaceHeights[idx2D], regionWs.surfaceHeights[idx2D], influence);
+                        ws.macroField[idx2D] = glm::mix(ws.macroField[idx2D], regionWs.macroField[idx2D], influence);
+                        ws.ridgeField[idx2D] = glm::mix(ws.ridgeField[idx2D], regionWs.ridgeField[idx2D], influence);
+                        
+                        // Discrete ownership for LayerRules / biomes
+                        if (influence > 0.5f) {
+                            ws.dominantRegionIndex[idx2D] = rIdx;
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // Diagnostic output per chunk
@@ -145,14 +201,16 @@ void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, co
     }
 }
 
-void TerrainSolver::EvaluateCavesAndWater(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws) {
+void TerrainSolver::EvaluateCavesAndWater(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws) {
     // Generate volumetric data for caves and water bodies
     for (int y = 0; y < ctx.voxelResolutionY; ++y) {
         for (int z = 0; z < ctx.voxelResolutionZ; ++z) {
             for (int x = 0; x < ctx.voxelResolutionX; ++x) {
                 int idx3D = (y * ctx.voxelResolutionZ * ctx.voxelResolutionX) + (z * ctx.voxelResolutionX) + x;
+                int idx2D = z * ctx.voxelResolutionX + x;
                 
-                // glm::vec3 spherePos = GetVoxelSpherePos(ctx, x, y, z);
+                // TODO: Regional composition for caves and water
+                // We could use dominantRegionIndex to pick the rules for caves/water
                 
                 ws.caveDensity[idx3D] = 0.0f; // No caves for now
                 ws.waterLevel[idx3D] = 0.0f;
@@ -161,7 +219,7 @@ void TerrainSolver::EvaluateCavesAndWater(const TerrainGenerationContext& ctx, c
     }
 }
 
-void TerrainSolver::EvaluateLayers(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws) {
+void TerrainSolver::EvaluateLayers(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws) {
     for (int y = 0; y < ctx.voxelResolutionY; ++y) {
         // Voxel world Y (simplified, usually chunkY * size + y)
         float voxelY = (float)y;
@@ -179,9 +237,12 @@ void TerrainSolver::EvaluateLayers(const TerrainGenerationContext& ctx, const Re
                 if (depth >= 0.0f) {
                     layerIdx = 255; // Core block by default
                     
-                    // Check custom layers
-                    for (size_t i = 0; i < rules.rules.layers.layers.size(); ++i) {
-                        const auto& layer = rules.rules.layers.layers[i];
+                    int rIdx = ws.dominantRegionIndex[idx2D];
+                    const auto& effectiveRules = (rIdx >= 0) ? regions[rIdx].second : baseRules;
+                    
+                    // Check custom layers using effective rules
+                    for (size_t i = 0; i < effectiveRules.rules.layers.layers.size(); ++i) {
+                        const auto& layer = effectiveRules.rules.layers.layers[i];
                         if (depth >= layer.minDepth && depth < layer.maxDepth) {
                             layerIdx = (uint8_t)(i + 1); // 1-indexed to differentiate from Core
                             break;
@@ -195,9 +256,7 @@ void TerrainSolver::EvaluateLayers(const TerrainGenerationContext& ctx, const Re
     }
 }
 
-void TerrainSolver::ClassifyVoxels(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws, fw::VoxelChunkComponent& output) {
-    uint8_t coreBlockId = static_cast<uint8_t>(rules.resolvedCoreBlock);
-    uint8_t waterBlockId = static_cast<uint8_t>(rules.resolvedWaterBlock);
+void TerrainSolver::ClassifyVoxels(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& baseRules, const std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>>& regions, TerrainWorkspace& ws, fw::VoxelChunkComponent& output) {
     uint8_t airBlockId = 0;
     
     for (int y = 0; y < ctx.voxelResolutionY; ++y) {
@@ -208,6 +267,12 @@ void TerrainSolver::ClassifyVoxels(const TerrainGenerationContext& ctx, const Re
                 int idx3D = (y * ctx.voxelResolutionZ * ctx.voxelResolutionX) + (z * ctx.voxelResolutionX) + x;
                 int idx2D = (z * ctx.voxelResolutionX) + x;
                 
+                int rIdx = ws.dominantRegionIndex[idx2D];
+                const auto& effectiveRules = (rIdx >= 0) ? regions[rIdx].second : baseRules;
+                
+                uint8_t coreBlockId = static_cast<uint8_t>(effectiveRules.resolvedCoreBlock);
+                uint8_t waterBlockId = static_cast<uint8_t>(effectiveRules.resolvedWaterBlock);
+                
                 uint8_t layerIdx = ws.layerIndices[idx3D];
                 uint8_t finalBlock = airBlockId;
                 
@@ -215,14 +280,14 @@ void TerrainSolver::ClassifyVoxels(const TerrainGenerationContext& ctx, const Re
                     finalBlock = coreBlockId;
                 } else if (layerIdx > 0) {
                     // It's a specific layer
-                    if (layerIdx - 1 < rules.resolvedLayerBlocks.size()) {
-                        finalBlock = static_cast<uint8_t>(rules.resolvedLayerBlocks[layerIdx - 1]);
+                    if (layerIdx - 1 < effectiveRules.resolvedLayerBlocks.size()) {
+                        finalBlock = static_cast<uint8_t>(effectiveRules.resolvedLayerBlocks[layerIdx - 1]);
                     } else {
                         finalBlock = coreBlockId;
                     }
                 } else {
                     // Above surface
-                    if (rules.rules.water.enabled && voxelY < rules.rules.water.globalLevel) {
+                    if (effectiveRules.rules.water.enabled && voxelY < effectiveRules.rules.water.globalLevel) {
                         finalBlock = waterBlockId;
                     }
                 }
@@ -259,7 +324,7 @@ void TerrainSolver::ClassifyVoxels(const TerrainGenerationContext& ctx, const Re
                     else 
                     {
                         // Per i field 2D topografici
-                        float renderHeight = rules.rules.height.baseHeight + (val * 30.0f); 
+                        float renderHeight = effectiveRules.rules.height.common.baseHeight + (val * 30.0f); 
                         if (voxelY < renderHeight) finalBlock = coreBlockId;
                         else finalBlock = airBlockId;
                     }
