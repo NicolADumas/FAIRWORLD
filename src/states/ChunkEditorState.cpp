@@ -865,6 +865,33 @@ void ChunkEditorState::DrawUI() {
                             mountainOvr->ridgeStrength = ridgeStrength;
                         }
                         if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                    } else if (auto* duneOvr = std::get_if<fw::DuneRuleOverrides>(&inst.overrides.height->specialized.value())) {
+                        float defaultDirAngle = 45.0f;
+                        float defaultWarpAmp = 30.0f;
+                        float defaultCrestSharp = 2.0f;
+                        if (auto* spec = std::get_if<fw::DuneRules>(&activeTemplate.baseRules.height.specialized)) {
+                            defaultDirAngle = spec->directionAngle;
+                            defaultWarpAmp = spec->warpAmplitude;
+                            defaultCrestSharp = spec->crestSharpness;
+                        }
+                        
+                        float dirAngle = duneOvr->directionAngle.value_or(defaultDirAngle);
+                        if (ImGui::SliderFloat("Dunes: Direction Angle", &dirAngle, 0.0f, 360.0f, "%.1f")) {
+                            duneOvr->directionAngle = dirAngle;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                        
+                        float warpAmp = duneOvr->warpAmplitude.value_or(defaultWarpAmp);
+                        if (ImGui::SliderFloat("Dunes: Warp Amplitude", &warpAmp, 0.0f, 100.0f, "%.1f")) {
+                            duneOvr->warpAmplitude = warpAmp;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                        
+                        float crestSharp = duneOvr->crestSharpness.value_or(defaultCrestSharp);
+                        if (ImGui::SliderFloat("Dunes: Crest Sharpness", &crestSharp, 0.1f, 10.0f, "%.2f")) {
+                            duneOvr->crestSharpness = crestSharp;
+                        }
+                        if (ImGui::IsItemDeactivatedAfterEdit() && editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
                     }
                 }
                 ImGui::Unindent();
@@ -957,7 +984,14 @@ void ChunkEditorState::DrawUI() {
                 if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
                 ImGui::SliderFloat("Mountains: Persistence (Template)", &mountainBase->persistence, 0.1f, 1.0f, "%.2f");
                 if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
-                ImGui::SliderFloat("Mountains: Ridge Strength (Template)", &mountainBase->ridgeStrength, 0.0f, 1.0f, "%.2f");
+                if (ImGui::SliderFloat("Mountains: Ridge Strength (Template)", &mountainBase->ridgeStrength, 0.0f, 1.0f, "%.2f")) { mountainBase->ridgeStrength = mountainBase->ridgeStrength; }
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+            } else if (auto* duneBase = std::get_if<fw::DuneRules>(&activeTemplate.baseRules.height.specialized)) {
+                ImGui::SliderFloat("Dunes: Direction Angle (Template)", &duneBase->directionAngle, 0.0f, 360.0f, "%.1f");
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                ImGui::SliderFloat("Dunes: Warp Amplitude (Template)", &duneBase->warpAmplitude, 0.0f, 100.0f, "%.1f");
+                if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
+                ImGui::SliderFloat("Dunes: Crest Sharpness (Template)", &duneBase->crestSharpness, 0.1f, 10.0f, "%.2f");
                 if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
             }
             

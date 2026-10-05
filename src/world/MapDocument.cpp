@@ -1369,7 +1369,9 @@ uint64_t ComputeRuleHash(const ResolvedTerrainRules& resolved) {
         add_data(&mountains->persistence, sizeof(float));
         add_data(&mountains->ridgeStrength, sizeof(float));
     } else if (auto* dunes = std::get_if<DuneRules>(&resolved.rules.height.specialized)) {
-        // Dune future parameters (directionAngle, warpAmplitude, crestSharpness) are NOT hashed yet
+        add_data(&dunes->directionAngle, sizeof(float));
+        add_data(&dunes->warpAmplitude, sizeof(float));
+        add_data(&dunes->crestSharpness, sizeof(float));
     }
     
     // Hash Layers

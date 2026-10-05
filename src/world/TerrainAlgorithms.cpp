@@ -132,12 +132,20 @@ void GenerateMountains(const TerrainAlgorithmContext& ctx) {
 
 void GenerateDunes(const TerrainAlgorithmContext& ctx) {
     const auto& hr = ctx.rules.rules.height;
+    const auto* spec = std::get_if<DuneRules>(&hr.specialized);
+    
+    float directionAngle = spec ? spec->directionAngle : 45.0f;
+    float warpAmplitude = spec ? spec->warpAmplitude : 30.0f;
+    float crestSharpness = spec ? spec->crestSharpness : 2.0f;
 
-    Noise duneNoise(ctx.context.planetSeed);
-    duneNoise.SetNoiseType(NoiseType::OpenSimplex2);
-    duneNoise.SetFractalType(FractalType::DomainWarpProgressive);
-    duneNoise.SetDomainWarpAmp(30.0f);
-    duneNoise.SetFrequency(hr.common.frequency);
+    // Use a noise instance for the warp
+    Noise warpNoise(ctx.context.planetSeed);
+    warpNoise.SetNoiseType(NoiseType::OpenSimplex2);
+    warpNoise.SetFrequency(hr.common.frequency);
+    
+    float rad = glm::radians(directionAngle);
+    float dirX = std::cos(rad);
+    float dirZ = std::sin(rad);
 
     for (int z = 0; z < ctx.context.voxelResolutionZ; ++z) {
         for (int x = 0; x < ctx.context.voxelResolutionX; ++x) {
@@ -148,16 +156,32 @@ void GenerateDunes(const TerrainAlgorithmContext& ctx) {
             float wy = pos.y * hr.common.macroScale;
             float wz = pos.z * hr.common.macroScale;
 
-            duneNoise.DomainWarp(wx, wy, wz);
-            
-            float duneValue = std::sin(wx * hr.common.frequency + wz * hr.common.frequency);
-            duneValue = 1.0f - std::abs(duneValue);
-            duneValue = std::pow(duneValue, 2.0f);
+            // Project coordinates to the directional axis
+            float dirCoord = wx * dirX + wz * dirZ;
 
-            float finalHeight = hr.common.baseHeight + (duneValue * hr.common.amplitude);
+            // Deterministic domain warp
+            // We evaluate the noise in 3D to ensure world-space continuity
+            float warpValue = warpNoise.GetNoise(wx, wy, wz);
+            float warpedCoord = dirCoord + (warpValue * warpAmplitude);
+
+            // Periodic carrier
+            float carrier = std::sin(warpedCoord * hr.common.frequency);
+
+            // Remap into bounded response [0, 1] with 1 being the peak
+            float normalized = 1.0f - std::abs(carrier);
+
+            // Crest shaping
+            float duneResponse = std::pow(normalized, crestSharpness);
+
+            // Final absolute height
+            float finalHeight = hr.common.baseHeight + (duneResponse * hr.common.amplitude);
             
             ctx.workspace.surfaceHeights[idx2D] = finalHeight;
-            ctx.workspace.macroField[idx2D] = duneValue;
+            
+            // Diagnostics
+            ctx.workspace.macroField[idx2D] = duneResponse;
+            ctx.workspace.detailField[idx2D] = carrier;
+            ctx.workspace.regionalField[idx2D] = warpValue;
         }
     }
 }
