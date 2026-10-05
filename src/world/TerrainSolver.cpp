@@ -156,10 +156,12 @@ void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, co
                     glm::vec3 pos = GetVoxelSpherePos(ctx, x, 0, z);
                     
                     // Evaluate Shape SDF
-                    glm::vec2 localPos(pos.x - (region.rectMin.x + region.rectMax.x) * 8.0f, 
-                                       pos.z - (region.rectMin.y + region.rectMax.y) * 8.0f);
-                    glm::vec2 halfExtents((region.rectMax.x - region.rectMin.x) * 8.0f,
-                                          (region.rectMax.y - region.rectMin.y) * 8.0f);
+                    float centerX = (region.rectMin.x + region.rectMax.x + 1) * 8.0f;
+                    float centerZ = (region.rectMin.y + region.rectMax.y + 1) * 8.0f;
+                    glm::vec2 localPos(pos.x - centerX, pos.z - centerZ);
+                    
+                    glm::vec2 halfExtents((region.rectMax.x - region.rectMin.x + 1) * 8.0f,
+                                          (region.rectMax.y - region.rectMin.y + 1) * 8.0f);
                     
                     float sdf = ShapeMath::EvaluateSDF(region.shape, localPos, halfExtents);
                     

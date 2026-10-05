@@ -158,6 +158,16 @@ void ChunkEditorState::RebuildChunkPreview(const char* reason) {
     // baseRegion.water.enabled = false; // Disable water for the preview
     tempPlanet.regions.push_back(baseRegion);
 
+    // --- MICRO DIAGNOSTIC 7 ---
+    std::cout << "\n[RegionStorage]\n";
+    for (size_t i = 0; i < tmpl.subRegions.size(); ++i) {
+        const auto& sub = tmpl.subRegions[i];
+        std::cout << "Region " << i << " explicit algorithm: " 
+                  << (sub.overrides.height.has_value() && sub.overrides.height->algorithm.has_value() ? std::to_string((int)sub.overrides.height->algorithm.value()) : "nullopt") << "\n";
+    }
+    std::cout << "\n";
+    // --------------------------
+
     for (const auto& sub : tmpl.subRegions) {
         fw::MapRegion projectedSub = sub;
         projectedSub.eulerAngles = glm::vec3(0.0f);
@@ -554,6 +564,24 @@ void ChunkEditorState::DrawUI() {
                             nr.rectMin = targetMin;
                             nr.rectMax = targetMax;
                             nr.angularRadius = 0.0f; // Fix: Ensure canvas regions are always evaluated as 2D flat footprints
+                            
+                            // --- MICRO DIAGNOSTIC 7 ---
+                            std::cout << "\n[BrushSnapshot]\n";
+                            if (m_brushSettings.overrides.height.has_value() && m_brushSettings.overrides.height->algorithm.has_value()) {
+                                std::cout << "Brush algorithm: " << (int)m_brushSettings.overrides.height->algorithm.value() << "\n";
+                            } else {
+                                std::cout << "Brush algorithm: nullopt\n";
+                            }
+                            if (nr.overrides.height.has_value() && nr.overrides.height->algorithm.has_value()) {
+                                std::cout << "Region snapshot algorithm: " << (int)nr.overrides.height->algorithm.value() << "\n";
+                            } else {
+                                std::cout << "Region snapshot algorithm: nullopt\n";
+                            }
+                            std::cout << "Height override present: " << (nr.overrides.height.has_value() ? "YES" : "NO") << "\n";
+                            std::cout << "Region count before: " << activeTemplate.subRegions.size() << "\n";
+                            std::cout << "Target rect: " << nr.rectMin.x << "," << nr.rectMin.y << " to " << nr.rectMax.x << "," << nr.rectMax.y << "\n\n";
+                            // --------------------------
+                            
                             activeTemplate.subRegions.push_back(nr);
                             m_selectedSubRegionIndex = (int)activeTemplate.subRegions.size() - 1;
                             if (m_autoRebuildPreview) { m_needsRebuild = true;  }
@@ -706,7 +734,12 @@ void ChunkEditorState::DrawUI() {
                 ImGui::PopStyleColor();
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-                if (ImGui::Button("MODALITÀ PENNELLO: OFF (Clicca per Dipingere)", ImVec2(-1, 35))) m_isBrushModeActive = true;
+                if (ImGui::Button("MODALITÀ PENNELLO: OFF (Clicca per Dipingere)", ImVec2(-1, 35))) {
+                    m_isBrushModeActive = true;
+                    if (!m_brushSettings.overrides.height.has_value()) {
+                        m_brushSettings.overrides.height = fw::MakeMorphologyOverrides(activeTemplate.baseRules.height.algorithm);
+                    }
+                }
                 ImGui::PopStyleColor();
             }
             ImGui::Spacing();
@@ -736,7 +769,7 @@ void ChunkEditorState::DrawUI() {
         }
 
         bool editingSelected = (m_selectedSubRegionIndex >= 0 && m_selectedSubRegionIndex < (int)activeTemplate.subRegions.size() && !m_isBrushModeActive);
-        const char* headerTitle = editingSelected ? "Proprietà Regione Selezionata" : "Impostazioni Pennello (Nuova Regione)";
+        const char* headerTitle = editingSelected ? "MORFOLOGIA REGIONE SELEZIONATA" : "MORFOLOGIA PENNELLO";
         
         if (ImGui::CollapsingHeader(headerTitle, ImGuiTreeNodeFlags_DefaultOpen)) {
             fw::MapRegion& inst = editingSelected ? activeTemplate.subRegions[m_selectedSubRegionIndex] : m_brushSettings;
@@ -934,7 +967,7 @@ void ChunkEditorState::DrawUI() {
         }
 
         int templatePanelFlags = editingSelected ? 0 : ImGuiTreeNodeFlags_DefaultOpen;
-        if (ImGui::CollapsingHeader("Default del Template", templatePanelFlags)) {
+        if (ImGui::CollapsingHeader("MORFOLOGIA BASE", templatePanelFlags)) {
             if (editingSelected) {
                 ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "ATTENZIONE: Modifiche qui si applicano all'intero modello!");
             }
@@ -954,13 +987,18 @@ void ChunkEditorState::DrawUI() {
             
             const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
             int currentAlgo = static_cast<int>(activeTemplate.baseRules.height.algorithm);
-            if (ImGui::Combo("Algoritmo Terreno", &currentAlgo, algoNames, IM_ARRAYSIZE(algoNames))) {
-                if (activeTemplate.baseRules.height.algorithm != static_cast<fw::TerrainAlgorithmType>(currentAlgo)) {
-                    auto backupCommon = activeTemplate.baseRules.height.common;
-                    activeTemplate.baseRules.height = fw::MakeMorphologyRules(static_cast<fw::TerrainAlgorithmType>(currentAlgo));
-                    activeTemplate.baseRules.height.common = backupCommon;
+            
+            if (m_isBrushModeActive) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Algoritmo Base NASCOSTO: Usa la Morfologia Pennello in alto.");
+            } else {
+                if (ImGui::Combo("Algoritmo", &currentAlgo, algoNames, IM_ARRAYSIZE(algoNames))) {
+                    if (activeTemplate.baseRules.height.algorithm != static_cast<fw::TerrainAlgorithmType>(currentAlgo)) {
+                        auto backupCommon = activeTemplate.baseRules.height.common;
+                        activeTemplate.baseRules.height = fw::MakeMorphologyRules(static_cast<fw::TerrainAlgorithmType>(currentAlgo));
+                        activeTemplate.baseRules.height.common = backupCommon;
+                    }
+                    if (m_autoRebuildPreview) { m_needsRebuild = true;  }
                 }
-                if (m_autoRebuildPreview) { m_needsRebuild = true;  }
             }
             ImGui::SliderFloat("Altezza Base (Template)", &activeTemplate.baseRules.height.common.baseHeight, -100.0f, 200.0f, "%.1f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }
