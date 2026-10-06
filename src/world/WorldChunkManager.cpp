@@ -3,6 +3,7 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include "core/utils/ChunkDimensions.h"
 
 namespace fw {
 
@@ -11,9 +12,9 @@ struct ChunkFileHeader {
     uint32_t version = 1;
     int32_t cx = 0;
     int32_t cz = 0;
-    uint32_t sizeX = 16;
-    uint32_t sizeY = 128;
-    uint32_t sizeZ = 16;
+    uint32_t sizeX = ChunkDimensions::VoxelsX;
+    uint32_t sizeY = ChunkDimensions::VoxelsY;
+    uint32_t sizeZ = ChunkDimensions::VoxelsZ;
 };
 
 bool WorldChunkManager::SaveChunk(int cx, int cz, const VoxelChunkComponent& chunkData) const {
@@ -56,7 +57,7 @@ bool WorldChunkManager::LoadChunk(int cx, int cz, VoxelChunkComponent& chunkData
         return false; // Il sistema lo rigenererà da zero
     }
     
-    if (header.version != 1 || header.sizeX != 16 || header.sizeY != 128 || header.sizeZ != 16) {
+    if (header.version != 1 || header.sizeX != ChunkDimensions::VoxelsX || header.sizeY != ChunkDimensions::VoxelsY || header.sizeZ != ChunkDimensions::VoxelsZ) {
         std::cerr << "[WorldChunkManager] Versione o dimensioni chunk incompatibili: " << filename << "\n";
         return false;
     }

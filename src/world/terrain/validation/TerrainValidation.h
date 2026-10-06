@@ -41,6 +41,8 @@ private:
     static bool TestParallelDeterminism();
     static bool TestInterleaving();
     static bool TestSeedSensitivity();
+    static bool TestMorphologySeedVariation();
+    static bool TestRegionSeedContract();
     static bool TestRuleSensitivity();
     
     // Phase 5.1

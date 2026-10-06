@@ -26,12 +26,17 @@ enum class TerrainDiagnosticMode {
 struct TerrainGenerationContext {
     uint32_t planetSeed;
     ChunkCoord chunkCoord;
+    int32_t layer = 0; // Canonical radial chunk layer
     glm::vec3 chunkCenterSphere; // Center of the chunk in normalized spherical coordinates
     int faceIndex = 0;
     int faceGridResolution = 100; // Valore di default
     int voxelResolutionX;
     int voxelResolutionY;
     int voxelResolutionZ;
+    
+    // Spatial Validity (Compact radial mask)
+    int32_t firstValidRadialY = 0; 
+
     
     // Configurazione Architetturale del Mondo
     bool isFlat = false;

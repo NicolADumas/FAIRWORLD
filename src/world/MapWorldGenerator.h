@@ -30,6 +30,6 @@ namespace fw {
         static const ::BiomeDef* EvaluateBiome(float temp, float humidity, float height, AssetManager* assets);
     
         // Converte le coordinate cartesiane in un valore di altezza sferica locale
-        static float SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, float frequency = 1.0f);
+        static float SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, uint32_t baseSeed, float frequency = 1.0f);
     };
 }

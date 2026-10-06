@@ -310,7 +310,7 @@ struct MapRegion {
     MapRegionType type = MapRegionType::Forest;
     RegionShape shape = RegionShape::Rectangle; // Forma della struttura (Rettangolo, Cerchio, Rombo, Stella)
     std::string label;
-    uint32_t seed = 0;
+    std::optional<uint32_t> seed = std::nullopt;
     
     // OVERRIDES LOCALI (eredita tutto il resto dal Template)
     TerrainRuleOverrides overrides;
@@ -375,6 +375,7 @@ struct PlanetBaseTerrain {
     MapRegionType biome = MapRegionType::Flat; // Updated biome
     TerrainGenerationRules baseRules;
     uint32_t resolvedSurfaceBlock = 1;
+    uint32_t seed = 0;
 };
 
 struct PlanetMap {

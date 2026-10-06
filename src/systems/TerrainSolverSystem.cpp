@@ -7,6 +7,8 @@
 #include "BlockRegistry.h"
 #include "ForgeComponents.h"
 #include "world/MapDocument.h"
+#include "world/PlanetRadialMapping.h"
+#include "core/utils/ChunkDimensions.h"
 
 namespace fw {
 
@@ -48,8 +50,16 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
         
         // Costruisci il contesto di generazione dalla BiomeDataComponent
         TerrainGenerationContext ctx;
-        ctx.planetSeed = 12345; // TODO: Fetch from actual global map data when available
-        ctx.chunkCoord = {chunk.cx, chunk.cz};
+        ctx.planetSeed = biomeData.baseTerrain.seed;
+        
+        if (chunk.planetCoord.planet.IsValid()) {
+            ctx.faceIndex = static_cast<int>(chunk.planetCoord.face);
+            ctx.chunkCoord = {chunk.planetCoord.col, chunk.planetCoord.row};
+            ctx.layer = chunk.planetCoord.layer;
+        } else {
+            ctx.chunkCoord = {chunk.cx, chunk.cz};
+            ctx.layer = 0;
+        }
         
         // Centriamo nello spazio sferico (placeholder approssimato)
         ctx.chunkCenterSphere = glm::normalize(biomeData.chunkCenterWorld);
@@ -57,15 +67,30 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
             ctx.chunkCenterSphere = glm::vec3(0.0f, 1.0f, 0.0f); // Fallback sicuro
         }
         
-        ctx.voxelResolutionX = 16;
-        ctx.voxelResolutionY = 128;
-        ctx.voxelResolutionZ = 16;
+        ctx.voxelResolutionX = ChunkDimensions::VoxelsX;
+        ctx.voxelResolutionY = ChunkDimensions::VoxelsY;
+        ctx.voxelResolutionZ = ChunkDimensions::VoxelsZ;
         
         ctx.isFlat = biomeData.isFlat;
         ctx.planetRadius = PlanetMath::GetPlanetRadius(biomeData.planetSize);
         ctx.faceGridResolution = PlanetMath::GetFaceResolution(biomeData.planetSize) * ctx.voxelResolutionX;
         
         ctx.diagnosticMode = s_DiagnosticMode;
+        
+        // Setup Spatial Radial Validity Mask
+        ctx.firstValidRadialY = 0;
+        if (!ctx.isFlat) {
+            for (int y = 0; y < ctx.voxelResolutionY; ++y) {
+                if (PlanetRadialMapping::ClassifyCellRadialDomain(ctx.layer, y, ctx.planetRadius) == PlanetRadialMapping::RadialDomain::Valid) {
+                    ctx.firstValidRadialY = y;
+                    break;
+                }
+                if (y == ctx.voxelResolutionY - 1) {
+                    ctx.firstValidRadialY = ctx.voxelResolutionY; // Entire chunk invalid
+                }
+            }
+        }
+        
         // ruleHash will be computed below
         
         // Ottieni le regole finali risolvendo i nomi dei blocchi per le base rules
@@ -73,6 +98,10 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
         ResolvedTerrainRules baseRules = ResolveTerrainRules(biomeData.baseTerrain.baseRules, emptyOverrides, 1.0f, blockRegistry);
         
         uint64_t combinedHash = ComputeRuleHash(baseRules);
+        
+        // Include base seed in hash
+        uint64_t baseSeed = ctx.planetSeed;
+        combinedHash ^= (baseSeed + 0x9e3779b9 + (combinedHash << 6) + (combinedHash >> 2));
         
         // Risolvi le regole per ogni regione e calcola l'hash composto
         std::vector<std::pair<fw::MapRegion, ResolvedTerrainRules>> resolvedRegions;
@@ -100,6 +129,9 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
             mix((int)r.shape);
             mix(r.angularRadius);
             mix(r.influence); // falloff
+            
+            uint32_t effRegionSeed = r.seed.value_or(ctx.planetSeed);
+            mix(effRegionSeed);
             
             // Combine hash
             combinedHash ^= (rHash + 0x9e3779b9 + (combinedHash << 6) + (combinedHash >> 2));

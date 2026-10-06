@@ -11,6 +11,7 @@
 
 #include "GameWorld.h"
 #include <glm/gtx/quaternion.hpp>
+#include "core/utils/ChunkDimensions.h"
 
 namespace fw {
 
@@ -86,6 +87,23 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 
         auto& chunk = targetWorld.GetRegistry().get<fw::VoxelChunkComponent>(chunkEnt);
         chunk.isGenerated = false; // Force regeneration when map rules are applied
+        
+        if (face >= 0 && face <= 5) {
+            chunk.planetCoord.planet = fw::PlanetID{(uint32_t)planetIndex};
+            chunk.planetCoord.face = static_cast<fw::CubeFace>(face);
+            chunk.planetCoord.col = local_cx + fw::PlanetMath::GetEditorCanvasExtents(planet.planetSize);
+            chunk.planetCoord.row = local_cz + fw::PlanetMath::GetEditorCanvasExtents(planet.planetSize);
+            chunk.planetCoord.layer = 0;
+            
+            if (targetWorld.GetRegistry().all_of<fw::TransformComponent>(chunkEnt)) {
+                auto& trans = targetWorld.GetRegistry().get<fw::TransformComponent>(chunkEnt);
+                trans.location = {0.0f, 0.0f, 0.0f};
+                trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
+                trans.scale = {1.0f, 1.0f, 1.0f};
+            }
+        } else {
+            chunk.planetCoord.planet = fw::PlanetID::Invalid();
+        }
         
         fw::BiomeDataComponent biomeData;
         biomeData.planetSize = planet.planetSize;
@@ -207,7 +225,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
                 }
                 
                 if (shouldSpawn) {
-                    generateChunk(cx, cz, cx, cz, -1, glm::vec3(cx * 16.0f, 0.0f, cz * 16.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+                    generateChunk(cx, cz, cx, cz, -1, glm::vec3(cx * fw::ChunkDimensions::HorizontalWorldExtent, 0.0f, cz * fw::ChunkDimensions::HorizontalWorldExtent), glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
                 }
             }
         }
@@ -219,7 +237,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 bool MapWorldGenerator::GetSphericalChunkTransform(PlanetSize pSize, int global_cx, int global_cz, glm::vec3& outPos, glm::quat& outRot) {
     int N = fw::PlanetMath::GetEditorCanvasExtents(pSize); // Es: 5 per Medium
     float R = fw::PlanetMath::GetPlanetRadius(pSize);      // Es: 88.0f
-    float S = fw::PlanetMath::CHUNK_WORLD_SIZE;            // Rigorosamente 16.0f
+    float S = fw::ChunkDimensions::HorizontalWorldExtent;  // Rigorosamente 16.0f
 
     int stride = fw::PlanetMath::GetFaceResolution(pSize); // Es: 11
     
@@ -269,13 +287,13 @@ bool MapWorldGenerator::GetSphericalChunkTransform(PlanetSize pSize, int global_
 
 bool MapWorldGenerator::GetTrueSphericalPosition(PlanetSize pSize, bool isFlat, int global_cx, int global_cz, float local_x, float local_y, float local_z, glm::vec3& outWorldPos) {
     if (isFlat) {
-        outWorldPos = glm::vec3(global_cx * 16.0f + local_x, local_y, global_cz * 16.0f + local_z);
+        outWorldPos = glm::vec3(global_cx * fw::ChunkDimensions::HorizontalWorldExtent + local_x, local_y, global_cz * fw::ChunkDimensions::HorizontalWorldExtent + local_z);
         return true;
     }
 
     int N = fw::PlanetMath::GetEditorCanvasExtents(pSize);
     float R = fw::PlanetMath::GetPlanetRadius(pSize);
-    float S = fw::PlanetMath::CHUNK_WORLD_SIZE;
+    float S = fw::ChunkDimensions::HorizontalWorldExtent;
     int stride = fw::PlanetMath::GetFaceResolution(pSize);
     
     int face_col = global_cx / stride;
@@ -286,8 +304,8 @@ bool MapWorldGenerator::GetTrueSphericalPosition(PlanetSize pSize, bool isFlat, 
         int cx = (global_cx % stride) - N;
         int cy = (global_cz % stride) - N;
 
-        float dx = (local_x - 8.0f);
-        float dz = (local_z - 8.0f);
+        float dx = (local_x - (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f));
+        float dz = (local_z - (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f));
         
         float faceX = cx * S + dx;
         float faceY = cy * S + dz;
@@ -311,9 +329,9 @@ bool MapWorldGenerator::GetTrueSphericalPosition(PlanetSize pSize, bool isFlat, 
 
 void MapWorldGenerator::WorldToVoxelCoord(PlanetSize pSize, bool isFlat, const glm::vec3& worldPos, float& out_flatX, float& out_localY, float& out_flatZ) {
     if (isFlat) {
-        out_flatX = worldPos.x + 8.0f;
+        out_flatX = worldPos.x + (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
         out_localY = worldPos.y;
-        out_flatZ = worldPos.z + 8.0f;
+        out_flatZ = worldPos.z + (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
         return;
     }
 
@@ -332,7 +350,7 @@ void MapWorldGenerator::WorldToVoxelCoord(PlanetSize pSize, bool isFlat, const g
     else if (absNormal.x >= absNormal.y && absNormal.x >= absNormal.z) face = normal.x > 0 ? 2 : 3;
     else face = normal.y > 0 ? 4 : 5;
 
-    float factor = R / fw::PlanetMath::CHUNK_WORLD_SIZE;
+    float factor = R / fw::ChunkDimensions::HorizontalWorldExtent;
     float local_cx = 0, local_cy = 0;
 
     if (face == 0) { local_cx = (normal.x / normal.z) * factor; local_cy = (normal.y / normal.z) * factor; }
@@ -350,14 +368,14 @@ void MapWorldGenerator::WorldToVoxelCoord(PlanetSize pSize, bool isFlat, const g
     float global_cx_continuous = local_cx + N + face_col * stride;
     float global_cy_continuous = local_cy + N + face_row * stride;
 
-    out_flatX = global_cx_continuous * 16.0f + 8.0f;
-    out_flatZ = global_cy_continuous * 16.0f + 8.0f;
+    out_flatX = global_cx_continuous * fw::ChunkDimensions::HorizontalWorldExtent + (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
+    out_flatZ = global_cy_continuous * fw::ChunkDimensions::HorizontalWorldExtent + (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
 }
 
 void MapWorldGenerator::GetChunkCoordFromPosition(PlanetSize pSize, bool isFlat, const glm::vec3& worldPos, int& out_cx, int& out_cz) {
     if (isFlat) {
-        out_cx = (int)std::floor(worldPos.x / 16.0f);
-        out_cz = (int)std::floor(worldPos.z / 16.0f);
+        out_cx = (int)std::floor(worldPos.x / fw::ChunkDimensions::HorizontalWorldExtent);
+        out_cz = (int)std::floor(worldPos.z / fw::ChunkDimensions::HorizontalWorldExtent);
         return;
     }
 
@@ -373,7 +391,7 @@ void MapWorldGenerator::GetChunkCoordFromPosition(PlanetSize pSize, bool isFlat,
     }
 
     float R = fw::PlanetMath::GetPlanetRadius(pSize);
-    float factor = R / fw::PlanetMath::CHUNK_WORLD_SIZE;
+    float factor = R / fw::ChunkDimensions::HorizontalWorldExtent;
     float local_cx = 0, local_cy = 0;
 
     if (face == 0) { local_cx = (normal.x / normal.z) * factor; local_cy = (normal.y / normal.z) * factor; }
@@ -400,12 +418,13 @@ void MapWorldGenerator::GetChunkCoordFromPosition(PlanetSize pSize, bool isFlat,
     out_cz = (cy + N) + (face / 3) * stride;
 }
 
-float MapWorldGenerator::SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, float frequency) {
+float MapWorldGenerator::SampleSphericalNoise(const glm::vec3& normal, const MapRegion& regionInfo, uint32_t baseSeed, float frequency) {
     thread_local std::unordered_map<uint32_t, ::PerlinNoise> noiseCache;
-    if (noiseCache.find(regionInfo.seed) == noiseCache.end()) {
-        noiseCache.emplace(regionInfo.seed, ::PerlinNoise(regionInfo.seed));
+    uint32_t effSeed = regionInfo.seed.value_or(baseSeed);
+    if (noiseCache.find(effSeed) == noiseCache.end()) {
+        noiseCache.emplace(effSeed, ::PerlinNoise(effSeed));
     }
-    const ::PerlinNoise& noiseGen = noiseCache[regionInfo.seed];
+    const ::PerlinNoise& noiseGen = noiseCache[effSeed];
     
     // Parametri base ereditati dal template
     float noiseScale = frequency * 100.0f; 

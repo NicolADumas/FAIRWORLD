@@ -16,6 +16,7 @@
 #include "BlockRegistry.h"
 #include "MaterialRegistry.h"
 #include "MapWorldGenerator.h"
+#include "PlanetaryMeshGenerator.h"
 #include "AssetManager.h"
 #include "systems/TerrainSolverSystem.h"
 #include <iostream>
@@ -422,6 +423,9 @@ void GameWorld::Update(float dt) {
                 }
 
                 auto getVertexPos = [&](float vx, float vy, float vz) -> fw::Vec3 {
+                    if (chunkData->planetCoord.planet.IsValid()) {
+                        return {vx, vy, vz};
+                    }
                     if (!isSpherical) return {vx, vy, vz};
                     glm::vec3 trueWorldPos;
                     if (fw::MapWorldGenerator::GetTrueSphericalPosition(pSize, !isSpherical, chunkData->cx, chunkData->cz, vx, vy, vz, trueWorldPos)) {
@@ -516,6 +520,10 @@ void GameWorld::Update(float dt) {
                             }
                         }
                     }
+                }
+
+                if (chunkData->planetCoord.planet.IsValid()) {
+                    fw::PlanetaryMeshGenerator::ConvertToPlanetaryPositions(vertices, chunkData->planetCoord, pSize);
                 }
 
                 if (vertices.empty()) {

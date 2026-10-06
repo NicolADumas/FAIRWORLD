@@ -143,6 +143,10 @@ void ChunkEditorState::RebuildChunkPreview(const char* reason) {
     tempPlanet.minZ = minZ;
     tempPlanet.maxZ = maxZ;
     tempPlanet.baseTerrain.baseRules = tmpl.baseRules;
+    tempPlanet.baseTerrain.seed = tmpl.seed;
+    std::cout << "\n[PreviewSeed]\n";
+    std::cout << "TemplateSeed: " << tmpl.seed << "\n";
+    std::cout << "PreviewBaseSeed: " << tempPlanet.baseTerrain.seed << "\n\n";
     std::cout << "[PreviewRebuild] SOURCE Amplitude = " << tmpl.baseRules.height.common.amplitude << "\n";
 
     fw::MapRegion baseRegion;
@@ -364,8 +368,6 @@ void ChunkEditorState::DrawUI() {
         t.id = "terrain_" + std::to_string(doc.terrainLibrary.size() + 1);
         t.planetSize = m_previewPlanetSize;
         t.baseType = fw::MapRegionType::Forest;
-        t.baseRules.height.common.frequency = 0.03f;
-        t.baseRules.height.common.amplitude = 1.0f;
         t.baseAngularRadius = 0.25f;
 
         fw::TerrainLayer surfaceLayer;
@@ -553,12 +555,7 @@ void ChunkEditorState::DrawUI() {
                         }
 
                         if (existingIdx >= 0) {
-                            fw::MapRegion& nr = activeTemplate.subRegions[existingIdx];
-                            nr.type = m_brushSettings.type;
-                            nr.shape = m_brushSettings.shape;
-                            nr.overrides = m_brushSettings.overrides;
-                            nr.angularRadius = 0.0f; // Fix: Ensure canvas regions are always evaluated as 2D flat footprints
-                            if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+                            m_selectedSubRegionIndex = existingIdx;
                         } else {
                             fw::MapRegion nr = m_brushSettings;
                             nr.rectMin = targetMin;
@@ -781,10 +778,39 @@ void ChunkEditorState::DrawUI() {
                 if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
             }
             
-            int seed = (int)inst.seed;
-            if (ImGui::InputInt("Seme Geologico (Seed) Regione", &seed)) {
-                inst.seed = seed;
+            bool hasSeedOverride = inst.seed.has_value();
+            if (ImGui::Checkbox("Sovrascrivi Seme Geologico (Seed) Regione", &hasSeedOverride)) {
+                if (hasSeedOverride) {
+                    inst.seed = activeTemplate.seed;
+                } else {
+                    inst.seed.reset();
+                }
                 if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
+                int algoIdx = inst.overrides.height.has_value() && inst.overrides.height->algorithm.has_value() ? (int)inst.overrides.height->algorithm.value() : (int)activeTemplate.baseRules.height.algorithm;
+                if (algoIdx >= 0 && algoIdx < 4) {
+                    if (hasSeedOverride) {
+                        std::cout << "[MorphologySeed] Algorithm: " << algoNames[algoIdx] << " EffectiveSeed: " << activeTemplate.seed << " Source: RegionExplicit\n";
+                    } else {
+                        std::cout << "[MorphologySeed] Algorithm: " << algoNames[algoIdx] << " EffectiveSeed: " << activeTemplate.seed << " Source: Template\n";
+                    }
+                }
+            }
+            if (inst.seed.has_value()) {
+                ImGui::Indent();
+                int seed = (int)inst.seed.value();
+                if (ImGui::InputInt("Seme Geologico", &seed)) {
+                    inst.seed = seed;
+                    if (editingSelected && m_autoRebuildPreview) { m_needsRebuild = true; }
+                }
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
+                    int algoIdx = inst.overrides.height.has_value() && inst.overrides.height->algorithm.has_value() ? (int)inst.overrides.height->algorithm.value() : (int)activeTemplate.baseRules.height.algorithm;
+                    if (algoIdx >= 0 && algoIdx < 4) {
+                        std::cout << "[MorphologySeed] Algorithm: " << algoNames[algoIdx] << " EffectiveSeed: " << seed << " Source: RegionExplicit\n";
+                    }
+                }
+                ImGui::Unindent();
             }
             
             const char* biomeNames[] = { "Forest", "Desert", "Tundra", "Ocean", "Volcano", "City", "Dungeon", "Portal", "Flat" };
@@ -1037,6 +1063,13 @@ void ChunkEditorState::DrawUI() {
             if (ImGui::InputInt("Seme Geologico Base (Template)", &seed)) {
                 activeTemplate.seed = seed;
                 if (m_autoRebuildPreview) { m_needsRebuild = true;  }
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
+                int algoIdx = (int)activeTemplate.baseRules.height.algorithm;
+                if (algoIdx >= 0 && algoIdx < 4) {
+                    std::cout << "[MorphologySeed] Algorithm: " << algoNames[algoIdx] << " EffectiveSeed: " << seed << " Source: Template\n";
+                }
             }
             ImGui::SliderFloat("Estensione Base (Raggio)", &activeTemplate.baseAngularRadius, 0.01f, 0.5f, "%.3f");
             if (ImGui::IsItemDeactivatedAfterEdit() && m_autoRebuildPreview) { m_needsRebuild = true; }

@@ -148,7 +148,9 @@ void TerrainSolver::EvaluateHeightFields(const TerrainGenerationContext& ctx, co
             const auto& [region, regionRules] = regions[rIdx];
             
             // Generate full chunk for this region rules
-            EvaluateAlgorithmIntoWorkspace(ctx, regionRules, regionWs);
+            TerrainGenerationContext regionCtx = ctx;
+            regionCtx.planetSeed = region.seed.value_or(ctx.planetSeed);
+            EvaluateAlgorithmIntoWorkspace(regionCtx, regionRules, regionWs);
             
             for (int z = 0; z < ctx.voxelResolutionZ; ++z) {
                 for (int x = 0; x < ctx.voxelResolutionX; ++x) {
@@ -330,6 +332,14 @@ void TerrainSolver::ClassifyVoxels(const TerrainGenerationContext& ctx, const Re
                         if (voxelY < renderHeight) finalBlock = coreBlockId;
                         else finalBlock = airBlockId;
                     }
+                }
+                
+                // Enforce spatial validity domain
+                // If a cell falls in the core boundary or beyond, it is spatially invalid.
+                // It bypassed normal material selection above (or gets overridden here) 
+                // and must remain empty in the 3D grid.
+                if (y < ctx.firstValidRadialY) {
+                    finalBlock = airBlockId;
                 }
                 
                 output.blocks[x][y][z] = finalBlock;

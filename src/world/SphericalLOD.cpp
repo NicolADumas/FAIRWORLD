@@ -226,7 +226,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 
                 // DATA-DRIVEN: Calcoliamo l'influenza delle regioni tramite Grid Mapping esatto e distanza angolare (Fallback)
                 MapRegion activeRegion;
-                activeRegion.seed = 12345;
+                activeRegion.seed = baseTerrain.seed;
                 activeRegion.type = baseTerrain.biome;
                 
                 // --- GRID MAPPING LOGIC (Legge Sferica Esatta) ---
@@ -278,14 +278,14 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                 }
                 
                 MapRegion baseRegion;
-                baseRegion.seed = 12345;
+                baseRegion.seed = baseTerrain.seed;
                 baseRegion.type = baseTerrain.biome;
                 
                 if (foundGridAligned) {
                     baseRegion = activeRegion;
                 }
                 
-                float baseTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, baseRegion, 0.05f);
+                float baseTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, baseRegion, baseTerrain.seed, 0.05f);
                 float baseHeight = planetRadius + (baseTerrainVal * planetRadius * 0.05f * 1.0f);
                 if (baseRegion.type == MapRegionType::Ocean) {
                     baseHeight = planetRadius - (planetRadius * 0.02f) + (baseTerrainVal * planetRadius * 0.01f);
@@ -308,7 +308,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     float blendDistance = 0.08f; // Ampiezza della zona di transizione morbida
                     
                     if (sdf < blendDistance) {
-                        float rTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, r, 0.05f);
+                        float rTerrainVal = MapWorldGenerator::SampleSphericalNoise(normal, r, baseTerrain.seed, 0.05f);
                         float regionHeight = planetRadius + (rTerrainVal * planetRadius * 0.05f * 1.0f);
                         if (r.type == MapRegionType::Ocean) {
                             regionHeight = planetRadius - (planetRadius * 0.02f) + (rTerrainVal * planetRadius * 0.01f);

@@ -299,6 +299,108 @@ bool TerrainValidation::TestSeedSensitivity() {
     return diff;
 }
 
+bool TerrainValidation::TestMorphologySeedVariation() {
+    bool allPass = true;
+    fw::TerrainAlgorithmType algos[] = {
+        fw::TerrainAlgorithmType::Plains,
+        fw::TerrainAlgorithmType::Hills,
+        fw::TerrainAlgorithmType::Mountains,
+        fw::TerrainAlgorithmType::Dunes
+    };
+    const char* algoNames[] = { "Plains", "Hills", "Mountains", "Dunes" };
+    
+    for (int i = 0; i < 4; ++i) {
+        auto rules = CreateValidationRules();
+        rules.rules.height = fw::MakeMorphologyRules(algos[i]);
+        rules.rules.height.common.baseHeight = 30.0f;
+        rules.rules.height.common.amplitude = 40.0f;
+        rules.rules.height.common.frequency = 0.05f;
+        rules.rules.height.common.macroScale = 1.0f;
+        
+        auto A1 = std::make_unique<fw::VoxelChunkComponent>();
+        auto A2 = std::make_unique<fw::VoxelChunkComponent>();
+        auto B  = std::make_unique<fw::VoxelChunkComponent>();
+        
+        GenerateChunkMock(0, 0, 100, rules, *A1);
+        GenerateChunkMock(0, 0, 100, rules, *A2);
+        GenerateChunkMock(0, 0, 101, rules, *B);
+        
+        bool detPass = CompareChunks(*A1, *A2);
+        
+        int hA = GetChunkSurfaceHeight(*A1);
+        int hB = GetChunkSurfaceHeight(*B);
+        bool heightDiff = (hA != hB);
+        bool voxelDiff = !CompareChunks(*A1, *B);
+        
+        std::cout << "\n[SeedVariation] " << algoNames[i] << "\n";
+        std::cout << "Seed A: 100\n";
+        std::cout << "Seed B: 101\n";
+        std::cout << "Same Rules: YES\n";
+        std::cout << "Deterministic A: " << (detPass ? "PASS" : "FAIL") << "\n";
+        std::cout << "Height Different: " << (heightDiff ? "YES" : "NO") << "\n";
+        std::cout << "Voxel Different: " << (voxelDiff ? "YES" : "NO") << "\n";
+        
+        if (!detPass || !voxelDiff) {
+            allPass = false;
+        }
+    }
+    
+    return allPass;
+}
+
+bool TerrainValidation::TestRegionSeedContract() {
+    auto baseRules = CreateValidationRules();
+    
+    fw::MapRegion regNull;
+    regNull.seed = std::nullopt;
+    regNull.rectMin = glm::ivec2(-10, -10);
+    regNull.rectMax = glm::ivec2(10, 10);
+    regNull.influence = 1.0f;
+    
+    fw::MapRegion reg100 = regNull;
+    reg100.seed = 100;
+    
+    fw::MapRegion reg101 = regNull;
+    reg101.seed = 101;
+    
+    fw::MapRegion reg0 = regNull;
+    reg0.seed = 0;
+    
+    auto cNull = std::make_unique<fw::VoxelChunkComponent>();
+    auto c100  = std::make_unique<fw::VoxelChunkComponent>();
+    auto c101  = std::make_unique<fw::VoxelChunkComponent>();
+    auto c0    = std::make_unique<fw::VoxelChunkComponent>();
+    
+    auto gen = [&](const fw::MapRegion& r, fw::VoxelChunkComponent& outC) {
+        outC.cx = 0; outC.cz = 0;
+        auto ctx = CreateValidationContext(0, 0, 100);
+        fw::ResolvedTerrainRules rRules = baseRules; 
+        std::vector<std::pair<fw::MapRegion, fw::ResolvedTerrainRules>> regions = { {r, rRules} };
+        fw::TerrainSolverSystem::GenerateChunk(ctx, baseRules, regions, outC);
+    };
+    
+    gen(regNull, *cNull);
+    gen(reg100, *c100);
+    gen(reg101, *c101);
+    gen(reg0, *c0);
+    
+    bool eq100 = CompareChunks(*cNull, *c100);
+    bool diff101 = !CompareChunks(*cNull, *c101);
+    bool diff0 = !CompareChunks(*cNull, *c0);
+    
+    std::cout << "\n[RegionSeed]\n";
+    std::cout << "Template: 100\n";
+    std::cout << "Inherited: 100\n";
+    std::cout << "Explicit Same: 100\n";
+    std::cout << "Equivalent: " << (eq100 ? "PASS" : "FAIL") << "\n";
+    std::cout << "Explicit Different: 101\n";
+    std::cout << "Different Output: " << (diff101 ? "PASS" : "FAIL") << "\n";
+    std::cout << "Explicit Zero: 0\n";
+    std::cout << "Zero Preserved: " << (diff0 ? "PASS" : "FAIL") << "\n";
+    
+    return eq100 && diff101 && diff0;
+}
+
 bool TerrainValidation::TestRuleSensitivity() {
     auto rulesA = CreateValidationRules(1.0f);
     auto rulesB = CreateValidationRules(2.0f);
@@ -634,7 +736,16 @@ bool TerrainValidation::RunPipelineTest() {
     bool stableGPU = TestStableGPUUpload();
     PrintResult("Stable input GPU upload", stableGPU);
     
-    return ruleHash && stableRegen && stableGPU;
+    bool seedSens = TestSeedSensitivity();
+    PrintResult("Seed sensitivity (legacy)", seedSens);
+    
+    bool morphSeed = TestMorphologySeedVariation();
+    PrintResult("Morphology seed variation", morphSeed);
+    
+    bool regSeed = TestRegionSeedContract();
+    PrintResult("Region seed contract", regSeed);
+    
+    return ruleHash && stableRegen && stableGPU && seedSens && morphSeed && regSeed;
 }
 
 bool TerrainValidation::TestStableRuleHash() {

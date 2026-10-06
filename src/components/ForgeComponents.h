@@ -7,6 +7,8 @@
 #include <memory>
 #include "VramSlabAllocator.h"
 #include <glm/glm.hpp>
+#include "core/utils/ChunkDimensions.h"
+#include "core/utils/PlanetMath.h"
 
 namespace fw {
 
@@ -156,13 +158,16 @@ enum class BlockType : uint8_t {
     OutOfBounds = 255,
 };
 
-static constexpr int CHUNK_SIZE = 16;
-static constexpr int CHUNK_HEIGHT = 128;
+static constexpr int CHUNK_SIZE = fw::ChunkDimensions::VoxelsX;
+static constexpr int CHUNK_HEIGHT = fw::ChunkDimensions::VoxelsY;
 
 struct VoxelChunkComponent {
     // Coordinate del chunk (es. cx=0, cz=0)
     int cx = 0;
     int cz = 0;
+    
+    // Authoritative planetary address
+    fw::PlanetChunkCoord planetCoord = {fw::PlanetID::Invalid(), fw::CubeFace::PositiveZ, 0, 0, 0};
     
     // Array tridimensionale dei blocchi
     // L'allocazione di questa struct verrà gestita in futuro dal PoolAllocator in O(1)

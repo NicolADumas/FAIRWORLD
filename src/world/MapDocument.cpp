@@ -470,7 +470,9 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 rj["type"] = static_cast<int>(r.type);
                 rj["shape"] = static_cast<int>(r.shape);
                 rj["label"] = r.label;
-                rj["seed"] = r.seed;
+                if (r.seed.has_value()) {
+                    rj["seed"] = r.seed.value();
+                }
                 rj["influence"] = r.influence;
                 rj["overrides"] = r.overrides;
                 
@@ -518,7 +520,9 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 rj["type"] = static_cast<int>(region.type);
                 rj["shape"] = static_cast<int>(region.shape);
                 rj["label"] = region.label;
-                rj["seed"] = region.seed;
+                if (region.seed.has_value()) {
+                    rj["seed"] = region.seed.value();
+                }
                 rj["influence"] = region.influence;
                 rj["overrides"] = region.overrides;
                 pj["regions"].push_back(rj);
@@ -620,7 +624,11 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         r.type = static_cast<MapRegionType>(rj.value("type", 0));
                         r.shape = static_cast<RegionShape>(rj.value("shape", 0));
                         r.label = rj.value("label", "");
-                        r.seed = rj.value("seed", 0U);
+                        if (rj.contains("seed")) {
+                            r.seed = rj["seed"].get<uint32_t>();
+                        } else {
+                            r.seed = std::nullopt;
+                        }
                         r.influence = rj.value("influence", 1.0f);
                         if (rj.contains("overrides")) {
                             r.overrides = rj["overrides"].get<TerrainRuleOverrides>();
@@ -693,7 +701,11 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         region.type = static_cast<MapRegionType>(rj.value("type", 0));
                         region.shape = static_cast<RegionShape>(rj.value("shape", 0));
                         region.label = rj.value("label", "Region");
-                        region.seed = rj.value("seed", 12345U);
+                        if (rj.contains("seed")) {
+                            region.seed = rj["seed"].get<uint32_t>();
+                        } else {
+                            region.seed = std::nullopt;
+                        }
                         region.influence = rj.value("influence", 1.0f);
                         if (rj.contains("overrides")) {
                             region.overrides = rj["overrides"].get<TerrainRuleOverrides>();
@@ -811,7 +823,10 @@ void writeRegion(std::ostream& s, const fw::MapRegion& r) {
     writeI32(s, (int32_t)r.type);
     writeI32(s, (int32_t)r.shape);
     writeStr(s, r.label);
-    writeU32(s, r.seed);
+    writeBool(s, r.seed.has_value());
+    if (r.seed.has_value()) {
+        writeU32(s, r.seed.value());
+    }
     writeBool(s, r.isGridAligned);
     writeI32(s, r.faceIndex);
     writeI32(s, r.gridX);
@@ -827,7 +842,11 @@ fw::MapRegion readRegion(std::istream& s) {
     r.type             = (fw::MapRegionType)readI32(s);
     r.shape            = (fw::RegionShape)readI32(s);
     r.label            = readStr(s);
-    r.seed             = readU32(s);
+    if (readBool(s)) {
+        r.seed = readU32(s);
+    } else {
+        r.seed = std::nullopt;
+    }
     r.isGridAligned    = readBool(s);
     r.faceIndex        = readI32(s);
     r.gridX            = readI32(s);
@@ -842,7 +861,7 @@ namespace fw {
 
 // Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
 static constexpr uint32_t FWB_MAGIC = 0x46574231; // 'FWB1'
-static constexpr uint32_t FWB_VERSION = 6;
+static constexpr uint32_t FWB_VERSION = 7;
 
 bool MapDocument::SaveBinary
 (const std::string& path) const {
