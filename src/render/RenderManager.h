@@ -74,15 +74,21 @@ struct GLBPushConstantData {
 };
 
 struct ForgePushConstantData {
-    glm::mat4 mvp;
-    glm::vec4 colorOverride;
-    int useColorOverride;
-    float seasonProgress;
-    uint32_t grid_width;        // NEW
-    uint32_t debug_lens_active; // NEW
-    glm::vec4 lightDir;
-    glm::vec4 cameraPos;
+    glm::mat4 mvp;                // Offset: 0
+    glm::vec4 colorOverride;      // Offset: 64
+    int useColorOverride;         // Offset: 80
+    float curvatureRadius;        // Offset: 84
+    glm::vec2 chunkWorldXZ;       // Offset: 88
+    // Note: chunkWorldXZ is 8 bytes, so next offset is 96.
+    glm::vec4 lightDir;           // Offset: 96
+    glm::vec4 cameraPos;          // Offset: 112
 };
+
+static_assert(sizeof(ForgePushConstantData) == 128, "ForgePushConstantData must be exactly 128 bytes");
+static_assert(offsetof(ForgePushConstantData, curvatureRadius) == 84, "curvatureRadius offset must be 84");
+static_assert(offsetof(ForgePushConstantData, chunkWorldXZ) == 88, "chunkWorldXZ offset must be 88");
+static_assert(offsetof(ForgePushConstantData, lightDir) == 96, "lightDir offset must be 96");
+static_assert(offsetof(ForgePushConstantData, cameraPos) == 112, "cameraPos offset must be 112");
 
 class RenderManager {
 public:

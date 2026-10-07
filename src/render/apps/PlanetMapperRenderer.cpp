@@ -55,9 +55,8 @@ struct PlanetMapperPushConstants {
     glm::mat4 mvp;
     glm::vec4 colorOverride;
     int useColorOverride;
-    float seasonProgress;
-    uint32_t grid_width;
-    uint32_t debug_lens_active;
+    float curvatureRadius;
+    glm::vec2 chunkWorldXZ;
     glm::vec4 lightDir;
     glm::vec4 cameraPos;
 };
@@ -109,7 +108,8 @@ void PlanetMapperRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm
     PlanetMapperPushConstants pcData{};
     pcData.mvp = viewProjMatrix; // La mesh è già in World Space
     pcData.useColorOverride = 0;
-    pcData.seasonProgress = 0.0f;
+    pcData.curvatureRadius = 0.0f;
+    pcData.chunkWorldXZ = glm::vec2(0.0f);
     pcData.lightDir = glm::vec4(context->previewLightDir, 1.0f);
     pcData.cameraPos = glm::vec4(context->activeCameraView.cameraPosition, 1.0f);
 

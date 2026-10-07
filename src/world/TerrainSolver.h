@@ -41,6 +41,7 @@ struct TerrainGenerationContext {
     // Configurazione Architetturale del Mondo
     bool isFlat = false;
     float planetRadius = 1000.0f; // Usato se isFlat == false per scalare le frequenze
+    float planetaryReliefScale = 1.0f; // Multiplier per il displacement morfologico planetario
     
     TerrainDiagnosticMode diagnosticMode = TerrainDiagnosticMode::None;
     uint64_t ruleHash; // For cache and invalidation purposes only

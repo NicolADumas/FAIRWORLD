@@ -22,6 +22,7 @@ struct BiomeDataComponent {
     std::vector<MapRegion> overlappingRegions;
     fw::PlanetSize planetSize = fw::PlanetSize::Medium;
     bool isFlat = false;
+    float planetaryReliefScale = 1.0f;
     glm::vec3 chunkCenterWorld = glm::vec3(0.0f);
 };
 

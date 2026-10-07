@@ -35,11 +35,12 @@ void PlayRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 v
 
     // Disegna la scena del mondo principale tramite ForgeWorld (se attivo) o fallback
     if (context->forgeWorld && m_pipeline != VK_NULL_HANDLE && m_pipelineLayout != VK_NULL_HANDLE && m_globalVramBuffer != VK_NULL_HANDLE) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-
-        if (m_descriptorSets && !m_descriptorSets->empty() && (*m_descriptorSets)[m_currentFrame] != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &(*m_descriptorSets)[m_currentFrame], 0, nullptr);
+        if (!m_descriptorSets || m_descriptorSets->empty() || (*m_descriptorSets)[m_currentFrame] == VK_NULL_HANDLE) {
+            return;
         }
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &(*m_descriptorSets)[m_currentFrame], 0, nullptr);
 
         VkViewport viewport{};
         viewport.x = 0.0f;

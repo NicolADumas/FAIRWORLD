@@ -70,7 +70,8 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
             ForgePushConstantData pcData{};
             pcData.mvp              = viewProjMatrix * model;
             pcData.useColorOverride = 0;
-            pcData.seasonProgress   = 0.0f; // Nessuna stagione in BlockMaker
+            pcData.curvatureRadius  = 0.0f; // Nessuna curvatura in BlockMaker
+            pcData.chunkWorldXZ     = glm::vec2(trans.location.x, trans.location.z);
             pcData.lightDir         = glm::vec4(0.5f, -1.0f, 0.5f, 0.0f);
             pcData.cameraPos        = glm::vec4(0.0f);
 

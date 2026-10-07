@@ -2,7 +2,7 @@
 #include "PlanetaryMeshGenerator.h"
 #include <cassert>
 #include "core/utils/ChunkDimensions.h"
-#include "core/utils/CubeSphereMapping.h"
+#include "CubeSphereMapping.h"
 #include "PlanetRadialMapping.h"
 
 namespace fw {
@@ -42,9 +42,13 @@ void PlanetaryMeshGenerator::ConvertToPlanetaryPositions(
         auto v2 = inOutVertices[i+2];
 
         glm::vec3 warped0, warped1, warped2;
-        bool valid0 = computeWarp(v0.position, warped0);
-        bool valid1 = computeWarp(v1.position, warped1);
-        bool valid2 = computeWarp(v2.position, warped2);
+        glm::vec3 p0(v0.position.x, v0.position.y, v0.position.z);
+        glm::vec3 p1(v1.position.x, v1.position.y, v1.position.z);
+        glm::vec3 p2(v2.position.x, v2.position.y, v2.position.z);
+
+        bool valid0 = computeWarp(p0, warped0);
+        bool valid1 = computeWarp(p1, warped1);
+        bool valid2 = computeWarp(p2, warped2);
 
         if (!valid0 || !valid1 || !valid2) {
             // Defensive safety check. Spatially invalid cells should have been rejected upstream.
@@ -52,15 +56,17 @@ void PlanetaryMeshGenerator::ConvertToPlanetaryPositions(
             continue; // Entire face rejected
         }
 
-        glm::vec3 oldE1 = v1.position - v0.position;
-        glm::vec3 oldE2 = v2.position - v0.position;
+        glm::vec3 oldE1 = p1 - p0;
+        glm::vec3 oldE2 = p2 - p0;
         glm::vec3 oldGeoNormal = glm::cross(oldE1, oldE2);
 
         glm::vec3 newE1 = warped1 - warped0;
         glm::vec3 newE2 = warped2 - warped0;
         glm::vec3 newGeoNormal = glm::cross(newE1, newE2);
 
-        if (glm::dot(oldGeoNormal, v0.normal) < 0.0f) {
+        glm::vec3 v0_norm(v0.normal.x, v0.normal.y, v0.normal.z);
+
+        if (glm::dot(oldGeoNormal, v0_norm) < 0.0f) {
             newGeoNormal = -newGeoNormal;
         }
 
@@ -68,16 +74,16 @@ void PlanetaryMeshGenerator::ConvertToPlanetaryPositions(
         if (len > 1e-6f) {
             newGeoNormal /= len;
         } else {
-            newGeoNormal = v0.normal;
+            newGeoNormal = v0_norm;
         }
 
-        v0.position = warped0;
-        v1.position = warped1;
-        v2.position = warped2;
+        v0.position = {warped0.x, warped0.y, warped0.z};
+        v1.position = {warped1.x, warped1.y, warped1.z};
+        v2.position = {warped2.x, warped2.y, warped2.z};
         
-        v0.normal = newGeoNormal;
-        v1.normal = newGeoNormal;
-        v2.normal = newGeoNormal;
+        v0.normal = {newGeoNormal.x, newGeoNormal.y, newGeoNormal.z};
+        v1.normal = {newGeoNormal.x, newGeoNormal.y, newGeoNormal.z};
+        v2.normal = {newGeoNormal.x, newGeoNormal.y, newGeoNormal.z};
 
         inOutVertices[writeIdx++] = v0;
         inOutVertices[writeIdx++] = v1;

@@ -391,8 +391,7 @@ struct PlanetMap {
     bool isFlat = false;        // Sostituisce il check planetRadius <= 0.0f
     float axialTilt = 23.44f;   // Inclinazione asse terrestre (gradi)
     float yearLength = 365.0f;  // Durata dell'anno (in giorni)
-    
-    // Parametri DimensionsManager per Rigid Grid Map
+    float planetaryReliefScale = 1.0f; // Scala il rilievo morfologico prima di convertirlo in gSurface
     int32_t minX = -16;
     int32_t maxX = 16;
     int32_t minY = 0;

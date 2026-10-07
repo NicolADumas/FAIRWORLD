@@ -38,10 +38,8 @@ layout(push_constant) uniform PushConstants {
     mat4 mvp;
     vec4 colorOverride;
     int useColorOverride;
-    float seasonProgress;
-    // --- THERMAL / LIGHTING PUSH CONSTANTS ---
-    uint grid_width;
-    uint debug_lens_active;
+    float curvatureRadius;
+    vec2 chunkWorldXZ;
     vec4 lightDir;
     vec4 cameraPos;
 } push;

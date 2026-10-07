@@ -5,8 +5,22 @@
 #include "world/MapWorldGenerator.h" // For PerlinNoise or similar utility
 #include "world/CubeSphereMapping.h"
 #include "core/utils/ShapeMath.h"
+#include "world/PlanetRadialMapping.h"
 
 namespace fw {
+
+struct PlanetaryTerrainAdapter {
+    static void ConvertMorphologyToRadial(const TerrainGenerationContext& ctx, const ResolvedTerrainRules& rules, TerrainWorkspace& ws) {
+        float baseHeight = rules.rules.height.common.baseHeight;
+        float scale = ctx.planetaryReliefScale;
+        
+        for (size_t i = 0; i < ws.surfaceHeights.size(); ++i) {
+            float rawHeight = ws.surfaceHeights[i];
+            float morphologyDisplacement = rawHeight - baseHeight;
+            ws.surfaceHeights[i] = morphologyDisplacement * scale;
+        }
+    }
+};
 
 // Fast pure hash function (e.g. MurmurHash3 or FNV-1a or similar simple hash)
 uint32_t TerrainGenerationContext::GetDeterministicHash(const glm::vec3& worldPos, int salt) const {
@@ -105,6 +119,11 @@ void TerrainSolver::GenerateChunk(
     
     // 3. Evaluate volumetric fields (Caves, Water)
     EvaluateCavesAndWater(context, baseRules, regions, workspace);
+    
+    // 3.5. Convert morphology to planetary radial semantic
+    if (!context.isFlat) {
+        PlanetaryTerrainAdapter::ConvertMorphologyToRadial(context, baseRules, workspace);
+    }
     
     // 4. Evaluate layers (relative depth based)
     EvaluateLayers(context, baseRules, regions, workspace);
@@ -233,8 +252,15 @@ void TerrainSolver::EvaluateLayers(const TerrainGenerationContext& ctx, const Re
                 int idx2D = z * ctx.voxelResolutionX + x;
                 int idx3D = (y * ctx.voxelResolutionZ * ctx.voxelResolutionX) + (z * ctx.voxelResolutionX) + x;
                 
-                float surfaceY = ws.surfaceHeights[idx2D];
-                float depth = surfaceY - voxelY;
+                float depth;
+                if (!ctx.isFlat) {
+                    float gSurface = ws.surfaceHeights[idx2D];
+                    float gVoxel = PlanetRadialMapping::GetGlobalRadialOffset(ctx.layer, voxelY);
+                    depth = gSurface - gVoxel;
+                } else {
+                    float surfaceY = ws.surfaceHeights[idx2D];
+                    depth = surfaceY - voxelY;
+                }
                 
                 uint8_t layerIdx = 0; // 0 = Air/Core
                 

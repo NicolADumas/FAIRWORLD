@@ -51,6 +51,7 @@ int TerrainSolverSystem::Update(entt::registry& registry, std::vector<entt::enti
         // Costruisci il contesto di generazione dalla BiomeDataComponent
         TerrainGenerationContext ctx;
         ctx.planetSeed = biomeData.baseTerrain.seed;
+        ctx.planetaryReliefScale = biomeData.planetaryReliefScale;
         
         if (chunk.planetCoord.planet.IsValid()) {
             ctx.faceIndex = static_cast<int>(chunk.planetCoord.face);

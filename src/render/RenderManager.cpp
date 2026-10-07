@@ -1015,13 +1015,9 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     }
 
     // --- FAIRWORLD INSTANCED MESHER ---
-    if (m_forgePipeline != VK_NULL_HANDLE && context && (context->forgeWorld || overrideWorld)) {
+    if (m_forgePipeline != VK_NULL_HANDLE && context && (context->forgeWorld || overrideWorld) && !m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
-        
-        if (!m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
-        }
-
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
         // Viewport e Scissor dinamici
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -1100,7 +1096,17 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
-                pcData.seasonProgress = seasonalUboValue;
+                
+                float curvatureRadius = 0.0f;
+                if (context && context->forgeWorld) {
+                    entt::entity planetEnt = context->forgeWorld->GetPlanetEntity();
+                    if (registry.valid(planetEnt) && registry.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
+                        const auto& geom = registry.get<fw::PlanetGeometryComponent>(planetEnt);
+                        curvatureRadius = geom.isLogicalSphere ? fw::PlanetMath::GetPlanetRadius(geom.planetSize) : 0.0f;
+                    }
+                }
+                pcData.curvatureRadius = curvatureRadius;
+                pcData.chunkWorldXZ = glm::vec2(trans.location.x, trans.location.z);
                 
                 pcData.lightDir = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
                 if (context && context->forgeWorld) {
@@ -3087,15 +3093,36 @@ bool RenderManager::CreateGLBPipeline() {
 void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMatrix, glm::vec3 cameraPos, SharedContext* context) {
     if (!context || !context->forgeWorld) return;
     auto* forgeWorld = context->forgeWorld;
+    
+    static bool s_loggedRender = false;
+    if (!s_loggedRender) {
+        s_loggedRender = true;
+        char logBuf[1024];
+        snprintf(logBuf, sizeof(logBuf),
+            "[D7.4F.6E][RENDER]\n"
+            "  Camera Pos Received: (%.3f, %.3f, %.3f)\n"
+            "  ViewProj Col 0: (%.3f, %.3f, %.3f, %.3f)\n"
+            "  ViewProj Col 1: (%.3f, %.3f, %.3f, %.3f)\n"
+            "  ViewProj Col 2: (%.3f, %.3f, %.3f, %.3f)\n"
+            "  ViewProj Col 3: (%.3f, %.3f, %.3f, %.3f)\n",
+            cameraPos.x, cameraPos.y, cameraPos.z,
+            viewProjMatrix[0][0], viewProjMatrix[0][1], viewProjMatrix[0][2], viewProjMatrix[0][3],
+            viewProjMatrix[1][0], viewProjMatrix[1][1], viewProjMatrix[1][2], viewProjMatrix[1][3],
+            viewProjMatrix[2][0], viewProjMatrix[2][1], viewProjMatrix[2][2], viewProjMatrix[2][3],
+            viewProjMatrix[3][0], viewProjMatrix[3][1], viewProjMatrix[3][2], viewProjMatrix[3][3]
+        );
+        std::cout << logBuf;
+    }
 
     // ==========================================
     // 1. SETUP GLOBALE (Cambio di stato singolo)
     // ==========================================
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
-    
-    if (!m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
+    if (m_memory->GetForgeDescriptorSets().empty() || m_memory->GetForgeDescriptorSets()[m_currentFrame] == VK_NULL_HANDLE) {
+        return;
     }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
 
     ForgePushConstantData pcData{};
     VkDeviceSize offsets[] = {0};
@@ -3106,7 +3133,8 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
         rawYearProgress = fmod((float)currentDay, 365.0f) / 365.0f;
     }
     float seasonalUboValue = (sin((rawYearProgress * 2.0f * glm::pi<float>()) - (glm::pi<float>() / 2.0f)) + 1.0f) * 0.5f;
-    pcData.seasonProgress = seasonalUboValue;
+    pcData.curvatureRadius = 0.0f;
+    pcData.chunkWorldXZ = glm::vec2(0.0f);
     pcData.cameraPos = glm::vec4(cameraPos, 1.0f);
     if (context && context->isBlockMakerMode) {
         pcData.lightDir = glm::vec4(context->previewLightDir, 0.0f);
@@ -3200,7 +3228,8 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
                 pcData.colorOverride = glm::vec4(0.0f);
-                pcData.seasonProgress = seasonalUboValue;
+                pcData.curvatureRadius = 0.0f;
+                pcData.chunkWorldXZ = glm::vec2(trans.location.x, trans.location.z);
                 
                 if (mesh.colorOverride[3] > 0.0f) {
                     pcData.useColorOverride = 1;
@@ -3210,6 +3239,34 @@ void RenderManager::RenderForge(VkCommandBuffer cmd, const glm::mat4& viewProjMa
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
                 uint32_t firstVertex = allocInfo.offset / sizeof(fw::Vertex);
+                
+                static bool s_loggedDraw = false;
+                if (!s_loggedDraw && mesh.type == fw::MeshType::Chunk) {
+                    s_loggedDraw = true;
+                    
+                    bool isSpherical = false;
+                    auto planetView = registry.view<fw::PlanetGeometryComponent>();
+                    if (planetView.begin() != planetView.end()) {
+                        isSpherical = !planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).isLogicalSphere;
+                    }
+
+                    char logBuf[1024];
+                    snprintf(logBuf, sizeof(logBuf),
+                        "[D7.4F.6E][DRAW]\n"
+                        "  Entity: %u\n"
+                        "  VertexCount: %u\n"
+                        "  isSpherical (PHYSICAL): %s\n"
+                        "  curvatureRadius: %.3f\n"
+                        "  Model Translation: (%.3f, %.3f, %.3f)\n",
+                        (unsigned)(uint32_t)entity,
+                        (unsigned)mesh.vertices.size(),
+                        isSpherical ? "YES" : "NO",
+                        pcData.curvatureRadius,
+                        model[3][0], model[3][1], model[3][2]
+                    );
+                    std::cout << logBuf;
+                }
+
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, firstVertex, 0);
             }
         }

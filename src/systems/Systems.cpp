@@ -13,12 +13,24 @@
 
 namespace fw {
     void CameraSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
-        bool isSpherical = false;
+        bool usePlanetaryFrame = false;
+        bool rawLogicalSphere = false;
+        bool planetEntityFound = false;
+        glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
+        glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
+
         if (context && context->forgeWorld) {
-            auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent>();
-            if (!planetView.empty()) {
-                auto& planet = planetView.get<fw::PlanetGeometryComponent>(planetView.front());
-                isSpherical = planet.isLogicalSphere;
+            auto planetEnt = context->forgeWorld->GetPlanetEntity();
+            auto& fRegistry = context->forgeWorld->GetRegistry();
+            if (fRegistry.valid(planetEnt) && fRegistry.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
+                auto& planet = fRegistry.get<fw::PlanetGeometryComponent>(planetEnt);
+                planetEntityFound = true;
+                rawLogicalSphere = planet.isLogicalSphere;
+                usePlanetaryFrame = planet.isLogicalSphere;
+                
+                // planet center ownership will migrate to the future SolarSystem/root-transform architecture
+                planetCenter = glm::vec3(0.0f, 0.0f, 0.0f);
+                planetNorth = glm::vec3(0.0f, 1.0f, 0.0f);
             }
         }
 
@@ -27,24 +39,14 @@ namespace fw {
             if (!cam.isMain) continue;
             
             glm::vec3 up(0.0f, 1.0f, 0.0f);
-            glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
-            if (isSpherical) {
-                float dist = glm::length(glm::vec3(transform.x, transform.y, transform.z));
+            if (usePlanetaryFrame) {
+                glm::vec3 camPos(transform.x, transform.y, transform.z);
+                float dist = glm::length(camPos - planetCenter);
                 if (dist > 0.01f) {
-                    up = glm::normalize(glm::vec3(transform.x, transform.y, transform.z));
-                }
-                
-                if (context && context->forgeWorld) {
-                    auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent, fw::TransformComponent>();
-                    for (auto pEnt : planetView) {
-                        auto& planetTrans = planetView.get<fw::TransformComponent>(pEnt);
-                        fw::Mat4 pGlobal = planetTrans.computeGlobalMatrix(context->forgeWorld->GetRegistry());
-                        glm::mat4 planetGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&pGlobal));
-                        planetNorth = glm::normalize(glm::vec3(planetGlobalMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
-                        break;
-                    }
+                    up = glm::normalize(camPos - planetCenter);
                 }
             }
+            glm::vec3 initialLocalUp = up;
 
             // Calcolo del Front basato su Yaw (rotazione attorno a UP) e Pitch (rotazione locale X)
             glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up); 
@@ -69,17 +71,75 @@ namespace fw {
             rotMat[1] = up;
             rotMat[2] = -front;
             transform.rotation = glm::quat_cast(rotMat);
+            
+            static bool s_loggedCamera = false;
+            if (!s_loggedCamera) {
+                s_loggedCamera = true;
+                glm::vec3 camPos(transform.x, transform.y, transform.z);
+                glm::vec3 dirToCenter = (glm::distance(camPos, planetCenter) > 0.001f) ? glm::normalize(planetCenter - camPos) : glm::vec3(0,0,-1);
+                
+                char logBuf[2048];
+                snprintf(logBuf, sizeof(logBuf), 
+                    "[D7.4F.6E][CAMERA]\n"
+                    "  Entity: %u\n"
+                    "  planet entity found: %s\n"
+                    "  Camera Pos: (%.3f, %.3f, %.3f)\n"
+                    "  Planet Center: (%.3f, %.3f, %.3f)\n"
+                    "  isLogicalSphere raw: %s\n"
+                    "  usePlanetaryFrame: %s\n"
+                    "  Local UP: (%.3f, %.3f, %.3f)\n"
+                    "  Yaw: %.3f, Pitch: %.3f\n"
+                    "  Final Forward: (%.3f, %.3f, %.3f)\n"
+                    "  DirectionToCenter: (%.3f, %.3f, %.3f)\n"
+                    "  Dot(Forward, ToCenter): %.3f\n",
+                    (unsigned)entity,
+                    planetEntityFound ? "YES" : "NO",
+                    camPos.x, camPos.y, camPos.z,
+                    planetCenter.x, planetCenter.y, planetCenter.z,
+                    rawLogicalSphere ? "true" : "false",
+                    usePlanetaryFrame ? "true" : "false",
+                    initialLocalUp.x, initialLocalUp.y, initialLocalUp.z,
+                    cam.yaw, cam.pitch,
+                    front.x, front.y, front.z,
+                    dirToCenter.x, dirToCenter.y, dirToCenter.z,
+                    glm::dot(front, dirToCenter)
+                );
+                std::cout << logBuf;
+                
+                // Construct View matrix manually for truth
+                glm::mat4 vMat = glm::lookAt(camPos, camPos + front, up);
+                snprintf(logBuf, sizeof(logBuf),
+                    "[D7.4F.6E][VIEW]\n"
+                    "  Col 0: (%.3f, %.3f, %.3f, %.3f)\n"
+                    "  Col 1: (%.3f, %.3f, %.3f, %.3f)\n"
+                    "  Col 2: (%.3f, %.3f, %.3f, %.3f)\n"
+                    "  Col 3: (%.3f, %.3f, %.3f, %.3f)\n",
+                    vMat[0][0], vMat[0][1], vMat[0][2], vMat[0][3],
+                    vMat[1][0], vMat[1][1], vMat[1][2], vMat[1][3],
+                    vMat[2][0], vMat[2][1], vMat[2][2], vMat[2][3],
+                    vMat[3][0], vMat[3][1], vMat[3][2], vMat[3][3]
+                );
+                std::cout << logBuf;
+            }
         }
     }
 
     void PlayerMovementSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
         using namespace entt::literals;
-        bool isSpherical = false;
+        bool usePlanetaryFrame = false;
+        glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
+        glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
+
         if (context && context->forgeWorld) {
-            auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent>();
-            if (!planetView.empty()) {
-                auto& planet = planetView.get<fw::PlanetGeometryComponent>(planetView.front());
-                isSpherical = planet.isLogicalSphere;
+            auto planetEnt = context->forgeWorld->GetPlanetEntity();
+            auto& fRegistry = context->forgeWorld->GetRegistry();
+            if (fRegistry.valid(planetEnt) && fRegistry.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
+                auto& planet = fRegistry.get<fw::PlanetGeometryComponent>(planetEnt);
+                usePlanetaryFrame = planet.isLogicalSphere;
+                
+                // planet center ownership will migrate to the future SolarSystem/root-transform architecture
+                planetCenter = glm::vec3(0.0f, 0.0f, 0.0f);
+                planetNorth = glm::vec3(0.0f, 1.0f, 0.0f);
             }
         }
 
@@ -100,21 +160,9 @@ namespace fw {
             float moveSpeed = input.isRunning ? player.runSpeed : player.walkSpeed;
 
             glm::vec3 up(0.0f, 1.0f, 0.0f);
-            glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
-            if (isSpherical) {
-                float dist = glm::length(rbComp.body.position);
-                if (dist > 0.01f) up = glm::normalize(rbComp.body.position);
-
-                if (context && context->forgeWorld) {
-                    auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent, fw::TransformComponent>();
-                    for (auto pEnt : planetView) {
-                        auto& planetTrans = planetView.get<fw::TransformComponent>(pEnt);
-                        fw::Mat4 pGlobal = planetTrans.computeGlobalMatrix(context->forgeWorld->GetRegistry());
-                        glm::mat4 planetGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&pGlobal));
-                        planetNorth = glm::normalize(glm::vec3(planetGlobalMatrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
-                        break;
-                    }
-                }
+            if (usePlanetaryFrame) {
+                float dist = glm::length(rbComp.body.position - planetCenter);
+                if (dist > 0.01f) up = glm::normalize(rbComp.body.position - planetCenter);
             }
 
             // Stessa logica della camera per trovare "avanti" e "destra" sulla superficie

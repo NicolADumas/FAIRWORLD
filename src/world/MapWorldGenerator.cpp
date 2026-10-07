@@ -108,6 +108,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         fw::BiomeDataComponent biomeData;
         biomeData.planetSize = planet.planetSize;
         biomeData.isFlat = planet.isFlat;
+        biomeData.planetaryReliefScale = planet.planetaryReliefScale;
         biomeData.chunkCenterWorld = pos;
         biomeData.baseTerrain = planet.baseTerrain;
         

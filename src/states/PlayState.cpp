@@ -189,8 +189,43 @@ bool PlayState::Init() {
     // Posizione iniziale
     m_registry.emplace<TransformComponent>(cameraEntity, spawnPos.x, spawnPos.y, spawnPos.z);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
-    cam.yaw   = 0.0f;
-    cam.pitch = 0.0f;
+    
+    // --- CAMERA ORIENTATION MICRO-FIX ---
+    glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
+    glm::vec3 desiredForward = glm::vec3(0.0f, 0.0f, -1.0f);
+    if (glm::distance(planetCenter, spawnPos) > 0.01f) {
+        desiredForward = glm::normalize(planetCenter - spawnPos);
+    }
+
+    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+    if (glm::length(spawnPos) > 0.01f) {
+        up = glm::normalize(spawnPos);
+    }
+    
+    glm::vec3 planetNorth = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 baseForward;
+    if (std::abs(glm::dot(up, planetNorth)) < 0.99f) {
+        baseForward = glm::normalize(glm::cross(up, planetNorth));
+    } else {
+        baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+    }
+    
+    float derivedPitch = glm::degrees(std::asin(glm::clamp(glm::dot(desiredForward, up), -1.0f, 1.0f)));
+    
+    glm::vec3 tangentFront = desiredForward - up * glm::dot(desiredForward, up);
+    float derivedYaw = 0.0f;
+    if (glm::length(tangentFront) > 0.001f) {
+        tangentFront = glm::normalize(tangentFront);
+        glm::vec3 baseRight = glm::normalize(glm::cross(baseForward, up));
+        float cosYaw = glm::dot(tangentFront, baseForward);
+        float sinYaw = glm::dot(tangentFront, baseRight);
+        derivedYaw = glm::degrees(-std::atan2(sinYaw, cosYaw));
+    }
+    
+    cam.yaw = derivedYaw;
+    cam.pitch = derivedPitch;
+    // ------------------------------------
+
     m_registry.emplace<PlayerControllerComponent>(cameraEntity);
     
     // Inizializza il RigidBody per la fisica
