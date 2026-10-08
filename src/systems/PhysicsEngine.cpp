@@ -173,7 +173,7 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         
         int flatX = x;
         int flatZ = z;
-        fw::BlockType b = world.GetBlock(flatX, y, flatZ);
+        fw::BlockType b = world.GetBlockFlat(flatX, y, flatZ);
         
         // Trattiamo OutOfBounds come solido sotto Y=25, oppure ovunque per evitare di cadere nel vuoto
         if (b == fw::BlockType::OutOfBounds) {

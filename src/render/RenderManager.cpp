@@ -11,6 +11,7 @@
 #include "../core/utils/cgltf.h"
 #include "MobManager.h"
 #include "SharedContext.h"
+#include "../core/app/RuntimeManager.h"
 #include "TimeManager.h"
 #include "StateManager.h"
 #include "ForgeWorld.h"
@@ -935,7 +936,40 @@ struct CameraFrustum {
 };
 
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
+#include <atomic>
+
+extern std::atomic<int> g_d74f6l_gen_nonzero;
+extern std::atomic<int> g_d74f6l_dma_completed;
+extern std::atomic<int> g_d74f6l_deferred_queued;
+extern std::atomic<int> g_d74f6l_ecs_committed;
+
+static std::atomic<int> s_d74f6l_log_count(0);
+
 void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player, fw::ForgeWorld* overrideWorld) {
+    bool isPlayState = (context && context->engine && context->engine->GetGameMode() == GameMode::Play);
+    static int s_d74f6m_r2_entry = 0;
+    if (isPlayState && s_d74f6m_r2_entry < 1) {
+        std::cout << "[D7.4F.6M-R2] PlayState RenderFairworld Entered.\n";
+        std::cout << "GameMode predicate evaluated true.\n";
+        std::cout << "m_forgePipeline valid: " << (m_forgePipeline != VK_NULL_HANDLE) << "\n";
+        std::cout << "context->forgeWorld valid: " << (context && context->forgeWorld) << "\n";
+        std::cout << "GetForgeDescriptorSets empty: " << (m_memory->GetForgeDescriptorSets().empty()) << "\n";
+        s_d74f6m_r2_entry++;
+    }
+
+    int frame_valid_mesh = 0;
+    int frame_in_comp = 0;
+    int frame_frust = 0;
+    int frame_other = 0;
+    int frame_draw = 0;
+    std::string first_draw_params = "";
+
+    static int s_d74f6l_r1_rf_entry = 0;
+    if (s_d74f6l_r1_rf_entry < 5) {
+        std::cout << "[D7.4F.6L-R1] RenderFairworld Entered (Snapshot " << (s_d74f6l_r1_rf_entry + 1) << "/5)\n";
+        s_d74f6l_r1_rf_entry++;
+    }
+
     // --- SKY PASS ---
     if (m_skyPipeline != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline);
@@ -1015,7 +1049,20 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     }
 
     // --- FAIRWORLD INSTANCED MESHER ---
-    if (m_forgePipeline != VK_NULL_HANDLE && context && (context->forgeWorld || overrideWorld) && !m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
+    bool pbrReady = (context && context->runtimeManager && 
+                     context->runtimeManager->IsReady() && 
+                     fw::HasFeature(static_cast<uint32_t>(context->runtimeManager->GetActiveFeatures()), fw::RuntimeFeature::PBRTextures));
+    
+    static bool s_d74f6o_logged = false;
+    if (isPlayState && !s_d74f6o_logged && pbrReady && !m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
+        std::cout << "\n[D7.4F.6O] PBRTextures feature ready: YES\n";
+        std::cout << "[D7.4F.6O] Forge descriptor set count: " << m_memory->GetForgeDescriptorSets().size() << "\n";
+        std::cout << "[D7.4F.6O] Forge pipeline valid: " << (m_forgePipeline != VK_NULL_HANDLE ? "YES" : "NO") << "\n";
+        std::cout << "[D7.4F.6O] PlayState renderer eligible: YES\n\n";
+        s_d74f6o_logged = true;
+    }
+
+    if (pbrReady && m_forgePipeline != VK_NULL_HANDLE && context && (context->forgeWorld || overrideWorld) && !m_memory->GetForgeDescriptorSets().empty() && m_memory->GetForgeDescriptorSets()[m_currentFrame] != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_forgePipelineLayout, 0, 1, &m_memory->GetForgeDescriptorSets()[m_currentFrame], 0, nullptr);
         // Viewport e Scissor dinamici
@@ -1053,15 +1100,35 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         // Raggruppa entità per compartimento VRAM
         std::map<uint32_t, std::vector<entt::entity>> compartmentBatches;
         for (auto entity : view) {
+            bool isTargetChunk = registry.all_of<fw::VoxelChunkComponent>(entity) && registry.get<fw::VoxelChunkComponent>(entity).planetCoord.planet.IsValid();
+            
+            if (registry.all_of<fw::VisibilityComponent>(entity)) {
+                if (!registry.get<fw::VisibilityComponent>(entity).enabled) continue;
+            }
+            
             const auto& mesh = view.get<fw::MeshComponent>(entity);
-            if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE || mesh.vertices.empty()) continue;
+            if (isTargetChunk && mesh.vramAlloc != fw::INVALID_VRAM_HANDLE && !mesh.vertices.empty()) {
+                frame_valid_mesh++;
+            }
+            
+            if (mesh.vramAlloc == fw::INVALID_VRAM_HANDLE || mesh.vertices.empty()) {
+                if (isTargetChunk) frame_other++;
+                continue;
+            }
             if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Prefab) {
                 if (context && context->vramAllocator) {
                     auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
                     if (allocInfo.valid) {
                         compartmentBatches[allocInfo.compartmentIdx].push_back(entity);
+                        if (isTargetChunk) frame_in_comp++;
+                    } else if (isTargetChunk) {
+                        frame_other++;
                     }
+                } else if (isTargetChunk) {
+                    frame_other++;
                 }
+            } else if (isTargetChunk) {
+                frame_other++;
             }
         }
 
@@ -1078,6 +1145,32 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 const auto& trans = view.get<fw::TransformComponent>(entity);
                 auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
 
+                static bool s_d74f6j_logged = false;
+                bool isTargetChunk = false;
+                if (!s_d74f6j_logged && registry.valid(entity) && registry.all_of<fw::VoxelChunkComponent>(entity)) {
+                    const auto& chunkComp = registry.get<fw::VoxelChunkComponent>(entity);
+                    if (chunkComp.planetCoord.planet.IsValid()) {
+                        isTargetChunk = true;
+                        s_d74f6j_logged = true;
+                        
+                        std::cout << "[D7.4F.6J][PLANET CHUNK]\n\n";
+                        std::cout << "entity\n";
+                        std::cout << "PlanetID " << chunkComp.planetCoord.planet.value << "\n";
+                        std::cout << "face " << (int)chunkComp.planetCoord.face << "\n";
+                        std::cout << "col " << chunkComp.planetCoord.col << "\n";
+                        std::cout << "row " << chunkComp.planetCoord.row << "\n";
+                        std::cout << "layer " << chunkComp.planetCoord.layer << "\n\n";
+                        
+                        std::cout << "vertexCount " << mesh.vertices.size() << "\n\n";
+                        std::cout << "vram handle " << mesh.vramAlloc << "\n";
+                        std::cout << "allocation valid " << (allocInfo.valid ? "YES" : "NO") << "\n";
+                        std::cout << "compartment index " << allocInfo.compartmentIdx << "\n";
+                        std::cout << "GPU offset " << allocInfo.offset << "\n\n";
+                        
+                        std::cout << "model translation " << trans.location.x << ", " << trans.location.y << ", " << trans.location.z << "\n\n";
+                    }
+                }
+
                 fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
                 glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 
@@ -1092,21 +1185,56 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                     std::abs(model[0][2]) * extents.x + std::abs(model[1][2]) * extents.y + std::abs(model[2][2]) * extents.z
                 );
                 
-                if (!frustum.containsAABB(worldCenter - worldExtents, worldCenter + worldExtents)) continue;
+                bool frustumResult = frustum.containsAABB(worldCenter - worldExtents, worldCenter + worldExtents);
+                
+                if (isTargetChunk) {
+                    std::cout << "Mesh local AABB min: " << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z << "\n";
+                    std::cout << "Mesh local AABB max: " << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z << "\n";
+                    std::cout << "World AABB min: " << (worldCenter.x - worldExtents.x) << ", " << (worldCenter.y - worldExtents.y) << ", " << (worldCenter.z - worldExtents.z) << "\n";
+                    std::cout << "World AABB max: " << (worldCenter.x + worldExtents.x) << ", " << (worldCenter.y + worldExtents.y) << ", " << (worldCenter.z + worldExtents.z) << "\n";
+                    std::cout << "FRUSTUM RESULT = " << (frustumResult ? "PASS" : "REJECT") << "\n\n";
+                }
+
+                if (!frustumResult) {
+                    if (isTargetChunk) {
+                        std::cout << "[D7.4F.6J][DRAW]\nreached = NO\nreason = Frustum rejected\n\n";
+                        frame_frust++;
+                    }
+                    continue;
+                }
+                
+                if (isTargetChunk) {
+                    frame_draw++;
+                }
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
                 
                 float curvatureRadius = 0.0f;
+                bool isLogSphere = false;
+                fw::PlanetSize pSize = fw::PlanetSize::Tiny;
                 if (context && context->forgeWorld) {
                     entt::entity planetEnt = context->forgeWorld->GetPlanetEntity();
                     if (registry.valid(planetEnt) && registry.all_of<fw::PlanetGeometryComponent>(planetEnt)) {
                         const auto& geom = registry.get<fw::PlanetGeometryComponent>(planetEnt);
-                        curvatureRadius = geom.isLogicalSphere ? fw::PlanetMath::GetPlanetRadius(geom.planetSize) : 0.0f;
+                        isLogSphere = geom.isLogicalSphere;
+                        pSize = geom.planetSize;
+                        curvatureRadius = 0.0f; // Planet geometry is now true spherical CPU-side
                     }
                 }
                 pcData.curvatureRadius = curvatureRadius;
                 pcData.chunkWorldXZ = glm::vec2(trans.location.x, trans.location.z);
+                
+                if (isTargetChunk && frame_draw == 1) {
+                    first_draw_params = "\nFIRST DRAW PARAMS:\n";
+                    first_draw_params += "Curvature Radius: " + std::to_string(curvatureRadius) + "\n";
+                    first_draw_params += "Chunk World XZ: " + std::to_string(pcData.chunkWorldXZ.x) + ", " + std::to_string(pcData.chunkWorldXZ.y) + "\n";
+                    first_draw_params += "Model Translation: " + std::to_string(trans.location.x) + ", " + std::to_string(trans.location.y) + ", " + std::to_string(trans.location.z) + "\n";
+                    first_draw_params += "Model[3]: " + std::to_string(model[3][0]) + ", " + std::to_string(model[3][1]) + ", " + std::to_string(model[3][2]) + "\n";
+                    first_draw_params += "View[3]: " + std::to_string(viewMatrix[3][0]) + ", " + std::to_string(viewMatrix[3][1]) + ", " + std::to_string(viewMatrix[3][2]) + "\n";
+                    first_draw_params += "Mesh vertices: " + std::to_string(mesh.vertices.size()) + "\n";
+                    first_draw_params += "VRAM alloc offset: " + std::to_string(allocInfo.offset) + "\n";
+                }
                 
                 pcData.lightDir = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
                 if (context && context->forgeWorld) {
@@ -1120,15 +1248,103 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
                 vkCmdPushConstants(cmd, m_forgePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ForgePushConstantData), &pcData);
 
+                if (isTargetChunk) {
+                    std::cout << "[D7.4J.3] RADIAL GEOMETRY DIAGNOSTIC\n";
+                    if (registry.all_of<fw::VoxelChunkComponent>(entity)) {
+                        const auto& chunk = registry.get<fw::VoxelChunkComponent>(entity);
+                        std::cout << "PlanetID: " << chunk.planetCoord.planet.value << "\n";
+                        std::cout << "Face: " << (int)chunk.planetCoord.face << " Col: " << chunk.planetCoord.col << " Row: " << chunk.planetCoord.row << " Layer: " << chunk.planetCoord.layer << "\n";
+                    }
+                    std::cout << "Planet Center: 0.0, 0.0, 0.0\n";
+                    float R = fw::PlanetMath::GetPlanetRadius(pSize);
+                    std::cout << "Nominal Radius (R): " << R << "\n";
+                    
+                    if (!mesh.vertices.empty()) {
+                        float minDist = 999999.0f;
+                        float maxDist = -1.0f;
+                        float repDist = 0.0f;
+                        
+                        for (size_t i = 0; i < mesh.vertices.size(); i += 100) {
+                            glm::vec4 localPos(mesh.vertices[i].position.x, mesh.vertices[i].position.y, mesh.vertices[i].position.z, 1.0f);
+                            glm::vec4 worldPos = model * localPos;
+                            float d = glm::length(glm::vec3(worldPos));
+                            if (d < minDist) minDist = d;
+                            if (d > maxDist) maxDist = d;
+                            if (i == 0) repDist = d;
+                        }
+                        
+                        std::cout << "Min Vertex Dist: " << minDist << "\n";
+                        std::cout << "Max Vertex Dist: " << maxDist << "\n";
+                        std::cout << "Rep Vertex Dist: " << repDist << "\n";
+                        
+                        if (minDist > R + 0.1f) std::cout << "Position: OUTSIDE\n";
+                        else if (maxDist < R - 0.1f) std::cout << "Position: INSIDE\n";
+                        else std::cout << "Position: AT RADIUS (Intersecting)\n";
+                        
+                        std::cout << "Mesh Model Transform:\n";
+                        for(int r=0; r<4; r++) std::cout << "  " << model[r][0] << ", " << model[r][1] << ", " << model[r][2] << ", " << model[r][3] << "\n";
+                    }
+                    std::cout << "curvatureRadius in PushConstant: " << curvatureRadius << "\n";
+
+                    if (context && context->engine) {
+                        auto& player = context->engine->GetPlayer();
+                        auto pView = registry.view<fw::RigidBodyComponent, fw::PlayerControllerComponent>();
+                        if (!pView.empty()) {
+                            auto pEnt = pView.front();
+                            auto& rb = pView.get<fw::RigidBodyComponent>(pEnt);
+                            float pDist = glm::length(rb.body.position);
+                            std::cout << "Player Cartesian Pos: " << rb.body.position.x << ", " << rb.body.position.y << ", " << rb.body.position.z << "\n";
+                            std::cout << "Player Dist From Center: " << pDist << "\n";
+                            std::cout << "Player Radial Height: " << (pDist - R) << "\n";
+                            std::cout << "Player Local UP: " << (pDist > 0.001f ? (rb.body.position.x/pDist) : 0) << ", " << (pDist > 0.001f ? (rb.body.position.y/pDist) : 1) << ", " << (pDist > 0.001f ? (rb.body.position.z/pDist) : 0) << "\n";
+                        }
+                        std::cout << "Camera Forward: " << context->activeCameraView.cameraFront.x << ", " << context->activeCameraView.cameraFront.y << ", " << context->activeCameraView.cameraFront.z << "\n";
+                        std::cout << "Player Mode: " << (player.isCreativeMode ? "Creative" : "Survival") << "\n";
+                    }
+                    std::cout << "======================================\n\n";
+                }
+
                 // Usa firstVertex al posto di ri-bindare il buffer
                 uint32_t firstVertex = allocInfo.offset / sizeof(fw::Vertex);
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, firstVertex, 0);
             }
         }
-        
         // RIPRISTINA LA PIPELINE ORIGINALE PER GLI ALTRI ELEMENTI DI FAIRWORLD
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_memory->GetDescriptorSets()[m_currentFrame], 0, nullptr);
+    }
+    
+    static int s_playstate_frames = 0;
+    static bool s_d74f6m_printed = false;
+    if (isPlayState && !s_d74f6m_printed) {
+        s_playstate_frames++;
+        if (g_d74f6l_ecs_committed.load() > 0 || s_playstate_frames > 600) {
+            std::cout << "\n============================================================\n";
+            std::cout << "[D7.4F.6M-R2] PLANET MESH COMMIT & DRAW DIAGNOSTIC\n";
+            std::cout << "GENERATION (NONZERO VERTICES): " << g_d74f6l_gen_nonzero.load() << "\n";
+            std::cout << "DMA COMPLETED:                 " << g_d74f6l_dma_completed.load() << "\n";
+            std::cout << "DEFERRED QUEUED:               " << g_d74f6l_deferred_queued.load() << "\n";
+            std::cout << "ECS COMMITTED:                 " << g_d74f6l_ecs_committed.load() << "\n";
+            std::cout << "VALID MESH COMPONENTS:         " << frame_valid_mesh << "\n";
+            std::cout << "IN COMPARTMENTS:               " << frame_in_comp << "\n";
+            std::cout << "FRUSTUM REJECTED:              " << frame_frust << "\n";
+            std::cout << "OTHER REJECTED:                " << frame_other << "\n";
+            std::cout << "DRAW REACHED:                  " << frame_draw << "\n";
+            
+            if (frame_draw == 0) {
+                std::cout << "FIRST REJECTION REASON:        ";
+                if (g_d74f6l_ecs_committed.load() == 0) std::cout << "0 ECS commits.\n";
+                else if (frame_valid_mesh == 0) std::cout << "0 Valid MeshComponents (empty vertices or invalid VRAM handle).\n";
+                else if (frame_in_comp == 0) std::cout << "0 batched in compartment (compartment mapping issue).\n";
+                else if (frame_other > 0) std::cout << "Rejected by other RenderFairworld loop eligibility checks.\n";
+                else if (frame_frust > 0) std::cout << "Rejected by Frustum Culling.\n";
+                else std::cout << "Unknown (Possible logic error or Forge pipeline bypassed).\n";
+            } else {
+                std::cout << first_draw_params;
+            }
+            std::cout << "============================================================\n\n";
+            s_d74f6m_printed = true;
+        }
     }
         if (m_ghostVertexBuffer != VK_NULL_HANDLE && m_ghostIndexBuffer != VK_NULL_HANDLE && m_ghostIndexCount > 0) {
             VkBuffer ghostBuffers[] = { m_ghostVertexBuffer };

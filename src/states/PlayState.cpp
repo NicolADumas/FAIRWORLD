@@ -27,6 +27,7 @@
 #include "MapWorldGenerator.h"
 #include "JobSystem.h"
 #include "VulkanDmaManager.h"
+#include "../core/app/RuntimeManager.h"
 #include <imgui.h>
 
 using json = nlohmann::json;
@@ -37,11 +38,6 @@ PlayState::PlayState(SharedContext* context) : m_context(context) {
 
 PlayState::~PlayState() {
     std::cout << "[PlayState] Distrutto.\n";
-    if (m_context && m_context->jobSystem) {
-        m_context->jobSystem->Shutdown(); // Attende che tutti i job finiscano
-        m_context->jobSystem->Initialize(); // Riaccende i thread
-    }
-    
     if (m_context && m_context->forgeWorld) {
         m_context->forgeWorld->ClearWorld(true); // Salva in saves/world e svuota
         m_context->activeRegistry = nullptr;
@@ -56,16 +52,20 @@ PlayState::~PlayState() {
 
 bool PlayState::Init() {
     // --- CRITICAL FIX FOR GPU RENDERING BUG ---
-    // Ensure JobSystem is initialized so background meshes can be generated and sent to GPU.
-    if (m_context) {
-        if (!m_context->jobSystem) {
-            m_context->jobSystem = new fw::JobSystem();
-            m_context->jobSystem->Initialize();
-        }
+    // Safely migrate JobSystem ownership to RuntimeManager and ensure PBR textures are loaded.
+    if (m_context && m_context->runtimeManager) {
+        m_context->runtimeManager->RequireFeaturesAsync(
+            fw::RuntimeFeature::GlobalVRAM | 
+            fw::RuntimeFeature::JobSystem | 
+            fw::RuntimeFeature::PBRTextures
+        );
     }
 
     // (Action Map registrata precedentemente nel DeviceManager)
     auto& bindings = m_context->deviceManager->GetActionMap().bindings;
+    if (bindings.empty()) {
+        m_context->deviceManager->InitDefaultBindings();
+    }
     std::cout << "[PlayState] Action Map caricata: "
               << bindings.size() << " azioni logiche nel Kernel Bus.\n";
 
@@ -191,12 +191,6 @@ bool PlayState::Init() {
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
     
     // --- CAMERA ORIENTATION MICRO-FIX ---
-    glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
-    glm::vec3 desiredForward = glm::vec3(0.0f, 0.0f, -1.0f);
-    if (glm::distance(planetCenter, spawnPos) > 0.01f) {
-        desiredForward = glm::normalize(planetCenter - spawnPos);
-    }
-
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
     if (glm::length(spawnPos) > 0.01f) {
         up = glm::normalize(spawnPos);
@@ -209,6 +203,8 @@ bool PlayState::Init() {
     } else {
         baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
     }
+    
+    glm::vec3 desiredForward = baseForward;
     
     float derivedPitch = glm::degrees(std::asin(glm::clamp(glm::dot(desiredForward, up), -1.0f, 1.0f)));
     
@@ -383,7 +379,17 @@ bool PlayState::Init() {
 }
 
 void PlayState::Update(float dt) {
+    static int s_d74f6l_r1_ps_update = 0;
+    if (s_d74f6l_r1_ps_update < 5) {
+        std::cout << "[D7.4F.6L-R1] PlayState::Update Entered (Snapshot " << (s_d74f6l_r1_ps_update + 1) << "/5)\n";
+        s_d74f6l_r1_ps_update++;
+    }
+
     if (!m_context) return;
+    
+    if (m_context->runtimeManager && !m_context->runtimeManager->IsReady()) {
+        return; // Attende il completamento delle feature asincrone (JobSystem, PBRTextures) senza bloccare l'UI
+    }
     using namespace entt::literals;
 
     m_context->isForgeMode = false;
@@ -472,7 +478,17 @@ void PlayState::Update(float dt) {
 
     // Aggiunto l'aggiornamento di ForgeWorld per permettere la generazione asincrona dei chunk
     if (m_context && m_context->forgeWorld) {
+        static int s_d74f6l_r1_gw_update = 0;
+        if (s_d74f6l_r1_gw_update < 5) {
+            std::cout << "[D7.4F.6L-R1] PlayState before GameWorld::Update (Snapshot " << (s_d74f6l_r1_gw_update + 1) << "/5)\n";
+        }
+        
         m_context->forgeWorld->Update(dt);
+        
+        if (s_d74f6l_r1_gw_update < 5) {
+            std::cout << "[D7.4F.6L-R1] PlayState after GameWorld::Update (Snapshot " << (s_d74f6l_r1_gw_update + 1) << "/5)\n";
+            s_d74f6l_r1_gw_update++;
+        }
     }
 
     // --- ASSET BROWSER (Key 'B') ---

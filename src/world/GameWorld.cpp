@@ -28,6 +28,12 @@
 #include "systems/BiomeSystems.h"
 #include "systems/TerrainSolverSystem.h"
 
+#include <atomic>
+std::atomic<int> g_d74f6l_gen_nonzero(0);
+std::atomic<int> g_d74f6l_dma_completed(0);
+std::atomic<int> g_d74f6l_deferred_queued(0);
+std::atomic<int> g_d74f6l_ecs_committed(0);
+
 namespace fw {
 
 GameWorld::GameWorld() {
@@ -187,6 +193,12 @@ void GameWorld::Update(float dt) {
         meshBatch.swap(m_deferredMeshes);
     }
     
+    static int s_d74f6l_r1_gw_queue = 0;
+    if (s_d74f6l_r1_gw_queue < 5 && !meshBatch.empty()) {
+        std::cout << "[D7.4F.6L-R1] GameWorld consuming deferred queue of size " << meshBatch.size() << " (Snapshot " << (s_d74f6l_r1_gw_queue + 1) << "/5)\n";
+        s_d74f6l_r1_gw_queue++;
+    }
+    
     for (auto& def : meshBatch) {
         if (def.targetEntity != entt::null && !m_registry.valid(def.targetEntity)) {
             if (def.mesh.vramAlloc != fw::INVALID_VRAM_HANDLE && m_context && m_context->vramAllocator) {
@@ -229,6 +241,12 @@ void GameWorld::Update(float dt) {
                     }
                 }
                 m_registry.emplace_or_replace<MeshComponent>(def.targetEntity, std::move(def.mesh));
+                
+                if (m_registry.all_of<VoxelChunkComponent>(def.targetEntity)) {
+                    if (m_registry.get<VoxelChunkComponent>(def.targetEntity).planetCoord.planet.IsValid()) {
+                        g_d74f6l_ecs_committed++;
+                    }
+                }
             }
 
             auto* dirty = m_registry.try_get<ChunkDirtyComponent>(def.targetEntity);
@@ -550,9 +568,17 @@ void GameWorld::Update(float dt) {
                     return;
                 }
 
+                if (chunkData->planetCoord.planet.IsValid()) {
+                    g_d74f6l_gen_nonzero++;
+                }
+
                 auto allocInfo = ctx->vramAllocator->GetAllocation(vramAlloc);
                 VkBuffer destBuffer = ctx->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
                 ctx->dmaManager->UploadMeshAsync(vertices.data(), meshSizeBytes, allocInfo, destBuffer);
+
+                if (chunkData->planetCoord.planet.IsValid()) {
+                    g_d74f6l_dma_completed++;
+                }
 
                 MeshComponent newMesh;
                 newMesh.name = chunkName + "_Mesh";
@@ -573,6 +599,10 @@ void GameWorld::Update(float dt) {
                     std::cout << "VRAM offset: " << allocInfo.offset << "\n";
                     std::cout << "Compartment: " << allocInfo.compartmentIdx << "\n";
                     std::cout << "=======================================================\n";
+                }
+
+                if (chunkData->planetCoord.planet.IsValid()) {
+                    g_d74f6l_deferred_queued++;
                 }
 
 
@@ -617,8 +647,10 @@ entt::entity GameWorld::CreateChunkEntity(const std::string& name, const Vec3& p
             glm::vec3 sphPos;
             glm::quat sphRot;
             if (fw::MapWorldGenerator::GetSphericalChunkTransform(geom.planetSize, cx, cz, sphPos, sphRot)) {
-                trans.location = {sphPos.x, sphPos.y, sphPos.z};
-                trans.rotation = {sphRot.x, sphRot.y, sphRot.z, sphRot.w};
+                // PlanetaryMeshGenerator outputs absolute planet-local vertices.
+                // The chunk transform must be exactly the planet center (identity translation and rotation).
+                trans.location = {0.0f, 0.0f, 0.0f};
+                trans.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
             } else {
                 // Se il chunk è fuori dai limiti della mappa sferica (pianeta finito), 
                 // lo scaliamo a zero per non renderizzarlo e dopo lo marchiamo come vuoto
