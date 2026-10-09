@@ -28,6 +28,7 @@ namespace fw {
     class GameWorld;
     class BlockRegistry;
     class MaterialRegistry;
+    class ShapeRegistry;
     class SimulationManager;
     class CacheManager;
     class WorldProjectManager;
@@ -63,6 +64,7 @@ struct SharedContext {
     fw::DiagnosticsManager* diagnosticsManager  = nullptr;
     fw::RuntimeManager*     runtimeManager      = nullptr;
     fw::BlockRegistry*      blockRegistry       = nullptr;
+    fw::ShapeRegistry*      shapeRegistry       = nullptr;
     fw::MaterialRegistry*   materialRegistry    = nullptr;
 
     // --- INFRASTRUTTURA ASINCRONA E RENDER ---

@@ -384,6 +384,11 @@ void FairWorldEngine::Run() {
 
         // Rendering
         Render();
+
+        if (m_renderManager && m_renderManager->IsDeviceLost()) {
+            std::cerr << "[FAIRWORLD] Chiusura forzata: Device Vulkan perso irremediabilmente." << std::endl;
+            m_isRunning = false;
+        }
     }
     
     if (m_windowManager && !m_isVrMode) {

@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include <cstdint>
+#include "ShapeRegistry.h"
 
 namespace fw {
 
@@ -42,6 +43,9 @@ struct PBRMaterialDef {
     // Parametric Geometry (Per-Block)
     int shapeType = 0;          // 0 = Standard Voxel Cube, 1 = SuperSphere (|x|^n + |y|^n + |z|^n = 1)
     float superSphereN = 2.0f;  // Exponent n for SuperSphere
+    
+    // New Universal Shape System
+    ShapeHandle sharedShape;
 };
 
 class MaterialRegistry {

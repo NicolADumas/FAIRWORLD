@@ -460,9 +460,7 @@ void PlayState::Update(float dt) {
         }
     }
     
-    for (auto& root : m_planetRootNodes) {
-        m_lodSystem.UpdateLODTree(root, m_context->activeCameraView.cameraPosition, m_context->forgeWorld, m_context->jobSystem, m_context->assetManager, activeRegions, vpMatrix, m_context->blockRegistry, baseTerrain);
-    }
+    // Independent LOD terrain removed from PlayState. Only authoritative voxel chunks are used.
 
     // --- ESECUZIONE SISTEMI ECS ---
     for (auto& system : m_systems) {

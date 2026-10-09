@@ -586,6 +586,7 @@ void BlockMakerState::DrawUI() {
                     m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
                     m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
                     m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+                    m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
                     m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                     if (m_context->cacheManager) {
                         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
@@ -612,6 +613,7 @@ void BlockMakerState::DrawUI() {
             m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
             m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
             m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+            m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
             
             // Esporta asset file in assets/blocks/ per l'Asset Browser di FORGE

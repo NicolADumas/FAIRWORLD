@@ -105,6 +105,8 @@ public:
     void UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic);
     void UpdateBlockPropertiesSSBO(const std::vector<struct fw::BlockPropertiesGPU>& properties);
 
+    bool IsDeviceLost() const { return m_deviceLost; }
+
     VkInstance GetVulkanInstance() const { return m_core ? m_core->GetInstance() : VK_NULL_HANDLE; }
     VkPhysicalDevice GetPhysicalDevice() const { return m_core ? m_core->GetPhysicalDevice() : VK_NULL_HANDLE; }
     VkDevice GetDevice() const { return m_core ? m_core->GetDevice() : VK_NULL_HANDLE; }
@@ -140,6 +142,7 @@ private:
     
     bool m_isVRMode;
     bool m_isFullyInitialized{ false }; // Protegge RecreateSwapchain durante l'init
+    bool m_deviceLost{ false }; // Segnala la perdita irreversibile del device Vulkan
     void* m_hwnd{ nullptr };
     
     
@@ -246,8 +249,14 @@ private:
     bool           m_terrainDataDirty{ false };
 
     // Allocazione dal Ring Buffer e gestione della libreria
+    // Terrain Staging
     VkDeviceSize AllocateTerrainStaging(VkDeviceSize size, uint32_t currentFrame);
     void ReclaimTerrainStaging(uint32_t frameIndex);
+    
+    // PBR Texture Metadata
+    uint32_t m_pbrTextureWidth = 0;
+    uint32_t m_pbrTextureHeight = 0;
+    uint32_t m_pbrTextureLayers = 0;
 
     // --- FORGE DESCRIPTOR SETS ---
     VkDescriptorSetLayout m_forgeDescriptorSetLayout{ VK_NULL_HANDLE };

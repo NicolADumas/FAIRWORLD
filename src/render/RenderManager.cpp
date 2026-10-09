@@ -100,6 +100,14 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     if (!CreateDescriptorSetLayout()) return false;
     if (!m_memory->CreateUniformBuffers(sizeof(UniformBufferObject))) return false;
     if (!m_memory->CreateDescriptorPoolAndSets(m_descriptorSetLayout, m_forgeDescriptorSetLayout, sizeof(UniformBufferObject))) return false;
+    
+    // Inizializza l'SSBO con la capacita' massima (256 blocchi, dato che target_block_id e' uint8_t)
+    // In questo modo evitiamo out-of-bounds quando l'SSBO viene aggiornato con la lista reale.
+    std::vector<fw::BlockPropertiesGPU> dummyProps(256);
+    UpdateBlockPropertiesSSBO(dummyProps);
+    
+    // Assicura che esista almeno un set di fallback per m_forgeDescriptorSets prima di creare la pipeline
+    CreatePBRTextures(fw::PackedTextureData());
 
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateForgePipeline()) return false;
@@ -1097,11 +1105,31 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
         CameraFrustum frustum;
         frustum.extract(cullProj * viewMatrix);
 
+        static bool s_d74f6l_ownership_logged = false;
+        if (!s_d74f6l_ownership_logged) {
+            int lodCount = 0;
+            int voxelCount = 0;
+            for (auto e : view) {
+                if (registry.all_of<fw::MetadataComponent>(e) && registry.get<fw::MetadataComponent>(e).name.find("LODChunk_") != std::string::npos) lodCount++;
+                if (registry.all_of<fw::VoxelChunkComponent>(e)) voxelCount++;
+            }
+            std::cout << "[D7.4L][PLANET RENDER OWNERSHIP]\n";
+            std::cout << "- Active independent LOD mesh count in PlayState: " << lodCount << "\n";
+            std::cout << "- Active voxel mesh count: " << voxelCount << "\n";
+            std::cout << "- Whether SphericalLODSystem is updated in PlayState: NO (removed)\n";
+            std::cout << "- Whether SphericalLODSystem is submitted for drawing: NO (excluded via MetadataComponent)\n";
+            s_d74f6l_ownership_logged = true;
+        }
+
         // Raggruppa entità per compartimento VRAM
         std::map<uint32_t, std::vector<entt::entity>> compartmentBatches;
         for (auto entity : view) {
             bool isTargetChunk = registry.all_of<fw::VoxelChunkComponent>(entity) && registry.get<fw::VoxelChunkComponent>(entity).planetCoord.planet.IsValid();
             
+            if (registry.all_of<fw::MetadataComponent>(entity)) {
+                if (registry.get<fw::MetadataComponent>(entity).name.find("LODChunk_") != std::string::npos) continue;
+            }
+
             if (registry.all_of<fw::VisibilityComponent>(entity)) {
                 if (!registry.get<fw::VisibilityComponent>(entity).enabled) continue;
             }
@@ -1288,16 +1316,6 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
                     if (context && context->engine) {
                         auto& player = context->engine->GetPlayer();
-                        auto pView = registry.view<fw::RigidBodyComponent, fw::PlayerControllerComponent>();
-                        if (!pView.empty()) {
-                            auto pEnt = pView.front();
-                            auto& rb = pView.get<fw::RigidBodyComponent>(pEnt);
-                            float pDist = glm::length(rb.body.position);
-                            std::cout << "Player Cartesian Pos: " << rb.body.position.x << ", " << rb.body.position.y << ", " << rb.body.position.z << "\n";
-                            std::cout << "Player Dist From Center: " << pDist << "\n";
-                            std::cout << "Player Radial Height: " << (pDist - R) << "\n";
-                            std::cout << "Player Local UP: " << (pDist > 0.001f ? (rb.body.position.x/pDist) : 0) << ", " << (pDist > 0.001f ? (rb.body.position.y/pDist) : 1) << ", " << (pDist > 0.001f ? (rb.body.position.z/pDist) : 0) << "\n";
-                        }
                         std::cout << "Camera Forward: " << context->activeCameraView.cameraFront.x << ", " << context->activeCameraView.cameraFront.y << ", " << context->activeCameraView.cameraFront.z << "\n";
                         std::cout << "Player Mode: " << (player.isCreativeMode ? "Creative" : "Survival") << "\n";
                     }
@@ -1436,8 +1454,15 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 }
 
 void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
+    if (m_deviceLost) return;
     if (m_core->GetDevice() == VK_NULL_HANDLE) return;
-    vkWaitForFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
+    
+    VkResult waitResult = vkWaitForFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
+    if (waitResult == VK_ERROR_DEVICE_LOST) {
+        std::cerr << "[VULKAN FATAL] Device perso durante vkWaitForFences!" << std::endl;
+        m_deviceLost = true;
+        return;
+    }
 
     // imageAvailable[currentFrame]: protetto dal fence sopra => e' sicuro risegnalarlo
     uint32_t imageIndex;
@@ -1447,6 +1472,10 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_ERROR_SURFACE_LOST_KHR) {
         RecreateSwapchain();
+        return;
+    } else if (result == VK_ERROR_DEVICE_LOST) {
+        std::cerr << "[VULKAN FATAL] Device perso durante vkAcquireNextImageKHR!" << std::endl;
+        m_deviceLost = true;
         return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         std::cerr << "[VULKAN ERROR] Impossibile acquisire l'immagine della swapchain! Error: " << result << std::endl;
@@ -1575,7 +1604,12 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
 
     {
         std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
-        if (vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS) {
+        VkResult submitResult = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]);
+        if (submitResult == VK_ERROR_DEVICE_LOST) {
+            std::cerr << "[VULKAN FATAL] Device perso durante vkQueueSubmit!" << std::endl;
+            m_deviceLost = true;
+            return;
+        } else if (submitResult != VK_SUCCESS) {
             std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer!" << std::endl;
         }
     }
@@ -1597,7 +1631,11 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
         resultPresent = vkQueuePresentKHR(m_core->GetPresentQueue(), &presentInfo);
     }
-    if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || resultPresent == VK_ERROR_SURFACE_LOST_KHR) {
+    if (resultPresent == VK_ERROR_DEVICE_LOST) {
+        std::cerr << "[VULKAN FATAL] Device perso durante vkQueuePresentKHR!" << std::endl;
+        m_deviceLost = true;
+        return;
+    } else if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || resultPresent == VK_ERROR_SURFACE_LOST_KHR) {
         RecreateSwapchain();
     } else if (resultPresent != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile presentare l'immagine della swapchain! Error: " << resultPresent << std::endl;
@@ -2321,8 +2359,29 @@ void RenderManager::InitImGui(void* hwnd) {
 // ---------------------------------------------------------
 // TEXTURE ARRAY (16x16 Pixel Editor)
 // ---------------------------------------------------------
-void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
-    if (data.layerCount == 0 || data.albedoData.empty()) return;
+void RenderManager::CreatePBRTextures(const fw::PackedTextureData& inputData) {
+    if (m_core && m_core->GetDevice() != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_core->GetDevice());
+    }
+
+    fw::PackedTextureData data = inputData;
+    if (data.layerCount == 0 || data.albedoData.empty()) {
+        data.width = 1;
+        data.height = 1;
+        data.layerCount = 256; // Must match maximum block IDs to prevent shader OOB access
+        data.albedoData.resize(256 * 4);
+        data.normalData.resize(256 * 4);
+        data.ormData.resize(256 * 4);
+        for (int i = 0; i < 256; i++) {
+            data.albedoData[i*4 + 0] = 255; data.albedoData[i*4 + 1] = 255; data.albedoData[i*4 + 2] = 255; data.albedoData[i*4 + 3] = 255;
+            data.normalData[i*4 + 0] = 128; data.normalData[i*4 + 1] = 128; data.normalData[i*4 + 2] = 255; data.normalData[i*4 + 3] = 255;
+            data.ormData[i*4 + 0]    = 255; data.ormData[i*4 + 1]    = 255; data.ormData[i*4 + 2]    = 0;   data.ormData[i*4 + 3]    = 255;
+        }
+    }
+
+    m_pbrTextureWidth = data.width;
+    m_pbrTextureHeight = data.height;
+    m_pbrTextureLayers = data.layerCount;
 
     VkCommandPoolCreateInfo cmdPoolInfo{};
     cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -2380,9 +2439,30 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
         }
     };
 
+    auto destroyTextureArray = [&](VkImage& image, VmaAllocation& alloc, VkImageView& view) {
+        if (view != VK_NULL_HANDLE) {
+            vkDestroyImageView(m_core->GetDevice(), view, nullptr);
+            view = VK_NULL_HANDLE;
+        }
+        if (image != VK_NULL_HANDLE) {
+            vmaDestroyImage(m_memory->GetAllocator(), image, alloc);
+            image = VK_NULL_HANDLE;
+            alloc = VK_NULL_HANDLE;
+        }
+    };
+
+    destroyTextureArray(m_albedoImage, m_albedoImageAllocation, m_albedoImageView);
+    destroyTextureArray(m_normalImage, m_normalImageAllocation, m_normalImageView);
+    destroyTextureArray(m_ormImage, m_ormImageAllocation, m_ormImageView);
+
     createTextureArray(data.albedoData, m_albedoImage, m_albedoImageAllocation, m_albedoImageView);
     createTextureArray(data.normalData, m_normalImage, m_normalImageAllocation, m_normalImageView);
     createTextureArray(data.ormData, m_ormImage, m_ormImageAllocation, m_ormImageView);
+
+    if (m_textureSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(m_core->GetDevice(), m_textureSampler, nullptr);
+        m_textureSampler = VK_NULL_HANDLE;
+    }
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -2537,8 +2617,18 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& data) {
 
 void RenderManager::UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIndex, uint32_t width, uint32_t height, const glm::vec4& color) {
     if (image == VK_NULL_HANDLE) return;
+    if (layerIndex >= m_pbrTextureLayers) {
+        std::cerr << "[VULKAN ERROR] UpdateTextureLayerSolidColor: layerIndex fuori dai limiti." << std::endl;
+        return;
+    }
+    if (width > m_pbrTextureWidth || height > m_pbrTextureHeight) {
+        std::cerr << "[VULKAN ERROR] UpdateTextureLayerSolidColor: dimensioni upload superano le dimensioni dell'immagine." << std::endl;
+        return;
+    }
 
     VkDeviceSize imageSize = width * height * 4;
+    if (imageSize == 0 || width > 16384 || height > 16384) return;
+
     std::vector<uint8_t> pixels(imageSize);
     uint8_t r = static_cast<uint8_t>(glm::clamp(color.r * 255.0f, 0.0f, 255.0f));
     uint8_t g = static_cast<uint8_t>(glm::clamp(color.g * 255.0f, 0.0f, 255.0f));
@@ -2611,13 +2701,14 @@ void RenderManager::UpdateTextureLayerSolidColor(VkImage image, uint32_t layerIn
 
 void RenderManager::UpdateMaterialFallback(uint32_t layerIndex, const glm::vec3& baseColor, float roughness, float metallic) {
     if (m_albedoImage == VK_NULL_HANDLE || m_ormImage == VK_NULL_HANDLE) return;
+    if (layerIndex >= m_pbrTextureLayers) return; // Prevent VUID 07968
 
     // Aggiorna l'Albedo se non ci sono texture vere, altrimenti lascia la mappa originale intatta?
     // Nel Block Maker vogliamo forzare il colore fallback per feedback visivo, se l'utente sposta lo slider!
-    UpdateTextureLayerSolidColor(m_albedoImage, layerIndex, 512, 512, glm::vec4(baseColor, 1.0f));
+    UpdateTextureLayerSolidColor(m_albedoImage, layerIndex, m_pbrTextureWidth, m_pbrTextureHeight, glm::vec4(baseColor, 1.0f));
 
     // Aggiorna ORM map (Ambient Occlusion = 1.0, Roughness, Metallic)
-    UpdateTextureLayerSolidColor(m_ormImage, layerIndex, 512, 512, glm::vec4(1.0f, roughness, metallic, 1.0f));
+    UpdateTextureLayerSolidColor(m_ormImage, layerIndex, m_pbrTextureWidth, m_pbrTextureHeight, glm::vec4(1.0f, roughness, metallic, 1.0f));
 }
 
 void RenderManager::CreateImage(uint32_t width, uint32_t height, uint32_t layerCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VmaMemoryUsage vmaUsage, VkImage& image, VmaAllocation& imageAllocation) {
@@ -2752,8 +2843,24 @@ void RenderManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w
 
 void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height, PBRTextureType type) {
     if (m_albedoImage == VK_NULL_HANDLE || m_normalImage == VK_NULL_HANDLE || m_ormImage == VK_NULL_HANDLE) return; // Texture PBR non ancora caricate
-    VkDeviceSize imageSize = width * height * 4;
+    if (layerIndex >= m_pbrTextureLayers) {
+        std::cerr << "[VULKAN ERROR] UpdateTextureLayer: layerIndex (" << layerIndex << ") fuori dai limiti (" << m_pbrTextureLayers << ")." << std::endl;
+        return;
+    }
 
+    if (width > m_pbrTextureWidth || height > m_pbrTextureHeight) {
+        std::cerr << "[VULKAN ERROR] UpdateTextureLayer: dimensioni upload (" << width << "x" << height 
+                  << ") superano le dimensioni dell'immagine (" << m_pbrTextureWidth << "x" << m_pbrTextureHeight << ")." << std::endl;
+        return;
+    }
+
+    VkDeviceSize imageSize = width * height * 4;
+    
+    // Validate potential overflow
+    if (imageSize == 0 || width > 16384 || height > 16384) {
+        std::cerr << "[VULKAN ERROR] UpdateTextureLayer: dimensioni non valide!" << std::endl;
+        return;
+    }
 
     VkBuffer stagingBuffer;
     VmaAllocation stagingBufferMemory;
@@ -2771,10 +2878,25 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
 
     if (targetImage == VK_NULL_HANDLE) return;
 
-    // Aggiorna il layer nell'array
-    TransitionImageLayout(targetImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 256);
-
+    // Aggiorna il layer nell'array con una barrier mirata solo su questo layer
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = targetImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = layerIndex;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
@@ -2789,10 +2911,16 @@ void RenderManager::UpdateTextureLayer(uint32_t layerIndex, const void* pixelDat
     region.imageExtent = {width, height, 1};
     
     vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, targetImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    EndSingleTimeCommands(commandBuffer);
 
     // Transizione indietro a SHADER_READ_ONLY
-    TransitionImageLayout(targetImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 256);
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    EndSingleTimeCommands(commandBuffer);
 
     vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
     std::cout << "[VULKAN] Texture Layer " << layerIndex << " aggiornato in tempo reale!" << std::endl;

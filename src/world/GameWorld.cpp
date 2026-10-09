@@ -722,6 +722,24 @@ void GameWorld::UploadMeshToVram(entt::entity e) {
     }
 }
 
+BlockType GameWorld::GetBlockCartesian(const glm::vec3& worldPos) const {
+    fw::PlanetSize pSize = fw::PlanetSize::Medium;
+    bool isSpherical = false;
+    if (m_registry.valid(m_planetEntity) && m_registry.all_of<fw::PlanetGeometryComponent>(m_planetEntity)) {
+        const auto& geom = m_registry.get<fw::PlanetGeometryComponent>(m_planetEntity);
+        isSpherical = geom.isLogicalSphere;
+        pSize = geom.planetSize;
+    }
+
+    if (isSpherical) {
+        float flatX, localY, flatZ;
+        fw::MapWorldGenerator::WorldToVoxelCoord(pSize, false, worldPos, flatX, localY, flatZ);
+        return GetBlockFlat((int)std::floor(flatX), (int)std::floor(localY), (int)std::floor(flatZ));
+    } else {
+        return GetBlock((int)std::floor(worldPos.x + 0.5f), (int)std::floor(worldPos.y + 0.1f), (int)std::floor(worldPos.z + 0.5f));
+    }
+}
+
 BlockType GameWorld::GetBlock(int x, int y, int z) const {
     if (y < 0) return BlockType::OutOfBounds;
     

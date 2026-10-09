@@ -71,6 +71,7 @@ public:
     void UploadMeshToVram(entt::entity e);
     entt::entity CreateEmptyEntity(const std::string& name);
 
+    BlockType GetBlockCartesian(const glm::vec3& worldPos) const;
     BlockType GetBlock(int x, int y, int z) const;
     BlockType GetBlockFlat(int flatX, int y, int flatZ) const;
     void SetBlockFlat(int flatX, int y, int flatZ, BlockType type);

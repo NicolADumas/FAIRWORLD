@@ -4,6 +4,8 @@
 // Forward declaration
 namespace fw { class GameWorld; class ForgeWorld; }
 
+#include "core/utils/PlanetMath.h"
+
 #include <vector>
 
 // Eventi fisici generati durante il tick
@@ -51,6 +53,11 @@ struct RigidBody {
     float radius = 0.3f;
     float height = 1.8f;
     float eyeOffset = 1.6f;
+    
+    glm::vec3 dbg_gravityAccel = glm::vec3(0.0f);
+    int dbg_voxelContacts = 0;
+    glm::ivec3 dbg_lastLookupCoord = glm::ivec3(0);
+    bool dbg_lastLookupSolid = false;
 };
 
 class PhysicsEngine {
@@ -77,6 +84,7 @@ private:
 
     // Risolve collisioni AABB contro i blocchi Voxel (Cap. 9 - reazioni vincolari normali)
     void ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world);
+    void ResolveSphericalCollisions(RigidBody& rb, float dt, const fw::GameWorld& world, fw::PlanetSize pSize);
 
     // Integrazione Numerica (Metodo di Eulero/Verlet) (Cap. 7)
     void Integrate(RigidBody& rb, float dt);

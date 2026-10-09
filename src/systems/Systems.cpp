@@ -215,19 +215,54 @@ namespace fw {
             }
             
             // Camera position matches the rigid body position + eye offset
-            transform.x = rbComp.body.position.x;
-            transform.y = rbComp.body.position.y + rbComp.body.eyeOffset;
-            transform.z = rbComp.body.position.z;
+            glm::vec3 camPos = rbComp.body.position + (up * rbComp.body.eyeOffset);
+            transform.x = camPos.x;
+            transform.y = camPos.y;
+            transform.z = camPos.z;
         }
     }
 
     void PhysicsSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
         if (!context->forgeWorld) return;
         
+        static float s_dbgTimer = 0.0f;
+        s_dbgTimer += dt;
+        bool shouldLog = (s_dbgTimer >= 1.0f);
+        if (shouldLog) s_dbgTimer = 0.0f;
+        
         PhysicsEngine engine;
         auto view = registry.view<::RigidBodyComponent>();
         for (auto [entity, rbComp] : view.each()) {
+            bool isPlayer = registry.all_of<::PlayerControllerComponent>(entity);
+            
+            glm::vec3 preVel = rbComp.body.velocity;
+            glm::vec3 prePos = rbComp.body.position;
+            
             engine.StepSimulation(rbComp.body, dt, *context->forgeWorld);
+            
+            if (isPlayer && shouldLog) {
+                std::cout << "[D7.4L][PLAYER PHYSICS]\n";
+                auto planetEnt = context->forgeWorld->GetPlanetEntity();
+                uint32_t pId = context->forgeWorld->GetRegistry().valid(planetEnt) ? (uint32_t)planetEnt : 0;
+                std::cout << "- PlanetID: " << pId << "\n";
+                std::cout << "- Player entity valid: YES\n";
+                std::cout << "- Physics update executed: YES\n";
+                std::cout << "- Mode: " << (rbComp.body.isFlying ? "Creative" : "Survival") << "\n";
+                std::cout << "- Cartesian position: (" << rbComp.body.position.x << ", " << rbComp.body.position.y << ", " << rbComp.body.position.z << ")\n";
+                std::cout << "- Planet center: (0, 0, 0)\n";
+                float dist = glm::length(rbComp.body.position);
+                std::cout << "- Distance from center: " << dist << "\n";
+                glm::vec3 up = (dist > 0.01f) ? (rbComp.body.position / dist) : glm::vec3(0,1,0);
+                std::cout << "- Local UP: (" << up.x << ", " << up.y << ", " << up.z << ")\n";
+                std::cout << "- Gravity enabled: " << (rbComp.body.isFlying ? "NO" : "YES") << "\n";
+                std::cout << "- Gravity acceleration: (" << rbComp.body.dbg_gravityAccel.x << ", " << rbComp.body.dbg_gravityAccel.y << ", " << rbComp.body.dbg_gravityAccel.z << ")\n";
+                std::cout << "- Velocity before/after integration: (" << preVel.x << ", " << preVel.y << ", " << preVel.z << ") -> (" << rbComp.body.velocity.x << ", " << rbComp.body.velocity.y << ", " << rbComp.body.velocity.z << ")\n";
+                std::cout << "- Position before/after integration: (" << prePos.x << ", " << prePos.y << ", " << prePos.z << ") -> (" << rbComp.body.position.x << ", " << rbComp.body.position.y << ", " << rbComp.body.position.z << ")\n";
+                std::cout << "- Grounded: " << (rbComp.body.isGrounded ? "YES" : "NO") << "\n";
+                std::cout << "- Number of solid voxel contacts: " << rbComp.body.dbg_voxelContacts << "\n";
+                std::cout << "- Last voxel lookup coordinates: (" << rbComp.body.dbg_lastLookupCoord.x << ", " << rbComp.body.dbg_lastLookupCoord.y << ", " << rbComp.body.dbg_lastLookupCoord.z << ")\n";
+                std::cout << "- Last voxel lookup solid/empty: " << (rbComp.body.dbg_lastLookupSolid ? "SOLID" : "EMPTY") << "\n";
+            }
             
             // Processa eventi pendenti (es. danno da caduta)
             for (auto& ev : rbComp.body.pendingEvents) {

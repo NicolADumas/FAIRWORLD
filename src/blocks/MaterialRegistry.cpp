@@ -124,6 +124,9 @@ bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
             def.behaviors = jMat.value("behaviors", (uint32_t)BLOCK_BEHAVIOR_NONE);
             def.shapeType = jMat.value("shapeType", 0);
             def.superSphereN = jMat.value("superSphereN", 2.0f);
+            
+            def.sharedShape.id = jMat.value("sharedShapeId", (uint32_t)0);
+            def.sharedShape.revision = jMat.value("sharedShapeRevision", (uint32_t)0);
         }
         std::cout << "[MaterialRegistry] Caricati " << j["materials"].size() << " materiali da " << filepath << "\n";
         return true;
@@ -154,6 +157,9 @@ bool MaterialRegistry::SaveToJson(const std::string& filepath) {
         jMat["behaviors"] = def.behaviors;
         jMat["shapeType"] = def.shapeType;
         jMat["superSphereN"] = def.superSphereN;
+        
+        jMat["sharedShapeId"] = def.sharedShape.id;
+        jMat["sharedShapeRevision"] = def.sharedShape.revision;
         
         jMaterials.push_back(jMat);
     }

@@ -87,11 +87,15 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
             float ratio = R / r_clamped;
             float currentG = surfaceGravity * (ratio * ratio);
             
-            glm::vec3 gravityForce = normDir * (currentG * rb.mass);
+            glm::vec3 gravityAcceleration = normDir * currentG;
+            rb.dbg_gravityAccel = gravityAcceleration;
+            
+            glm::vec3 gravityForce = gravityAcceleration * rb.mass;
             rb.netForce += gravityForce;
         }
     } else {
         glm::vec3 gravityForce = glm::vec3(0.0f, -surfaceGravity * rb.mass, 0.0f);
+        rb.dbg_gravityAccel = glm::vec3(0.0f, -surfaceGravity, 0.0f);
         rb.netForce += gravityForce;
     }
 }
@@ -128,6 +132,7 @@ void PhysicsEngine::Integrate(RigidBody& rb, float dt) {
 void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world) {
     rb.isGrounded = false;
     rb.isAgainstWall = false;
+    rb.dbg_voxelContacts = 0;
     
     bool isSpherical = false;
     fw::PlanetSize pSize = fw::PlanetSize::Medium;
@@ -143,33 +148,18 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     glm::vec3 voxPos = rb.position;
     glm::quat localRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     glm::vec3 localVel = rb.velocity;
+    float oldVelY = localVel.y;
     glm::vec3 preCollisionGlobalPos = rb.position;
     
-    glm::mat4 planetGlobalMatrix = glm::mat4(1.0f);
-    glm::mat4 invPlanetMatrix = glm::mat4(1.0f);
-    if (isSpherical && const_cast<fw::GameWorld&>(world).GetRegistry().all_of<fw::TransformComponent>(*planetView.begin())) {
-        auto& pt = const_cast<fw::GameWorld&>(world).GetRegistry().get<fw::TransformComponent>(*planetView.begin());
-        fw::Mat4 ptMat = pt.computeGlobalMatrix(const_cast<fw::GameWorld&>(world).GetRegistry());
-        planetGlobalMatrix = glm::transpose(*reinterpret_cast<glm::mat4*>(&ptMat));
-        invPlanetMatrix = glm::inverse(planetGlobalMatrix);
-    }
-    
-    float oldVelY = localVel.y;
-
     if (isSpherical) {
-        // Mappa la posizione globale in locale al pianeta, poi nello spazio continuo dei voxel piatti
-        glm::vec3 localPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
-        fw::MapWorldGenerator::WorldToVoxelCoord(pSize, isFlat, localPos, voxPos.x, voxPos.y, voxPos.z);
-        
-        // Calcola una rotazione locale approssimata basata sulla normale per la velocità
-        glm::vec3 normal = glm::normalize(localPos);
-        localRot = glm::rotation(glm::vec3(0, 1, 0), normal);
-        localVel = glm::inverse(localRot) * glm::vec3(invPlanetMatrix * glm::vec4(rb.velocity, 0.0f));
+        ResolveSphericalCollisions(rb, dt, world, pSize);
+        return;
     }
 
     // Helper per verificare se un blocco è solido
     auto isSolid = [&](int x, int y, int z) {
-        if (y < 0 || y >= 128) return false;
+        rb.dbg_lastLookupCoord = glm::ivec3(x, y, z);
+        if (y < 0 || y >= 128) { rb.dbg_lastLookupSolid = false; return false; }
         
         int flatX = x;
         int flatZ = z;
@@ -177,11 +167,17 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         
         // Trattiamo OutOfBounds come solido sotto Y=25, oppure ovunque per evitare di cadere nel vuoto
         if (b == fw::BlockType::OutOfBounds) {
-            return (y < 25);
+            bool sol = (y < 25);
+            rb.dbg_lastLookupSolid = sol;
+            if (sol) rb.dbg_voxelContacts++;
+            return sol;
         }
         
-        return (b != fw::BlockType::Air && b != fw::BlockType::Water && 
+        bool sol = (b != fw::BlockType::Air && b != fw::BlockType::Water && 
                 b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal);
+        rb.dbg_lastLookupSolid = sol;
+        if (sol) rb.dbg_voxelContacts++;
+        return sol;
     };
 
     // Stargate Trigger check
@@ -577,46 +573,15 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
         voxPos.z += moveZ;
     }
 
-    // Ritorna in coordinate globali
-    if (isSpherical) {
-        int gcx = (int)std::floor(voxPos.x / 16.0f);
-        int gcz = (int)std::floor(voxPos.z / 16.0f);
-        float local_x = voxPos.x - (gcx * 16.0f);
-        float local_z = voxPos.z - (gcz * 16.0f);
-        glm::vec3 localSpherePos;
-        fw::MapWorldGenerator::GetTrueSphericalPosition(pSize, false, gcx, gcz, local_x, voxPos.y, local_z, localSpherePos);
-        rb.position = glm::vec3(planetGlobalMatrix * glm::vec4(localSpherePos, 1.0f));
-    } else {
-        rb.position = voxPos;
-    }
+    rb.position = voxPos;
 
     // Ricalcolo velocità effettiva (Post-Collisione)
     if (dt > 0.0f) {
         glm::vec3 actualGlobalVelocity = (rb.position - preCollisionGlobalPos) / dt;
-        glm::vec3 actualLocalVelocity = actualGlobalVelocity;
-        
-        if (isSpherical) {
-            glm::vec3 localCurrentPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
-            glm::vec3 newNormal = glm::normalize(localCurrentPos);
-            glm::quat newLocalRot = glm::rotation(glm::vec3(0, 1, 0), newNormal);
-            actualLocalVelocity = glm::inverse(newLocalRot) * glm::vec3(invPlanetMatrix * glm::vec4(actualGlobalVelocity, 0.0f));
-        }
-        
-        if (moveX != dx) actualLocalVelocity.x = -localVel.x * rb.restitution;
-        if (moveY != dy) actualLocalVelocity.y = -localVel.y * rb.restitution;
-        if (moveZ != dz) actualLocalVelocity.z = -localVel.z * rb.restitution;
-        
-        localVel = actualLocalVelocity;
-    }
-
-    if (isSpherical) {
-        glm::vec3 localCurrentPos = glm::vec3(invPlanetMatrix * glm::vec4(rb.position, 1.0f));
-        glm::vec3 finalNormal = glm::normalize(localCurrentPos);
-        glm::quat finalRot = glm::rotation(glm::vec3(0, 1, 0), finalNormal);
-        glm::vec3 localPlanetVel = finalRot * localVel;
-        rb.velocity = glm::vec3(planetGlobalMatrix * glm::vec4(localPlanetVel, 0.0f));
-    } else {
-        rb.velocity = localVel;
+        if (moveX != dx) actualGlobalVelocity.x = -localVel.x * rb.restitution;
+        if (moveY != dy) actualGlobalVelocity.y = -localVel.y * rb.restitution;
+        if (moveZ != dz) actualGlobalVelocity.z = -localVel.z * rb.restitution;
+        rb.velocity = actualGlobalVelocity;
     }
 
     // Danno da caduta (Energia Cinetica persa improvvisamente)
@@ -743,4 +708,134 @@ bool PhysicsEngine::SweepTest(const AABB& playerBounds, const glm::vec3& movemen
     }
 
     return outHit.hit;
+}
+
+void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw::GameWorld& world, fw::PlanetSize pSize) {
+    if (glm::length(rb.position) < 0.1f) return;
+    
+    glm::vec3 preCollisionGlobalPos = rb.position;
+    glm::vec3 movement = rb.velocity * dt;
+    float oldVelY = glm::dot(rb.velocity, glm::normalize(rb.position));
+
+    glm::vec3 localUp = glm::normalize(rb.position);
+    glm::vec3 localRight = glm::normalize(glm::cross(localUp, glm::vec3(0,1,0)));
+    if (glm::length(glm::cross(localUp, glm::vec3(0,1,0))) < 0.01f) {
+        localRight = glm::normalize(glm::cross(localUp, glm::vec3(1,0,0)));
+    }
+    glm::vec3 localFwd = glm::cross(localRight, localUp);
+
+    auto isCylinderBlocked = [&](const glm::vec3& cPos) -> bool {
+        float r = rb.radius;
+        float h = rb.height;
+        float y_steps[] = { 0.1f, h * 0.5f, h - 0.1f };
+        glm::vec2 xz_offsets[] = {
+            {0, 0}, {r, 0}, {-r, 0}, {0, r}, {0, -r},
+            {r*0.707f, r*0.707f}, {-r*0.707f, r*0.707f}, {r*0.707f, -r*0.707f}, {-r*0.707f, -r*0.707f}
+        };
+        for (float y_off : y_steps) {
+            for (auto& off : xz_offsets) {
+                glm::vec3 samplePos = cPos + localUp * y_off + localRight * off.x + localFwd * off.y;
+                fw::BlockType b = world.GetBlockCartesian(samplePos);
+                
+                if (b != fw::BlockType::Air && b != fw::BlockType::Water && 
+                    b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal) {
+                    
+                    if (b == fw::BlockType::OutOfBounds) {
+                        float dist = glm::length(samplePos);
+                        float R = fw::PlanetMath::GetPlanetRadius(pSize);
+                        if (dist - R < 25.0f) return true;
+                        continue;
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    auto tryMove = [&](const glm::vec3& stepVec, bool isY) -> bool {
+        if (!isCylinderBlocked(rb.position + stepVec)) {
+            rb.position += stepVec;
+            return true;
+        }
+        if (!isY && rb.isGrounded) {
+            float stepUp = 0.6f;
+            if (!isCylinderBlocked(rb.position + localUp * stepUp)) {
+                if (!isCylinderBlocked(rb.position + localUp * stepUp + stepVec)) {
+                    rb.position += localUp * stepUp + stepVec;
+                    for(float d = 0.1f; d <= stepUp; d += 0.1f) {
+                        if (isCylinderBlocked(rb.position - localUp * 0.1f)) break;
+                        rb.position -= localUp * 0.1f;
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // Basic Depenetration
+    if (isCylinderBlocked(rb.position)) {
+        for(int i = 1; i <= 5; ++i) {
+            if (!isCylinderBlocked(rb.position + localUp * (0.1f * i))) {
+                rb.position += localUp * (0.1f * i);
+                break;
+            }
+        }
+    }
+
+    float dy = glm::dot(movement, localUp);
+    float dx = glm::dot(movement, localRight);
+    float dz = glm::dot(movement, localFwd);
+
+    if (dy != 0.0f) {
+        int steps = std::max(1, (int)std::ceil(std::abs(dy) / 0.1f));
+        float inc = dy / steps;
+        glm::vec3 stepVec = localUp * inc;
+        for(int i = 0; i < steps; ++i) {
+            if (!tryMove(stepVec, true)) {
+                if (dy < 0.0f) rb.isGrounded = true;
+                break;
+            }
+        }
+    }
+    
+    if (dx != 0.0f) {
+        int steps = std::max(1, (int)std::ceil(std::abs(dx) / 0.1f));
+        float inc = dx / steps;
+        glm::vec3 stepVec = localRight * inc;
+        for(int i = 0; i < steps; ++i) {
+            if (!tryMove(stepVec, false)) {
+                rb.isAgainstWall = true;
+                break;
+            }
+        }
+    }
+    
+    if (dz != 0.0f) {
+        int steps = std::max(1, (int)std::ceil(std::abs(dz) / 0.1f));
+        float inc = dz / steps;
+        glm::vec3 stepVec = localFwd * inc;
+        for(int i = 0; i < steps; ++i) {
+            if (!tryMove(stepVec, false)) {
+                rb.isAgainstWall = true;
+                break;
+            }
+        }
+    }
+
+    if (dt > 0.0f) {
+        rb.velocity = (rb.position - preCollisionGlobalPos) / dt;
+    }
+
+    if (rb.isGrounded && oldVelY < -7.7f) {
+        float deltaV = std::abs(oldVelY - glm::dot(rb.velocity, localUp));
+        float damage = ComputeFallDamage(deltaV, rb.mass);
+        if (damage > 0.0f) {
+            PhysicsEvent ev;
+            ev.type = PhysicsEvent::Type::FallDamage;
+            ev.value = damage;
+            rb.pendingEvents.push_back(ev);
+        }
+    }
 }

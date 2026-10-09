@@ -23,6 +23,7 @@
 #include "TimeManager.h"
 #include "JoltPhysicsSystem.h"
 #include "BlockRegistry.h"
+#include "ShapeRegistry.h"
 #include "MaterialRegistry.h"
 #include "CacheManager.h"
 #include "LifecycleFreezeGate.h"
@@ -216,7 +217,11 @@ int main(int argc, char* argv[]) {
     fw::TimeManager timeManager;
     fw::DiagnosticsManager diagnosticsManager;
     fw::BlockRegistry blockRegistry;
+    fw::ShapeRegistry shapeRegistry;
     fw::MaterialRegistry materialRegistry;
+    
+    shapeRegistry.Initialize();
+    shapeRegistry.LoadFromJson("assets/definitions/shapes.json");
     
     blockRegistry.Initialize();
     blockRegistry.LoadFromJson("assets/definitions/blocks.json");
@@ -238,6 +243,7 @@ int main(int argc, char* argv[]) {
     context.timeManager = &timeManager;
     context.diagnosticsManager = &diagnosticsManager;
     context.blockRegistry = &blockRegistry;
+    context.shapeRegistry = &shapeRegistry;
     context.materialRegistry = &materialRegistry;
     context.cacheManager = &cacheManager;
     context.projectManager = &projectManager;
