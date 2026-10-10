@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include "GeometryCompiler.h"
 
 namespace {
     std::string BrowseForImage() {
@@ -293,11 +294,52 @@ void BlockMakerState::UpdatePreviewMesh() {
     fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
 
     fw::MeshComponent previewMesh;
-    if (mat.shapeType == 1) {
-        previewMesh = fw::MeshGenerators::MakeSuperSphere(mat.superSphereN, 0.5f, 28);
+    m_lastCompileError.clear();
+
+    bool needsRecompile = false;
+    if (mat.sharedShape.IsValid()) {
+        if (!m_lastGeometryWasParametric || m_lastGeometryShapeID != mat.sharedShape.id || m_lastGeometryRevision != mat.sharedShape.revision || m_cachedGeometryMesh.vertices.empty()) {
+            needsRecompile = true;
+        }
     } else {
-        previewMesh = fw::MeshGenerators::MakeCube(1.0f);
+        if (m_lastGeometryWasParametric || m_lastGeometryLegacyType != mat.shapeType || m_lastGeometryLegacyN != mat.superSphereN || m_cachedGeometryMesh.vertices.empty()) {
+            needsRecompile = true;
+        }
     }
+
+    if (needsRecompile) {
+        if (mat.sharedShape.IsValid()) {
+            const fw::ShapeDefinition* shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+            if (shapeDef) {
+                fw::GeometryCompileOptions options;
+                auto result = fw::GeometryCompiler::Compile(*shapeDef, options);
+                if (result.success) {
+                    m_cachedGeometryMesh = std::move(result.mesh);
+                    m_lastGeometryShapeID = mat.sharedShape.id;
+                    m_lastGeometryRevision = mat.sharedShape.revision;
+                    m_lastGeometryWasParametric = true;
+                } else {
+                    m_lastCompileError = "Compile Error: " + result.errorMessage;
+                    return; // Preserve last valid preview
+                }
+            } else {
+                m_lastCompileError = "Shape ID not found in registry.";
+                return; // Preserve last valid preview
+            }
+        } else {
+            if (mat.shapeType == 1) {
+                m_cachedGeometryMesh = fw::MeshGenerators::MakeSuperSphere(mat.superSphereN, 0.5f, 28);
+            } else {
+                m_cachedGeometryMesh = fw::MeshGenerators::MakeCube(1.0f);
+            }
+            m_lastGeometryLegacyType = mat.shapeType;
+            m_lastGeometryLegacyN = mat.superSphereN;
+            m_lastGeometryWasParametric = false;
+        }
+    }
+
+    // Copy cached geometry
+    previewMesh = m_cachedGeometryMesh;
     previewMesh.type = fw::MeshType::Chunk;
     previewMesh.colorOverride[3] = 1.0f;
     
@@ -459,20 +501,324 @@ void BlockMakerState::DrawUI() {
                 }
                 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco (|x|^n + |y|^n + |z|^n = 1)");
-                const char* shapes[] = { "Standard Voxel Cube (n -> inf)", "Super-Sphere / Superellipsoid" };
-                if (ImGui::Combo("Block Geometry", &mat.shapeType, shapes, 2)) {
-                    isDirty = true;
-                }
-                if (mat.shapeType == 1) {
-                    if (ImGui::SliderFloat("Esponente SuperSfera (n)", &mat.superSphereN, 0.2f, 10.0f, "n = %.2f")) {
-                        isDirty = true;
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco");
+                
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco");
+
+                struct TypeInfo { fw::ShapeType type; const char* name; bool supported; };
+                static const TypeInfo supportedTypes[] = {
+                    { fw::ShapeType::Cube, "Cube", true },
+                    { fw::ShapeType::Cuboid, "Cuboid", true },
+                    { fw::ShapeType::Parallelepiped, "Parallelepiped", true },
+                    { fw::ShapeType::Pyramid, "Pyramid", true },
+                    { fw::ShapeType::PyramidFrustum, "Pyramid Frustum", true },
+                    { fw::ShapeType::Cylinder, "Cylinder", true },
+                    { fw::ShapeType::HollowCylinder, "Hollow Cylinder", true },
+                    { fw::ShapeType::Cone, "Cone", true },
+                    { fw::ShapeType::ConeFrustum, "Cone Frustum", true },
+                    { fw::ShapeType::Sphere, "Sphere", true },
+                    { fw::ShapeType::Capsule, "Capsule", true },
+                    { fw::ShapeType::LegacySuperSphere, "Legacy SuperSphere", true },
+                    { fw::ShapeType::SphericalZone, "Spherical Zone", true },
+                    { fw::ShapeType::SphericalSegment, "Spherical Segment", true },
+                    { fw::ShapeType::SphericalSector, "Spherical Sector", true },
+                    { fw::ShapeType::SphereWithCylindricalBore, "Sphere w/ Bore", true },
+                    { fw::ShapeType::SphereWithConicalCavities, "Sphere w/ Cavities", true },
+                    { fw::ShapeType::SlicedCylinder, "Sliced Cylinder", true },
+                    { fw::ShapeType::Ungula, "Ungula", true },
+                    { fw::ShapeType::Barrel, "Barrel", true },
+                    { fw::ShapeType::Compound, "Compound", false },
+                    { fw::ShapeType::ConvexHull, "Convex Hull", false },
+                    { fw::ShapeType::Heightfield, "Heightfield", false },
+                    { fw::ShapeType::SignedDistanceField, "Signed Distance Field", false },
+                    { fw::ShapeType::TriangleMesh, "Triangle Mesh", false }
+                };
+                
+                fw::ShapeType currentType = fw::ShapeType::None;
+                if (mat.sharedShape.IsValid()) {
+                    const fw::ShapeDefinition* currentDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+                    if (currentDef) {
+                        currentType = currentDef->type;
                     }
-                    ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
+                } else if (mat.shapeType == 1) {
+                    currentType = fw::ShapeType::LegacySuperSphere;
+                } else {
+                    currentType = fw::ShapeType::Cube;
                 }
+
+                int currentIndex = -1;
+                for (int i = 0; i < std::size(supportedTypes); ++i) {
+                    if (supportedTypes[i].type == currentType) {
+                        currentIndex = i;
+                        break;
+                    }
+                }
+
+                if (ImGui::BeginCombo("Tipo Geometria", currentIndex >= 0 ? supportedTypes[currentIndex].name : "Sconosciuto")) {
+                    for (int i = 0; i < std::size(supportedTypes); ++i) {
+                        bool is_selected = (currentIndex == i);
+                        bool supported = supportedTypes[i].supported;
+                        
+                        if (!supported) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                        }
+                        
+                        std::string label = supportedTypes[i].name;
+                        if (!supported) label += " (NON IMPLEMENTATO)";
+                        
+                        if (ImGui::Selectable(label.c_str(), is_selected) && supported && currentIndex != i) {
+                            fw::ShapeDefinition newDef;
+                            newDef.type = supportedTypes[i].type;
+                            switch (newDef.type) {
+                                case fw::ShapeType::Cube: newDef.parameters = std::monostate{}; break;
+                                case fw::ShapeType::Cuboid: newDef.parameters = fw::ShapeParamsCuboid{{1,1,1}}; break;
+                                case fw::ShapeType::Parallelepiped: newDef.parameters = fw::ShapeParamsParallelepiped{{1,0,0},{0,1,0},{0,0,1}}; break;
+                                case fw::ShapeType::Pyramid: newDef.parameters = fw::ShapeParamsPyramid{1,1,1,{0,0}}; break;
+                                case fw::ShapeType::PyramidFrustum: newDef.parameters = fw::ShapeParamsPyramidFrustum{1,1,0.5f,0.5f,1,{0,0}}; break;
+                                case fw::ShapeType::Cylinder: newDef.parameters = fw::ShapeParamsCylinder{0.5f, 1.0f}; break;
+                                case fw::ShapeType::HollowCylinder: newDef.parameters = fw::ShapeParamsHollowCylinder{0.5f, 0.25f, 1.0f}; break;
+                                case fw::ShapeType::Cone: newDef.parameters = fw::ShapeParamsCone{0.5f, 1.0f}; break;
+                                case fw::ShapeType::ConeFrustum: newDef.parameters = fw::ShapeParamsConeFrustum{0.5f, 0.25f, 1.0f}; break;
+                                case fw::ShapeType::Sphere: newDef.parameters = fw::ShapeParamsSphere{0.5f}; break;
+                                case fw::ShapeType::Capsule: newDef.parameters = fw::ShapeParamsCapsule{0.5f, 0.5f}; break;
+                                case fw::ShapeType::LegacySuperSphere: newDef.parameters = fw::ShapeParamsLegacySuperSphere{2.0f}; break;
+                                case fw::ShapeType::SphericalZone: newDef.parameters = fw::ShapeParamsSphericalZone{1.0f, -0.5f, 0.5f}; break;
+                                case fw::ShapeType::SphericalSegment: newDef.parameters = fw::ShapeParamsSphericalSegment{1.0f, 0.0f}; break;
+                                case fw::ShapeType::SphericalSector: newDef.parameters = fw::ShapeParamsSphericalSector{1.0f, 3.14159f, 1.57079f}; break;
+                                case fw::ShapeType::SphereWithCylindricalBore: newDef.parameters = fw::ShapeParamsSphereWithCylindricalBore{1.0f, 0.5f, 2.0f}; break;
+                                case fw::ShapeType::SphereWithConicalCavities: newDef.parameters = fw::ShapeParamsSphereWithConicalCavities{1.0f, 0.5f, 0.5f}; break;
+                                case fw::ShapeType::SlicedCylinder: newDef.parameters = fw::ShapeParamsSlicedCylinder{0.5f, 1.0f, {0.0f, 1.0f, 1.0f}}; break;
+                                case fw::ShapeType::Ungula: newDef.parameters = fw::ShapeParamsUngula{0.5f, 1.0f, 0.78539f}; break;
+                                case fw::ShapeType::Barrel: newDef.parameters = fw::ShapeParamsBarrel{1.0f, 0.8f, 2.0f}; break;
+                                default: break;
+                            }
+                            newDef.supportsVisualCompilation = true;
+                            mat.sharedShape = m_context->shapeRegistry->RegisterShape(newDef);
+                            mat.shapeType = (newDef.type == fw::ShapeType::LegacySuperSphere) ? 1 : 0;
+                            isDirty = true;
+                        }
+                        
+                        if (!supported) {
+                            ImGui::PopStyleColor();
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                
+                if (mat.sharedShape.IsValid()) {
+                    const fw::ShapeDefinition* currentDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+                    if (currentDef) {
+                        if (m_editorShapeID != mat.sharedShape.id) {
+                            m_editorShapeID = mat.sharedShape.id;
+                            m_editorParams = currentDef->parameters;
+                            m_isolateSharedShape = true;
+                            m_sharedEditConfirmed = false;
+                        }
+                        
+                        uint32_t users = m_context->materialRegistry->CountShapeUsers(mat.sharedShape.id);
+                        if (users > 1) {
+                            ImGui::Separator();
+                            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Shape #%u \xe2\x80\x94 Shared by %u materials", mat.sharedShape.id, users);
+                            ImGui::TextDisabled("Editing mode: %s", m_isolateSharedShape ? "Isolated (Copy-on-Write)" : "Global (Affects all)");
+                            
+                            if (ImGui::RadioButton("Edit Selected Block", m_isolateSharedShape)) {
+                                m_isolateSharedShape = true;
+                                m_sharedEditConfirmed = false;
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::RadioButton("Edit Shared Shape", !m_isolateSharedShape)) {
+                                m_isolateSharedShape = false;
+                            }
+                            
+                            if (!m_isolateSharedShape && !m_sharedEditConfirmed) {
+                                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "WARNING: This will affect all %u blocks.", users);
+                                if (ImGui::Button("Confirm Shared Edit")) {
+                                    m_sharedEditConfirmed = true;
+                                }
+                            }
+                            ImGui::Separator();
+                        } else {
+                            m_isolateSharedShape = true;
+                            m_sharedEditConfirmed = false;
+                        }
+
+                        bool paramsChanged = false;
+                        
+                        if (auto* p = std::get_if<fw::ShapeParamsLegacySuperSphere>(&m_editorParams)) {
+                            if (ImGui::SliderFloat("Esponente SuperSfera (n)", &p->n, 0.2f, 10.0f)) paramsChanged = true;
+                            ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsCuboid>(&m_editorParams)) {
+                            if (ImGui::DragFloat3("Dimensioni (X,Y,Z)", &p->size.x, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsParallelepiped>(&m_editorParams)) {
+                            if (ImGui::DragFloat3("Base X Vector", &p->basisX.x, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat3("Base Y Vector", &p->basisY.x, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat3("Base Z Vector", &p->basisZ.x, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsPyramid>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Base Width", &p->baseWidth, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Base Depth", &p->baseDepth, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Height", &p->height, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat2("Apex Offset", &p->apexOffset.x, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsPyramidFrustum>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Bottom Width", &p->bottomWidth, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Bottom Depth", &p->bottomDepth, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Top Width", &p->topWidth, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Top Depth", &p->topDepth, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Height", &p->height, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat2("Apex Offset", &p->apexOffset.x, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsCylinder>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsCone>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Base", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsConeFrustum>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Base", &p->bottomRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Raggio Superiore", &p->topRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsHollowCylinder>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Esterno", &p->outerRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Raggio Interno", &p->innerRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsCapsule>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Mezza Altezza Cilindro", &p->halfHeight, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSphere>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSphericalZone>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Sfera", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Taglio Inferiore (Y)", &p->bottomY, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Taglio Superiore (Y)", &p->topY, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSphericalSegment>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Sfera", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Taglio Base (Y)", &p->baseY, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSphericalSector>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::SliderAngle("Range Polare (Theta)", &p->thetaRange, 0.0f, 360.0f)) paramsChanged = true;
+                            if (ImGui::SliderAngle("Range Azimutale (Phi)", &p->phiRange, 0.0f, 180.0f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSphereWithCylindricalBore>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Sfera", &p->sphereRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Raggio Foro (Cilindro)", &p->cylinderRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza Cilindro (Riservato)", &p->cylinderHeight, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSphereWithConicalCavities>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Sfera", &p->sphereRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Raggio Cavita' (Cono)", &p->coneRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Profondita' Cavita' (Cono)", &p->coneHeight, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsSlicedCylinder>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat3("Normale di Taglio", &p->cutNormal.x, 0.05f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsUngula>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                            if (ImGui::SliderAngle("Angolo di Taglio", &p->cutAngle, 0.0f, 89.9f)) paramsChanged = true;
+                        }
+                        else if (auto* p = std::get_if<fw::ShapeParamsBarrel>(&m_editorParams)) {
+                            if (ImGui::DragFloat("Raggio Centrale", &p->midRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Raggio Estremo", &p->endRadius, 0.05f)) paramsChanged = true;
+                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                        }
+                        
+                        if (paramsChanged) {
+                            auto valid = m_context->shapeRegistry->ValidateParameters(currentDef->type, m_editorParams, mat.sharedShape.id);
+                            if (valid.isValid) {
+                                m_lastValidationError = "";
+                                bool canEdit = true;
+                                
+                                if (users > 1) {
+                                    if (m_isolateSharedShape) {
+                                        fw::ShapeDefinition clone = *currentDef;
+                                        clone.id = 0; 
+                                        
+                                        fw::ShapeHandle newHandle = m_context->shapeRegistry->RegisterShape(clone);
+                                        if (newHandle.IsValid()) {
+                                            mat.sharedShape = newHandle;
+                                            m_editorShapeID = newHandle.id;
+                                        } else {
+                                            canEdit = false;
+                                        }
+                                    } else {
+                                        if (!m_sharedEditConfirmed) {
+                                            canEdit = false;
+                                        }
+                                    }
+                                }
+                                
+                                if (canEdit) {
+                                    if (m_context->shapeRegistry->UpdateShape(mat.sharedShape, m_editorParams)) {
+                                        mat.sharedShape.revision++;
+                                        isDirty = true;
+                                    }
+                                }
+                            } else {
+                                m_lastValidationError = valid.errorMessage;
+                            }
+                        }
+                        
+                        if (!m_lastValidationError.empty()) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Parametri non validi:");
+                            ImGui::TextWrapped("%s", m_lastValidationError.c_str());
+                        }
+                    }
+                } else {
+                    if (mat.shapeType == 1) {
+                        ImGui::TextDisabled("Modalita' Legacy. Converti selezionando un tipo dal menu.");
+                        if (ImGui::SliderFloat("Esponente SuperSfera (n) [Legacy]", &mat.superSphereN, 0.2f, 10.0f)) {
+                            isDirty = true;
+                        }
+                        ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
+                    } else {
+                        ImGui::TextDisabled("Standard Voxel Cube [Legacy]");
+                    }
+                }
+                
+                if (!m_lastCompileError.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Errore di Compilazione Geometria:");
+                    ImGui::TextWrapped("%s", m_lastCompileError.c_str());
+                }
+
                 if (isDirty) {
                     UpdatePreviewMesh();
                 }
+                
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Transform (Local Preview)");
+                if (m_previewWorld) {
+                    auto& m_registry = m_previewWorld->GetRegistry();
+                    if (m_registry.valid(m_previewBlockEntity) && m_registry.all_of<fw::TransformComponent>(m_previewBlockEntity)) {
+                        auto& trans = m_registry.get<fw::TransformComponent>(m_previewBlockEntity);
+                        ImGui::DragFloat3("Position XYZ", &trans.location.x, 0.05f);
+                        glm::quat gq(trans.rotation.w, trans.rotation.x, trans.rotation.y, trans.rotation.z);
+                        glm::vec3 euler = glm::degrees(glm::eulerAngles(gq));
+                        if (ImGui::DragFloat3("Rotation XYZ", &euler.x, 0.5f)) {
+                            glm::quat new_gq = glm::quat(glm::radians(euler));
+                            trans.rotation = {new_gq.x, new_gq.y, new_gq.z, new_gq.w};
+                        }
+                        
+                        ImGui::DragFloat3("Scale XYZ", &trans.scale.x, 0.05f);
+                    } else {
+                        ImGui::TextDisabled("Preview entity not ready.");
+                    }
+                }
+                ImGui::TextDisabled("Note: Save/Load persistence requires P2.3C schema extension.");
                 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PBR Texture Maps");

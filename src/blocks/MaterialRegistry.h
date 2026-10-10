@@ -62,6 +62,8 @@ public:
     const PBRMaterialDef& GetMaterial(uint8_t blockId) const;
     PBRMaterialDef& GetMaterialMutable(uint8_t blockId);
 
+    uint32_t CountShapeUsers(ShapeID id) const;
+
     const std::vector<PBRMaterialDef>& GetAllMaterials() const { return m_materials; }
 
 private:

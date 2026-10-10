@@ -192,4 +192,18 @@ PBRMaterialDef& MaterialRegistry::GetMaterialMutable(uint8_t blockId) {
     return m_fallbackMaterial;
 }
 
+uint32_t MaterialRegistry::CountShapeUsers(ShapeID id) const {
+    if (id == 0) return 0;
+    uint32_t count = 0;
+    for (int i = 0; i < 256; ++i) {
+        // Skip uninitialized blocks/materials
+        if (i > 0 && m_materials[i].target_block_id == 0) continue;
+        
+        if (m_materials[i].sharedShape.id == id) {
+            count++;
+        }
+    }
+    return count;
+}
+
 } // namespace fw

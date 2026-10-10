@@ -1674,8 +1674,19 @@ void RenderManager::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers    = &cmdBuf;
-    vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_core->GetGraphicsQueue());
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence tempFence;
+    vkCreateFence(m_core->GetDevice(), &fenceInfo, nullptr, &tempFence);
+
+    {
+        std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+        vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, tempFence);
+    }
+    
+    vkWaitForFences(m_core->GetDevice(), 1, &tempFence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(m_core->GetDevice(), tempFence, nullptr);
 
     vkFreeCommandBuffers(m_core->GetDevice(), m_commandPool, 1, &cmdBuf);
 }
@@ -1813,10 +1824,18 @@ void RenderManager::FlushTransferBatch() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &m_transferCommandBuffer;
 
-    vkQueueSubmit(m_core->GetTransferQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence tempFence;
+    vkCreateFence(m_core->GetDevice(), &fenceInfo, nullptr, &tempFence);
 
-    // Iterazione 1: WaitIdle (Sincronizzazione dura a fine batch)
-    vkQueueWaitIdle(m_core->GetTransferQueue());
+    {
+        std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+        vkQueueSubmit(m_core->GetTransferQueue(), 1, &submitInfo, tempFence);
+    }
+
+    vkWaitForFences(m_core->GetDevice(), 1, &tempFence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(m_core->GetDevice(), tempFence, nullptr);
 
     // Resetta l'offset (Tail raggiunge Head) e il command buffer per il prossimo batch
     m_currentOffset = 0;
@@ -2764,11 +2783,18 @@ void RenderManager::EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkComma
     VkQueue queueToUse = customQueue != VK_NULL_HANDLE ? customQueue : m_core->GetGraphicsQueue();
     VkCommandPool poolToUse = customPool != VK_NULL_HANDLE ? customPool : m_commandPool;
 
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence tempFence;
+    vkCreateFence(m_core->GetDevice(), &fenceInfo, nullptr, &tempFence);
+
     {
         std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
-        vkQueueSubmit(queueToUse, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(queueToUse);
+        vkQueueSubmit(queueToUse, 1, &submitInfo, tempFence);
     }
+    
+    vkWaitForFences(m_core->GetDevice(), 1, &tempFence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(m_core->GetDevice(), tempFence, nullptr);
 
     vkFreeCommandBuffers(m_core->GetDevice(), poolToUse, 1, &commandBuffer);
 }

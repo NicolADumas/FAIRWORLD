@@ -214,10 +214,15 @@ uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeIn
         std::cerr << "[VulkanDmaManager] ERROR: vkQueueSubmit fallito con codice " << resSubmit << "!\n";
     } else {
         // Aspetta che il trasferimento sia completo PRIMA di segnare la mesh come pronta.
-        // Questo elimina la race condition: senza questo, il RenderManager potrebbe disegnare
-        // dalla VRAM ancora non aggiornata dal DMA.
-        // NOTA: m_queueMutex è già stato usato nella submit, non rilocchiamo.
-        vkQueueWaitIdle(m_transferQueue);
+        // Utilizziamo il timeline semaphore invece di vkQueueWaitIdle per non toccare la queue
+        // e non creare race conditions o bloccare il mutex della coda grafice/transfer!
+        VkSemaphoreWaitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        waitInfo.semaphoreCount = 1;
+        waitInfo.pSemaphores = &m_transferTimeline;
+        waitInfo.pValues = &m_currentTimelineValue;
+        
+        vkWaitSemaphores(m_device, &waitInfo, UINT64_MAX);
     }
 
     if (sizeInBytes > 1024 * 1024) {

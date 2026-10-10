@@ -8,6 +8,7 @@
 
 #include "GameWorld.h"
 #include "MeshGenerators.h"
+#include "ShapeRegistry.h"
 struct SharedContext;
 
 class BlockMakerState : public State {
@@ -41,6 +42,21 @@ private:
     // --- Preview Block ---
     entt::entity m_previewBlockEntity = entt::null;
     glm::vec3 m_previewLightDir = glm::normalize(glm::vec3(0.5f, -1.0f, 0.5f));
+    std::string m_lastCompileError;
+    
+    fw::MeshComponent m_cachedGeometryMesh;
+    fw::ShapeRevision m_lastGeometryRevision = 0;
+    fw::ShapeID m_lastGeometryShapeID = 0;
+    int m_lastGeometryLegacyType = -1;
+    float m_lastGeometryLegacyN = -1.0f;
+    bool m_lastGeometryWasParametric = false;
+    
+    fw::ShapeParameters m_editorParams;
+    fw::ShapeID m_editorShapeID = 0;
+    std::string m_lastValidationError;
+    
+    bool m_isolateSharedShape = true;
+    bool m_sharedEditConfirmed = false;
     
     // --- Block Definition State ---
     uint8_t m_selectedBlockId = 1;

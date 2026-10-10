@@ -149,7 +149,7 @@ bool ShapeRegistry::LoadFromJson(const std::string& filepath) {
                 std::cerr << "[ShapeRegistry] Rejected shape with ID 0 in JSON." << std::endl;
                 return false;
             }
-            if (tempShapes.find(def.id) != tempShapes.end() || m_shapes.find(def.id) != m_shapes.end()) {
+            if (tempShapes.find(def.id) != tempShapes.end()) {
                 std::cerr << "[ShapeRegistry] Rejected duplicate shape ID " << def.id << " in JSON." << std::endl;
                 return false;
             }
@@ -382,11 +382,18 @@ bool ShapeRegistry::UpdateShape(ShapeHandle handle, const ShapeParameters& newPa
 const ShapeDefinition* ShapeRegistry::GetShapeDef(ShapeHandle handle) const {
     auto it = m_shapes.find(handle.id);
     if (it != m_shapes.end()) {
-        // Option: we could enforce revision matching here, but generally returning the latest is fine
-        // unless strict revision tracking is requested at read time.
         return &(it->second);
     }
     return nullptr;
+}
+
+std::vector<ShapeDefinition> ShapeRegistry::GetAllShapes() const {
+    std::vector<ShapeDefinition> shapes;
+    shapes.reserve(m_shapes.size());
+    for (const auto& pair : m_shapes) {
+        shapes.push_back(pair.second);
+    }
+    return shapes;
 }
 
 } // namespace fw

@@ -39,14 +39,14 @@ bool AssetManager::LoadAll(const std::string& directory) {
             blocksFile >> j;
             for (const auto& item : j["blocks"]) {
                 BlockDef def;
-                def.id          = item["id"];
-                def.name        = item["name"];
-                def.tex_top     = item["tex_top"];
-                def.tex_side    = item["tex_side"];
-                def.tex_bottom  = item["tex_bottom"];
-                def.hardness    = item["hardness"];
-                def.transparent = item["transparent"];
-                def.alpha       = item["alpha"];
+                def.id          = item.value("id", 0);
+                def.name        = item.value("name", item.value("stringId", "Unknown"));
+                def.tex_top     = item.value("tex_top", "");
+                def.tex_side    = item.value("tex_side", "");
+                def.tex_bottom  = item.value("tex_bottom", "");
+                def.hardness    = item.value("hardness", 1.0f);
+                def.transparent = item.value("transparent", item.value("isTransparent", false));
+                def.alpha       = item.value("alpha", 1.0f);
                 
                 if (item.contains("isSolid")) def.isSolid = item["isSolid"];
                 if (item.contains("isLiquid")) def.isLiquid = item["isLiquid"];

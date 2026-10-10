@@ -152,6 +152,7 @@ public:
     ShapeValidationResult ValidateParameters(ShapeType type, const ShapeParameters& params, ShapeID selfId = 0, const std::unordered_map<ShapeID, ShapeDefinition>* contextGraph = nullptr) const;
     
     const ShapeDefinition* GetShapeDef(ShapeHandle handle) const;
+    std::vector<ShapeDefinition> GetAllShapes() const;
     
     // Cycle detection helper
     bool CheckCompoundCycle(ShapeID currentId, ShapeID targetId, int depth, const std::unordered_map<ShapeID, ShapeDefinition>* contextGraph = nullptr) const;
