@@ -2,6 +2,8 @@
     "blocks": [
         {
             "bounciness": 0.0,
+            "collisionEnabled": false,
+            "density": 1000.0,
             "displayName": "Air",
             "friction": 0.6000000238418579,
             "id": 0,
@@ -24,17 +26,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:air",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Grass",
             "friction": 0.6000000238418579,
             "id": 1,
@@ -42,9 +49,9 @@
             "isTransparent": false,
             "lightEmissionLevel": 0.0,
             "localPosition": [
-                -0.28999999165534973,
-                0.09000000357627869,
-                -0.11999999731779099
+                0.0,
+                0.0,
+                0.0
             ],
             "localRotation": [
                 0.0,
@@ -57,17 +64,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Grass",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Dirt",
             "friction": 0.6000000238418579,
             "id": 2,
@@ -90,17 +102,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Dirt",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Stone",
             "friction": 0.6000000238418579,
             "id": 3,
@@ -123,17 +140,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Stone",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Wood",
             "friction": 0.6000000238418579,
             "id": 4,
@@ -156,17 +178,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Wood",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Sand",
             "friction": 0.6000000238418579,
             "id": 5,
@@ -189,17 +216,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Sand",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": false,
+            "density": 1000.0,
             "displayName": "Water",
             "friction": 0.6000000238418579,
             "id": 6,
@@ -222,17 +254,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Water",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": false,
+            "density": 1000.0,
             "displayName": "Lava",
             "friction": 0.6000000238418579,
             "id": 7,
@@ -255,17 +292,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Lava",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Leaves",
             "friction": 0.6000000238418579,
             "id": 8,
@@ -288,17 +330,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:Leaves",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "MobSpawner",
             "friction": 0.6000000238418579,
             "id": 9,
@@ -321,17 +368,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:MobSpawner",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "LightSource",
             "friction": 0.6000000238418579,
             "id": 10,
@@ -354,17 +406,22 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:LightSource",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "BLOCCO A",
             "friction": 0.6000000238418579,
             "id": 11,
@@ -372,9 +429,9 @@
             "isTransparent": false,
             "lightEmissionLevel": 0.0,
             "localPosition": [
-                0.0,
-                0.0,
-                0.0
+                -0.8190339803695679,
+                0.13220208883285522,
+                -3.2742011547088623
             ],
             "localRotation": [
                 0.0,
@@ -386,18 +443,23 @@
                 1.0,
                 1.0
             ],
-            "mass": 1.0,
+            "mass": 14.300000190734863,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:bloccoA",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "BLOCCO B",
             "friction": 0.6000000238418579,
             "id": 12,
@@ -405,9 +467,9 @@
             "isTransparent": false,
             "lightEmissionLevel": 0.0,
             "localPosition": [
-                0.0,
-                0.0,
-                0.0
+                -0.4540449380874634,
+                0.021179169416427612,
+                -3.045600175857544
             ],
             "localRotation": [
                 0.0,
@@ -419,18 +481,23 @@
                 1.0,
                 1.0
             ],
-            "mass": 1.0,
+            "mass": 345.30999755859375,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:BLOCCOB",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
             "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
             "displayName": "Ice",
             "friction": 0.6000000238418579,
             "id": 13,
@@ -453,11 +520,14 @@
                 1.0
             ],
             "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
             "pivotOffset": [
                 0.0,
                 0.0,
                 0.0
             ],
+            "restitution": 0.0,
             "stringId": "fairworld:ice",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0

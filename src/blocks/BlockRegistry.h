@@ -8,18 +8,73 @@
 
 namespace fw {
 
+enum class BlockMotionType : uint8_t {
+    Static = 0,    // Immobile in simulation (terrain, standard voxel blocks)
+    Dynamic = 1,   // Affected by forces, gravity, collisions
+    Kinematic = 2  // Controlled programmatically / keyframed, infinite mass in collisions
+};
+
+enum class BlockMassMode : uint8_t {
+    Manual = 0,        // Mass authored directly by user in kg
+    DensityDerived = 1 // Mass calculated from volume and material density
+};
+
+struct BlockPhysicsDef {
+    float mass = 1.0f;               // [kg] Authored or effective mass
+    float density = 1000.0f;         // [kg/m^3] Density (water=1000, wood~600, stone~2500, iron~7870)
+    float friction = 0.6f;          // [0.0 - 1.0] Surface friction coefficient
+    float restitution = 0.0f;       // [0.0 - 1.0] Coefficient of restitution / bounciness
+    bool collisionEnabled = true;   // Whether collision resolution is enabled
+    BlockMotionType motionType = BlockMotionType::Static;
+    BlockMassMode massMode = BlockMassMode::Manual;
+
+    // Derived mass calculation based on bounding volume
+    float CalculateDerivedMass(const glm::vec3& scale) const {
+        float volume = std::abs(scale.x * scale.y * scale.z);
+        if (volume < 1e-4f) volume = 1e-4f;
+        return density * volume;
+    }
+
+    // Single source of truth for effective runtime mass
+    float GetEffectiveMass(const glm::vec3& scale) const {
+        if (massMode == BlockMassMode::DensityDerived) {
+            return CalculateDerivedMass(scale);
+        }
+        return (mass > 0.0f) ? mass : 0.001f;
+    }
+};
+
 struct SimBlockDef {
     // Identity
     uint8_t id = 0;
     std::string stringId = "fairworld:unknown";
     std::string displayName = "Unknown Block";
 
-    // Physics
+    // Physics Contract (Per-Asset Independent Definition)
+    BlockPhysicsDef physics;
+
+    // Backward-compatibility mirrors (kept synchronized with `physics`)
     bool isSolid = true;
     bool isTransparent = false;
-    float mass = 1.0f;       // Determines falling speed / inertia impact
-    float friction = 0.6f;   // Slipperiness (e.g. ice = 0.01)
-    float bounciness = 0.0f; // Restitution (0 = no bounce, 1 = full bounce)
+    float mass = 1.0f;       // Legacy mirror of physics.mass
+    float friction = 0.6f;   // Legacy mirror of physics.friction
+    float bounciness = 0.0f; // Legacy mirror of physics.restitution
+
+    // Synchronizes legacy mirrors from physics definition
+    void SyncLegacyPhysicsFields() {
+        isSolid = physics.collisionEnabled;
+        mass = physics.GetEffectiveMass(localScale);
+        friction = physics.friction;
+        bounciness = physics.restitution;
+    }
+
+    // Synchronizes physics definition from legacy mirrors
+    void SyncFromLegacyPhysicsFields() {
+        physics.collisionEnabled = isSolid;
+        physics.mass = mass;
+        physics.friction = friction;
+        physics.restitution = bounciness;
+    }
 
     // Thermodynamics
     float thermal_resistance = 1.0f; // Resistance to heat flow

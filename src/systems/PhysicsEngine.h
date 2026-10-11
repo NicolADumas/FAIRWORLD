@@ -34,6 +34,7 @@ struct RigidBody {
     
     float mass        = 70.0f; // [kg] default (es. peso player)
     float restitution = 0.0f;  // Elasticità dell'urto (0 = perfettamente anelastico)
+    float friction    = 0.6f;  // Coefficiente di attrito radente superficiale [0.0 - 1.0]
     float drag        = 0.5f;  // Coefficiente di attrito viscoso dell'aria
 
     bool isGrounded   = false;

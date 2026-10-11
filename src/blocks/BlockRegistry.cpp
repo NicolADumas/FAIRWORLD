@@ -54,23 +54,67 @@ void BlockRegistry::RegisterDefaultBlocks() {
         m_blocks[id].displayName = name;
         m_blocks[id].isSolid = solid;
         m_blocks[id].isTransparent = transp;
+        m_blocks[id].physics.collisionEnabled = solid;
+        m_blocks[id].physics.friction = 0.6f;
+        m_blocks[id].physics.restitution = 0.0f;
+        m_blocks[id].physics.density = 1000.0f;
+        m_blocks[id].physics.mass = 1.0f;
+        m_blocks[id].physics.motionType = BlockMotionType::Static;
+        m_blocks[id].physics.massMode = BlockMassMode::Manual;
+        m_blocks[id].SyncLegacyPhysicsFields();
         m_stringToIdMap[strId] = id;
         m_stringToIdMap[toLowerStr(strId)] = id;
     };
 
     registerDef(0,  "fairworld:air",        "Air",        false, true);
+    m_blocks[0].physics.collisionEnabled = false;
+    m_blocks[0].physics.density = 1.225f; // aria a livello del mare
+    m_blocks[0].physics.mass = 0.001f;
+    m_blocks[0].SyncLegacyPhysicsFields();
+
     registerDef(1,  "fairworld:grass",      "Grass",      true,  false);
+    m_blocks[1].physics.density = 1200.0f;
+    m_blocks[1].SyncLegacyPhysicsFields();
+
     registerDef(2,  "fairworld:dirt",       "Dirt",       true,  false);
+    m_blocks[2].physics.density = 1500.0f;
+    m_blocks[2].SyncLegacyPhysicsFields();
+
     registerDef(3,  "fairworld:stone",      "Stone",      true,  false);
-    m_blocks[3].mass = 5.0f;
+    m_blocks[3].physics.mass = 5.0f;
+    m_blocks[3].physics.density = 2600.0f;
+    m_blocks[3].SyncLegacyPhysicsFields();
+
     registerDef(4,  "fairworld:wood",       "Wood",       true,  false);
+    m_blocks[4].physics.density = 650.0f;
+    m_blocks[4].SyncLegacyPhysicsFields();
+
     registerDef(5,  "fairworld:sand",       "Sand",       true,  false);
+    m_blocks[5].physics.density = 1600.0f;
+    m_blocks[5].physics.friction = 0.8f;
+    m_blocks[5].SyncLegacyPhysicsFields();
+
     registerDef(6,  "fairworld:water",      "Water",      false, true);
+    m_blocks[6].physics.collisionEnabled = false;
+    m_blocks[6].physics.density = 1000.0f;
+    m_blocks[6].SyncLegacyPhysicsFields();
+
     registerDef(7,  "fairworld:lava",       "Lava",       false, false);
+    m_blocks[7].physics.collisionEnabled = false;
+    m_blocks[7].physics.density = 3100.0f;
+    m_blocks[7].SyncLegacyPhysicsFields();
+
     registerDef(8,  "fairworld:leaves",     "Leaves",     true,  true);
+    m_blocks[8].physics.density = 200.0f;
+    m_blocks[8].SyncLegacyPhysicsFields();
+
     registerDef(9,  "fairworld:mobspawner", "MobSpawner", true,  false);
     registerDef(10, "fairworld:lightsource","LightSource",true,  false);
+
     registerDef(13, "fairworld:ice",        "Ice",        true,  true);
+    m_blocks[13].physics.friction = 0.05f;
+    m_blocks[13].physics.density = 917.0f;
+    m_blocks[13].SyncLegacyPhysicsFields();
 }
 
 bool BlockRegistry::LoadFromJson(const std::string& filepath) {
@@ -102,12 +146,34 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
             def.stringId = jBlock.value("stringId", defaultStrId);
             def.displayName = jBlock.value("displayName", defaultDispName);
             
+            // Baseline and legacy compatibility values
             def.isSolid = jBlock.value("isSolid", true);
             def.isTransparent = jBlock.value("isTransparent", false);
             def.mass = jBlock.value("mass", 1.0f);
             def.friction = jBlock.value("friction", 0.6f);
             def.bounciness = jBlock.value("bounciness", 0.0f);
-            
+
+            // Typed physics contract with robust legacy defaults
+            def.physics.mass = def.mass;
+            def.physics.density = jBlock.value("density", 1000.0f);
+            def.physics.friction = def.friction;
+            def.physics.restitution = jBlock.value("restitution", def.bounciness);
+            def.physics.collisionEnabled = jBlock.value("collisionEnabled", def.isSolid);
+
+            int motionTypeInt = jBlock.value("motionType", static_cast<int>(BlockMotionType::Static));
+            if (motionTypeInt >= 0 && motionTypeInt <= 2) {
+                def.physics.motionType = static_cast<BlockMotionType>(motionTypeInt);
+            } else {
+                def.physics.motionType = BlockMotionType::Static;
+            }
+
+            int massModeInt = jBlock.value("massMode", static_cast<int>(BlockMassMode::Manual));
+            if (massModeInt >= 0 && massModeInt <= 1) {
+                def.physics.massMode = static_cast<BlockMassMode>(massModeInt);
+            } else {
+                def.physics.massMode = BlockMassMode::Manual;
+            }
+
             def.thermal_resistance = jBlock.value("thermal_resistance", 1.0f);
             def.thermal_capacity = jBlock.value("thermal_capacity", 1.0f);
             def.lightEmissionLevel = jBlock.value("lightEmissionLevel", 0.0f);
@@ -127,6 +193,9 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
 
             def.pivotOffset = parseVec3Safe(jBlock, "pivotOffset", glm::vec3(0.0f));
             
+            // Sync legacy fields so mirrors are in lockstep
+            def.SyncLegacyPhysicsFields();
+
             m_stringToIdMap[def.stringId] = id;
             m_stringToIdMap[toLowerStr(def.stringId)] = id;
         }
@@ -142,19 +211,30 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
     json jBlocks = json::array();
 
     for (int i = 0; i < 256; ++i) {
-        const auto& def = m_blocks[i];
+        auto& def = m_blocks[i];
         if (i > 0 && (def.stringId.empty() || def.stringId == "fairworld:unknown")) continue; // Skip uninitialized blocks
         
+        // Ensure legacy fields reflect authoritative physics definition before writing
+        def.SyncLegacyPhysicsFields();
+
         json jBlock;
         jBlock["id"] = def.id > 0 ? def.id : (uint8_t)i;
         jBlock["stringId"] = def.stringId;
         jBlock["displayName"] = def.displayName;
         
+        // Legacy fields for backward compatibility
         jBlock["isSolid"] = def.isSolid;
         jBlock["isTransparent"] = def.isTransparent;
         jBlock["mass"] = def.mass;
         jBlock["friction"] = def.friction;
         jBlock["bounciness"] = def.bounciness;
+
+        // Authoritative Typed Physics Contract
+        jBlock["density"] = def.physics.density;
+        jBlock["restitution"] = def.physics.restitution;
+        jBlock["collisionEnabled"] = def.physics.collisionEnabled;
+        jBlock["motionType"] = static_cast<int>(def.physics.motionType);
+        jBlock["massMode"] = static_cast<int>(def.physics.massMode);
         
         jBlock["thermal_resistance"] = def.thermal_resistance;
         jBlock["thermal_capacity"] = def.thermal_capacity;
