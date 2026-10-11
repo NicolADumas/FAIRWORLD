@@ -33,6 +33,8 @@ void CacheManager::SyncMaterialGpuCache(uint8_t blockId, SharedContext* context)
         const auto& mat = context->materialRegistry->GetMaterial(blockId);
         if (!mat.albedoPath.empty()) {
             context->engine->GetRenderManager()->LoadPBRTextureFromFile(mat.albedoPath, blockId, RenderManager::PBRTextureType::ALBEDO);
+        } else {
+            context->engine->GetRenderManager()->UpdateMaterialFallback(blockId, mat.baseColorFallback, mat.roughnessFallback, mat.metallicFallback);
         }
         if (!mat.normalPath.empty()) {
             context->engine->GetRenderManager()->LoadPBRTextureFromFile(mat.normalPath, blockId, RenderManager::PBRTextureType::NORMAL);
@@ -42,6 +44,31 @@ void CacheManager::SyncMaterialGpuCache(uint8_t blockId, SharedContext* context)
         }
         context->engine->GetRenderManager()->InvalidateForgeCache();
     }
+    SyncAllBlockPropertiesSSBO(context);
+}
+
+void CacheManager::SyncAllMaterialsGpuCache(SharedContext* context) {
+    if (!context || !context->engine || !context->engine->GetRenderManager() || !context->materialRegistry) return;
+
+    std::cout << "[CacheManager] Sincronizzazione globale di tutti i materiali su GPU...\n";
+    for (uint32_t i = 1; i < 256; ++i) {
+        const auto& mat = context->materialRegistry->GetMaterial((uint8_t)i);
+        if (mat.target_block_id == 0 && i > 0) continue; // Skip uninitialized materials
+
+        if (!mat.albedoPath.empty()) {
+            context->engine->GetRenderManager()->LoadPBRTextureFromFile(mat.albedoPath, (uint8_t)i, RenderManager::PBRTextureType::ALBEDO);
+        } else {
+            context->engine->GetRenderManager()->UpdateMaterialFallback((uint8_t)i, mat.baseColorFallback, mat.roughnessFallback, mat.metallicFallback);
+        }
+
+        if (!mat.normalPath.empty()) {
+            context->engine->GetRenderManager()->LoadPBRTextureFromFile(mat.normalPath, (uint8_t)i, RenderManager::PBRTextureType::NORMAL);
+        }
+        if (!mat.ormPath.empty()) {
+            context->engine->GetRenderManager()->LoadPBRTextureFromFile(mat.ormPath, (uint8_t)i, RenderManager::PBRTextureType::ORM);
+        }
+    }
+    context->engine->GetRenderManager()->InvalidateForgeCache();
     SyncAllBlockPropertiesSSBO(context);
 }
 

@@ -20,13 +20,18 @@ struct TransformComponent {
     Vec3 location = {0.0f, 0.0f, 0.0f};
     Quat rotation = {0.0f, 0.0f, 0.0f, 1.0f}; // Quaternion
     Vec3 scale    = {1.0f, 1.0f, 1.0f};
+    Vec3 pivot    = {0.0f, 0.0f, 0.0f};      // Pivot offset (BM-A1)
     
     entt::entity parent = entt::null; // Nodo gerarchico padre
 
     Mat4 localMatrix() const {
-        return Mat4::translate(location)
-             * Mat4::fromQuat(rotation)
-             * Mat4::scale(scale);
+        Mat4 mat = Mat4::translate(location)
+                 * Mat4::fromQuat(rotation)
+                 * Mat4::scale(scale);
+        if (pivot.x != 0.0f || pivot.y != 0.0f || pivot.z != 0.0f) {
+            mat = mat * Mat4::translate(-pivot);
+        }
+        return mat;
     }
 
     Mat4 computeGlobalMatrix(const entt::registry& registry) const {

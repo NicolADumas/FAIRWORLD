@@ -1,104 +1,284 @@
 {
     "materials": [
         {
-            "target_block_id": 1,
             "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
             "normalPath": "",
             "ormPath": "",
-            "baseColorFallback": [0.3, 0.8, 0.2],
-            "metallicFallback": 0.0,
-            "roughnessFallback": 0.9,
-            "emissiveStrength": 0.0
-        },
-        {
-            "target_block_id": 2,
-            "albedoPath": "",
-            "normalPath": "",
-            "ormPath": "",
-            "baseColorFallback": [0.4, 0.25, 0.1],
-            "metallicFallback": 0.0,
             "roughnessFallback": 1.0,
-            "emissiveStrength": 0.0
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 0
         },
         {
-            "target_block_id": 3,
             "albedoPath": "",
-            "normalPath": "",
-            "ormPath": "",
-            "baseColorFallback": [0.5, 0.5, 0.5],
-            "metallicFallback": 0.2,
-            "roughnessFallback": 0.6,
-            "emissiveStrength": 0.0
-        },
-        {
-            "target_block_id": 4,
-            "albedoPath": "",
-            "normalPath": "",
-            "ormPath": "",
-            "baseColorFallback": [0.55, 0.35, 0.15],
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.30000001192092896,
+                0.800000011920929,
+                0.20000000298023224
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
             "metallicFallback": 0.0,
-            "roughnessFallback": 0.85,
-            "emissiveStrength": 0.0
-        },
-        {
-            "target_block_id": 5,
-            "albedoPath": "",
             "normalPath": "",
             "ormPath": "",
-            "baseColorFallback": [0.85, 0.8, 0.6],
+            "roughnessFallback": 0.8999999761581421,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 1
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.4000000059604645,
+                0.25,
+                0.10000000149011612
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
             "metallicFallback": 0.0,
-            "roughnessFallback": 0.95,
-            "emissiveStrength": 0.0
-        },
-        {
-            "target_block_id": 6,
-            "albedoPath": "",
             "normalPath": "",
             "ormPath": "",
-            "baseColorFallback": [0.1, 0.4, 0.9],
+            "roughnessFallback": 1.0,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 2
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.5,
+                0.5,
+                0.5
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.20000000298023224,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.6000000238418579,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 3
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.550000011920929,
+                0.3499999940395355,
+                0.15000000596046448
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
             "metallicFallback": 0.0,
-            "roughnessFallback": 0.05,
-            "emissiveStrength": 0.0
-        },
-        {
-            "target_block_id": 7,
-            "albedoPath": "",
             "normalPath": "",
             "ormPath": "",
-            "baseColorFallback": [1.0, 0.3, 0.0],
-            "metallicFallback": 0.1,
-            "roughnessFallback": 0.2,
-            "emissiveStrength": 5.0
+            "roughnessFallback": 0.8500000238418579,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 4
         },
         {
-            "target_block_id": 8,
             "albedoPath": "",
-            "normalPath": "",
-            "ormPath": "",
-            "baseColorFallback": [0.1, 0.5, 0.1],
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.8500000238418579,
+                0.800000011920929,
+                0.6000000238418579
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
             "metallicFallback": 0.0,
-            "roughnessFallback": 0.8,
-            "emissiveStrength": 0.0
-        },
-        {
-            "target_block_id": 9,
-            "albedoPath": "",
             "normalPath": "",
             "ormPath": "",
-            "baseColorFallback": [0.15, 0.15, 0.2],
-            "metallicFallback": 0.9,
-            "roughnessFallback": 0.4,
-            "emissiveStrength": 0.0
+            "roughnessFallback": 0.949999988079071,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 5
         },
         {
-            "target_block_id": 10,
             "albedoPath": "",
-            "normalPath": "",
-            "ormPath": "",
-            "baseColorFallback": [1.0, 0.95, 0.8],
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.10000000149011612,
+                0.4000000059604645,
+                0.8999999761581421
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
             "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.05000000074505806,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 6
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                1.0,
+                0.30000001192092896,
+                0.0
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 5.0,
+            "metallicFallback": 0.10000000149011612,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.20000000298023224,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 7
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.10000000149011612,
+                0.5,
+                0.10000000149011612
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.800000011920929,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 8
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.15000000596046448,
+                0.15000000596046448,
+                0.20000000298023224
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.8999999761581421,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.4000000059604645,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 9
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                1.0,
+                0.949999988079071,
+                0.800000011920929
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 10.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
             "roughnessFallback": 0.5,
-            "emissiveStrength": 10.0
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 10
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.0,
+                1.0,
+                0.00619196891784668
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 1.0,
+            "shapeType": 0,
+            "sharedShapeId": 19,
+            "sharedShapeRevision": 73,
+            "superSphereN": 2.0,
+            "target_block_id": 11
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.0,
+                0.02476811408996582,
+                1.0
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 1.0,
+            "shapeType": 0,
+            "sharedShapeId": 24,
+            "sharedShapeRevision": 1,
+            "superSphereN": 2.0,
+            "target_block_id": 12
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 0.8500000238418579,
+            "baseColorFallback": [
+                0.75,
+                0.8799999952316284,
+                0.949999988079071
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.10000000149011612,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.05000000074505806,
+            "shapeType": 0,
+            "sharedShapeId": 0,
+            "sharedShapeRevision": 0,
+            "superSphereN": 2.0,
+            "target_block_id": 13
         }
     ]
 }

@@ -25,6 +25,12 @@ struct SimBlockDef {
     float thermal_resistance = 1.0f; // Resistance to heat flow
     float thermal_capacity = 1.0f;   // Energy required to heat up
     float lightEmissionLevel = 0.0f; // Also part of simulation (light system)
+
+    // Asset-Local Transform & Pivot (BM-A1)
+    glm::vec3 localPosition{0.0f, 0.0f, 0.0f}; // Asset-local position offset
+    glm::vec3 localRotation{0.0f, 0.0f, 0.0f}; // Asset-local orientation (Euler angles in degrees)
+    glm::vec3 localScale{1.0f, 1.0f, 1.0f};    // Asset-local scale
+    glm::vec3 pivotOffset{0.0f, 0.0f, 0.0f};  // Asset-local pivot offset relative to shape canonical center
 };
 
 class BlockRegistry {

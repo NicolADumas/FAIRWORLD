@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
+#include <array>
 #include "Systems.h"
 
 #include "GameWorld.h"
@@ -24,6 +25,7 @@ public:
 
 private:
     void DrawUI();
+    void DrawGizmo();
 
     SharedContext* m_context;
     std::vector<std::unique_ptr<System>> m_systems;
@@ -62,7 +64,20 @@ private:
     uint8_t m_selectedBlockId = 1;
     char m_inputStringId[128] = "";
     char m_inputDisplayName[128] = "";
-    int m_activeTab = 0; // 0 = Identity, 1 = Material, 2 = Physics
+    int m_activeTab = 0; // 0 = Transform, 1 = Identity, 2 = Graphics, 3 = Physics
+
+    // --- Per-Block Transform Baseline Snapshots & Dirty Tracking (BM-A2.1) ---
+    struct SavedTransformState {
+        glm::vec3 localPosition{0.0f};
+        glm::vec3 localRotation{0.0f};
+        glm::vec3 localScale{1.0f};
+        glm::vec3 pivotOffset{0.0f};
+    };
+    std::array<SavedTransformState, 256> m_savedTransforms{};
+
+    bool IsBlockTransformDirty(uint8_t id) const;
+    uint32_t CountUnsavedTransformBlocks() const;
+    void SynchronizeAllSavedTransformBaselines();
 
     // --- Physics Simulation (Bouncing) ---
     bool m_simulatePhysics = false;
@@ -74,6 +89,11 @@ private:
     bool m_isCopying = false;
     float m_copyProgress = 0.0f;
     float m_saveMessageTimer = 0.0f;
+
+    // --- Viewport Move Gizmo (BM-A3.1) ---
+    bool m_moveGizmoEnabled = true;
+    bool m_isGizmoInteracting = false;
+    glm::mat4 m_projNoFlip{1.0f};
 
     void UpdatePreviewMesh();
     void HandlePhysicsSimulation(float dt);

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -12,6 +13,23 @@ namespace {
     std::string toLowerStr(std::string s) {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return (char)std::tolower(c); });
         return s;
+    }
+
+    glm::vec3 parseVec3Safe(const json& jBlock, const char* key, const glm::vec3& defaultVal) {
+        if (!jBlock.contains(key) || !jBlock[key].is_array() || jBlock[key].size() != 3) {
+            return defaultVal;
+        }
+        const auto& arr = jBlock[key];
+        if (!arr[0].is_number() || !arr[1].is_number() || !arr[2].is_number()) {
+            return defaultVal;
+        }
+        float x = arr[0].get<float>();
+        float y = arr[1].get<float>();
+        float z = arr[2].get<float>();
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+            return defaultVal;
+        }
+        return glm::vec3(x, y, z);
     }
 }
 
@@ -94,6 +112,21 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
             def.thermal_capacity = jBlock.value("thermal_capacity", 1.0f);
             def.lightEmissionLevel = jBlock.value("lightEmissionLevel", 0.0f);
             
+            def.localPosition = parseVec3Safe(jBlock, "localPosition", glm::vec3(0.0f));
+            def.localRotation = parseVec3Safe(jBlock, "localRotation", glm::vec3(0.0f));
+            for (int c = 0; c < 3; ++c) {
+                def.localRotation[c] = std::fmod(def.localRotation[c], 360.0f);
+            }
+
+            def.localScale = parseVec3Safe(jBlock, "localScale", glm::vec3(1.0f));
+            for (int c = 0; c < 3; ++c) {
+                if (std::abs(def.localScale[c]) < 1e-4f) {
+                    def.localScale[c] = (def.localScale[c] < 0.0f) ? -1e-4f : 1e-4f;
+                }
+            }
+
+            def.pivotOffset = parseVec3Safe(jBlock, "pivotOffset", glm::vec3(0.0f));
+            
             m_stringToIdMap[def.stringId] = id;
             m_stringToIdMap[toLowerStr(def.stringId)] = id;
         }
@@ -110,10 +143,10 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
 
     for (int i = 0; i < 256; ++i) {
         const auto& def = m_blocks[i];
-        if (i > 0 && def.stringId == "fairworld:unknown") continue; // Skip uninitialized blocks
+        if (i > 0 && (def.stringId.empty() || def.stringId == "fairworld:unknown")) continue; // Skip uninitialized blocks
         
         json jBlock;
-        jBlock["id"] = def.id;
+        jBlock["id"] = def.id > 0 ? def.id : (uint8_t)i;
         jBlock["stringId"] = def.stringId;
         jBlock["displayName"] = def.displayName;
         
@@ -126,6 +159,11 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
         jBlock["thermal_resistance"] = def.thermal_resistance;
         jBlock["thermal_capacity"] = def.thermal_capacity;
         jBlock["lightEmissionLevel"] = def.lightEmissionLevel;
+        
+        jBlock["localPosition"] = { def.localPosition.x, def.localPosition.y, def.localPosition.z };
+        jBlock["localRotation"] = { def.localRotation.x, def.localRotation.y, def.localRotation.z };
+        jBlock["localScale"] = { def.localScale.x, def.localScale.y, def.localScale.z };
+        jBlock["pivotOffset"] = { def.pivotOffset.x, def.pivotOffset.y, def.pivotOffset.z };
         
         jBlocks.push_back(jBlock);
     }
@@ -158,6 +196,7 @@ uint8_t BlockRegistry::CreateNewBlock(const std::string& stringId, const std::st
 void BlockRegistry::UpdateBlock(uint8_t id, const SimBlockDef& def) {
     if (id > 0 && id < 256) {
         m_blocks[id] = def;
+        m_blocks[id].id = id;
         m_stringToIdMap[def.stringId] = id;
     }
 }
@@ -181,7 +220,12 @@ const SimBlockDef& BlockRegistry::GetBlock(const std::string& stringId) const {
 }
 
 SimBlockDef& BlockRegistry::GetBlockMutable(uint8_t id) {
-    if (id < 256) return m_blocks[id];
+    if (id < 256) {
+        if (m_blocks[id].id == 0 && id > 0) {
+            m_blocks[id].id = id;
+        }
+        return m_blocks[id];
+    }
     return m_fallbackBlock;
 }
 

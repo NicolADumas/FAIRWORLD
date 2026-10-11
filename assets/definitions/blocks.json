@@ -1,134 +1,466 @@
 {
     "blocks": [
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 1.0,
+            "bounciness": 0.0,
+            "displayName": "Air",
+            "friction": 0.6000000238418579,
+            "id": 0,
+            "isSolid": false,
+            "isTransparent": true,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:air",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
+        },
+        {
+            "bounciness": 0.0,
+            "displayName": "Grass",
+            "friction": 0.6000000238418579,
             "id": 1,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "Grass",
-            "tex_bottom": "textures/dirt.png",
-            "tex_side": "textures/grass_side.png",
-            "tex_top": "textures/grass_top.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                -0.28999999165534973,
+                0.09000000357627869,
+                -0.11999999731779099
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Grass",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 0.800000011920929,
+            "bounciness": 0.0,
+            "displayName": "Dirt",
+            "friction": 0.6000000238418579,
             "id": 2,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "Dirt",
-            "tex_bottom": "textures/dirt.png",
-            "tex_side": "textures/dirt.png",
-            "tex_top": "textures/dirt.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Dirt",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 3.0,
+            "bounciness": 0.0,
+            "displayName": "Stone",
+            "friction": 0.6000000238418579,
             "id": 3,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "Stone",
-            "tex_bottom": "textures/stone.png",
-            "tex_side": "textures/stone.png",
-            "tex_top": "textures/stone.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Stone",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 2.0,
+            "bounciness": 0.0,
+            "displayName": "Wood",
+            "friction": 0.6000000238418579,
             "id": 4,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "Wood",
-            "tex_bottom": "textures/wood_top.png",
-            "tex_side": "textures/wood_side.png",
-            "tex_top": "textures/wood_top.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Wood",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 0.5,
+            "bounciness": 0.0,
+            "displayName": "Sand",
+            "friction": 0.6000000238418579,
             "id": 5,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "Sand",
-            "tex_bottom": "textures/sand.png",
-            "tex_side": "textures/sand.png",
-            "tex_top": "textures/sand.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Sand",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 0.699999988079071,
-            "damagePerSecond": 0,
-            "hardness": 0.0,
+            "bounciness": 0.0,
+            "displayName": "Water",
+            "friction": 0.6000000238418579,
             "id": 6,
-            "isLiquid": true,
             "isSolid": false,
-            "name": "Water",
-            "tex_bottom": "textures/water.png",
-            "tex_side": "textures/water.png",
-            "tex_top": "textures/water.png",
-            "transparent": true
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Water",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 5,
-            "hardness": 0.0,
+            "bounciness": 0.0,
+            "displayName": "Lava",
+            "friction": 0.6000000238418579,
             "id": 7,
-            "isLiquid": true,
             "isSolid": false,
-            "name": "Lava",
-            "tex_bottom": "textures/lava.png",
-            "tex_side": "textures/lava.png",
-            "tex_top": "textures/lava.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Lava",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 0.8999999761581421,
-            "damagePerSecond": 0,
-            "hardness": 0.30000001192092896,
+            "bounciness": 0.0,
+            "displayName": "Leaves",
+            "friction": 0.6000000238418579,
             "id": 8,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "Leaves",
-            "tex_bottom": "textures/leaves.png",
-            "tex_side": "textures/leaves.png",
-            "tex_top": "textures/leaves.png",
-            "transparent": true
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:Leaves",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 5.0,
+            "bounciness": 0.0,
+            "displayName": "MobSpawner",
+            "friction": 0.6000000238418579,
             "id": 9,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "MobSpawner",
-            "tex_bottom": "",
-            "tex_side": "",
-            "tex_top": "",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:MobSpawner",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         },
         {
-            "alpha": 1.0,
-            "damagePerSecond": 0,
-            "hardness": 0.5,
+            "bounciness": 0.0,
+            "displayName": "LightSource",
+            "friction": 0.6000000238418579,
             "id": 10,
-            "isLiquid": false,
             "isSolid": true,
-            "name": "LightSource",
-            "tex_bottom": "textures/light.png",
-            "tex_side": "textures/light.png",
-            "tex_top": "textures/light.png",
-            "transparent": false
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:LightSource",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
+        },
+        {
+            "bounciness": 0.0,
+            "displayName": "BLOCCO A",
+            "friction": 0.6000000238418579,
+            "id": 11,
+            "isSolid": true,
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:bloccoA",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
+        },
+        {
+            "bounciness": 0.0,
+            "displayName": "BLOCCO B",
+            "friction": 0.6000000238418579,
+            "id": 12,
+            "isSolid": true,
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:BLOCCOB",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
+        },
+        {
+            "bounciness": 0.0,
+            "displayName": "Ice",
+            "friction": 0.6000000238418579,
+            "id": 13,
+            "isSolid": true,
+            "isTransparent": true,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "stringId": "fairworld:ice",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
         }
     ]
 }

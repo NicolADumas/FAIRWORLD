@@ -16,8 +16,10 @@
 #include "VulkanDmaManager.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include "imgui.h"
+#include "ImGuizmo.h"
 #include <windows.h>
 #include <commdlg.h>
 #include <filesystem>
@@ -60,6 +62,32 @@ namespace {
             return srcPath; // Fallback al path originale se la copia fallisce
         }
     }
+
+    const char* GetShapeTypeName(fw::ShapeType type) {
+        switch (type) {
+            case fw::ShapeType::Cube: return "Cube";
+            case fw::ShapeType::Cuboid: return "Cuboid";
+            case fw::ShapeType::Parallelepiped: return "Parallelepiped";
+            case fw::ShapeType::Pyramid: return "Pyramid";
+            case fw::ShapeType::PyramidFrustum: return "Pyramid Frustum";
+            case fw::ShapeType::Cylinder: return "Cylinder";
+            case fw::ShapeType::HollowCylinder: return "Hollow Cylinder";
+            case fw::ShapeType::Cone: return "Cone";
+            case fw::ShapeType::ConeFrustum: return "Cone Frustum";
+            case fw::ShapeType::Sphere: return "Sphere";
+            case fw::ShapeType::Capsule: return "Capsule";
+            case fw::ShapeType::LegacySuperSphere: return "Legacy SuperSphere";
+            case fw::ShapeType::SphericalZone: return "Spherical Zone";
+            case fw::ShapeType::SphericalSegment: return "Spherical Segment";
+            case fw::ShapeType::SphericalSector: return "Spherical Sector";
+            case fw::ShapeType::SphereWithCylindricalBore: return "Sphere w/ Bore";
+            case fw::ShapeType::SphereWithConicalCavities: return "Sphere w/ Cavities";
+            case fw::ShapeType::SlicedCylinder: return "Sliced Cylinder";
+            case fw::ShapeType::Ungula: return "Ungula";
+            case fw::ShapeType::Barrel: return "Barrel";
+            default: return "Custom / Other";
+        }
+    }
 }
 
 BlockMakerState::BlockMakerState(SharedContext* context) : m_context(context) {
@@ -87,6 +115,42 @@ BlockMakerState::~BlockMakerState() {
 entt::registry* BlockMakerState::GetRegistry() {
     if (m_previewWorld) return &m_previewWorld->GetRegistry();
     return nullptr;
+}
+
+bool BlockMakerState::IsBlockTransformDirty(uint8_t id) const {
+    if (!m_context || !m_context->blockRegistry) return false;
+    const auto& bDef = m_context->blockRegistry->GetBlock(id);
+    const auto& saved = m_savedTransforms[id];
+    const float eps = 1e-5f;
+    auto diff = [](const glm::vec3& a, const glm::vec3& b, float e) {
+        return std::abs(a.x - b.x) > e || std::abs(a.y - b.y) > e || std::abs(a.z - b.z) > e;
+    };
+    return (diff(bDef.localPosition, saved.localPosition, eps) ||
+            diff(bDef.localRotation, saved.localRotation, eps) ||
+            diff(bDef.localScale, saved.localScale, eps) ||
+            diff(bDef.pivotOffset, saved.pivotOffset, eps));
+}
+
+uint32_t BlockMakerState::CountUnsavedTransformBlocks() const {
+    if (!m_context || !m_context->blockRegistry) return 0;
+    uint32_t count = 0;
+    for (int i = 1; i <= 255; ++i) {
+        if (IsBlockTransformDirty(static_cast<uint8_t>(i))) {
+            count++;
+        }
+    }
+    return count;
+}
+
+void BlockMakerState::SynchronizeAllSavedTransformBaselines() {
+    if (!m_context || !m_context->blockRegistry) return;
+    for (int i = 0; i < 256; ++i) {
+        const auto& def = m_context->blockRegistry->GetBlock(static_cast<uint8_t>(i));
+        m_savedTransforms[i].localPosition = def.localPosition;
+        m_savedTransforms[i].localRotation = def.localRotation;
+        m_savedTransforms[i].localScale = def.localScale;
+        m_savedTransforms[i].pivotOffset = def.pivotOffset;
+    }
 }
 
 bool BlockMakerState::Init() {
@@ -162,6 +226,10 @@ bool BlockMakerState::Init() {
         auto& initDef = m_context->blockRegistry->GetBlock(m_selectedBlockId);
         strncpy(m_inputStringId, initDef.stringId.c_str(), sizeof(m_inputStringId) - 1);
         strncpy(m_inputDisplayName, initDef.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
+        SynchronizeAllSavedTransformBaselines();
+    }
+    if (m_context && m_context->cacheManager) {
+        m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
     }
     UpdatePreviewMesh();
 
@@ -181,7 +249,7 @@ void BlockMakerState::Update(float dt) {
 
     // Handle Input for Orbital Camera via ImGui
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantCaptureMouse) {
+    if (!io.WantCaptureMouse && !m_isGizmoInteracting) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
             m_orbitYaw += io.MouseDelta.x * 0.2f;
             m_orbitPitch += io.MouseDelta.y * 0.2f;
@@ -210,7 +278,8 @@ void BlockMakerState::Update(float dt) {
         uint32_t h = m_context->engine->GetRenderManager()->GetWindowHeight();
         if (h > 0) aspect = (float)w / (float)h;
     }
-    m_context->activeCameraView.projectionMatrix = glm::perspective(glm::radians(m_cameraFov), aspect, 0.1f, 1000.0f);
+    m_projNoFlip = glm::perspective(glm::radians(m_cameraFov), aspect, 0.1f, 1000.0f);
+    m_context->activeCameraView.projectionMatrix = m_projNoFlip;
     m_context->activeCameraView.projectionMatrix[1][1] *= -1; // Vulkan Y-flip
     
     m_context->forgeWorld = m_previewWorld.get();
@@ -235,10 +304,11 @@ void BlockMakerState::Update(float dt) {
 
 void BlockMakerState::HandlePhysicsSimulation(float dt) {
     if (!m_simulatePhysics) {
+        // Modalita reset intenzionale: azzera quota e velocita di simulazione
         m_simPosY = 0.0f;
         m_simVelY = 0.0f;
-    } else {
-        // Simple Physics simulation (Gravity + Bounciness)
+    } else if (!m_isGizmoInteracting) {
+        // Simulazione attiva: avanza fisica solo quando NON in pausa per manipolazione gizmo
         if (m_context && m_context->blockRegistry) {
             auto& def = m_context->blockRegistry->GetBlock(m_selectedBlockId);
             
@@ -269,22 +339,79 @@ void BlockMakerState::HandlePhysicsSimulation(float dt) {
     auto& m_registry = m_previewWorld->GetRegistry();
     
     // Aggiorna la Transform dell'entità preview
-    if (m_previewBlockEntity != entt::null && m_registry.valid(m_previewBlockEntity)) {
+    if (m_previewBlockEntity != entt::null && m_registry.valid(m_previewBlockEntity) && m_context && m_context->blockRegistry) {
+        const auto& def = m_context->blockRegistry->GetBlock(m_selectedBlockId);
         auto& transform = m_registry.get<fw::TransformComponent>(m_previewBlockEntity);
-        transform.location = fw::Vec3{0.0f, m_simPosY, 0.0f};
         
-        // Rotazione automatica per mostrare tutte le facce del blocco
-        if (m_autoRotateBlock) {
+        // 1. Calculate effective transformed bounds using the 8 corners of canonical mesh AABB
+        // and the shape-in-asset transformation: R(localRotation) * S(localScale) * T(-pivotOffset)
+        float groundY = 0.0f;
+        if (!m_cachedGeometryMesh.vertices.empty()) {
+            fw::AABB bounds = m_cachedGeometryMesh.bounds();
+            glm::vec3 corners[8] = {
+                { bounds.min.x, bounds.min.y, bounds.min.z },
+                { bounds.min.x, bounds.min.y, bounds.max.z },
+                { bounds.min.x, bounds.max.y, bounds.min.z },
+                { bounds.min.x, bounds.max.y, bounds.max.z },
+                { bounds.max.x, bounds.min.y, bounds.min.z },
+                { bounds.max.x, bounds.min.y, bounds.max.z },
+                { bounds.max.x, bounds.max.y, bounds.min.z },
+                { bounds.max.x, bounds.max.y, bounds.max.z }
+            };
+
+            glm::mat4 mShapeInAsset = glm::mat4(1.0f);
+            mShapeInAsset = mShapeInAsset * glm::mat4_cast(glm::quat(glm::radians(def.localRotation)));
+            mShapeInAsset = glm::scale(mShapeInAsset, def.localScale);
+            mShapeInAsset = glm::translate(mShapeInAsset, -def.pivotOffset);
+
+            float minShapeY = 1e9f;
+            for (int i = 0; i < 8; ++i) {
+                glm::vec4 tc = mShapeInAsset * glm::vec4(corners[i], 1.0f);
+                if (tc.y < minShapeY) {
+                    minShapeY = tc.y;
+                }
+            }
+            // Floor top is at Y = -0.50f. Grounding places the shape's lowest point flush with the floor.
+            groundY = -0.50f - minShapeY;
+        }
+
+        // 2. Turntable rotation (inspection preview around vertical Y axis)
+        if (m_autoRotateBlock && !m_isGizmoInteracting) {
             m_blockEulerAngles.y += 45.0f * dt; // 45 gradi al secondo su Yaw
             if (m_blockEulerAngles.y >= 360.0f) m_blockEulerAngles.y -= 360.0f;
         }
-        glm::quat gq = glm::quat(glm::radians(m_blockEulerAngles));
-        transform.rotation = fw::Quat{gq.x, gq.y, gq.z, gq.w};
+        glm::quat qPreview = glm::quat(glm::radians(m_blockEulerAngles));
+        glm::quat qAsset = glm::quat(glm::radians(def.localRotation));
+
+        // 3. Compose ModelMatrix = PreviewMatrix * AssetMatrix
+        // PreviewMatrix = T(0, groundY + simPosY, 0) * R_preview
+        // AssetMatrix = T(localPosition) * R_asset * S_asset * T(-pivotOffset)
+        // Combined location = (0, groundY + simPosY, 0) + (qPreview * def.localPosition)
+        glm::vec3 newLoc = glm::vec3(0.0f, groundY + m_simPosY, 0.0f) + (qPreview * def.localPosition);
+        glm::quat qTotal = qPreview * qAsset;
+        fw::Vec3 targetLocation = fw::Vec3{ newLoc.x, newLoc.y, newLoc.z };
+        fw::Quat targetRotation = fw::Quat{ qTotal.x, qTotal.y, qTotal.z, qTotal.w };
+        fw::Vec3 targetScale = fw::Vec3{ def.localScale.x, def.localScale.y, def.localScale.z };
+        fw::Vec3 targetPivot = fw::Vec3{ def.pivotOffset.x, def.pivotOffset.y, def.pivotOffset.z };
+
+        // 4. Idle optimization: only write to ECS component if state actually changed
+        bool hasChanged = (transform.location.x != targetLocation.x || transform.location.y != targetLocation.y || transform.location.z != targetLocation.z ||
+                           transform.rotation.x != targetRotation.x || transform.rotation.y != targetRotation.y || transform.rotation.z != targetRotation.z || transform.rotation.w != targetRotation.w ||
+                           transform.scale.x != targetScale.x || transform.scale.y != targetScale.y || transform.scale.z != targetScale.z ||
+                           transform.pivot.x != targetPivot.x || transform.pivot.y != targetPivot.y || transform.pivot.z != targetPivot.z);
+        if (hasChanged) {
+            transform.location = targetLocation;
+            transform.rotation = targetRotation;
+            transform.scale = targetScale;
+            transform.pivot = targetPivot;
+        }
     }
 }
 
 void BlockMakerState::Render() {
+    ImGuizmo::BeginFrame();
     DrawUI();
+    DrawGizmo();
 }
 
 void BlockMakerState::UpdatePreviewMesh() {
@@ -399,7 +526,11 @@ void BlockMakerState::DrawUI() {
         ImGui::BeginChild("BlockList", ImVec2(0, 0), true);
         for (int i = 1; i <= 255; i++) {
             fw::SimBlockDef& blockDef = m_context->blockRegistry->GetBlockMutable(i);
+            bool isDirty = IsBlockTransformDirty(static_cast<uint8_t>(i));
             std::string label = std::to_string(i) + ": " + (blockDef.displayName.empty() ? (blockDef.stringId.empty() ? "Vuoto" : blockDef.stringId) : blockDef.displayName);
+            if (isDirty) {
+                label += " *";
+            }
             
             // Colore sbiadito per i blocchi vuoti
             if (blockDef.stringId.empty()) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
@@ -407,8 +538,13 @@ void BlockMakerState::DrawUI() {
             if (ImGui::Selectable(label.c_str(), m_selectedBlockId == i)) {
                 if (m_selectedBlockId != i) {
                     m_selectedBlockId = i;
+                    m_simPosY = 0.0f;
+                    m_simVelY = 0.0f;
                     strncpy(m_inputStringId, blockDef.stringId.c_str(), sizeof(m_inputStringId) - 1);
                     strncpy(m_inputDisplayName, blockDef.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
+                    if (m_context && m_context->cacheManager) {
+                        m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
+                    }
                     UpdatePreviewMesh();
                 }
             }
@@ -419,7 +555,9 @@ void BlockMakerState::DrawUI() {
 
         ImGui::NextColumn();
 
-        // COLONNA DESTRA: Proprietà del Blocco Selezionato
+        // COLONNA DESTRA: Proprietà del Blocco Selezionato (con scroll dedicato)
+        ImGui::BeginChild("BlockPropertiesScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
         ImGui::Text("Editing Block ID: %d", m_selectedBlockId);
         ImGui::Separator();
 
@@ -429,6 +567,193 @@ void BlockMakerState::DrawUI() {
         // --- TABS ---
         if (ImGui::BeginTabBar("BlockTabs")) {
             
+            // TAB: BLOCK TRANSFORM (BM-A2)
+            if (ImGui::BeginTabItem("Transform")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "BLOCK TRANSFORM — ID %u: %s", m_selectedBlockId, def.displayName.c_str());
+                ImGui::Separator();
+
+                // 1. Box Telemetria e Stato Salvataggio
+                bool isCurrentDirty = IsBlockTransformDirty(m_selectedBlockId);
+                uint32_t totalDirtyCount = CountUnsavedTransformBlocks();
+
+                ImGui::BeginChild("TransformDiagnosticsBox", ImVec2(0, 135), true);
+                ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "TELEMETRIA TRASFORMAZIONE ASSET (BM-A2.1)");
+                ImGui::Text("Blocco: ID %u (%s) | String: %s", m_selectedBlockId, def.displayName.c_str(), def.stringId.c_str());
+                if (mat.sharedShape.IsValid()) {
+                    const fw::ShapeDefinition* shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+                    const char* shapeTypeName = shapeDef ? GetShapeTypeName(shapeDef->type) : "Unknown";
+                    ImGui::Text("ShapeHandle: ID %u (Rev %u) | Tipo: %s", mat.sharedShape.id, mat.sharedShape.revision, shapeTypeName);
+                } else {
+                    ImGui::Text("Shape: Legacy (Tipo %d)", mat.shapeType);
+                }
+                ImGui::Text("Pos: (%.3f, %.3f, %.3f) | Rot: (%.1f, %.1f, %.1f) deg", 
+                    def.localPosition.x, def.localPosition.y, def.localPosition.z,
+                    def.localRotation.x, def.localRotation.y, def.localRotation.z);
+                ImGui::Text("Scale: (%.3f, %.3f, %.3f) | Pivot: (%.3f, %.3f, %.3f)", 
+                    def.localScale.x, def.localScale.y, def.localScale.z,
+                    def.pivotOffset.x, def.pivotOffset.y, def.pivotOffset.z);
+
+                if (isCurrentDirty) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Stato Blocco: MODIFICHE NON SALVATE (In attesa di persistenza)");
+                } else {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Stato Blocco: SINCRONIZZATO (Allineato alla baseline)");
+                }
+
+                if (totalDirtyCount > 0) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Registro: %u blocco/i con modifiche pendenti (*)", totalDirtyCount);
+                } else {
+                    ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Registro: Tutte le trasformazioni sincronizzate a disco");
+                }
+                ImGui::EndChild();
+
+                ImGui::Spacing();
+
+                // Viewport Move Gizmo Control (BM-A3.1)
+                ImGui::Checkbox("Viewport Move Gizmo (Assi XYZ)", &m_moveGizmoEnabled);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Attiva/disattiva il gizmo di traslazione 3D (assi X, Y, Z) nel viewport.\nPermette di manipolare direttamente la posizione con il mouse.");
+                }
+                ImGui::SameLine();
+                if (m_moveGizmoEnabled) {
+                    if (m_isGizmoInteracting) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[IN TRASCINAMENTO]");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[ATTIVO]");
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[DISATTIVATO]");
+                }
+
+                ImGui::Spacing();
+
+                // 2. POSITION
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "POSITION (Local Translation)");
+                ImGui::SameLine();
+                if (ImGui::Button("Reset Position##PosReset")) {
+                    def.localPosition = glm::vec3(0.0f);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Reset Local Position to (0, 0, 0)");
+                }
+                ImGui::DragFloat3("##LocalPos", &def.localPosition.x, 0.01f, 0.0f, 0.0f, "%.3f");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Local Position (X, Y, Z):\nTranslates the entire authored block asset in asset space.\nIndependent of shape-local pivot.");
+                }
+
+                ImGui::Spacing();
+
+                // 3. ROTATION
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "ROTATION (Euler Degrees)");
+                ImGui::SameLine();
+                if (ImGui::Button("Reset Rotation##RotReset")) {
+                    def.localRotation = glm::vec3(0.0f);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Reset Local Rotation to (0, 0, 0) deg");
+                }
+                if (ImGui::DragFloat3("##LocalRot", &def.localRotation.x, 0.5f, 0.0f, 0.0f, "%.1f deg")) {
+                    for (int c = 0; c < 3; ++c) {
+                        def.localRotation[c] = std::fmod(def.localRotation[c], 360.0f);
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Local Rotation (Pitch X, Yaw Y, Roll Z in degrees):\nRotates geometry around the shape pivot point.");
+                }
+
+                ImGui::Spacing();
+
+                // 4. SCALE
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "SCALE (Non-Uniform Factors)");
+                ImGui::SameLine();
+                if (ImGui::Button("Reset Scale##ScaleReset")) {
+                    def.localScale = glm::vec3(1.0f);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Reset Local Scale to (1, 1, 1)");
+                }
+                if (ImGui::DragFloat3("##LocalScale", &def.localScale.x, 0.01f, 0.0001f, 50.0f, "%.3f")) {
+                    for (int c = 0; c < 3; ++c) {
+                        if (std::abs(def.localScale[c]) < 1e-4f) {
+                            def.localScale[c] = (def.localScale[c] < 0.0f) ? -1e-4f : 1e-4f;
+                        }
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Local Scale (X, Y, Z):\nScales geometry along each axis relative to the pivot.\nEnforces |scale| >= 0.0001 to prevent degenerate matrices.");
+                }
+
+                ImGui::Spacing();
+
+                // 5. PIVOT
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "PIVOT (Shape-Local Origin Offset)");
+                ImGui::SameLine();
+                if (ImGui::Button("Reset Pivot##PivotReset")) {
+                    def.pivotOffset = glm::vec3(0.0f);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Reset Pivot Offset to (0, 0, 0)");
+                }
+                ImGui::DragFloat3("##PivotOffset", &def.pivotOffset.x, 0.01f, 0.0f, 0.0f, "%.3f");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Pivot Offset (X, Y, Z):\nDefines the center of rotation and scale in shape-local coordinates.\nMoving the pivot changes how the block rotates without translating its position in the world.\nIndependent of Position.");
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+
+                // 6. Reset All Transforms & Revert to Baseline
+                if (ImGui::Button("Reset All Transforms (Identity)", ImVec2(-1, 26))) {
+                    def.localPosition = glm::vec3(0.0f);
+                    def.localRotation = glm::vec3(0.0f);
+                    def.localScale = glm::vec3(1.0f);
+                    def.pivotOffset = glm::vec3(0.0f);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Imposta Position=(0,0,0), Rotation=(0,0,0) deg, Scale=(1,1,1), Pivot=(0,0,0).\nNota: se il blocco sul disco aveva valori diversi da identita, risultera NON SALVATO.");
+                }
+
+                if (ImGui::Button("Ripristina Baseline Salvata (Revert)", ImVec2(-1, 26))) {
+                    const auto& saved = m_savedTransforms[m_selectedBlockId];
+                    def.localPosition = saved.localPosition;
+                    def.localRotation = saved.localRotation;
+                    def.localScale = saved.localScale;
+                    def.pivotOffset = saved.pivotOffset;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Ripristina tutti i valori di trasformazione all'ultimo stato salvato su disco per questo blocco.");
+                }
+
+                ImGui::Spacing();
+
+                // 7. Explicit Save Button for Registry Block Definitions
+                if (ImGui::Button("SALVA DEFINIZIONI REGISTRO BLOCCHI (JSON)", ImVec2(-1, 35))) {
+                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
+                    m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
+                    bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+                    m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
+                    m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                    bool s2 = true;
+                    if (std::filesystem::exists("../assets/definitions")) {
+                        s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
+                        m_context->shapeRegistry->SaveToJson("../assets/definitions/shapes.json");
+                        m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
+                    }
+                    if (s1 && s2) {
+                        SynchronizeAllSavedTransformBaselines();
+                        m_saveMessageTimer = 3.0f;
+                        std::cout << "[BlockMaker] Definizioni registro blocchi salvate su disco e baselines sincronizzate.\n";
+                    } else {
+                        std::cerr << "[BlockMaker] ERRORE: Salvataggio definizioni registro non riuscito! Baselines preservate non sincronizzate.\n";
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Salva l'intero registro dei blocchi (blocks.json, shapes.json, materials.json) su disco.\nSincronizza le baselines di tutti i blocchi modificati.");
+                }
+
+                ImGui::EndTabItem();
+            }
+
             // TAB: IDENTITA E GAMEPLAY
             if (ImGui::BeginTabItem("Identity")) {
                 ImGui::Spacing();
@@ -795,31 +1120,6 @@ void BlockMakerState::DrawUI() {
                     ImGui::TextWrapped("%s", m_lastCompileError.c_str());
                 }
 
-                if (isDirty) {
-                    UpdatePreviewMesh();
-                }
-                
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Transform (Local Preview)");
-                if (m_previewWorld) {
-                    auto& m_registry = m_previewWorld->GetRegistry();
-                    if (m_registry.valid(m_previewBlockEntity) && m_registry.all_of<fw::TransformComponent>(m_previewBlockEntity)) {
-                        auto& trans = m_registry.get<fw::TransformComponent>(m_previewBlockEntity);
-                        ImGui::DragFloat3("Position XYZ", &trans.location.x, 0.05f);
-                        glm::quat gq(trans.rotation.w, trans.rotation.x, trans.rotation.y, trans.rotation.z);
-                        glm::vec3 euler = glm::degrees(glm::eulerAngles(gq));
-                        if (ImGui::DragFloat3("Rotation XYZ", &euler.x, 0.5f)) {
-                            glm::quat new_gq = glm::quat(glm::radians(euler));
-                            trans.rotation = {new_gq.x, new_gq.y, new_gq.z, new_gq.w};
-                        }
-                        
-                        ImGui::DragFloat3("Scale XYZ", &trans.scale.x, 0.05f);
-                    } else {
-                        ImGui::TextDisabled("Preview entity not ready.");
-                    }
-                }
-                ImGui::TextDisabled("Note: Save/Load persistence requires P2.3C schema extension.");
-                
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PBR Texture Maps");
 
@@ -848,6 +1148,9 @@ void BlockMakerState::DrawUI() {
                             // Copia il file e salva automaticamente
                             pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
                             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                            if (std::filesystem::exists("../assets/definitions")) {
+                                m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
+                            }
                             
                             // Sincronizza la cache GPU del materiale tramite il CacheManager!
                             if (m_context && m_context->cacheManager) {
@@ -881,8 +1184,8 @@ void BlockMakerState::DrawUI() {
                 
                 if (isDirty) {
                     UpdatePreviewMesh();
-                    if (m_context->engine && m_context->engine->GetRenderManager()) {
-                        m_context->engine->GetRenderManager()->UpdateMaterialFallback(m_selectedBlockId, mat.baseColorFallback, mat.roughnessFallback, mat.metallicFallback);
+                    if (m_context && m_context->cacheManager) {
+                        m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                     }
                 }
                 
@@ -931,20 +1234,29 @@ void BlockMakerState::DrawUI() {
                 if (ImGui::Button("SALVA TUTTE LE DEFINIZIONI BLOCCHI", ImVec2(-1, 40))) {
                     m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
                     m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
-                    m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+                    bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
                     m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
                     m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                    bool s2 = true;
+                    if (std::filesystem::exists("../assets/definitions")) {
+                        s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
+                        m_context->shapeRegistry->SaveToJson("../assets/definitions/shapes.json");
+                        m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
+                    }
                     if (m_context->cacheManager) {
                         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                     }
                     if (m_context->engine && m_context->engine->GetRenderManager()) {
                         m_context->engine->GetRenderManager()->InvalidateForgeCache();
                     }
-                    if (m_context->gameWorld) m_context->gameWorld->MarkAllChunksDirty();
-                    if (m_context->forgeWorld) m_context->forgeWorld->MarkAllChunksDirty();
                     UpdatePreviewMesh();
-                    m_saveMessageTimer = 3.0f;
-                    std::cout << "[BlockMaker] Dati blocco " << m_selectedBlockId << " salvati in assets/definitions/\n";
+                    if (s1 && s2) {
+                        SynchronizeAllSavedTransformBaselines();
+                        m_saveMessageTimer = 3.0f;
+                        std::cout << "[BlockMaker] Dati blocco " << (int)m_selectedBlockId << " e registro salvati in assets/definitions/\n";
+                    } else {
+                        std::cerr << "[BlockMaker] ERRORE durante il salvataggio delle definizioni su disco!\n";
+                    }
                 }
                 
                 ImGui::EndTabItem();
@@ -958,9 +1270,15 @@ void BlockMakerState::DrawUI() {
         if (ImGui::Button("SALVA DEFINIZIONE & ASSET BLOCCO (JSON/GPU)", ImVec2(-1, 35))) {
             m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
             m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
-            m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+            bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
             m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
             m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+            bool s2 = true;
+            if (std::filesystem::exists("../assets/definitions")) {
+                s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
+                m_context->shapeRegistry->SaveToJson("../assets/definitions/shapes.json");
+                m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
+            }
             
             // Esporta asset file in assets/blocks/ per l'Asset Browser di FORGE
             std::filesystem::create_directories("assets/blocks");
@@ -978,12 +1296,14 @@ void BlockMakerState::DrawUI() {
             if (m_context->engine && m_context->engine->GetRenderManager()) {
                 m_context->engine->GetRenderManager()->InvalidateForgeCache();
             }
-            if (m_context->gameWorld) m_context->gameWorld->MarkAllChunksDirty();
-            if (m_context->forgeWorld) m_context->forgeWorld->MarkAllChunksDirty();
-            
             UpdatePreviewMesh();
-            m_saveMessageTimer = 3.0f;
-            std::cout << "[BlockMaker] Definizioni fisiche, grafiche e geometriche del blocco " << m_selectedBlockId << " salvate con successo su disco e sincronizzate in GPU!\n";
+            if (s1 && s2) {
+                SynchronizeAllSavedTransformBaselines();
+                m_saveMessageTimer = 3.0f;
+                std::cout << "[BlockMaker] Definizioni fisiche, grafiche e geometriche del blocco " << (int)m_selectedBlockId << " salvate con successo su disco e sincronizzate in GPU!\n";
+            } else {
+                std::cerr << "[BlockMaker] ERRORE durante il salvataggio su disco!\n";
+            }
         }
         
         if (m_saveMessageTimer > 0.0f) {
@@ -1001,7 +1321,103 @@ void BlockMakerState::DrawUI() {
                 m_previewLightDir = glm::vec3(0, -1, 0);
             }
         }
+
+        ImGui::EndChild(); // Fine BlockPropertiesScrollRegion
     }
     ImGui::Columns(1);
     ImGui::End();
+}
+
+void BlockMakerState::DrawGizmo() {
+    if (!m_moveGizmoEnabled) {
+        m_isGizmoInteracting = false;
+        return;
+    }
+    if (!m_context || !m_context->blockRegistry || m_previewBlockEntity == entt::null) {
+        m_isGizmoInteracting = false;
+        return;
+    }
+
+    fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+
+    // 1. Calcolo grounding della presentazione identico a HandlePhysicsSimulation
+    float groundY = 0.0f;
+    if (!m_cachedGeometryMesh.vertices.empty()) {
+        fw::AABB bounds = m_cachedGeometryMesh.bounds();
+        glm::vec3 corners[8] = {
+            { bounds.min.x, bounds.min.y, bounds.min.z },
+            { bounds.min.x, bounds.min.y, bounds.max.z },
+            { bounds.min.x, bounds.max.y, bounds.min.z },
+            { bounds.min.x, bounds.max.y, bounds.max.z },
+            { bounds.max.x, bounds.min.y, bounds.min.z },
+            { bounds.max.x, bounds.min.y, bounds.max.z },
+            { bounds.max.x, bounds.max.y, bounds.min.z },
+            { bounds.max.x, bounds.max.y, bounds.max.z }
+        };
+
+        glm::mat4 mShapeInAsset = glm::mat4(1.0f);
+        mShapeInAsset = mShapeInAsset * glm::mat4_cast(glm::quat(glm::radians(def.localRotation)));
+        mShapeInAsset = glm::scale(mShapeInAsset, def.localScale);
+        mShapeInAsset = glm::translate(mShapeInAsset, -def.pivotOffset);
+
+        float minShapeY = 1e9f;
+        for (int i = 0; i < 8; ++i) {
+            glm::vec4 tc = mShapeInAsset * glm::vec4(corners[i], 1.0f);
+            if (tc.y < minShapeY) {
+                minShapeY = tc.y;
+            }
+        }
+        groundY = -0.50f - minShapeY;
+    }
+
+    glm::quat qPreview = glm::quat(glm::radians(m_blockEulerAngles));
+    glm::quat qAsset = glm::quat(glm::radians(def.localRotation));
+
+    // 2. PresentationMatrix = T(0, groundY + simPosY, 0) * R_preview
+    glm::mat4 presMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, groundY + m_simPosY, 0.0f))
+                      * glm::mat4_cast(qPreview);
+
+    // 3. AssetMatrix = T(localPosition) * R_asset * S_asset * T(-pivotOffset)
+    glm::mat4 assetMat = glm::translate(glm::mat4(1.0f), def.localPosition)
+                       * glm::mat4_cast(qAsset)
+                       * glm::scale(glm::mat4(1.0f), def.localScale)
+                       * glm::translate(glm::mat4(1.0f), -def.pivotOffset);
+
+    // 4. ManipulatedWorldMatrix = PresentationMatrix * AssetMatrix
+    glm::mat4 worldMat = presMat * assetMat;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+    if (vp) {
+        ImGuizmo::SetRect(vp->Pos.x, vp->Pos.y, vp->Size.x, vp->Size.y);
+    } else {
+        ImGuizmo::SetRect(0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+    }
+
+    // Protezione overlay ImGui: se il mouse e' sopra finestre/widget UI e non stiamo gia' trascinando, disabilita il gizmo
+    bool canInteract = m_moveGizmoEnabled && (!io.WantCaptureMouse || m_isGizmoInteracting);
+    ImGuizmo::Enable(canInteract);
+
+    // 5. Move gizmo only: TRANSLATE operation in WORLD mode
+    ImGuizmo::Manipulate(
+        glm::value_ptr(m_context->activeCameraView.viewMatrix),
+        glm::value_ptr(m_projNoFlip),
+        ImGuizmo::TRANSLATE,
+        ImGuizmo::WORLD,
+        glm::value_ptr(worldMat)
+    );
+
+    if (ImGuizmo::IsUsing()) {
+        m_isGizmoInteracting = true;
+        // 6. Conversione corretta della matrice manipolata tenendo conto del pivot:
+        // AssetTRS = inverse(PresentationMatrix) * ManipulatedWorldMatrix * T(pivotOffset)
+        glm::mat4 assetTRS = glm::inverse(presMat) * worldMat * glm::translate(glm::mat4(1.0f), def.pivotOffset);
+        // 7. Decomposizione deterministica: la colonna 3 di AssetTRS è esattamente localPosition.
+        // Rotazione, scala e pivot rimangono inalterati e congelati.
+        def.localPosition = glm::vec3(assetTRS[3]);
+    } else {
+        m_isGizmoInteracting = false;
+    }
 }

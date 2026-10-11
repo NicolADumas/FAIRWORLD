@@ -250,6 +250,7 @@ int main(int argc, char* argv[]) {
 
     engine.SetSharedContext(&context);
     cacheManager.SyncAllBlockPropertiesSSBO(&context);
+    cacheManager.SyncAllMaterialsGpuCache(&context);
 
     // 4. Bootstrap: Avvia lo stato selezionato con tutti i servizi connessi e sincronizzati
     if (choice == 1) {

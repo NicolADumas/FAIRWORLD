@@ -112,9 +112,9 @@ bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
             def.normalPath = jMat.value("normalPath", "");
             def.ormPath = jMat.value("ormPath", "");
             
-            if (jMat.contains("baseColorFallback")) {
-                auto color = jMat["baseColorFallback"];
-                def.baseColorFallback = glm::vec3(color[0], color[1], color[2]);
+            if (jMat.contains("baseColorFallback") && jMat["baseColorFallback"].is_array() && jMat["baseColorFallback"].size() >= 3) {
+                const auto& color = jMat["baseColorFallback"];
+                def.baseColorFallback = glm::vec3(color[0].get<float>(), color[1].get<float>(), color[2].get<float>());
             }
             
             def.metallicFallback = jMat.value("metallicFallback", 0.0f);
@@ -188,7 +188,12 @@ const PBRMaterialDef& MaterialRegistry::GetMaterial(uint8_t blockId) const {
 }
 
 PBRMaterialDef& MaterialRegistry::GetMaterialMutable(uint8_t blockId) {
-    if (blockId < 256) return m_materials[blockId];
+    if (blockId < 256) {
+        if (m_materials[blockId].target_block_id == 0 && blockId > 0) {
+            m_materials[blockId].target_block_id = blockId;
+        }
+        return m_materials[blockId];
+    }
     return m_fallbackMaterial;
 }
 
