@@ -85,6 +85,13 @@ void MaterialRegistry::RegisterDefaultMaterials() {
     m_materials[13].roughnessFallback = 0.05f;
     m_materials[13].metallicFallback = 0.1f;
     m_materials[13].alphaFallback = 0.85f;
+
+    // Ensure all default materials possess canonical sharedShape (Cube ID 1, Rev 1)
+    for (int i = 1; i < 256; ++i) {
+        if (m_materials[i].target_block_id > 0 && !m_materials[i].sharedShape.IsValid()) {
+            m_materials[i].sharedShape = {1, 1};
+        }
+    }
 }
 
 bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
@@ -127,6 +134,24 @@ bool MaterialRegistry::LoadFromJson(const std::string& filepath) {
             
             def.sharedShape.id = jMat.value("sharedShapeId", (uint32_t)0);
             def.sharedShape.revision = jMat.value("sharedShapeRevision", (uint32_t)0);
+            // Canonical resolution: default to Cube {1, 1} if missing or unassigned
+            if (!def.sharedShape.IsValid() && id > 0) {
+                def.sharedShape = {1, 1};
+            }
+
+            // BM-C: Deserializzazione UV & Superfici
+            if (jMat.contains("baseUVTransform")) {
+                jMat["baseUVTransform"].get_to(def.baseUVTransform);
+            }
+            def.baseProjection = static_cast<UVProjectionMode>(jMat.value("baseProjection", (uint8_t)0));
+            if (jMat.contains("surfaces") && jMat["surfaces"].is_array()) {
+                def.surfaces.clear();
+                for (const auto& js : jMat["surfaces"]) {
+                    SurfaceOverride s;
+                    from_json(js, s);
+                    def.surfaces.push_back(s);
+                }
+            }
         }
         std::cout << "[MaterialRegistry] Caricati " << j["materials"].size() << " materiali da " << filepath << "\n";
         return true;
@@ -161,6 +186,25 @@ bool MaterialRegistry::SaveToJson(const std::string& filepath) {
         jMat["sharedShapeId"] = def.sharedShape.id;
         jMat["sharedShapeRevision"] = def.sharedShape.revision;
         
+        // BM-C: Serializzazione UV & Superfici
+        if (!def.baseUVTransform.IsIdentity()) {
+            json jUv;
+            to_json(jUv, def.baseUVTransform);
+            jMat["baseUVTransform"] = jUv;
+        }
+        if (def.baseProjection != UVProjectionMode::Default) {
+            jMat["baseProjection"] = static_cast<uint8_t>(def.baseProjection);
+        }
+        if (!def.surfaces.empty()) {
+            json jSurfaces = json::array();
+            for (const auto& s : def.surfaces) {
+                json js;
+                to_json(js, s);
+                jSurfaces.push_back(js);
+            }
+            jMat["surfaces"] = jSurfaces;
+        }
+
         jMaterials.push_back(jMat);
     }
     
@@ -180,6 +224,38 @@ void MaterialRegistry::UpdateMaterial(uint8_t blockId, const PBRMaterialDef& def
         m_materials[blockId] = def;
         m_materials[blockId].target_block_id = blockId;
     }
+}
+
+bool MaterialRegistry::InitDefaultMaterial(uint8_t blockId) {
+    if (blockId == 0 || blockId >= 256) return false;
+    PBRMaterialDef def;
+    def.target_block_id = blockId;
+    def.baseColorFallback = glm::vec3(0.7f, 0.7f, 0.7f);
+    def.roughnessFallback = 0.8f;
+    def.metallicFallback = 0.0f;
+    def.emissiveStrength = 0.0f;
+    def.alphaFallback = 1.0f;
+    def.behaviors = BLOCK_BEHAVIOR_NONE;
+    def.shapeType = 0;
+    def.superSphereN = 2.0f;
+    def.sharedShape = {1, 1}; // Canonical default cube (ShapeID 1, Rev 1)
+    m_materials[blockId] = def;
+    return true;
+}
+
+bool MaterialRegistry::DuplicateMaterial(uint8_t sourceId, uint8_t targetId) {
+    if (sourceId >= 256 || targetId == 0 || targetId >= 256) return false;
+    PBRMaterialDef clone = m_materials[sourceId];
+    clone.target_block_id = targetId;
+    m_materials[targetId] = clone;
+    return true;
+}
+
+bool MaterialRegistry::ResetMaterial(uint8_t blockId) {
+    if (blockId == 0 || blockId >= 256) return false;
+    m_materials[blockId] = PBRMaterialDef();
+    m_materials[blockId].target_block_id = 0;
+    return true;
 }
 
 const PBRMaterialDef& MaterialRegistry::GetMaterial(uint8_t blockId) const {

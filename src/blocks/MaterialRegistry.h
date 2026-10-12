@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <cstdint>
 #include "ShapeRegistry.h"
+#include "SurfaceDefinition.h"
 
 namespace fw {
 
@@ -46,6 +47,29 @@ struct PBRMaterialDef {
     
     // New Universal Shape System
     ShapeHandle sharedShape;
+
+    // BM-C: UV & Surface System
+    uint32_t revision = 1;
+    UVTransform baseUVTransform;
+    UVProjectionMode baseProjection = UVProjectionMode::Default;
+    std::vector<SurfaceOverride> surfaces;
+
+    const SurfaceOverride* FindSurfaceOverride(uint32_t surfaceId) const {
+        for (const auto& s : surfaces) {
+            if (s.surfaceId == surfaceId) return &s;
+        }
+        return nullptr;
+    }
+
+    SurfaceOverride& GetOrCreateSurfaceOverride(uint32_t surfaceId) {
+        for (auto& s : surfaces) {
+            if (s.surfaceId == surfaceId) return s;
+        }
+        SurfaceOverride newS;
+        newS.surfaceId = surfaceId;
+        surfaces.push_back(newS);
+        return surfaces.back();
+    }
 };
 
 class MaterialRegistry {
@@ -58,6 +82,9 @@ public:
     bool SaveToJson(const std::string& filepath);
 
     void UpdateMaterial(uint8_t blockId, const PBRMaterialDef& def);
+    bool InitDefaultMaterial(uint8_t blockId);
+    bool DuplicateMaterial(uint8_t sourceId, uint8_t targetId);
+    bool ResetMaterial(uint8_t blockId);
 
     const PBRMaterialDef& GetMaterial(uint8_t blockId) const;
     PBRMaterialDef& GetMaterialMutable(uint8_t blockId);

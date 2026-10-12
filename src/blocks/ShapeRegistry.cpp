@@ -107,16 +107,15 @@ static ShapeParameters DeserializeShapeParams(const json& j, ShapeType type) {
 }
 
 void ShapeRegistry::Initialize() {
-    // Register the default 1x1x1 cube
+    // Register the canonical default 1x1x1 cube (ID 1, Rev 1)
     ShapeDefinition def;
-    def.id = m_nextId++;
+    def.id = 1;
+    m_nextId = 2;
     def.revision = 1;
     def.type = ShapeType::Cube;
     def.parameters = ShapeParamsCuboid{ glm::vec3(1.0f) };
-    
-    // Capabilities for P2.1 (placeholder)
-    def.supportsVisualCompilation = false;
-    def.supportsCollisionCompilation = false;
+    def.supportsVisualCompilation = true;
+    def.supportsCollisionCompilation = true;
     
     m_shapes[def.id] = def;
     m_defaultCube = { def.id, def.revision };

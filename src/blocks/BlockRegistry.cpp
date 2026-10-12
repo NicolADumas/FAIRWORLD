@@ -259,25 +259,291 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
     return false;
 }
 
-uint8_t BlockRegistry::CreateNewBlock(const std::string& stringId, const std::string& displayName) {
-    // Trova il primo slot libero (da 1 a 255)
-    for (uint8_t i = 1; i < 256; ++i) {
-        if (m_blocks[i].stringId == "fairworld:unknown") {
-            m_blocks[i].id = i;
-            m_blocks[i].stringId = stringId;
-            m_blocks[i].displayName = displayName;
-            m_stringToIdMap[stringId] = i;
-            return i;
+std::string BlockRegistry::SanitizeStringId(const std::string& input) {
+    std::string s = input;
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+
+    std::string prefix = "fairworld:";
+    std::string body;
+    if (s.rfind(prefix, 0) == 0) {
+        body = s.substr(prefix.length());
+    } else {
+        body = s;
+    }
+
+    std::string cleanBody;
+    for (char c : body) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc)) {
+            cleanBody += static_cast<char>(std::tolower(uc));
+        } else if (c == '_' || c == '-') {
+            cleanBody += c;
+        } else if (std::isspace(uc)) {
+            cleanBody += '_';
         }
     }
-    return 0; // Fallimento, registro pieno
+
+    if (cleanBody.empty()) {
+        cleanBody = "custom_block";
+    }
+
+    return prefix + cleanBody;
+}
+
+bool BlockRegistry::ValidateStringId(const std::string& input, std::string* outError) {
+    if (input.empty()) {
+        if (outError) *outError = "String ID non puo' essere vuoto.";
+        return false;
+    }
+
+    std::string prefix = "fairworld:";
+    if (input.rfind(prefix, 0) != 0) {
+        if (outError) *outError = "String ID deve iniziare con 'fairworld:'.";
+        return false;
+    }
+
+    std::string body = input.substr(prefix.length());
+    if (body.empty()) {
+        if (outError) *outError = "Specificare un identificatore dopo 'fairworld:'.";
+        return false;
+    }
+
+    if (body.length() > 64) {
+        if (outError) *outError = "Lunghezza String ID superiore al limite consentito (64 caratteri).";
+        return false;
+    }
+
+    for (char c : body) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (!std::isalnum(uc) && c != '_' && c != '-') {
+            if (outError) *outError = "Carattere non valido: sono ammessi solo caratteri alfanumerici, '_' e '-'.";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool BlockRegistry::IsBlockValid(uint8_t id) const {
+    if (id == 0) return true; // Air is reserved and valid
+    if (id >= 256) return false;
+    const auto& def = m_blocks[id];
+    return !def.stringId.empty() && def.stringId != "fairworld:unknown";
+}
+
+bool BlockRegistry::IsReservedBlock(uint8_t id) const {
+    return (id == 0); // Air is strictly reserved
+}
+
+bool BlockRegistry::IsStringIdTaken(const std::string& stringId, uint8_t excludeId) const {
+    std::string low = toLowerStr(stringId);
+    auto it = m_stringToIdMap.find(low);
+    if (it != m_stringToIdMap.end() && it->second != excludeId) {
+        return true;
+    }
+    it = m_stringToIdMap.find(stringId);
+    if (it != m_stringToIdMap.end() && it->second != excludeId) {
+        return true;
+    }
+    return false;
+}
+
+uint8_t BlockRegistry::FindFirstFreeSlot() const {
+    // Search forward from cursor to mitigate immediate reuse of recently freed IDs
+    for (int i = m_nextAllocSlot; i <= 255; ++i) {
+        if (m_blocks[i].stringId.empty() || m_blocks[i].stringId == "fairworld:unknown") {
+            return static_cast<uint8_t>(i);
+        }
+    }
+    // Wrap around to start if not found forward
+    for (int i = 1; i < m_nextAllocSlot; ++i) {
+        if (m_blocks[i].stringId.empty() || m_blocks[i].stringId == "fairworld:unknown") {
+            return static_cast<uint8_t>(i);
+        }
+    }
+    return 0; // Registro pieno
+}
+
+uint32_t BlockRegistry::GetActiveBlockCount() const {
+    uint32_t count = 0;
+    for (int i = 1; i < 256; ++i) {
+        if (IsBlockValid(static_cast<uint8_t>(i))) {
+            count++;
+        }
+    }
+    return count;
+}
+
+AssetOpResult BlockRegistry::CreateBlock(const std::string& stringId, const std::string& displayName) {
+    std::string sanitized = SanitizeStringId(stringId);
+    std::string valErr;
+    if (!ValidateStringId(sanitized, &valErr)) {
+        return { false, AssetValidationCode::InvalidCharacters, valErr, 0 };
+    }
+
+    if (IsStringIdTaken(sanitized)) {
+        return { false, AssetValidationCode::DuplicateStringId, "String ID gia' in uso da un altro blocco: " + sanitized, 0 };
+    }
+
+    uint8_t freeId = FindFirstFreeSlot();
+    if (freeId == 0) {
+        return { false, AssetValidationCode::RegistryFull, "Capacita' registro blocchi esaurita (limite 255 blocchi).", 0 };
+    }
+
+    SimBlockDef& def = m_blocks[freeId];
+    def.id = freeId;
+    def.stringId = sanitized;
+    def.displayName = displayName.empty() ? sanitized.substr(10) : displayName;
+
+    // Inizializzazione coerente di default
+    def.isSolid = true;
+    def.isTransparent = false;
+    def.physics.mass = 1.0f;
+    def.physics.density = 1000.0f;
+    def.physics.friction = 0.6f;
+    def.physics.restitution = 0.0f;
+    def.physics.collisionEnabled = true;
+    def.physics.motionType = BlockMotionType::Static;
+    def.physics.massMode = BlockMassMode::Manual;
+    def.SyncLegacyPhysicsFields();
+
+    def.thermal_resistance = 1.0f;
+    def.thermal_capacity = 1.0f;
+    def.lightEmissionLevel = 0.0f;
+
+    def.localPosition = glm::vec3(0.0f);
+    def.localRotation = glm::vec3(0.0f);
+    def.localScale = glm::vec3(1.0f);
+    def.pivotOffset = glm::vec3(0.0f);
+
+    m_stringToIdMap[sanitized] = freeId;
+    m_stringToIdMap[toLowerStr(sanitized)] = freeId;
+    m_nextAllocSlot = (freeId >= 255) ? 1 : static_cast<uint8_t>(freeId + 1);
+
+    return { true, AssetValidationCode::Success, "Blocco creato con successo.", freeId };
+}
+
+AssetOpResult BlockRegistry::DuplicateBlock(uint8_t sourceId, const std::string& newStringId, const std::string& newDisplayName) {
+    if (!IsBlockValid(sourceId)) {
+        return { false, AssetValidationCode::InvalidSourceId, "Blocco sorgente non valido o non inizializzato.", 0 };
+    }
+
+    const SimBlockDef& src = m_blocks[sourceId];
+    std::string targetStrId = newStringId;
+    if (targetStrId.empty()) {
+        std::string base = src.stringId + "_copy";
+        targetStrId = base;
+        int copyIndex = 2;
+        while (IsStringIdTaken(targetStrId)) {
+            targetStrId = base + std::to_string(copyIndex++);
+        }
+    } else {
+        targetStrId = SanitizeStringId(targetStrId);
+    }
+
+    std::string valErr;
+    if (!ValidateStringId(targetStrId, &valErr)) {
+        return { false, AssetValidationCode::InvalidCharacters, valErr, 0 };
+    }
+
+    if (IsStringIdTaken(targetStrId)) {
+        return { false, AssetValidationCode::DuplicateStringId, "String ID clone gia' in uso: " + targetStrId, 0 };
+    }
+
+    uint8_t freeId = FindFirstFreeSlot();
+    if (freeId == 0) {
+        return { false, AssetValidationCode::RegistryFull, "Capacita' registro blocchi esaurita per la duplicazione.", 0 };
+    }
+
+    // Copia profonda indipendente dei dati
+    SimBlockDef& clone = m_blocks[freeId];
+    clone = src; // copia profonda di tutte le proprietà
+    clone.id = freeId;
+    clone.stringId = targetStrId;
+    clone.displayName = newDisplayName.empty() ? (src.displayName + " (Copy)") : newDisplayName;
+    clone.SyncLegacyPhysicsFields();
+
+    m_stringToIdMap[targetStrId] = freeId;
+    m_stringToIdMap[toLowerStr(targetStrId)] = freeId;
+    m_nextAllocSlot = (freeId >= 255) ? 1 : static_cast<uint8_t>(freeId + 1);
+
+    return { true, AssetValidationCode::Success, "Blocco duplicato con successo.", freeId };
+}
+
+AssetOpResult BlockRegistry::RenameBlock(uint8_t id, const std::string& newStringId, const std::string& newDisplayName) {
+    if (id == 0) {
+        return { false, AssetValidationCode::ReservedBlockId, "Impossibile rinominare il blocco riservato 'fairworld:air'.", 0 };
+    }
+    if (!IsBlockValid(id)) {
+        return { false, AssetValidationCode::NotFound, "Blocco specificato non trovato o non inizializzato.", 0 };
+    }
+
+    std::string sanitized = SanitizeStringId(newStringId);
+    std::string valErr;
+    if (!ValidateStringId(sanitized, &valErr)) {
+        return { false, AssetValidationCode::InvalidCharacters, valErr, 0 };
+    }
+
+    if (IsStringIdTaken(sanitized, id)) {
+        return { false, AssetValidationCode::DuplicateStringId, "String ID gia' assegnato a un altro blocco: " + sanitized, 0 };
+    }
+
+    SimBlockDef& def = m_blocks[id];
+    std::string oldStrId = def.stringId;
+
+    m_stringToIdMap.erase(oldStrId);
+    m_stringToIdMap.erase(toLowerStr(oldStrId));
+
+    def.stringId = sanitized;
+    def.displayName = newDisplayName.empty() ? sanitized.substr(10) : newDisplayName;
+
+    m_stringToIdMap[sanitized] = id;
+    m_stringToIdMap[toLowerStr(sanitized)] = id;
+
+    return { true, AssetValidationCode::Success, "Blocco rinominato con successo.", id };
+}
+
+AssetOpResult BlockRegistry::DeleteBlock(uint8_t id) {
+    if (id == 0) {
+        return { false, AssetValidationCode::ReservedBlockId, "Impossibile eliminare il blocco riservato 'fairworld:air' (ID 0).", 0 };
+    }
+    if (!IsBlockValid(id)) {
+        return { false, AssetValidationCode::NotFound, "Blocco non trovato o gia' non allocato.", 0 };
+    }
+
+    SimBlockDef& def = m_blocks[id];
+    std::string oldStrId = def.stringId;
+
+    m_stringToIdMap.erase(oldStrId);
+    m_stringToIdMap.erase(toLowerStr(oldStrId));
+
+    // Reset completo dello slot a fallback
+    def = SimBlockDef();
+    def.id = id;
+    def.stringId = "fairworld:unknown";
+    def.displayName = "Unknown Block";
+    def.SyncLegacyPhysicsFields();
+
+    return { true, AssetValidationCode::Success, "Blocco eliminato con successo.", id };
+}
+
+uint8_t BlockRegistry::CreateNewBlock(const std::string& stringId, const std::string& displayName) {
+    auto res = CreateBlock(stringId, displayName);
+    return res.allocatedId;
 }
 
 void BlockRegistry::UpdateBlock(uint8_t id, const SimBlockDef& def) {
     if (id > 0 && id < 256) {
+        std::string oldStr = m_blocks[id].stringId;
+        if (!oldStr.empty() && oldStr != def.stringId) {
+            m_stringToIdMap.erase(oldStr);
+            m_stringToIdMap.erase(toLowerStr(oldStr));
+        }
         m_blocks[id] = def;
         m_blocks[id].id = id;
         m_stringToIdMap[def.stringId] = id;
+        m_stringToIdMap[toLowerStr(def.stringId)] = id;
     }
 }
 

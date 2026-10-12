@@ -11,6 +11,9 @@
 #include "MeshGenerators.h"
 #include "ShapeRegistry.h"
 #include "BlockRegistry.h"
+#include "blocks/factory/FactoryOrchestrator.h"
+#include "blocks/sculpt/EditableMesh.h"
+#include "blocks/sculpt/MeshSelectionService.h"
 struct SharedContext;
 
 class BlockMakerState : public State {
@@ -197,6 +200,126 @@ private:
     void RunAllFreezeGateTests(bool isManualTrigger = false);
 
     void RunMathValidationTests(bool isManualTrigger = false);
+
+    // --- BM-A4 Asset Management State & UI Controls ---
+    char m_blockFilter[64] = "";
+    char m_newBlockStringId[64] = "";
+    char m_newBlockDisplayName[64] = "";
+    bool m_showCreateDialog = false;
+    bool m_showDeleteConfirmDialog = false;
+    uint8_t m_blockPendingDelete = 0;
+    std::string m_assetOpFeedback;
+    float m_assetOpFeedbackTimer = 0.0f;
+    bool m_assetOpFeedbackIsError = false;
+
+    void SetAssetFeedback(const std::string& msg, bool isError = false);
+    void ExecuteCreateBlock(const std::string& stringId, const std::string& displayName);
+    void ExecuteDuplicateBlock(uint8_t sourceId);
+    void ExecuteDeleteBlock(uint8_t blockId);
+    void ExecuteRenameBlock(uint8_t blockId, const std::string& newStringId, const std::string& newDisplayName);
+
+    // --- BM-A4 Asset Management Validation (BM-A4.8) ---
+    struct AssetTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<AssetTestResult> m_assetTestResults;
+    bool m_assetTestsExecuted = false;
+    void RunAssetManagementValidationTests(bool isManualTrigger = false);
+
+    // --- BM-B Geometry System Validation (BM-B7: GM-1 .. GM-7) ---
+    struct GeometryTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<GeometryTestResult> m_geometryTestResults;
+    bool m_geometryTestsExecuted = false;
+    void RunGeometryValidationTests(bool isManualTrigger = false);
+
+    // --- BM-C UV & Surface System State & UI ---
+    int m_selectedSurfaceIndex = 0;
+    uint32_t m_lastMaterialRevision = 0;
+
+    // --- BM-C UV & Surface Validation (BM-C8: UV-1 .. UV-7) ---
+    struct UVTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<UVTestResult> m_uvTestResults;
+    bool m_uvTestsExecuted = false;
+    void RunUVValidationTests(bool isManualTrigger = false);
+
+    // --- BM-FC Factory Core System & Orchestrator ---
+    fw::FactoryOrchestrator m_factoryOrchestrator;
+    std::string m_factoryOpFeedback;
+    float m_factoryOpFeedbackTimer = 0.0f;
+    bool m_factoryOpFeedbackIsError = false;
+
+    // --- BM-FC Validation Suite (FC-1 .. FC-10) ---
+    struct FactoryTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<FactoryTestResult> m_factoryTestResults;
+    bool m_factoryTestsExecuted = false;
+    void RunFactoryCoreValidationTests(bool isManualTrigger = false);
+
+    // --- BM-S Sculpt & Modelling Validation Suite (SM-1 .. SM-10) ---
+    struct SculptTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<SculptTestResult> m_sculptTestResults;
+    bool m_sculptTestsExecuted = false;
+    void RunSculptValidationTests(bool isManualTrigger = false);
+
+    // --- BM-S3 Mesh Selection System & Controls ---
+    fw::MeshSelectionService m_selectionService;
+    fw::EditableMesh m_activeEditableMesh;
+    bool m_meshSelectionEnabled = false;
+    bool m_boxSelectActive = false;
+    glm::vec2 m_boxSelectStart{0.0f};
+
+    // --- BM-S3 Selection Validation Suite (SEL-1 .. SEL-10) ---
+    struct SelectionTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<SelectionTestResult> m_selectionTestResults;
+    bool m_selectionTestsExecuted = false;
+    void RunSelectionValidationTests(bool isManualTrigger = false);
+
+    void DrawMeshSelectionVisualFeedback();
 
     std::unique_ptr<fw::GameWorld> m_previewWorld;
 };

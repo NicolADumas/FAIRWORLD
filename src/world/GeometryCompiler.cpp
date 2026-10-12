@@ -2,6 +2,8 @@
 #include "GeometryCompiler.h"
 #include <cmath>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace fw {
 
@@ -38,6 +40,77 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
     std::vector<Vertex> vBuffer;
     std::vector<uint32_t> iBuffer;
 
+    struct SurfaceContext {
+        uint32_t materialId = 0;
+        UVProjectionMode projection = UVProjectionMode::Default;
+        UVTransform uvTransform;
+        bool hasPbrOverride = false;
+        glm::vec3 baseColor{1.0f};
+        float roughness = 1.0f;
+        float metallic = 0.0f;
+        float emissive = 0.0f;
+    };
+
+    auto resolveSurface = [&](uint32_t surfaceId) -> SurfaceContext {
+        SurfaceContext sc;
+        sc.materialId = options.defaultMaterialId;
+        sc.projection = options.defaultProjection;
+        if (options.defaultUVTransform) sc.uvTransform = *options.defaultUVTransform;
+        
+        if (options.surfaceOverrides) {
+            for (const auto& so : *options.surfaceOverrides) {
+                if (so.surfaceId == surfaceId) {
+                    if (so.useExplicitMaterial) sc.materialId = so.materialId;
+                    if (so.projection != UVProjectionMode::Default) sc.projection = so.projection;
+                    if (!so.uvTransform.IsIdentity()) sc.uvTransform = so.uvTransform;
+                    if (so.overridePbr) {
+                        sc.hasPbrOverride = true;
+                        sc.baseColor = so.baseColorFallback;
+                        sc.roughness = so.roughness;
+                        sc.metallic = so.metallic;
+                        sc.emissive = so.emissive;
+                    }
+                    break;
+                }
+            }
+        }
+        return sc;
+    };
+
+    auto createSurfVertex = [&](const glm::vec3& pos, const glm::vec3& norm, uint32_t surfaceId = 0, float paramHeight = 1.0f) -> Vertex {
+        SurfaceContext sc = resolveSurface(surfaceId);
+        
+        glm::vec2 rawUv(0.0f);
+        if (sc.projection == UVProjectionMode::Cylindrical) {
+            rawUv = CalculateCylindricalUV(pos, paramHeight, surfaceId);
+        } else if (sc.projection == UVProjectionMode::Spherical) {
+            rawUv = CalculateSphericalUV(norm);
+        } else {
+            rawUv = CalculatePlanarUV(pos, norm);
+        }
+
+        glm::vec2 finalUv = sc.uvTransform.Transform(rawUv);
+
+        Vertex v{};
+        v.position = {pos.x, pos.y, pos.z};
+        glm::vec3 n = glm::normalize(norm);
+        v.normal = {n.x, n.y, n.z};
+        v.materialID = sc.materialId;
+        v.ao = 1.0f;
+        v.light = 1.0f;
+
+        if (sc.hasPbrOverride) {
+            v.color = {sc.baseColor.x, sc.baseColor.y, sc.baseColor.z, 1.0f};
+            v.roughMetal = {sc.roughness, sc.metallic};
+            v.emissive = sc.emissive;
+        } else {
+            v.color = {1.0f, 1.0f, 1.0f, 1.0f};
+            v.roughMetal = {finalUv.x, finalUv.y};
+            v.emissive = 0.0f;
+        }
+        return v;
+    };
+
     auto addTri = [&](uint32_t a, uint32_t b, uint32_t c) {
         iBuffer.push_back(a);
         iBuffer.push_back(b);
@@ -47,6 +120,25 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
     auto addQuad = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
         addTri(a, b, c);
         addTri(a, c, d);
+    };
+
+    auto addTriFace = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t surfaceId, const glm::vec3& faceNorm) {
+        addTri(a, b, c);
+        Face f;
+        f.indices = {(int)a, (int)b, (int)c};
+        f.faceNormal = {faceNorm.x, faceNorm.y, faceNorm.z};
+        f.matIndex = (int)surfaceId;
+        result.mesh.faces.push_back(f);
+    };
+
+    auto addQuadFace = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t surfaceId, const glm::vec3& faceNorm) {
+        addTri(a, b, c);
+        addTri(a, c, d);
+        Face f;
+        f.indices = {(int)a, (int)b, (int)c, (int)a, (int)c, (int)d};
+        f.faceNormal = {faceNorm.x, faceNorm.y, faceNorm.z};
+        f.matIndex = (int)surfaceId;
+        result.mesh.faces.push_back(f);
     };
 
     if (definition.type == ShapeType::Cube) {
@@ -59,18 +151,18 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
             {-h,-h,h},  {h,-h,h},  {h,h,h},  {-h,h,h}
         };
         uint32_t idx = 0;
-        // -Z
-        vBuffer.push_back(CreateVertex(p[0], n[0])); vBuffer.push_back(CreateVertex(p[1], n[0])); vBuffer.push_back(CreateVertex(p[2], n[0])); vBuffer.push_back(CreateVertex(p[3], n[0])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // +Z
-        vBuffer.push_back(CreateVertex(p[5], n[1])); vBuffer.push_back(CreateVertex(p[4], n[1])); vBuffer.push_back(CreateVertex(p[7], n[1])); vBuffer.push_back(CreateVertex(p[6], n[1])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // -X
-        vBuffer.push_back(CreateVertex(p[4], n[2])); vBuffer.push_back(CreateVertex(p[0], n[2])); vBuffer.push_back(CreateVertex(p[3], n[2])); vBuffer.push_back(CreateVertex(p[7], n[2])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // +X
-        vBuffer.push_back(CreateVertex(p[1], n[3])); vBuffer.push_back(CreateVertex(p[5], n[3])); vBuffer.push_back(CreateVertex(p[6], n[3])); vBuffer.push_back(CreateVertex(p[2], n[3])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // -Y
-        vBuffer.push_back(CreateVertex(p[4], n[4])); vBuffer.push_back(CreateVertex(p[5], n[4])); vBuffer.push_back(CreateVertex(p[1], n[4])); vBuffer.push_back(CreateVertex(p[0], n[4])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // +Y
-        vBuffer.push_back(CreateVertex(p[3], n[5])); vBuffer.push_back(CreateVertex(p[2], n[5])); vBuffer.push_back(CreateVertex(p[6], n[5])); vBuffer.push_back(CreateVertex(p[7], n[5])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
+        // -Z (Surface 0)
+        vBuffer.push_back(createSurfVertex(p[0], n[0], 0)); vBuffer.push_back(createSurfVertex(p[1], n[0], 0)); vBuffer.push_back(createSurfVertex(p[2], n[0], 0)); vBuffer.push_back(createSurfVertex(p[3], n[0], 0)); addQuadFace(idx, idx+1, idx+2, idx+3, 0, n[0]); idx+=4;
+        // +Z (Surface 1)
+        vBuffer.push_back(createSurfVertex(p[5], n[1], 1)); vBuffer.push_back(createSurfVertex(p[4], n[1], 1)); vBuffer.push_back(createSurfVertex(p[7], n[1], 1)); vBuffer.push_back(createSurfVertex(p[6], n[1], 1)); addQuadFace(idx, idx+1, idx+2, idx+3, 1, n[1]); idx+=4;
+        // -X (Surface 2)
+        vBuffer.push_back(createSurfVertex(p[4], n[2], 2)); vBuffer.push_back(createSurfVertex(p[0], n[2], 2)); vBuffer.push_back(createSurfVertex(p[3], n[2], 2)); vBuffer.push_back(createSurfVertex(p[7], n[2], 2)); addQuadFace(idx, idx+1, idx+2, idx+3, 2, n[2]); idx+=4;
+        // +X (Surface 3)
+        vBuffer.push_back(createSurfVertex(p[1], n[3], 3)); vBuffer.push_back(createSurfVertex(p[5], n[3], 3)); vBuffer.push_back(createSurfVertex(p[6], n[3], 3)); vBuffer.push_back(createSurfVertex(p[2], n[3], 3)); addQuadFace(idx, idx+1, idx+2, idx+3, 3, n[3]); idx+=4;
+        // -Y (Surface 4)
+        vBuffer.push_back(createSurfVertex(p[4], n[4], 4)); vBuffer.push_back(createSurfVertex(p[5], n[4], 4)); vBuffer.push_back(createSurfVertex(p[1], n[4], 4)); vBuffer.push_back(createSurfVertex(p[0], n[4], 4)); addQuadFace(idx, idx+1, idx+2, idx+3, 4, n[4]); idx+=4;
+        // +Y (Surface 5)
+        vBuffer.push_back(createSurfVertex(p[3], n[5], 5)); vBuffer.push_back(createSurfVertex(p[2], n[5], 5)); vBuffer.push_back(createSurfVertex(p[6], n[5], 5)); vBuffer.push_back(createSurfVertex(p[7], n[5], 5)); addQuadFace(idx, idx+1, idx+2, idx+3, 5, n[5]); idx+=4;
     }
     else if (definition.type == ShapeType::Cuboid || definition.type == ShapeType::Parallelepiped) {
         glm::vec3 vx={1,0,0}, vy={0,1,0}, vz={0,0,1};
@@ -89,18 +181,18 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
                            glm::normalize(glm::cross(vy, vz)), glm::normalize(glm::cross(vz, vy)), 
                            glm::normalize(glm::cross(vx, vz)), glm::normalize(glm::cross(vz, vx)) };
         uint32_t idx = 0;
-        // Front (-Z)
-        vBuffer.push_back(CreateVertex(p[0], n[0])); vBuffer.push_back(CreateVertex(p[1], n[0])); vBuffer.push_back(CreateVertex(p[3], n[0])); vBuffer.push_back(CreateVertex(p[2], n[0])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // Back (+Z)
-        vBuffer.push_back(CreateVertex(p[5], n[1])); vBuffer.push_back(CreateVertex(p[4], n[1])); vBuffer.push_back(CreateVertex(p[6], n[1])); vBuffer.push_back(CreateVertex(p[7], n[1])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // Left (-X)
-        vBuffer.push_back(CreateVertex(p[4], n[2])); vBuffer.push_back(CreateVertex(p[0], n[2])); vBuffer.push_back(CreateVertex(p[2], n[2])); vBuffer.push_back(CreateVertex(p[6], n[2])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // Right (+X)
-        vBuffer.push_back(CreateVertex(p[1], n[3])); vBuffer.push_back(CreateVertex(p[5], n[3])); vBuffer.push_back(CreateVertex(p[7], n[3])); vBuffer.push_back(CreateVertex(p[3], n[3])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // Bottom (-Y)
-        vBuffer.push_back(CreateVertex(p[4], n[4])); vBuffer.push_back(CreateVertex(p[5], n[4])); vBuffer.push_back(CreateVertex(p[1], n[4])); vBuffer.push_back(CreateVertex(p[0], n[4])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
-        // Top (+Y)
-        vBuffer.push_back(CreateVertex(p[2], n[5])); vBuffer.push_back(CreateVertex(p[3], n[5])); vBuffer.push_back(CreateVertex(p[7], n[5])); vBuffer.push_back(CreateVertex(p[6], n[5])); addQuad(idx, idx+1, idx+2, idx+3); idx+=4;
+        // Front (-Z, Surface 0)
+        vBuffer.push_back(createSurfVertex(p[0], n[0], 0)); vBuffer.push_back(createSurfVertex(p[1], n[0], 0)); vBuffer.push_back(createSurfVertex(p[3], n[0], 0)); vBuffer.push_back(createSurfVertex(p[2], n[0], 0)); addQuadFace(idx, idx+1, idx+2, idx+3, 0, n[0]); idx+=4;
+        // Back (+Z, Surface 1)
+        vBuffer.push_back(createSurfVertex(p[5], n[1], 1)); vBuffer.push_back(createSurfVertex(p[4], n[1], 1)); vBuffer.push_back(createSurfVertex(p[6], n[1], 1)); vBuffer.push_back(createSurfVertex(p[7], n[1], 1)); addQuadFace(idx, idx+1, idx+2, idx+3, 1, n[1]); idx+=4;
+        // Left (-X, Surface 2)
+        vBuffer.push_back(createSurfVertex(p[4], n[2], 2)); vBuffer.push_back(createSurfVertex(p[0], n[2], 2)); vBuffer.push_back(createSurfVertex(p[2], n[2], 2)); vBuffer.push_back(createSurfVertex(p[6], n[2], 2)); addQuadFace(idx, idx+1, idx+2, idx+3, 2, n[2]); idx+=4;
+        // Right (+X, Surface 3)
+        vBuffer.push_back(createSurfVertex(p[1], n[3], 3)); vBuffer.push_back(createSurfVertex(p[5], n[3], 3)); vBuffer.push_back(createSurfVertex(p[7], n[3], 3)); vBuffer.push_back(createSurfVertex(p[3], n[3], 3)); addQuadFace(idx, idx+1, idx+2, idx+3, 3, n[3]); idx+=4;
+        // Bottom (-Y, Surface 4)
+        vBuffer.push_back(createSurfVertex(p[4], n[4], 4)); vBuffer.push_back(createSurfVertex(p[5], n[4], 4)); vBuffer.push_back(createSurfVertex(p[1], n[4], 4)); vBuffer.push_back(createSurfVertex(p[0], n[4], 4)); addQuadFace(idx, idx+1, idx+2, idx+3, 4, n[4]); idx+=4;
+        // Top (+Y, Surface 5)
+        vBuffer.push_back(createSurfVertex(p[2], n[5], 5)); vBuffer.push_back(createSurfVertex(p[3], n[5], 5)); vBuffer.push_back(createSurfVertex(p[7], n[5], 5)); vBuffer.push_back(createSurfVertex(p[6], n[5], 5)); addQuadFace(idx, idx+1, idx+2, idx+3, 5, n[5]); idx+=4;
     }
     else if (definition.type == ShapeType::Cylinder || definition.type == ShapeType::Cone || definition.type == ShapeType::ConeFrustum) {
         float rTop = 1.0f, rBot = 1.0f, h = 1.0f;
@@ -126,28 +218,28 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
             glm::vec3 sn1 = glm::normalize(glm::vec3(n1.x, slope, n1.z));
             glm::vec3 sn2 = glm::normalize(glm::vec3(n2.x, slope, n2.z));
             
-            uint32_t idx = vBuffer.size();
-            vBuffer.push_back(CreateVertex(glm::vec3(n1.x*rBot, -halfH, n1.z*rBot), sn1));
-            vBuffer.push_back(CreateVertex(glm::vec3(n2.x*rBot, -halfH, n2.z*rBot), sn2));
-            vBuffer.push_back(CreateVertex(glm::vec3(n2.x*rTop,  halfH, n2.z*rTop), sn2));
-            vBuffer.push_back(CreateVertex(glm::vec3(n1.x*rTop,  halfH, n1.z*rTop), sn1));
-            if (rTop == 0.0f) { addTri(idx, idx+1, idx+2); }
-            else { addQuad(idx, idx+1, idx+2, idx+3); }
+            uint32_t idx = (uint32_t)vBuffer.size();
+            vBuffer.push_back(createSurfVertex(glm::vec3(n1.x*rBot, -halfH, n1.z*rBot), sn1, 0, h));
+            vBuffer.push_back(createSurfVertex(glm::vec3(n2.x*rBot, -halfH, n2.z*rBot), sn2, 0, h));
+            vBuffer.push_back(createSurfVertex(glm::vec3(n2.x*rTop,  halfH, n2.z*rTop), sn2, 0, h));
+            vBuffer.push_back(createSurfVertex(glm::vec3(n1.x*rTop,  halfH, n1.z*rTop), sn1, 0, h));
+            if (rTop == 0.0f) { addTriFace(idx, idx+1, idx+2, 0, sn1); }
+            else { addQuadFace(idx, idx+1, idx+2, idx+3, 0, sn1); }
 
             // Caps
             if (rBot > 0.0f) {
-                uint32_t bIdx = vBuffer.size();
-                vBuffer.push_back(CreateVertex(glm::vec3(0, -halfH, 0), glm::vec3(0,-1,0)));
-                vBuffer.push_back(CreateVertex(glm::vec3(n2.x*rBot, -halfH, n2.z*rBot), glm::vec3(0,-1,0)));
-                vBuffer.push_back(CreateVertex(glm::vec3(n1.x*rBot, -halfH, n1.z*rBot), glm::vec3(0,-1,0)));
-                addTri(bIdx, bIdx+1, bIdx+2);
+                uint32_t bIdx = (uint32_t)vBuffer.size();
+                vBuffer.push_back(createSurfVertex(glm::vec3(0, -halfH, 0), glm::vec3(0,-1,0), 2, h));
+                vBuffer.push_back(createSurfVertex(glm::vec3(n2.x*rBot, -halfH, n2.z*rBot), glm::vec3(0,-1,0), 2, h));
+                vBuffer.push_back(createSurfVertex(glm::vec3(n1.x*rBot, -halfH, n1.z*rBot), glm::vec3(0,-1,0), 2, h));
+                addTriFace(bIdx, bIdx+1, bIdx+2, 2, glm::vec3(0,-1,0));
             }
             if (rTop > 0.0f) {
-                uint32_t tIdx = vBuffer.size();
-                vBuffer.push_back(CreateVertex(glm::vec3(0, halfH, 0), glm::vec3(0,1,0)));
-                vBuffer.push_back(CreateVertex(glm::vec3(n1.x*rTop, halfH, n1.z*rTop), glm::vec3(0,1,0)));
-                vBuffer.push_back(CreateVertex(glm::vec3(n2.x*rTop, halfH, n2.z*rTop), glm::vec3(0,1,0)));
-                addTri(tIdx, tIdx+1, tIdx+2);
+                uint32_t tIdx = (uint32_t)vBuffer.size();
+                vBuffer.push_back(createSurfVertex(glm::vec3(0, halfH, 0), glm::vec3(0,1,0), 1, h));
+                vBuffer.push_back(createSurfVertex(glm::vec3(n1.x*rTop, halfH, n1.z*rTop), glm::vec3(0,1,0), 1, h));
+                vBuffer.push_back(createSurfVertex(glm::vec3(n2.x*rTop, halfH, n2.z*rTop), glm::vec3(0,1,0), 1, h));
+                addTriFace(tIdx, tIdx+1, tIdx+2, 1, glm::vec3(0,1,0));
             }
         }
     }
@@ -745,6 +837,66 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
             addTri(st, st+1, st+2);
         }
     }
+    else if (definition.type == ShapeType::TriangleMesh) {
+        const auto* p = std::get_if<ShapeParamsTriangleMesh>(&definition.parameters);
+        if (p && !p->vertices.empty() && p->indices.size() >= 3) {
+            for (size_t i = 0; i + 2 < p->indices.size(); i += 3) {
+                uint32_t i0 = p->indices[i];
+                uint32_t i1 = p->indices[i + 1];
+                uint32_t i2 = p->indices[i + 2];
+                if (i0 < p->vertices.size() && i1 < p->vertices.size() && i2 < p->vertices.size()) {
+                    glm::vec3 v0 = p->vertices[i0];
+                    glm::vec3 v1 = p->vertices[i1];
+                    glm::vec3 v2 = p->vertices[i2];
+                    glm::vec3 normal = glm::cross(v1 - v0, v2 - v0);
+                    float len = glm::length(normal);
+                    if (len > 1e-6f) normal /= len; else normal = glm::vec3(0, 1, 0);
+
+                    uint32_t cur = (uint32_t)vBuffer.size();
+                    vBuffer.push_back(CreateVertex(v0, normal));
+                    vBuffer.push_back(CreateVertex(v1, normal));
+                    vBuffer.push_back(CreateVertex(v2, normal));
+                    addTri(cur, cur + 1, cur + 2);
+                }
+            }
+        } else {
+            result.success = false;
+            result.errorMessage = "TriangleMesh parameters empty or invalid.";
+            return result;
+        }
+    }
+    else if (definition.type == ShapeType::Compound) {
+        const auto* p = std::get_if<ShapeParamsCompound>(&definition.parameters);
+        if (p && options.shapeRegistry && options.recursionDepth < 8) {
+            GeometryCompileOptions childOptions = options;
+            childOptions.recursionDepth++;
+            for (const auto& child : p->children) {
+                const auto* childDef = options.shapeRegistry->GetShapeDef(child.handle);
+                if (childDef) {
+                    auto childRes = GeometryCompiler::Compile(*childDef, childOptions);
+                    if (childRes.success) {
+                        glm::mat4 childMat = glm::translate(glm::mat4(1.0f), child.position) *
+                                             glm::mat4_cast(child.rotation) *
+                                             glm::scale(glm::mat4(1.0f), child.scale);
+                        glm::mat3 normMat = glm::transpose(glm::inverse(glm::mat3(childMat)));
+                        uint32_t baseIdx = (uint32_t)vBuffer.size();
+                        for (const auto& cv : childRes.mesh.vertices) {
+                            glm::vec4 tp = childMat * glm::vec4(cv.position.x, cv.position.y, cv.position.z, 1.0f);
+                            glm::vec3 tn = glm::normalize(normMat * glm::vec3(cv.normal.x, cv.normal.y, cv.normal.z));
+                            vBuffer.push_back(CreateVertex(glm::vec3(tp), tn));
+                        }
+                        for (size_t k = 0; k < childRes.mesh.vertices.size(); ++k) {
+                            iBuffer.push_back(baseIdx + (uint32_t)k);
+                        }
+                    }
+                }
+            }
+        } else {
+            result.success = false;
+            result.errorMessage = "Compound compilation requires valid ShapeRegistry context.";
+            return result;
+        }
+    }
     else {
         result.success = false;
         result.errorMessage = "ShapeType compilation not implemented.";
@@ -758,10 +910,12 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
         }
     }
     
-    // Explicitly set the face list for completeness just in case some other renderer wants it
-    Face f;
-    f.indices = std::vector<int>(iBuffer.begin(), iBuffer.end());
-    result.mesh.faces.push_back(f);
+    // Explicitly set the face list if semantic faces were not recorded
+    if (result.mesh.faces.empty()) {
+        Face f;
+        f.indices = std::vector<int>(iBuffer.begin(), iBuffer.end());
+        result.mesh.faces.push_back(f);
+    }
 
     result.success = true;
     return result;

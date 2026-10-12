@@ -88,6 +88,24 @@ struct SimBlockDef {
     glm::vec3 pivotOffset{0.0f, 0.0f, 0.0f};  // Asset-local pivot offset relative to shape canonical center
 };
 
+enum class AssetValidationCode : uint8_t {
+    Success = 0,
+    EmptyStringId,
+    InvalidCharacters,
+    DuplicateStringId,
+    RegistryFull,
+    InvalidSourceId,
+    ReservedBlockId,
+    NotFound
+};
+
+struct AssetOpResult {
+    bool success = false;
+    AssetValidationCode code = AssetValidationCode::Success;
+    std::string message;
+    uint8_t allocatedId = 0;
+};
+
 class BlockRegistry {
 public:
     BlockRegistry();
@@ -97,7 +115,29 @@ public:
     bool LoadFromJson(const std::string& filepath);
     bool SaveToJson(const std::string& filepath);
 
-    // Creates a new block definition and returns its ID
+    // Asset Management Operations (BM-A4)
+    static std::string SanitizeStringId(const std::string& input);
+    static bool ValidateStringId(const std::string& input, std::string* outError = nullptr);
+
+    bool IsBlockValid(uint8_t id) const;
+    bool IsReservedBlock(uint8_t id) const;
+    bool IsStringIdTaken(const std::string& stringId, uint8_t excludeId = 0) const;
+    uint8_t FindFirstFreeSlot() const;
+    uint32_t GetActiveBlockCount() const;
+
+    // Creates a new block definition and returns operation result
+    AssetOpResult CreateBlock(const std::string& stringId, const std::string& displayName);
+
+    // Duplicates an existing block definition (BM-A4.2)
+    AssetOpResult DuplicateBlock(uint8_t sourceId, const std::string& newStringId = "", const std::string& newDisplayName = "");
+
+    // Renames an existing block definition (BM-A4.3)
+    AssetOpResult RenameBlock(uint8_t id, const std::string& newStringId, const std::string& newDisplayName);
+
+    // Deletes an existing block definition (BM-A4.4)
+    AssetOpResult DeleteBlock(uint8_t id);
+
+    // Legacy overload for backward compatibility
     uint8_t CreateNewBlock(const std::string& stringId, const std::string& displayName);
     
     // Updates an existing definition
@@ -118,6 +158,9 @@ private:
     
     // Fallback block if an invalid ID is requested
     SimBlockDef m_fallbackBlock;
+
+    // Quasi-monotonic cursor to minimize risk of immediate ID reuse on delete/create
+    mutable uint8_t m_nextAllocSlot = 1;
 };
 
 } // namespace fw
