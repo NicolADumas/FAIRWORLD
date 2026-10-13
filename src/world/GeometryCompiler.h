@@ -25,9 +25,12 @@ struct GeometryCompileResult {
     MeshComponent mesh;
 };
 
+class EditableMesh;
+
 class GeometryCompiler {
 public:
     static GeometryCompileResult Compile(const ShapeDefinition& definition, const GeometryCompileOptions& options = {});
+    static GeometryCompileResult CompileEditableMesh(const EditableMesh& mesh, const GeometryCompileOptions& options = {});
 
 private:
     static void AddQuad(MeshComponent& mesh, int v0, int v1, int v2, int v3, const glm::vec3& normal);

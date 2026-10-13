@@ -57,6 +57,19 @@ struct UVTransform {
     }
 };
 
+// BM-TX2.7: Surface Texture Binding Contract (per-surface texture maps)
+struct SurfaceTextureBinding {
+    std::string albedoMapPath;
+    std::string normalMapPath;
+    std::string ormMapPath;
+    std::string emissiveMapPath;
+    bool useExplicitTextures = false;
+
+    bool HasTextures() const {
+        return useExplicitTextures && (!albedoMapPath.empty() || !normalMapPath.empty() || !ormMapPath.empty() || !emissiveMapPath.empty());
+    }
+};
+
 // BM-C2 & BM-C5: Surface Material & Mapping Contract
 struct SurfaceOverride {
     uint32_t surfaceId = 0;              // Semantic surface identifier (0..N-1)
@@ -71,10 +84,13 @@ struct SurfaceOverride {
     float roughness = 1.0f;
     float metallic = 0.0f;
     float emissive = 0.0f;
+
+    // BM-TX2.7: Texture maps per-superficie opzionali
+    SurfaceTextureBinding textures;
 };
 
-// Semantic surface definitions for standard primitives
-enum class CubeFace : uint32_t {
+// Semantic surface definitions for standard primitives (BM-C: Asset-specific cube faces, distinctly typed from PlanetMath CubeFace)
+enum class AssetCubeFace : uint32_t {
     Back = 0,    // -Z
     Front = 1,   // +Z
     Left = 2,    // -X
@@ -230,6 +246,15 @@ inline void to_json(nlohmann::json& j, const SurfaceOverride& s) {
         {"metallic", s.metallic},
         {"emissive", s.emissive}
     };
+    if (s.textures.HasTextures()) {
+        j["textures"] = {
+            {"albedo", s.textures.albedoMapPath},
+            {"normal", s.textures.normalMapPath},
+            {"orm", s.textures.ormMapPath},
+            {"emissive", s.textures.emissiveMapPath},
+            {"useExplicit", s.textures.useExplicitTextures}
+        };
+    }
 }
 
 inline void from_json(const nlohmann::json& j, SurfaceOverride& s) {
@@ -247,6 +272,14 @@ inline void from_json(const nlohmann::json& j, SurfaceOverride& s) {
     s.roughness = j.value("roughness", 1.0f);
     s.metallic = j.value("metallic", 0.0f);
     s.emissive = j.value("emissive", 0.0f);
+    if (j.contains("textures")) {
+        const auto& jt = j["textures"];
+        s.textures.albedoMapPath = jt.value("albedo", "");
+        s.textures.normalMapPath = jt.value("normal", "");
+        s.textures.ormMapPath = jt.value("orm", "");
+        s.textures.emissiveMapPath = jt.value("emissive", "");
+        s.textures.useExplicitTextures = jt.value("useExplicit", false);
+    }
 }
 
 } // namespace fw

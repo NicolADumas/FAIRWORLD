@@ -6,6 +6,11 @@
 #include "blocks/MaterialRegistry.h"
 #include "blocks/BlockRegistry.h"
 #include "blocks/SurfaceDefinition.h"
+#include "blocks/texture/ImageBitmap.h"
+#include "blocks/texture/PBRTexturePack.h"
+#include "blocks/texture/TextureAsset.h"
+#include "blocks/uv/PrimitiveUVMapper.h"
+#include "blocks/sculpt/MeshBridgeService.h"
 #include <filesystem>
 #include <cmath>
 
@@ -88,40 +93,89 @@ private:
 };
 
 // =============================================================================
-// 2. SCULPT STATION ADAPTER (NOT_IMPLEMENTED in Phase 1 -> BM-S)
+// 2. SCULPT STATION ADAPTER (BM-S9)
 // =============================================================================
 class SculptStationAdapter : public IProductionStation {
 public:
     ProductionStationID GetID() const override { return ProductionStationID::Sculpt; }
     const char* GetName() const override { return "Sculpt Station"; }
-    const char* GetDescription() const override { return "Deformazione mesh e scultura volumetrica (Pianificata in BM-S)."; }
+    const char* GetDescription() const override { return "Deformazione mesh e scultura volumetrica CPU-authoritative."; }
 
     std::vector<ProductionStationID> GetPrerequisiteStations() const override {
         return { ProductionStationID::Shape };
     }
     std::vector<StationRequirement> GetRequiredInputs() const override {
-        return { {"MeshGeometry", true} };
+        return { {"EditableMesh", false} };
     }
     std::vector<StationArtifact> GetProducedOutputs() const override {
-        return { {"SculptedMesh", "EditableMesh"} };
+        return { {"SculptedMesh", "EditableMesh"}, {"CompiledPreview", "MeshComponent"} };
     }
 
-    StationStatus GetStatus() const override { return StationStatus::NotImplemented; }
-    uint64_t GetLastProcessedRevision() const override { return 0; }
+    StationStatus GetStatus() const override { return m_status; }
+    uint64_t GetLastProcessedRevision() const override { return m_lastRevision; }
     const StationDiagnostic& GetDiagnostic() const override { return m_diagnostic; }
 
-    bool IsImplemented() const override { return false; }
-    bool CanExecute(const StationContext&) const override { return false; }
-    bool Execute(StationContext&) override {
-        m_diagnostic.Clear();
-        m_diagnostic.warnings.push_back("Sculpt Station e' pianificata per la fase successiva (BM-S).");
-        return false;
+    bool IsImplemented() const override { return true; }
+    bool CanExecute(const StationContext& context) const override {
+        return context.draft.sculptMesh.has_value() || context.draft.shape.type != ShapeType::None;
     }
-    void Invalidate() override {}
-    void Reset() override {}
+
+    bool Execute(StationContext& context) override {
+        m_diagnostic.Clear();
+        m_status = StationStatus::Processing;
+
+        // Se il draft non possiede ancora una EditableMesh, inizializzala a cubo base di default
+        if (!context.draft.sculptMesh.has_value()) {
+            context.draft.sculptMesh = EditableMesh::CreateCube(1.0f);
+        }
+
+        // 1. Validazione topologica della mesh
+        auto valReport = context.draft.sculptMesh->ValidateTopology();
+        if (!valReport.isValid) {
+            for (const auto& err : valReport.errors) {
+                m_diagnostic.errors.push_back("Errore topologico Sculpt: " + err);
+            }
+            m_status = StationStatus::Failed;
+            return false;
+        }
+
+        for (const auto& warn : valReport.warnings) {
+            m_diagnostic.warnings.push_back("Warning topologico Sculpt: " + warn);
+        }
+
+        // 2. Compilazione di test verso GeometryCompiler
+        GeometryCompileOptions opts;
+        opts.surfaceOverrides = &context.draft.surfaces;
+        opts.defaultUVTransform = &context.draft.baseUVTransform;
+        opts.defaultProjection = context.draft.baseProjection;
+
+        auto compRes = GeometryCompiler::CompileEditableMesh(*context.draft.sculptMesh, opts);
+        if (!compRes.success) {
+            m_diagnostic.errors.push_back("Compilazione geometrica Sculpt fallita: " + compRes.errorMessage);
+            m_status = StationStatus::Failed;
+            return false;
+        }
+
+        m_lastRevision = context.draft.manifest.revision;
+        m_status = StationStatus::Completed;
+        context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::Sculpt));
+        return true;
+    }
+
+    void Invalidate() override {
+        m_status = StationStatus::Dirty;
+    }
+
+    void Reset() override {
+        m_status = StationStatus::Uninitialized;
+        m_diagnostic.Clear();
+        m_lastRevision = 0;
+    }
 
 private:
-    mutable StationDiagnostic m_diagnostic;
+    StationStatus m_status = StationStatus::Uninitialized;
+    StationDiagnostic m_diagnostic;
+    uint64_t m_lastRevision = 0;
 };
 
 // =============================================================================
@@ -131,7 +185,7 @@ class SurfaceUVStationAdapter : public IProductionStation {
 public:
     ProductionStationID GetID() const override { return ProductionStationID::SurfaceUV; }
     const char* GetName() const override { return "Surface & UV Station"; }
-    const char* GetDescription() const override { return "Sezionamento delle superfici semantiche e coordinate di mappatura UV."; }
+    const char* GetDescription() const override { return "Sezionamento delle superfici semantiche e coordinate di mappatura UV (BM-UV2)."; }
 
     std::vector<ProductionStationID> GetPrerequisiteStations() const override {
         return { ProductionStationID::Shape };
@@ -140,12 +194,17 @@ public:
         return { {"ShapeDefinition", true} };
     }
     std::vector<StationArtifact> GetProducedOutputs() const override {
-        return { {"SurfaceOverrides", "std::vector<SurfaceOverride>"}, {"UVTransforms", "UVTransform"} };
+        return { 
+            {"SurfaceOverrides", "std::vector<SurfaceOverride>"}, 
+            {"UVTransforms", "UVTransform"},
+            {"UVLayout", "UVLayout"}
+        };
     }
 
     StationStatus GetStatus() const override { return m_status; }
     uint64_t GetLastProcessedRevision() const override { return m_lastRevision; }
     const StationDiagnostic& GetDiagnostic() const override { return m_diagnostic; }
+    bool IsImplemented() const override { return true; }
 
     bool CanExecute(const StationContext& context) const override {
         return (context.draft.completedStationsMask & (1u << static_cast<uint8_t>(ProductionStationID::Shape))) != 0;
@@ -168,6 +227,31 @@ public:
             }
         }
 
+        // BM-UV2: Generazione autoritativa del layout UV su EditableMesh
+        EditableMesh workMesh;
+        if (context.draft.sculptMesh.has_value()) {
+            workMesh = *context.draft.sculptMesh;
+        } else {
+            workMesh = MeshBridgeService::CreateMeshFromShape(context.draft.shape);
+        }
+
+        PrimitiveUVOptions opt;
+        opt.markSeamEdges = true;
+        auto mapRes = m_uvMapper.AnalyzeAndMap(workMesh, context.draft.shape.type, context.draft.shape.parameters, opt);
+
+        context.draft.uvLayout = mapRes.layout;
+        context.draft.uvRevision = mapRes.layout.uvRevision;
+
+        if (mapRes.status == PrimitiveMappingStatus::NEEDS_BM_UV3) {
+            m_diagnostic.warnings.push_back("Forma complessa: richiede solver generale BM-UV3. Applicato fallback.");
+        } else if (mapRes.status == PrimitiveMappingStatus::UNSUPPORTED_MAPPING) {
+            m_diagnostic.warnings.push_back("Forma volumetrica non parametrizzabile analiticamente.");
+        }
+
+        for (const auto& w : mapRes.validation.warnings) {
+            m_diagnostic.warnings.push_back(w);
+        }
+
         m_lastRevision = context.draft.manifest.revision;
         m_status = StationStatus::Completed;
         context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::SurfaceUV));
@@ -181,57 +265,147 @@ private:
     StationStatus m_status = StationStatus::Uninitialized;
     StationDiagnostic m_diagnostic;
     uint64_t m_lastRevision = 0;
+    PrimitiveUVMapper m_uvMapper;
 };
 
 // =============================================================================
 // 4. TEXTURE STATION ADAPTER (BM-FC6)
 // =============================================================================
+// 4. TEXTURE STATION ADAPTER (BM-TX2)
+// =============================================================================
 class TextureStationAdapter : public IProductionStation {
 public:
     ProductionStationID GetID() const override { return ProductionStationID::Texture; }
     const char* GetName() const override { return "Texture Station"; }
-    const char* GetDescription() const override { return "Verifica presenza e binding dei file texture (Albedo, Normal, ORM)."; }
+    const char* GetDescription() const override { return "Importazione, normalizzazione e binding delle mappe texture PBR (BM-TX2)."; }
 
     std::vector<ProductionStationID> GetPrerequisiteStations() const override { return {}; }
     std::vector<StationRequirement> GetRequiredInputs() const override { return {}; }
     std::vector<StationArtifact> GetProducedOutputs() const override {
-        return { {"TextureFileBindings", "FilePaths"} };
+        return { 
+            {"PBRTexturePack", "PBRTexturePack"},
+            {"TextureFileBindings", "FilePaths"} 
+        };
     }
 
     StationStatus GetStatus() const override { return m_status; }
     uint64_t GetLastProcessedRevision() const override { return m_lastRevision; }
     const StationDiagnostic& GetDiagnostic() const override { return m_diagnostic; }
 
+    bool IsImplemented() const override { return true; }
     bool CanExecute(const StationContext&) const override { return true; }
 
     bool Execute(StationContext& context) override {
         m_diagnostic.Clear();
         m_status = StationStatus::Processing;
 
-        // Verifica esistenza opzionale dei percorsi texture su disco
-        auto checkPath = [&](const std::string& path, const char* name) {
-            if (!path.empty() && !std::filesystem::exists(path) && !std::filesystem::exists(std::string("../") + path)) {
-                m_diagnostic.warnings.push_back(std::string("File texture ") + name + " non trovato su disco: " + path);
+        // 1. Calcolo del fingerprint d'ingresso per invariante Zero-Work
+        uint64_t currentFp = 14695981039346656037ULL;
+        auto addStr = [&](const std::string& s) {
+            for (char c : s) { currentFp ^= static_cast<uint8_t>(c); currentFp *= 1099511628211ULL; }
+        };
+        addStr(context.draft.albedoPath);
+        addStr(context.draft.normalPath);
+        addStr(context.draft.ormPath);
+        addStr(context.draft.emissivePath);
+        for (const auto& s : context.draft.surfaces) {
+            if (s.textures.HasTextures()) {
+                addStr(s.textures.albedoMapPath);
+                addStr(s.textures.normalMapPath);
+                addStr(s.textures.ormMapPath);
+            }
+        }
+        currentFp ^= context.draft.textureRevision;
+        currentFp *= 1099511628211ULL;
+
+        // BM-TX2.9: Zero-Work - se input stabile e stato Completed, non fare I/O o ricalcoli
+        if (m_status == StationStatus::Completed && currentFp == m_lastFingerprint && m_lastFingerprint != 0) {
+            return true;
+        }
+
+        // 2. Inizializza il PBRTexturePack se non presente
+        if (!context.draft.textures.has_value()) {
+            context.draft.textures = PBRTexturePack();
+        }
+
+        auto& pack = *context.draft.textures;
+        pack.fallbackBaseColor = glm::vec4(context.draft.baseColorFallback, context.draft.alphaFallback);
+        pack.fallbackRoughness = context.draft.roughnessFallback;
+        pack.fallbackMetallic = context.draft.metallicFallback;
+        pack.fallbackEmissive = glm::vec3(context.draft.emissiveStrength);
+
+        auto resolvePath = [](const std::string& p) -> std::string {
+            if (p.empty()) return "";
+            if (std::filesystem::exists(p)) return p;
+            if (std::filesystem::exists("../" + p)) return "../" + p;
+            return "";
+        };
+
+        // 3. Importazione e decodifica mappe con color space appropriato
+        auto loadMap = [&](const std::string& path, TextureColorSpace cs, auto setter, const char* name) {
+            if (!path.empty()) {
+                std::string resPath = resolvePath(path);
+                if (!resPath.empty()) {
+                    ImageBitmap img;
+                    if (img.LoadFromFile(resPath, cs)) {
+                        (pack.*setter)(img);
+                    } else {
+                        m_diagnostic.warnings.push_back(std::string("Decodifica fallita per mappa ") + name + ": " + path);
+                    }
+                } else {
+                    m_diagnostic.warnings.push_back(std::string("File texture ") + name + " non trovato su disco: " + path);
+                }
             }
         };
 
-        checkPath(context.draft.albedoPath, "Albedo");
-        checkPath(context.draft.normalPath, "Normal");
-        checkPath(context.draft.ormPath, "ORM");
+        loadMap(context.draft.albedoPath, TextureColorSpace::sRGB, &PBRTexturePack::SetBaseColorMap, "Albedo");
+        loadMap(context.draft.normalPath, TextureColorSpace::Linear, &PBRTexturePack::SetNormalMap, "Normal");
+        loadMap(context.draft.ormPath, TextureColorSpace::Linear, &PBRTexturePack::SetORMMap, "ORM");
+        loadMap(context.draft.emissivePath, TextureColorSpace::sRGB, &PBRTexturePack::SetEmissiveMap, "Emissive");
+
+        // 4. Auto-packing ORM se non fornito esplicitamente
+        if (!pack.HasORM()) {
+            pack.GenerateORM(512, 512);
+        }
+
+        // 5. Validazione finale
+        auto valReport = pack.Validate();
+        for (const auto& err : valReport.errors) {
+            m_diagnostic.errors.push_back(err);
+        }
+        for (const auto& warn : valReport.warnings) {
+            m_diagnostic.warnings.push_back(warn);
+        }
+
+        if (m_diagnostic.HasErrors()) {
+            m_status = StationStatus::Failed;
+            return false;
+        }
 
         m_lastRevision = context.draft.manifest.revision;
+        m_lastFingerprint = currentFp;
         m_status = StationStatus::Completed;
         context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::Texture));
         return true;
     }
 
-    void Invalidate() override { m_status = StationStatus::Dirty; }
-    void Reset() override { m_status = StationStatus::Uninitialized; m_diagnostic.Clear(); m_lastRevision = 0; }
+    void Invalidate() override { 
+        m_status = StationStatus::Dirty; 
+        m_lastFingerprint = 0;
+    }
+
+    void Reset() override { 
+        m_status = StationStatus::Uninitialized; 
+        m_diagnostic.Clear(); 
+        m_lastRevision = 0; 
+        m_lastFingerprint = 0;
+    }
 
 private:
     StationStatus m_status = StationStatus::Uninitialized;
     StationDiagnostic m_diagnostic;
     uint64_t m_lastRevision = 0;
+    uint64_t m_lastFingerprint = 0;
 };
 
 // =============================================================================
@@ -439,6 +613,55 @@ public:
             m_diagnostic.errors.push_back("Scale degenere: le componenti devono avere |scale| >= 0.0001.");
         }
 
+        // 3. Verifica di conformità geometrica della mesh Sculpt (se presente)
+        if (context.draft.sculptMesh.has_value()) {
+            const auto& sMesh = *context.draft.sculptMesh;
+            auto sReport = sMesh.ValidateTopology();
+            if (!sReport.isValid) {
+                for (const auto& err : sReport.errors) {
+                    m_diagnostic.errors.push_back("QC Sculpt Topology: " + err);
+                }
+            }
+            for (const auto& w : sReport.warnings) {
+                m_diagnostic.warnings.push_back("QC Sculpt Warning: " + w);
+            }
+            // Controllo coordinate degenerate (NaN / Inf)
+            for (auto vId : sMesh.GetActiveVertexIDs()) {
+                const auto* v = sMesh.GetVertex(vId);
+                if (v && (std::isnan(v->position.x) || std::isnan(v->position.y) || std::isnan(v->position.z) ||
+                          std::isinf(v->position.x) || std::isinf(v->position.y) || std::isinf(v->position.z))) {
+                    m_diagnostic.errors.push_back("QC Sculpt Vertice Degenere: coordinate NaN o Inf rilevate.");
+                    break;
+                }
+            }
+        }
+
+        // 4. Verifica di integrità del pacchetto Texture PBR (se presente)
+        if (context.draft.textures.has_value()) {
+            auto texReport = context.draft.textures->Validate();
+            if (!texReport.isValid) {
+                for (const auto& err : texReport.errors) {
+                    m_diagnostic.errors.push_back("QC Texture PBR: " + err);
+                }
+            }
+            for (const auto& w : texReport.warnings) {
+                m_diagnostic.warnings.push_back("QC Texture Warning: " + w);
+            }
+        }
+
+        // 5. Verifica dei Layer di Pittura (BM-TX3, se presenti)
+        if (!context.draft.paintLayers.empty()) {
+            for (size_t i = 0; i < context.draft.paintLayers.size(); ++i) {
+                const auto& l = context.draft.paintLayers[i];
+                if (l.opacity < 0.0f || l.opacity > 1.0f) {
+                    m_diagnostic.warnings.push_back("QC PaintLayer #" + std::to_string(i) + " (" + l.name + "): opacita fuori scala [0, 1].");
+                }
+                if (!l.pixelBuffer.IsValid()) {
+                    m_diagnostic.errors.push_back("QC PaintLayer #" + std::to_string(i) + " (" + l.name + "): buffer pixel non valido.");
+                }
+            }
+        }
+
         if (m_diagnostic.HasErrors()) {
             m_status = StationStatus::Failed;
             context.draft.manifest.stage = RawAssetStage::Draft;
@@ -505,7 +728,13 @@ public:
         opts.defaultUVTransform = &context.draft.baseUVTransform;
         opts.defaultProjection = context.draft.baseProjection;
 
-        auto compRes = GeometryCompiler::Compile(context.draft.shape, opts);
+        GeometryCompileResult compRes;
+        if (context.draft.sculptMesh.has_value()) {
+            compRes = GeometryCompiler::CompileEditableMesh(*context.draft.sculptMesh, opts);
+        } else {
+            compRes = GeometryCompiler::Compile(context.draft.shape, opts);
+        }
+
         if (!compRes.success) {
             m_diagnostic.errors.push_back("Errore compilazione geometria durante il packaging: " + compRes.errorMessage);
             m_status = StationStatus::Failed;

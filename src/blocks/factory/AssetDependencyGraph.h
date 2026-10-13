@@ -20,7 +20,8 @@ enum class DependencyNodeID : uint8_t {
     MaterialParameters = 4,  // Parametri PBR e fallbacks
     RawPhysicsProxy = 5,     // Collider proxy e parametri di massa
     QualityControlAudit = 6, // Report di conformità e validazione
-    PackageArtifact = 7      // Pacchetto finale congelato
+    PackageArtifact = 7,     // Pacchetto finale congelato
+    SculptGeometry = 8       // EditableMesh / scultura CPU-authoritative (BM-S)
 };
 
 inline const char* GetDependencyNodeName(DependencyNodeID id) {
@@ -33,6 +34,7 @@ inline const char* GetDependencyNodeName(DependencyNodeID id) {
         case DependencyNodeID::RawPhysicsProxy:     return "RawPhysicsProxy";
         case DependencyNodeID::QualityControlAudit: return "QualityControlAudit";
         case DependencyNodeID::PackageArtifact:     return "PackageArtifact";
+        case DependencyNodeID::SculptGeometry:      return "SculptGeometry";
         default:                                    return "UnknownNode";
     }
 }
@@ -69,6 +71,7 @@ public:
 
         // 1. Registrazione Nodi
         RegisterNode(DependencyNodeID::ShapeGeometry, ProductionStationID::Shape);
+        RegisterNode(DependencyNodeID::SculptGeometry, ProductionStationID::Sculpt);
         RegisterNode(DependencyNodeID::SurfaceLayout, ProductionStationID::SurfaceUV);
         RegisterNode(DependencyNodeID::TopologyUV, ProductionStationID::SurfaceUV);
         RegisterNode(DependencyNodeID::TextureResources, ProductionStationID::Texture);
@@ -78,14 +81,18 @@ public:
         RegisterNode(DependencyNodeID::PackageArtifact, ProductionStationID::Packaging);
 
         // 2. Definizione archi diretti di dipendenza (Upstream -> Downstream)
-        // ShapeGeometry -> TopologyUV (le coordinate UV dipendono dalla geometria)
+        // ShapeGeometry -> SculptGeometry (la mesh editabile consuma la forma parametrica iniziale se presente)
+        AddDependency(DependencyNodeID::SculptGeometry, DependencyNodeID::ShapeGeometry, true);
+
+        // Geometria (Shape o Sculpt) -> TopologyUV & SurfaceLayout & RawPhysicsProxy
         AddDependency(DependencyNodeID::TopologyUV, DependencyNodeID::ShapeGeometry, false);
+        AddDependency(DependencyNodeID::TopologyUV, DependencyNodeID::SculptGeometry, true);
 
-        // ShapeGeometry -> SurfaceLayout (la partizione semantica dipende dalla forma)
         AddDependency(DependencyNodeID::SurfaceLayout, DependencyNodeID::ShapeGeometry, false);
+        AddDependency(DependencyNodeID::SurfaceLayout, DependencyNodeID::SculptGeometry, true);
 
-        // ShapeGeometry -> RawPhysicsProxy (il volume/bounds determina la massa derivata)
         AddDependency(DependencyNodeID::RawPhysicsProxy, DependencyNodeID::ShapeGeometry, false);
+        AddDependency(DependencyNodeID::RawPhysicsProxy, DependencyNodeID::SculptGeometry, true);
 
         // SurfaceLayout -> MaterialParameters (l'override dei materiali si ancora alle superfici)
         AddDependency(DependencyNodeID::MaterialParameters, DependencyNodeID::SurfaceLayout, false);
@@ -95,6 +102,7 @@ public:
 
         // Tutti i componenti a monte convergono nel QualityControlAudit
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::ShapeGeometry, false);
+        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::SculptGeometry, true);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::TopologyUV, false);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::SurfaceLayout, false);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::MaterialParameters, false);

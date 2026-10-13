@@ -755,18 +755,10 @@ void EditableMesh::ComputeVertexNormals() {
 
 AABB EditableMesh::ComputeAABB() const {
     AABB b;
-    bool first = true;
     for (size_t i = 0; i < m_vertices.size(); ++i) {
         if (m_vertices[i].isDeleted) continue;
         const glm::vec3& p = m_vertices[i].position;
-        if (first) {
-            b.min = p;
-            b.max = p;
-            first = false;
-        } else {
-            b.min = glm::min(b.min, p);
-            b.max = glm::max(b.max, p);
-        }
+        b.expand(Vec3{p.x, p.y, p.z});
     }
     return b;
 }
@@ -1088,19 +1080,19 @@ EditableMesh EditableMesh::CreateCube(float size) {
         CornerAttributes{ glm::vec2(0.0f, 1.0f) }
     };
 
-    // 6 facce quad conformi a CubeFace enum di SurfaceDefinition
+    // 6 facce quad conformi a AssetCubeFace enum di SurfaceDefinition
     // Back (-Z) surfaceId = 0
-    mesh.AddFace({ v1, v0, v3, v2 }, static_cast<uint32_t>(CubeFace::Back), 0, &uvQuad);
+    mesh.AddFace({ v1, v0, v3, v2 }, static_cast<uint32_t>(AssetCubeFace::Back), 0, &uvQuad);
     // Front (+Z) surfaceId = 1
-    mesh.AddFace({ v4, v5, v6, v7 }, static_cast<uint32_t>(CubeFace::Front), 0, &uvQuad);
+    mesh.AddFace({ v4, v5, v6, v7 }, static_cast<uint32_t>(AssetCubeFace::Front), 0, &uvQuad);
     // Left (-X) surfaceId = 2
-    mesh.AddFace({ v0, v4, v7, v3 }, static_cast<uint32_t>(CubeFace::Left), 0, &uvQuad);
+    mesh.AddFace({ v0, v4, v7, v3 }, static_cast<uint32_t>(AssetCubeFace::Left), 0, &uvQuad);
     // Right (+X) surfaceId = 3
-    mesh.AddFace({ v5, v1, v2, v6 }, static_cast<uint32_t>(CubeFace::Right), 0, &uvQuad);
+    mesh.AddFace({ v5, v1, v2, v6 }, static_cast<uint32_t>(AssetCubeFace::Right), 0, &uvQuad);
     // Bottom (-Y) surfaceId = 4
-    mesh.AddFace({ v0, v1, v5, v4 }, static_cast<uint32_t>(CubeFace::Bottom), 0, &uvQuad);
+    mesh.AddFace({ v0, v1, v5, v4 }, static_cast<uint32_t>(AssetCubeFace::Bottom), 0, &uvQuad);
     // Top (+Y) surfaceId = 5
-    mesh.AddFace({ v3, v7, v6, v2 }, static_cast<uint32_t>(CubeFace::Top), 0, &uvQuad);
+    mesh.AddFace({ v3, v7, v6, v2 }, static_cast<uint32_t>(AssetCubeFace::Top), 0, &uvQuad);
 
     mesh.ComputeVertexNormals();
     return mesh;

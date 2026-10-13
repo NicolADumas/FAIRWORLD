@@ -58,6 +58,8 @@ target_include_directories(FairworldCore PRIVATE
     src/blocks
     src/blocks/factory
     src/blocks/sculpt
+    src/blocks/texture
+    src/blocks/uv
     src/world
     src/systems
     src/render

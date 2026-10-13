@@ -155,6 +155,29 @@ bool FactoryOrchestrator::LoadDraftFromFile(const std::string& filepath) {
     return true;
 }
 
+void FactoryOrchestrator::SetDraftSculptMesh(const EditableMesh& mesh) {
+    if (m_activeDraft.has_value()) {
+        m_activeDraft->sculptMesh = mesh;
+        m_activeDraft->MarkDirty();
+        uint64_t fp = mesh.GetTopologyRevision() * 100003ULL + mesh.GetGeometryRevision();
+        m_dependencyGraph.InvalidateNode(DependencyNodeID::SculptGeometry, fp);
+    }
+}
+
+const EditableMesh* FactoryOrchestrator::GetDraftSculptMesh() const {
+    if (m_activeDraft.has_value() && m_activeDraft->sculptMesh.has_value()) {
+        return &(*m_activeDraft->sculptMesh);
+    }
+    return nullptr;
+}
+
+EditableMesh* FactoryOrchestrator::GetDraftSculptMeshMutable() {
+    if (m_activeDraft.has_value() && m_activeDraft->sculptMesh.has_value()) {
+        return &(*m_activeDraft->sculptMesh);
+    }
+    return nullptr;
+}
+
 bool FactoryOrchestrator::SetActiveStation(ProductionStationID id) {
     m_activeStation = id;
     return true;
@@ -185,6 +208,7 @@ bool FactoryOrchestrator::ExecuteStation(ProductionStationID id, ShapeRegistry* 
         DependencyNodeID matchedNode = DependencyNodeID::ShapeGeometry;
         switch (id) {
             case ProductionStationID::Shape: matchedNode = DependencyNodeID::ShapeGeometry; break;
+            case ProductionStationID::Sculpt: matchedNode = DependencyNodeID::SculptGeometry; break;
             case ProductionStationID::SurfaceUV: matchedNode = DependencyNodeID::SurfaceLayout; break;
             case ProductionStationID::Texture: matchedNode = DependencyNodeID::TextureResources; break;
             case ProductionStationID::Material: matchedNode = DependencyNodeID::MaterialParameters; break;
@@ -208,6 +232,7 @@ bool FactoryOrchestrator::ExecutePipelineUpTo(ProductionStationID targetStation,
     // Ordine di valutazione delle stazioni
     std::vector<ProductionStationID> sequence = {
         ProductionStationID::Shape,
+        ProductionStationID::Sculpt,
         ProductionStationID::SurfaceUV,
         ProductionStationID::Texture,
         ProductionStationID::Material,
@@ -287,7 +312,13 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
     opts.defaultUVTransform = &m_activeDraft->baseUVTransform;
     opts.defaultProjection = m_activeDraft->baseProjection;
 
-    auto compRes = GeometryCompiler::Compile(m_activeDraft->shape, opts);
+    GeometryCompileResult compRes;
+    if (m_activeDraft->sculptMesh.has_value()) {
+        compRes = GeometryCompiler::CompileEditableMesh(*m_activeDraft->sculptMesh, opts);
+        package.sculptTopologyJson = m_activeDraft->sculptMesh->ToJson().dump();
+    } else {
+        compRes = GeometryCompiler::Compile(m_activeDraft->shape, opts);
+    }
     if (!compRes.success) {
         return std::nullopt;
     }
@@ -384,6 +415,9 @@ uint64_t FactoryOrchestrator::ComputeStationFingerprint(ProductionStationID id) 
     if (!m_activeDraft.has_value()) return 0;
     // Calcola un hash leggero basato sui parametri correnti della stazione
     uint64_t rev = m_activeDraft->manifest.revision;
+    if (id == ProductionStationID::Sculpt && m_activeDraft->sculptMesh.has_value()) {
+        rev = rev * 1000003ULL + m_activeDraft->sculptMesh->GetTopologyRevision() * 1009ULL + m_activeDraft->sculptMesh->GetGeometryRevision();
+    }
     return (rev * 2654435761ULL) ^ (static_cast<uint64_t>(id) << 32);
 }
 

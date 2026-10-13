@@ -14,6 +14,19 @@
 #include "blocks/factory/FactoryOrchestrator.h"
 #include "blocks/sculpt/EditableMesh.h"
 #include "blocks/sculpt/MeshSelectionService.h"
+#include "blocks/sculpt/MeshModelingService.h"
+#include "blocks/sculpt/MeshSculptService.h"
+#include "blocks/sculpt/MeshTopologyService.h"
+#include "blocks/sculpt/MeshRepairService.h"
+#include "blocks/sculpt/MeshHistoryService.h"
+#include "blocks/sculpt/MeshBridgeService.h"
+#include "blocks/texture/TextureContractTests.h"
+#include "blocks/texture/PaintContractTests.h"
+#include "blocks/texture/TexturePaintingService.h"
+#include "blocks/texture/SurfacePaintContractTests.h"
+#include "blocks/texture/SurfacePaintingAdapter.h"
+#include "blocks/uv/PrimitiveUVContractTests.h"
+#include "blocks/uv/PrimitiveUVMapper.h"
 struct SharedContext;
 
 class BlockMakerState : public State {
@@ -320,6 +333,135 @@ private:
     void RunSelectionValidationTests(bool isManualTrigger = false);
 
     void DrawMeshSelectionVisualFeedback();
+
+    // --- BM-S4 Model Operations State & Parameters ---
+    int m_modelingTool = 0; // 0 = None, 1 = Move, 2 = Rotate, 3 = Scale, 4 = Extrude, 5 = Inset, 6 = Bevel
+    glm::vec3 m_modelMoveDelta{0.0f, 0.1f, 0.0f};
+    float m_modelRotateAngle = 45.0f;
+    int m_modelRotateAxis = 1; // 0 = X, 1 = Y, 2 = Z
+    glm::vec3 m_modelScaleVec{1.2f, 1.2f, 1.2f};
+    float m_modelExtrudeOffset = 0.2f;
+    bool m_modelExtrudeRegion = true;
+    float m_modelInsetAmount = 0.1f;
+    float m_modelInsetDepth = 0.0f;
+    float m_modelBevelWidth = 0.05f;
+    std::optional<fw::EditableMesh> m_modelingStagedBackup;
+    std::string m_modelingFeedbackMsg;
+    float m_modelingFeedbackTimer = 0.0f;
+    bool m_modelingFeedbackIsError = false;
+
+    // --- BM-S4 Modeling Validation Suite (MOD-1 .. MOD-10) ---
+    struct ModelingTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<ModelingTestResult> m_modelingTestResults;
+    bool m_modelingTestsExecuted = false;
+    void RunModelingValidationTests(bool isManualTrigger = false);
+    void ApplyModelingOperation(fw::ModelingOperationType opType);
+
+    // --- BM-S5 Sculpt Brush Engine State & Parameters ---
+    fw::MeshSculptService m_sculptService;
+    bool m_sculptModeActive = false;
+    bool m_isSculptStroking = false;
+    fw::StrokePoint m_lastSculptStrokePoint;
+    bool m_sculptLiveGpuDirty = false;
+    float m_sculptLiveGpuCooldown = 0.0f; // Coalescenza aggiornamenti GPU live (~30 FPS max in drag)
+
+    // --- BM-S5 Sculpt Brush Validation Suite (SCL-1 .. SCL-12) ---
+    struct SculptBrushTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<SculptBrushTestResult> m_sculptBrushTestResults;
+    bool m_sculptBrushTestsExecuted = false;
+    void RunSculptBrushValidationTests(bool isManualTrigger = false);
+    void DrawSculptBrushVisualFeedback();
+
+    // --- BM-S6 Topology Operations Validation Suite (TOP-1 .. TOP-10) ---
+    struct TopologyTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<TopologyTestResult> m_topologyTestResults;
+    bool m_topologyTestsExecuted = false;
+    void RunTopologyValidationTests(bool isManualTrigger = false);
+
+    // --- BM-S7 Remeshing & Manifold Repair Validation Suite (REP-1 .. REP-10) ---
+    struct RepairTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<RepairTestResult> m_repairTestResults;
+    bool m_repairTestsExecuted = false;
+    void RunRepairValidationTests(bool isManualTrigger = false);
+
+    // --- BM-S8 History & Undo/Redo Engine ---
+    fw::MeshHistoryService m_meshHistoryService;
+    void ExecuteMeshUndo();
+    void ExecuteMeshRedo();
+
+    struct HistoryTestResult {
+        std::string testId;
+        std::string testName;
+        std::string inputDesc;
+        std::string expectedDesc;
+        std::string observedDesc;
+        bool passed = false;
+        std::string details;
+    };
+    std::vector<HistoryTestResult> m_historyTestResults;
+    bool m_historyTestsExecuted = false;
+    void RunHistoryValidationTests(bool isManualTrigger = false);
+
+    // --- BM-S9 GeometryCompiler Bridge Validation Suite (BRG-1 .. BRG-10) ---
+    std::vector<fw::BridgeTestResult> m_bridgeTestResults;
+    bool m_bridgeTestsExecuted = false;
+    void RunBridgeValidationTests(bool isManualTrigger = false);
+    fw::BridgePreviewCache m_bridgePreviewCache;
+
+    // --- BM-TX2 Texture Engine & PBR Importer Validation Suite (TX-1 .. TX-10) ---
+    std::vector<fw::TextureTestResult> m_textureTestResults;
+    bool m_textureTestsExecuted = false;
+    void RunTextureValidationTests(bool isManualTrigger = false);
+
+    // --- BM-TX3 Painting & Layer Engine Validation Suite (PT-1 .. PT-10) ---
+    std::vector<fw::PaintTestResult> m_paintTestResults;
+    bool m_paintTestsExecuted = false;
+    void RunPaintValidationTests(bool isManualTrigger = false);
+    fw::TexturePaintingService m_paintingService;
+
+    // --- BM-TX4 3D Surface Brush & Painting Suite (BP-1 .. BP-15) ---
+    std::vector<fw::SurfacePaintTestResult> m_surfacePaintTestResults;
+    bool m_surfacePaintTestsExecuted = false;
+    void RunSurfacePaintValidationTests(bool isManualTrigger = false);
+    fw::SurfacePaintingAdapter m_surfacePaintingAdapter;
+
+    // --- BM-UV2 Universal UV Contract & Primitive Mapping Suite (UVP-1 .. UVP-15) ---
+    std::vector<fw::PrimitiveUVTestResult> m_primitiveUVTestResults;
+    bool m_primitiveUVTestsExecuted = false;
+    void RunPrimitiveUVValidationTests(bool isManualTrigger = false);
+    fw::PrimitiveUVMapper m_primitiveUVMapper;
 
     std::unique_ptr<fw::GameWorld> m_previewWorld;
 };

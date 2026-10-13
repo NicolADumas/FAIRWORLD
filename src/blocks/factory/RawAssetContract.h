@@ -5,11 +5,16 @@
 #include <chrono>
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <optional>
 #include "json.hpp"
 #include "ShapeRegistry.h"
 #include "SurfaceDefinition.h"
 #include "BlockRegistry.h"
 #include "ForgeComponents.h"
+#include "blocks/sculpt/EditableMesh.h"
+#include "blocks/texture/PBRTexturePack.h"
+#include "blocks/texture/PaintLayer.h"
+#include "blocks/uv/UVLayout.h"
 
 namespace fw {
 
@@ -92,16 +97,21 @@ struct RawAssetDraft {
     // 1. Stazione Shape: Geometria parametrica o definita
     ShapeDefinition shape;
 
+    // 1b. Stazione Sculpt: Mesh poligonale avanzata CPU-authoritative (BM-S)
+    std::optional<EditableMesh> sculptMesh;
+
     // 2. Trasformazioni di base e Pivot nello spazio modello dell'asset
     glm::vec3 localPosition{0.0f, 0.0f, 0.0f};
     glm::vec3 localRotation{0.0f, 0.0f, 0.0f}; // Gradi Euler (Pitch, Yaw, Roll)
     glm::vec3 localScale{1.0f, 1.0f, 1.0f};
     glm::vec3 pivotOffset{0.0f, 0.0f, 0.0f};
 
-    // 3. Stazione SurfaceUV: Mappatura, proiezioni e superfici semantiche
+    // 3. Stazione SurfaceUV: Mappatura, proiezioni e superfici semantiche (BM-UV2)
     UVTransform baseUVTransform;
     UVProjectionMode baseProjection = UVProjectionMode::Default;
     std::vector<SurfaceOverride> surfaces;
+    uint64_t uvRevision = 1;
+    std::optional<UVLayout> uvLayout;
 
     // 4. Stazione Material & Texture: Parametri visivi PBR e mappe
     glm::vec3 baseColorFallback{1.0f, 1.0f, 1.0f};
@@ -113,7 +123,16 @@ struct RawAssetDraft {
     std::string albedoPath;
     std::string normalPath;
     std::string ormPath;
+    std::string emissivePath;
     uint32_t behaviors = 0;
+
+    // BM-TX2: Texture Pack CPU Headless
+    uint64_t textureRevision = 1;
+    std::optional<PBRTexturePack> textures;
+
+    // BM-TX3: Painting & Layer Engine CPU Headless
+    uint64_t paintRevision = 1;
+    std::vector<PaintLayer> paintLayers;
 
     // 5. Stazione RawPhysics: Proprietà fisiche e termiche indipendenti
     BlockPhysicsDef physics;
@@ -168,6 +187,8 @@ struct RawAssetPackage {
     std::string albedoMapUri;
     std::string normalMapUri;
     std::string ormMapUri;
+    std::string emissiveMapUri;
+    uint64_t textureFingerprint = 0;
 
     // Trasformazione standard congelata
     glm::vec3 packagePosition{0.0f};
@@ -177,6 +198,10 @@ struct RawAssetPackage {
 
     // Impronta digitale univoca (hash di validazione)
     uint64_t packageFingerprint = 0;
+    uint64_t paintFingerprint = 0;
+
+    // Rappresentazione topologica persistente isolata (senza riferimenti a GPU/Vulkan o puntatori UI)
+    std::string sculptTopologyJson;
 
     bool IsPublishable() const {
         return validationReport.isValid &&
@@ -255,6 +280,7 @@ inline void to_json(nlohmann::json& j, const RawAssetDraft& d) {
             {"albedoPath", d.albedoPath},
             {"normalPath", d.normalPath},
             {"ormPath", d.ormPath},
+            {"emissivePath", d.emissivePath},
             {"behaviors", d.behaviors}
         }},
         {"physics", {
@@ -286,6 +312,17 @@ inline void to_json(nlohmann::json& j, const RawAssetDraft& d) {
             jSurfaces.push_back(js);
         }
         j["surfaces"] = jSurfaces;
+    }
+    if (d.sculptMesh.has_value()) {
+        j["sculptMesh"] = d.sculptMesh->ToJson();
+    }
+    if (!d.paintLayers.empty()) {
+        nlohmann::json jLayers = nlohmann::json::array();
+        for (const auto& l : d.paintLayers) {
+            jLayers.push_back(l.ToJson());
+        }
+        j["paintLayers"] = jLayers;
+        j["paintRevision"] = d.paintRevision;
     }
 }
 
@@ -320,6 +357,7 @@ inline void from_json(const nlohmann::json& j, RawAssetDraft& d) {
         d.albedoPath = jg.value("albedoPath", "");
         d.normalPath = jg.value("normalPath", "");
         d.ormPath = jg.value("ormPath", "");
+        d.emissivePath = jg.value("emissivePath", "");
         d.behaviors = jg.value("behaviors", 0u);
     }
     if (j.contains("physics")) {
@@ -345,6 +383,19 @@ inline void from_json(const nlohmann::json& j, RawAssetDraft& d) {
             SurfaceOverride s;
             from_json(js, s);
             d.surfaces.push_back(s);
+        }
+    }
+    if (j.contains("sculptMesh") && !j["sculptMesh"].is_null()) {
+        EditableMesh em;
+        if (em.FromJson(j["sculptMesh"])) {
+            d.sculptMesh = std::move(em);
+        }
+    }
+    d.paintRevision = j.value("paintRevision", static_cast<uint64_t>(1));
+    if (j.contains("paintLayers") && j["paintLayers"].is_array()) {
+        d.paintLayers.clear();
+        for (const auto& lj : j["paintLayers"]) {
+            d.paintLayers.push_back(PaintLayer::FromJson(lj));
         }
     }
 }

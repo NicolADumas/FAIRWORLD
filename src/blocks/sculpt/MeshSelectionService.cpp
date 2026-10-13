@@ -754,7 +754,7 @@ std::vector<MeshSelectionService::SelectionTestResult> MeshSelectionService::Run
         res.testId = "SEL-3";
         res.testName = "SEL-3 — Face Picking via Möller-Trumbore Ray Intersection";
         res.inputDesc = "Ray centrale puntato al centro della faccia frontale (Z=+1)";
-        res.expectedDesc = "FaceID frontale (CubeFace::Front, surfaceId=1) colpito a distanza t=4.0";
+        res.expectedDesc = "FaceID frontale (AssetCubeFace::Front, surfaceId=1) colpito a distanza t=4.0";
 
         selService.SetMode(SelectionMode::Face);
         glm::vec2 centerScreen(1920.0f * 0.5f, 1080.0f * 0.5f);
@@ -763,7 +763,7 @@ std::vector<MeshSelectionService::SelectionTestResult> MeshSelectionService::Run
 
         bool pickOk = hit.hit && hit.faceId.IsValid();
         const auto* f = cube.GetFace(hit.faceId);
-        bool frontFace = f && (f->surfaceId == static_cast<uint32_t>(CubeFace::Front));
+        bool frontFace = f && (f->surfaceId == static_cast<uint32_t>(AssetCubeFace::Front));
         bool distOk = std::abs(hit.distance - 4.0f) < 1e-2f; // Camera a Z=5, faccia a Z=1 -> dist = 4
 
         res.passed = pickOk && frontFace && distOk;
@@ -844,12 +844,12 @@ std::vector<MeshSelectionService::SelectionTestResult> MeshSelectionService::Run
         PickHit hit = selService.Pick(ray, cube, ctx);
 
         const auto* f = cube.GetFace(hit.faceId);
-        bool frontChosen = f && (f->surfaceId == static_cast<uint32_t>(CubeFace::Front));
-        bool backRejected = f && (f->surfaceId != static_cast<uint32_t>(CubeFace::Back));
+        bool frontChosen = f && (f->surfaceId == static_cast<uint32_t>(AssetCubeFace::Front));
+        bool backRejected = f && (f->surfaceId != static_cast<uint32_t>(AssetCubeFace::Back));
 
         res.passed = frontChosen && backRejected;
         res.observedDesc = "ChosenFaceSurface=" + (f ? std::to_string(f->surfaceId) : "none") +
-                           " (CubeFace::Front=1, CubeFace::Back=0)";
+                           " (AssetCubeFace::Front=1, AssetCubeFace::Back=0)";
         res.details = res.passed ? "PASS" : "FAIL: La faccia posteriore occlusa ha prevalso su quella anteriore";
         results.push_back(res);
     }

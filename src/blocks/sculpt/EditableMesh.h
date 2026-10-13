@@ -203,6 +203,8 @@ public:
     }
     void IncrementGeometryRevision() { m_geometryRevision++; }
     void IncrementAttributeRevision() { m_attributeRevision++; }
+    void SetGeometryRevision(uint64_t rev) { m_geometryRevision = rev; }
+    void SetTopologyRevision(uint64_t rev) { m_topologyRevision = rev; }
 
     // --- Conteggi Attivi ---
     size_t GetVertexCount() const { return m_activeVertexCount; }

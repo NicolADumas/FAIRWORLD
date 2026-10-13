@@ -2934,6 +2934,537 @@ void BlockMakerState::RunSelectionValidationTests(bool isManualTrigger) {
     std::cout << "====================================================================================\n\n";
 }
 
+void BlockMakerState::RunModelingValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<ModelingTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_modelingTestResults = s_sessionCachedResults;
+        m_modelingTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST MODEL OPERATIONS (BM-S4 / MOD-1 .. MOD-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_modelingTestResults.clear();
+    m_modelingTestResults.reserve(10);
+
+    auto rawResults = fw::MeshModelingService::RunModelingContractTests();
+    for (const auto& r : rawResults) {
+        ModelingTestResult tr;
+        tr.testId = r.testId;
+        tr.testName = r.testName;
+        tr.inputDesc = r.inputDesc;
+        tr.expectedDesc = r.expectedDesc;
+        tr.observedDesc = r.observedDesc;
+        tr.passed = r.passed;
+        tr.details = r.details;
+        m_modelingTestResults.push_back(tr);
+        std::cout << "  [" << (tr.passed ? "PASS" : "FAIL") << "] " << tr.testName << " | " << tr.observedDesc << "\n";
+    }
+
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_modelingTestResults;
+    m_modelingTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_modelingTestResults) {
+        if (r.passed) totalPass++;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-S4 MODEL OPERATIONS AUDIT REPORT: " 
+              << totalPass << "/" << m_modelingTestResults.size() << " PASS (" 
+              << (totalPass == m_modelingTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunSculptBrushValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<SculptBrushTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_sculptBrushTestResults = s_sessionCachedResults;
+        m_sculptBrushTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST SCULPT BRUSH ENGINE (BM-S5 / SCL-1 .. SCL-12):\n";
+    std::cout << "====================================================================================\n";
+
+    m_sculptBrushTestResults.clear();
+    m_sculptBrushTestResults.reserve(12);
+
+    auto rawResults = fw::MeshSculptService::RunSculptContractTests();
+    for (const auto& r : rawResults) {
+        SculptBrushTestResult tr;
+        tr.testId = r.testId;
+        tr.testName = r.testName;
+        tr.inputDesc = r.inputDesc;
+        tr.expectedDesc = r.expectedDesc;
+        tr.observedDesc = r.observedDesc;
+        tr.passed = r.passed;
+        tr.details = r.details;
+        m_sculptBrushTestResults.push_back(tr);
+        std::cout << "  [" << (tr.passed ? "PASS" : "FAIL") << "] " << tr.testName << " | " << tr.observedDesc << "\n";
+    }
+
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_sculptBrushTestResults;
+    m_sculptBrushTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_sculptBrushTestResults) {
+        if (r.passed) totalPass++;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-S5 SCULPT BRUSH ENGINE AUDIT REPORT: " 
+              << totalPass << "/" << m_sculptBrushTestResults.size() << " PASS (" 
+              << (totalPass == m_sculptBrushTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunTopologyValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<TopologyTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_topologyTestResults = s_sessionCachedResults;
+        m_topologyTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST TOPOLOGY OPERATIONS & SYMMETRY (BM-S6 / TOP-1 .. TOP-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_topologyTestResults.clear();
+    m_topologyTestResults.reserve(10);
+
+    auto rawResults = fw::MeshTopologyService::RunTopologyContractTests();
+    for (const auto& r : rawResults) {
+        TopologyTestResult tr;
+        tr.testId = r.testId;
+        tr.testName = r.testName;
+        tr.inputDesc = r.inputDesc;
+        tr.expectedDesc = r.expectedDesc;
+        tr.observedDesc = r.observedDesc;
+        tr.passed = r.passed;
+        tr.details = r.details;
+        m_topologyTestResults.push_back(tr);
+        std::cout << "  [" << (tr.passed ? "PASS" : "FAIL") << "] " << tr.testName << " | " << tr.observedDesc << "\n";
+    }
+
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_topologyTestResults;
+    m_topologyTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_topologyTestResults) {
+        if (r.passed) totalPass++;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-S6 TOPOLOGY OPERATIONS AUDIT REPORT: " 
+              << totalPass << "/" << m_topologyTestResults.size() << " PASS (" 
+              << (totalPass == m_topologyTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunRepairValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<RepairTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_repairTestResults = s_sessionCachedResults;
+        m_repairTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST REMESHING & MANIFOLD REPAIR (BM-S7 / REP-1 .. REP-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_repairTestResults.clear();
+    m_repairTestResults.reserve(10);
+
+    auto rawResults = fw::MeshRepairService::RunRepairContractTests();
+    for (const auto& r : rawResults) {
+        RepairTestResult tr;
+        tr.testId = r.testId;
+        tr.testName = r.testName;
+        tr.inputDesc = r.inputDesc;
+        tr.expectedDesc = r.expectedDesc;
+        tr.observedDesc = r.observedDesc;
+        tr.passed = r.passed;
+        tr.details = r.details;
+        m_repairTestResults.push_back(tr);
+        std::cout << "  [" << (tr.passed ? "PASS" : "FAIL") << "] " << tr.testName << " | " << tr.observedDesc << "\n";
+    }
+
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_repairTestResults;
+    m_repairTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_repairTestResults) {
+        if (r.passed) totalPass++;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-S7 REMESHING & MANIFOLD REPAIR AUDIT REPORT: " 
+              << totalPass << "/" << m_repairTestResults.size() << " PASS (" 
+              << (totalPass == m_repairTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunHistoryValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<HistoryTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_historyTestResults = s_sessionCachedResults;
+        m_historyTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST HISTORY & UNDO/REDO (BM-S8 / HIS-1 .. HIS-12):\n";
+    std::cout << "====================================================================================\n";
+
+    m_historyTestResults.clear();
+    m_historyTestResults.reserve(12);
+
+    auto rawResults = fw::MeshHistoryService::RunHistoryContractTests();
+    for (const auto& r : rawResults) {
+        HistoryTestResult tr;
+        tr.testId = r.testId;
+        tr.testName = r.testName;
+        tr.inputDesc = r.inputDesc;
+        tr.expectedDesc = r.expectedDesc;
+        tr.observedDesc = r.observedDesc;
+        tr.passed = r.passed;
+        tr.details = r.details;
+        m_historyTestResults.push_back(tr);
+        std::cout << "  [" << (tr.passed ? "PASS" : "FAIL") << "] " << tr.testName << " | " << tr.observedDesc << "\n";
+    }
+
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_historyTestResults;
+    m_historyTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_historyTestResults) {
+        if (r.passed) totalPass++;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-S8 HISTORY & UNDO/REDO AUDIT REPORT: " 
+              << totalPass << "/" << m_historyTestResults.size() << " PASS (" 
+              << (totalPass == m_historyTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunBridgeValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::BridgeTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_bridgeTestResults = s_sessionCachedResults;
+        m_bridgeTestsExecuted = true;
+        return;
+    }
+
+    m_bridgeTestResults = fw::MeshBridgeService::RunContractTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_bridgeTestResults;
+    m_bridgeTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_bridgeTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-S9 GEOMETRYCOMPILER BRIDGE & FACTORY AUDIT REPORT: " 
+              << totalPass << "/" << m_bridgeTestResults.size() << " PASS (" 
+              << (totalPass == m_bridgeTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunTextureValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::TextureTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_textureTestResults = s_sessionCachedResults;
+        m_textureTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST TEXTURE & PBR IMPORTER (BM-TX2 / TX-1 .. TX-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_textureTestResults = fw::TextureContractTests::RunContractTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_textureTestResults;
+    m_textureTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_textureTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-TX2 TEXTURE ENGINE & PBR AUDIT REPORT: " 
+              << totalPass << "/" << m_textureTestResults.size() << " PASS (" 
+              << (totalPass == m_textureTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunPaintValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::PaintTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_paintTestResults = s_sessionCachedResults;
+        m_paintTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST PAINT & LAYER ENGINE (BM-TX3 / PT-1 .. PT-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_paintTestResults = fw::PaintContractTests::RunContractTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_paintTestResults;
+    m_paintTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_paintTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-TX3 PAINT & LAYER ENGINE AUDIT REPORT: " 
+              << totalPass << "/" << m_paintTestResults.size() << " PASS (" 
+              << (totalPass == m_paintTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunSurfacePaintValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::SurfacePaintTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_surfacePaintTestResults = s_sessionCachedResults;
+        m_surfacePaintTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST 3D SURFACE BRUSH (BM-TX4 / BP-1 .. BP-15):\n";
+    std::cout << "====================================================================================\n";
+
+    m_surfacePaintTestResults = fw::SurfacePaintContractTests::RunContractTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_surfacePaintTestResults;
+    m_surfacePaintTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_surfacePaintTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-TX4 3D SURFACE PAINT AUDIT REPORT: " 
+              << totalPass << "/" << m_surfacePaintTestResults.size() << " PASS (" 
+              << (totalPass == m_surfacePaintTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunPrimitiveUVValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::PrimitiveUVTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_primitiveUVTestResults = s_sessionCachedResults;
+        m_primitiveUVTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST PRIMITIVE & PARAMETRIC UV (BM-UV2 / UVP-1 .. UVP-15):\n";
+    std::cout << "====================================================================================\n";
+
+    m_primitiveUVTestResults = fw::PrimitiveUVContractTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_primitiveUVTestResults;
+    m_primitiveUVTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_primitiveUVTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-UV2 PRIMITIVE UV AUDIT REPORT: " 
+              << totalPass << "/" << m_primitiveUVTestResults.size() << " PASS (" 
+              << (totalPass == m_primitiveUVTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::ExecuteMeshUndo() {
+    auto res = m_meshHistoryService.Undo(m_activeEditableMesh, m_selectedBlockId);
+    if (res.success) {
+        if (m_factoryOrchestrator.IsDraftOpen()) {
+            m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+        }
+        auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+        m_cachedGeometryMesh = compMesh;
+        if (m_previewWorld) {
+            m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+        }
+        m_selectionService.PruneInvalidated(m_activeEditableMesh);
+        m_modelingFeedbackMsg = res.message;
+        m_modelingFeedbackIsError = false;
+        m_modelingFeedbackTimer = 2.5f;
+    } else {
+        m_modelingFeedbackMsg = res.message;
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 2.5f;
+    }
+}
+
+void BlockMakerState::ExecuteMeshRedo() {
+    auto res = m_meshHistoryService.Redo(m_activeEditableMesh, m_selectedBlockId);
+    if (res.success) {
+        if (m_factoryOrchestrator.IsDraftOpen()) {
+            m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+        }
+        auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+        m_cachedGeometryMesh = compMesh;
+        if (m_previewWorld) {
+            m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+        }
+        m_selectionService.PruneInvalidated(m_activeEditableMesh);
+        m_modelingFeedbackMsg = res.message;
+        m_modelingFeedbackIsError = false;
+        m_modelingFeedbackTimer = 2.5f;
+    } else {
+        m_modelingFeedbackMsg = res.message;
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 2.5f;
+    }
+}
+
+void BlockMakerState::ApplyModelingOperation(fw::ModelingOperationType opType) {
+    if (m_activeEditableMesh.GetVertexCount() == 0) {
+        m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+    }
+
+    fw::HistoryCommandType cmdType = (opType == fw::ModelingOperationType::Move ||
+                                      opType == fw::ModelingOperationType::Rotate ||
+                                      opType == fw::ModelingOperationType::Scale)
+                                     ? fw::HistoryCommandType::GeometryDelta
+                                     : fw::HistoryCommandType::TopologyMutation;
+    std::string opName = "Modeling Operation";
+    if (opType == fw::ModelingOperationType::Move) opName = "Move";
+    else if (opType == fw::ModelingOperationType::Rotate) opName = "Rotate";
+    else if (opType == fw::ModelingOperationType::Scale) opName = "Scale";
+    else if (opType == fw::ModelingOperationType::ExtrudeFace) opName = "Extrude Face";
+    else if (opType == fw::ModelingOperationType::InsetFace) opName = "Inset Face";
+    else if (opType == fw::ModelingOperationType::BevelEdge) opName = "Bevel Edge";
+
+    m_meshHistoryService.BeginTransaction(m_selectedBlockId, opName, cmdType, &m_activeEditableMesh);
+
+    fw::ModelingOperationResult res;
+    switch (opType) {
+        case fw::ModelingOperationType::Move:
+            res = fw::MeshModelingService::MoveSelection(m_activeEditableMesh, m_selectionService, m_modelMoveDelta);
+            break;
+        case fw::ModelingOperationType::Rotate: {
+            glm::vec3 axis(0.0f);
+            if (m_modelRotateAxis == 0) axis = glm::vec3(1.0f, 0.0f, 0.0f);
+            else if (m_modelRotateAxis == 1) axis = glm::vec3(0.0f, 1.0f, 0.0f);
+            else axis = glm::vec3(0.0f, 0.0f, 1.0f);
+            glm::quat q = glm::angleAxis(glm::radians(m_modelRotateAngle), axis);
+            res = fw::MeshModelingService::RotateSelection(m_activeEditableMesh, m_selectionService, q);
+            break;
+        }
+        case fw::ModelingOperationType::Scale:
+            res = fw::MeshModelingService::ScaleSelection(m_activeEditableMesh, m_selectionService, m_modelScaleVec);
+            break;
+        case fw::ModelingOperationType::ExtrudeFace: {
+            fw::ExtrudeParams ep;
+            ep.offset = m_modelExtrudeOffset;
+            ep.createIndividualFaces = !m_modelExtrudeRegion;
+            res = fw::MeshModelingService::ExtrudeSelection(m_activeEditableMesh, m_selectionService, ep);
+            break;
+        }
+        case fw::ModelingOperationType::InsetFace: {
+            fw::InsetParams ip;
+            ip.insetAmount = m_modelInsetAmount;
+            ip.depthOffset = m_modelInsetDepth;
+            res = fw::MeshModelingService::InsetSelection(m_activeEditableMesh, m_selectionService, ip);
+            break;
+        }
+        case fw::ModelingOperationType::BevelEdge: {
+            fw::BevelParams bp;
+            bp.width = m_modelBevelWidth;
+            res = fw::MeshModelingService::BevelSelection(m_activeEditableMesh, m_selectionService, bp);
+            break;
+        }
+        default:
+            break;
+    }
+
+    if (res.success) {
+        if (cmdType == fw::HistoryCommandType::GeometryDelta) {
+            std::vector<fw::VertexPositionDelta> deltas;
+            deltas.reserve(res.positionDeltas.size());
+            for (const auto& d : res.positionDeltas) {
+                deltas.push_back({d.id, d.oldPos, d.newPos});
+            }
+            m_meshHistoryService.RecordVertexDeltas(deltas);
+        }
+        m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+
+        m_modelingFeedbackMsg = "Operazione di modellazione applicata con successo!";
+        m_modelingFeedbackIsError = false;
+        m_modelingFeedbackTimer = 3.5f;
+        m_selectionService.PruneInvalidated(m_activeEditableMesh);
+
+        // Se topologia o geometria e' cambiata, aggiorna la preview GPU tramite il bridge
+        if (res.topologyChanged || res.geometryChanged) {
+            if (m_factoryOrchestrator.IsDraftOpen()) {
+                m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+            }
+            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+            m_cachedGeometryMesh = compMesh;
+            if (m_context && m_previewWorld) {
+                m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+            }
+        }
+    } else {
+        m_meshHistoryService.CancelTransaction();
+        m_modelingFeedbackMsg = "Errore: " + res.errorMessage;
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 4.5f;
+    }
+}
+
 bool BlockMakerState::Init() {
     std::cout << "[BlockMakerState] Inizializzazione...\n";
 
@@ -3021,6 +3552,16 @@ bool BlockMakerState::Init() {
     RunFactoryCoreValidationTests(false);
     RunSculptValidationTests(false);
     RunSelectionValidationTests(false);
+    RunModelingValidationTests(false);
+    RunSculptBrushValidationTests(false);
+    RunTopologyValidationTests(false);
+    RunRepairValidationTests(false);
+    RunHistoryValidationTests(false);
+    RunBridgeValidationTests(false);
+    RunTextureValidationTests(false);
+    RunPaintValidationTests(false);
+    RunSurfacePaintValidationTests(false);
+    RunPrimitiveUVValidationTests(false);
     if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
         m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
     }
@@ -3036,6 +3577,17 @@ void BlockMakerState::Update(float dt) {
     m_context->isBlockMakerMode = true; // Isolate rendering to Void Room
     m_context->previewLightDir = m_previewLightDir;
     
+    if (m_modelingFeedbackTimer > 0.0f) {
+        m_modelingFeedbackTimer -= dt;
+        if (m_modelingFeedbackTimer <= 0.0f) {
+            m_modelingFeedbackMsg.clear();
+        }
+    }
+
+    if (m_sculptLiveGpuCooldown > 0.0f) {
+        m_sculptLiveGpuCooldown -= dt;
+    }
+
     if (m_context->deviceManager) {
         m_context->deviceManager->requireFreeCursor = true; // Impedisce che il cursore scompaia cliccando sullo schermo
     }
@@ -3051,6 +3603,17 @@ void BlockMakerState::Update(float dt) {
         if (io.MouseWheel != 0.0f) {
             m_orbitDistance -= io.MouseWheel * 0.5f;
             m_orbitDistance = glm::clamp(m_orbitDistance, 2.0f, 20.0f);
+        }
+    }
+
+    // Undo / Redo Shortcuts (BM-S8.9: Ctrl+Z / Ctrl+Y)
+    if (!io.WantTextInput) {
+        if (io.KeyCtrl) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Z) && !io.KeyShift) {
+                ExecuteMeshUndo();
+            } else if (ImGui::IsKeyPressed(ImGuiKey_Y) || (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z))) {
+                ExecuteMeshRedo();
+            }
         }
     }
 
@@ -3281,6 +3844,7 @@ void BlockMakerState::Render() {
     DrawUI();
     DrawGizmo();
     DrawMeshSelectionVisualFeedback();
+    DrawSculptBrushVisualFeedback();
 }
 
 void BlockMakerState::UpdatePreviewMesh() {
@@ -3306,48 +3870,73 @@ void BlockMakerState::UpdatePreviewMesh() {
         }
     }
 
+    bool isSculptAuthoritative = (m_sculptModeActive || m_modelingTool != 0 || m_meshSelectionEnabled || 
+                                 (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.has_value()));
+
     bool needsRecompile = false;
-    if (m_lastGeometryShapeID != mat.sharedShape.id || 
-        m_lastGeometryRevision != mat.sharedShape.revision || 
-        m_lastMaterialRevision != mat.revision ||
-        m_cachedGeometryMesh.vertices.empty()) 
-    {
-        needsRecompile = true;
+    if (isSculptAuthoritative && m_activeEditableMesh.GetFaceCount() > 0) {
+        if (fw::MeshBridgeService::NeedsPreviewRecompile(m_activeEditableMesh, (uint32_t)m_selectedBlockId, m_bridgePreviewCache) ||
+            m_cachedGeometryMesh.vertices.empty()) {
+            needsRecompile = true;
+        }
+    } else {
+        if (m_lastGeometryShapeID != mat.sharedShape.id || 
+            m_lastGeometryRevision != mat.sharedShape.revision || 
+            m_lastMaterialRevision != mat.revision ||
+            m_cachedGeometryMesh.vertices.empty()) 
+        {
+            needsRecompile = true;
+        }
     }
 
     if (needsRecompile) {
-        const fw::ShapeDefinition* shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
-        if (!shapeDef) {
-            // Fallback deterministico a cubo di default se l'handle fosse disallineato
-            mat.sharedShape = m_context->shapeRegistry->GetDefaultCube();
-            shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
-        }
+        fw::GeometryCompileOptions options;
+        if (m_context) options.shapeRegistry = m_context->shapeRegistry.get();
+        options.surfaceOverrides = &mat.surfaces;
+        options.defaultUVTransform = &mat.baseUVTransform;
+        options.defaultProjection = mat.baseProjection;
+        options.defaultMaterialId = (uint32_t)m_selectedBlockId;
 
-        if (shapeDef) {
-            fw::GeometryCompileOptions options;
-            if (m_context) options.shapeRegistry = m_context->shapeRegistry.get();
-            options.surfaceOverrides = &mat.surfaces;
-            options.defaultUVTransform = &mat.baseUVTransform;
-            options.defaultProjection = mat.baseProjection;
-            options.defaultMaterialId = (uint32_t)m_selectedBlockId;
+        if (isSculptAuthoritative && m_activeEditableMesh.GetFaceCount() > 0) {
             m_zeroWorkTelemetry.geoCompilerCalls++;
-            auto result = fw::GeometryCompiler::Compile(*shapeDef, options);
+            auto result = fw::MeshBridgeService::CompileForPreview(m_activeEditableMesh, options, m_bridgePreviewCache);
             if (result.success) {
-                m_cachedGeometryMesh = std::move(result.mesh);
-                if (m_lastGeometryRevision != mat.sharedShape.revision) {
-                    m_zeroWorkTelemetry.shapeRevIncrements++;
-                }
-                m_lastGeometryShapeID = mat.sharedShape.id;
-                m_lastGeometryRevision = mat.sharedShape.revision;
+                m_cachedGeometryMesh = result.mesh;
+                m_lastGeometryRevision = m_activeEditableMesh.GetGeometryRevision();
                 m_lastMaterialRevision = mat.revision;
-                m_lastGeometryWasParametric = true;
+                m_lastGeometryWasParametric = false;
             } else {
                 m_lastCompileError = "Compile Error: " + result.errorMessage;
-                return; // Preserve last valid preview
+                return;
             }
         } else {
-            m_lastCompileError = "Shape ID not found in registry.";
-            return; // Preserve last valid preview
+            const fw::ShapeDefinition* shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+            if (!shapeDef) {
+                // Fallback deterministico a cubo di default se l'handle fosse disallineato
+                mat.sharedShape = m_context->shapeRegistry->GetDefaultCube();
+                shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+            }
+
+            if (shapeDef) {
+                m_zeroWorkTelemetry.geoCompilerCalls++;
+                auto result = fw::GeometryCompiler::Compile(*shapeDef, options);
+                if (result.success) {
+                    m_cachedGeometryMesh = std::move(result.mesh);
+                    if (m_lastGeometryRevision != mat.sharedShape.revision) {
+                        m_zeroWorkTelemetry.shapeRevIncrements++;
+                    }
+                    m_lastGeometryShapeID = mat.sharedShape.id;
+                    m_lastGeometryRevision = mat.sharedShape.revision;
+                    m_lastMaterialRevision = mat.revision;
+                    m_lastGeometryWasParametric = true;
+                } else {
+                    m_lastCompileError = "Compile Error: " + result.errorMessage;
+                    return; // Preserve last valid preview
+                }
+            } else {
+                m_lastCompileError = "Shape ID not found in registry.";
+                return; // Preserve last valid preview
+            }
         }
     }
 
@@ -3760,6 +4349,18 @@ void BlockMakerState::DrawUI() {
                 if (ImGui::Button("Esegui Test Selezione (BM-S3)", ImVec2(220, 22))) {
                     RunSelectionValidationTests(true);
                 }
+                ImGui::SameLine();
+                if (ImGui::Button("Esegui Test Modeling (BM-S4)", ImVec2(220, 22))) {
+                    RunModelingValidationTests(true);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Esegui Test Sculpt Brush (BM-S5)", ImVec2(230, 22))) {
+                    RunSculptBrushValidationTests(true);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Esegui Test Topology (BM-S6)", ImVec2(220, 22))) {
+                    RunTopologyValidationTests(true);
+                }
                 if (m_mathTestsExecuted) {
                     size_t passCount = 0;
                     for (const auto& t : m_mathTestResults) {
@@ -4046,6 +4647,186 @@ void BlockMakerState::DrawUI() {
                         ImGui::TreePop();
                     }
                 }
+
+                if (m_modelingTestsExecuted) {
+                    size_t modPassCount = 0;
+                    for (const auto& s : m_modelingTestResults) {
+                        if (s.passed) modPassCount++;
+                    }
+                    if (modPassCount == m_modelingTestResults.size()) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S4 MODEL OPERATIONS: %zu/%zu PASS (100%%)", modPassCount, m_modelingTestResults.size());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S4 MODEL OPERATIONS: %zu/%zu PASS (%zu FAIL)", modPassCount, m_modelingTestResults.size(), m_modelingTestResults.size() - modPassCount);
+                    }
+
+                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Model Operations (BM-S4: MOD-1 .. MOD-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& s : m_modelingTestResults) {
+                            if (s.passed) {
+                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            } else {
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                                ImGui::Separator();
+                                ImGui::Text("Input: %s", s.inputDesc.c_str());
+                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                                ImGui::Text("Dettagli: %s", s.details.c_str());
+                                ImGui::EndTooltip();
+                            }
+                        }
+                        if (ImGui::Button("Riesegui Test Modeling (BM-S4)")) {
+                            RunModelingValidationTests(true);
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+
+                if (m_sculptBrushTestsExecuted) {
+                    size_t sclPassCount = 0;
+                    for (const auto& s : m_sculptBrushTestResults) {
+                        if (s.passed) sclPassCount++;
+                    }
+                    if (sclPassCount == m_sculptBrushTestResults.size()) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S5 SCULPT BRUSH ENGINE: %zu/%zu PASS (100%%)", sclPassCount, m_sculptBrushTestResults.size());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S5 SCULPT BRUSH ENGINE: %zu/%zu PASS (%zu FAIL)", sclPassCount, m_sculptBrushTestResults.size(), m_sculptBrushTestResults.size() - sclPassCount);
+                    }
+
+                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Sculpt Brush Engine (BM-S5: SCL-1 .. SCL-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& s : m_sculptBrushTestResults) {
+                            if (s.passed) {
+                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            } else {
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                                ImGui::Separator();
+                                ImGui::Text("Input: %s", s.inputDesc.c_str());
+                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                                ImGui::Text("Dettagli: %s", s.details.c_str());
+                                ImGui::EndTooltip();
+                            }
+                        }
+                        if (ImGui::Button("Riesegui Test Sculpt Brush (BM-S5)")) {
+                            RunSculptBrushValidationTests(true);
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+
+                if (m_topologyTestsExecuted) {
+                    size_t topPassCount = 0;
+                    for (const auto& s : m_topologyTestResults) {
+                        if (s.passed) topPassCount++;
+                    }
+                    if (topPassCount == m_topologyTestResults.size()) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S6 TOPOLOGY OPERATIONS: %zu/%zu PASS (100%%)", topPassCount, m_topologyTestResults.size());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S6 TOPOLOGY OPERATIONS: %zu/%zu PASS (%zu FAIL)", topPassCount, m_topologyTestResults.size(), m_topologyTestResults.size() - topPassCount);
+                    }
+
+                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Topology Operations & Symmetry (BM-S6: TOP-1 .. TOP-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& s : m_topologyTestResults) {
+                            if (s.passed) {
+                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            } else {
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                                ImGui::Separator();
+                                ImGui::Text("Input: %s", s.inputDesc.c_str());
+                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                                ImGui::Text("Dettagli: %s", s.details.c_str());
+                                ImGui::EndTooltip();
+                            }
+                        }
+                        if (ImGui::Button("Riesegui Test Topology (BM-S6)")) {
+                            RunTopologyValidationTests(true);
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+
+                if (m_repairTestsExecuted) {
+                    size_t repPassCount = 0;
+                    for (const auto& s : m_repairTestResults) {
+                        if (s.passed) repPassCount++;
+                    }
+                    if (repPassCount == m_repairTestResults.size()) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S7 REMESHING & REPAIR: %zu/%zu PASS (100%%)", repPassCount, m_repairTestResults.size());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S7 REMESHING & REPAIR: %zu/%zu PASS (%zu FAIL)", repPassCount, m_repairTestResults.size(), m_repairTestResults.size() - repPassCount);
+                    }
+
+                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Remeshing & Manifold Repair (BM-S7: REP-1 .. REP-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& s : m_repairTestResults) {
+                            if (s.passed) {
+                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            } else {
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                                ImGui::Separator();
+                                ImGui::Text("Input: %s", s.inputDesc.c_str());
+                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                                ImGui::Text("Dettagli: %s", s.details.c_str());
+                                ImGui::EndTooltip();
+                            }
+                        }
+                        if (ImGui::Button("Riesegui Test Repair (BM-S7)")) {
+                            RunRepairValidationTests(true);
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+
+                if (m_historyTestsExecuted) {
+                    size_t hisPassCount = 0;
+                    for (const auto& s : m_historyTestResults) {
+                        if (s.passed) hisPassCount++;
+                    }
+                    if (hisPassCount == m_historyTestResults.size()) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S8 HISTORY & UNDO/REDO: %zu/%zu PASS (100%%)", hisPassCount, m_historyTestResults.size());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S8 HISTORY & UNDO/REDO: %zu/%zu PASS (%zu FAIL)", hisPassCount, m_historyTestResults.size(), m_historyTestResults.size() - hisPassCount);
+                    }
+
+                    if (ImGui::TreeNodeEx("Dettaglio 12 Test History Engine (BM-S8: HIS-1 .. HIS-12)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& s : m_historyTestResults) {
+                            if (s.passed) {
+                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            } else {
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                                ImGui::Separator();
+                                ImGui::Text("Input: %s", s.inputDesc.c_str());
+                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                                ImGui::Text("Dettagli: %s", s.details.c_str());
+                                ImGui::EndTooltip();
+                            }
+                        }
+                        if (ImGui::Button("Riesegui Test History (BM-S8)")) {
+                            RunHistoryValidationTests(true);
+                        }
+                        ImGui::TreePop();
+                    }
+                }
                 ImGui::EndChild();
 
                 ImGui::Spacing();
@@ -4253,6 +5034,225 @@ void BlockMakerState::DrawUI() {
                         ImGui::SameLine();
                         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active F: %u)", m_selectionService.GetActiveFace().index);
                     }
+
+                    // --- BM-S8: Undo / Redo Toolbar ---
+                    ImGui::Spacing();
+                    bool canUndo = m_meshHistoryService.CanUndo();
+                    bool canRedo = m_meshHistoryService.CanRedo();
+                    std::string undoLabel = "Undo (Ctrl+Z)";
+                    if (canUndo) undoLabel += ": " + m_meshHistoryService.GetUndoCommandName();
+                    std::string redoLabel = "Redo (Ctrl+Y)";
+                    if (canRedo) redoLabel += ": " + m_meshHistoryService.GetRedoCommandName();
+
+                    if (!canUndo) ImGui::BeginDisabled();
+                    if (ImGui::Button("Undo##BtnUndo", ImVec2(100, 24))) {
+                        ExecuteMeshUndo();
+                    }
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("%s", undoLabel.c_str());
+                    }
+                    if (!canUndo) ImGui::EndDisabled();
+
+                    ImGui::SameLine();
+                    if (!canRedo) ImGui::BeginDisabled();
+                    if (ImGui::Button("Redo##BtnRedo", ImVec2(100, 24))) {
+                        ExecuteMeshRedo();
+                    }
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("%s", redoLabel.c_str());
+                    }
+                    if (!canRedo) ImGui::EndDisabled();
+
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(History: %zu)", m_meshHistoryService.GetUndoCount());
+
+                    // --- BM-S4: Modeling Operations Tools UI ---
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.8f, 1.0f), "OPERAZIONI DI MODELLAZIONE (BM-S4):");
+                    
+                    if (ImGui::RadioButton("Move##ToolMove", m_modelingTool == 1)) m_modelingTool = 1;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Rotate##ToolRot", m_modelingTool == 2)) m_modelingTool = 2;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Scale##ToolScale", m_modelingTool == 3)) m_modelingTool = 3;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Extrude##ToolExt", m_modelingTool == 4)) m_modelingTool = 4;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Inset##ToolInset", m_modelingTool == 5)) m_modelingTool = 5;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Bevel##ToolBevel", m_modelingTool == 6)) m_modelingTool = 6;
+
+                    // Parametri contestuali
+                    if (m_modelingTool == 1) {
+                        ImGui::Text("Delta (X, Y, Z):");
+                        ImGui::DragFloat3("##MoveDelta", &m_modelMoveDelta.x, 0.01f, -5.0f, 5.0f, "%.2f");
+                        if (ImGui::Button("Applica Move (Commit)", ImVec2(180, 24))) {
+                            ApplyModelingOperation(fw::ModelingOperationType::Move);
+                        }
+                    } else if (m_modelingTool == 2) {
+                        ImGui::Text("Angolo (Gradi):");
+                        ImGui::DragFloat("##RotAngle", &m_modelRotateAngle, 1.0f, -360.0f, 360.0f, "%.1f deg");
+                        ImGui::Text("Asse:");
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("X##AxisX", m_modelRotateAxis == 0)) m_modelRotateAxis = 0;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Y##AxisY", m_modelRotateAxis == 1)) m_modelRotateAxis = 1;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Z##AxisZ", m_modelRotateAxis == 2)) m_modelRotateAxis = 2;
+                        if (ImGui::Button("Applica Rotate (Commit)", ImVec2(180, 24))) {
+                            ApplyModelingOperation(fw::ModelingOperationType::Rotate);
+                        }
+                    } else if (m_modelingTool == 3) {
+                        ImGui::Text("Fattore Scala (X, Y, Z):");
+                        ImGui::DragFloat3("##ScaleVec", &m_modelScaleVec.x, 0.01f, 0.01f, 10.0f, "%.2f");
+                        if (ImGui::Button("Applica Scale (Commit)", ImVec2(180, 24))) {
+                            ApplyModelingOperation(fw::ModelingOperationType::Scale);
+                        }
+                    } else if (m_modelingTool == 4) {
+                        ImGui::Text("Offset Estrusione:");
+                        ImGui::DragFloat("##ExtOffset", &m_modelExtrudeOffset, 0.01f, -5.0f, 5.0f, "%.2f u");
+                        ImGui::Checkbox("Region Extrude (Unione facce adiacenti)", &m_modelExtrudeRegion);
+                        if (ImGui::Button("Applica Extrude (Commit)", ImVec2(180, 24))) {
+                            ApplyModelingOperation(fw::ModelingOperationType::ExtrudeFace);
+                        }
+                    } else if (m_modelingTool == 5) {
+                        ImGui::Text("Offset Inset:");
+                        ImGui::DragFloat("##InsetAmount", &m_modelInsetAmount, 0.01f, 0.01f, 0.95f, "%.2f");
+                        ImGui::Text("Depth Offset:");
+                        ImGui::DragFloat("##InsetDepth", &m_modelInsetDepth, 0.01f, -2.0f, 2.0f, "%.2f");
+                        if (ImGui::Button("Applica Inset (Commit)", ImVec2(180, 24))) {
+                            ApplyModelingOperation(fw::ModelingOperationType::InsetFace);
+                        }
+                    } else if (m_modelingTool == 6) {
+                        ImGui::Text("Larghezza Bevel:");
+                        ImGui::DragFloat("##BevelWidth", &m_modelBevelWidth, 0.005f, 0.001f, 0.5f, "%.3f");
+                        if (ImGui::Button("Applica Bevel (Commit)", ImVec2(180, 24))) {
+                            ApplyModelingOperation(fw::ModelingOperationType::BevelEdge);
+                        }
+                    }
+
+                    // Feedback temporizzato
+                    if (!m_modelingFeedbackMsg.empty()) {
+                        ImVec4 col = m_modelingFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.2f, 1.0f, 0.3f, 1.0f);
+                        ImGui::TextColored(col, "%s", m_modelingFeedbackMsg.c_str());
+                    }
+
+                    // --- BM-S5: Sculpt Brush Engine UI ---
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "SCULPT BRUSH ENGINE (BM-S5)");
+                    ImGui::Checkbox("Attiva Sculpt Brush Mode##SculptBrushMode", &m_sculptModeActive);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Attiva la modalità scultura interattiva via cursore 3D (drag del mouse sulla superficie).");
+                    }
+
+                    if (m_sculptModeActive) {
+                        auto& bSettings = m_sculptService.GetSettingsMutable();
+                        int curBrush = static_cast<int>(bSettings.brushType);
+                        ImGui::Text("Brush:");
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Grab##BGrab", curBrush == 0)) bSettings.brushType = fw::SculptBrushType::Grab;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Smooth##BSmooth", curBrush == 1)) bSettings.brushType = fw::SculptBrushType::Smooth;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Inflate##BInflate", curBrush == 2)) bSettings.brushType = fw::SculptBrushType::Inflate;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Flatten##BFlatten", curBrush == 3)) bSettings.brushType = fw::SculptBrushType::Flatten;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Clay##BClay", curBrush == 4)) bSettings.brushType = fw::SculptBrushType::Clay;
+
+                        ImGui::DragFloat("Raggio##BRadius", &bSettings.radius, 0.01f, 0.02f, 3.0f, "%.2f u");
+                        ImGui::DragFloat("Intensità##BStrength", &bSettings.strength, 0.01f, 0.01f, 2.0f, "%.2f");
+                        ImGui::DragFloat("Spaziatura##BSpacing", &bSettings.spacing, 0.01f, 0.02f, 1.0f, "%.2f");
+
+                        int curFalloff = static_cast<int>(bSettings.falloff);
+                        const char* falloffNames[] = { "Smooth (Hermite)", "Linear", "Sphere", "Sharp", "Constant" };
+                        if (ImGui::Combo("Falloff##BFalloff", &curFalloff, falloffNames, 5)) {
+                            bSettings.falloff = static_cast<fw::BrushFalloffType>(curFalloff);
+                        }
+
+                        int curSym = static_cast<int>(bSettings.symmetry);
+                        const char* symNames[] = { "Nessuna (None)", "Specchia Asse X", "Specchia Asse Y", "Specchia Asse Z" };
+                        if (ImGui::Combo("Simmetria##BSym", &curSym, symNames, 4)) {
+                            bSettings.symmetry = static_cast<fw::SymmetryPlane>(curSym);
+                        }
+
+                        if (bSettings.brushType == fw::SculptBrushType::Clay) {
+                            ImGui::DragFloat("Clay Ceiling##BClayCeil", &bSettings.clayCeiling, 0.01f, 0.02f, 1.0f, "%.2f");
+                        }
+                    }
+
+                    // --- BM-S7: Remeshing & Manifold Repair Actions ---
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.7f, 1.0f), "MANIFOLD REPAIR & REMESH (BM-S7)");
+                    if (ImGui::Button("Rimuovi Degenerazioni##BtnRemDeg", ImVec2(180, 24))) {
+                        auto r = fw::MeshRepairService::RemoveDegenerateFaces(m_activeEditableMesh);
+                        if (r.modified) {
+                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                            m_cachedGeometryMesh = compMesh;
+                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Tappa Fori (Cap Holes)##BtnCapHoles", ImVec2(180, 24))) {
+                        auto r = fw::MeshRepairService::CapHoles(m_activeEditableMesh);
+                        if (r.modified) {
+                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                            m_cachedGeometryMesh = compMesh;
+                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                        }
+                    }
+                    if (ImGui::Button("Limited Dissolve (Complanari)##BtnDissolve", ImVec2(180, 24))) {
+                        auto r = fw::MeshRepairService::LimitedDissolve(m_activeEditableMesh);
+                        if (r.modified) {
+                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                            m_cachedGeometryMesh = compMesh;
+                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Remesh Uniforme##BtnRemesh", ImVec2(180, 24))) {
+                        fw::RemeshOptions opt;
+                        opt.targetEdgeLength = 0.25f;
+                        opt.iterations = 2;
+                        auto r = fw::MeshRepairService::UniformRemesh(m_activeEditableMesh, opt);
+                        if (r.modified) {
+                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                            m_cachedGeometryMesh = compMesh;
+                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                        }
+                    }
+                }
+
+                // --- BM-S9: GeometryCompiler Bridge & Factory Integration ---
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 1.0f, 1.0f), "GEOMETRYCOMPILER BRIDGE & FACTORY (BM-S9)");
+
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    if (ImGui::Button("Sincronizza Mesh in Factory Draft##SyncBridgeDraft", ImVec2(260, 26))) {
+                        fw::MeshBridgeService::SynchronizeEditableMeshToDraft(m_activeEditableMesh, *m_factoryOrchestrator.GetCurrentDraft(), &m_factoryOrchestrator);
+                        m_modelingFeedbackMsg = "Mesh sincronizzata nel RawAssetDraft della Factory!";
+                        m_modelingFeedbackIsError = false;
+                        m_modelingFeedbackTimer = 3.0f;
+                    }
+                }
+
+                if (ImGui::TreeNodeEx("Audit Suite BM-S9 (BRG-1 .. BRG-10)##BridgeTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::Button("Esegui Audit Bridge BM-S9 (Re-Run)##RerunBridgeTests", ImVec2(260, 24))) {
+                        RunBridgeValidationTests(true);
+                    }
+                    ImGui::Spacing();
+                    for (const auto& r : m_bridgeTestResults) {
+                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+                        if (!r.details.empty()) {
+                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
                 }
                 ImGui::Separator();
 
@@ -4853,6 +5853,74 @@ void BlockMakerState::DrawUI() {
                     ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Texture caricata e Materiale salvato automaticamente!");
                 }
 
+                // BM-TX2: Texture Engine & PBR Importer Audit Suite (TX-1 .. TX-10)
+                if (ImGui::TreeNodeEx("Audit Suite BM-TX2 (TX-1 .. TX-10)##TextureTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::Button("Esegui Audit Texture BM-TX2 (Re-Run)##RerunTextureTests", ImVec2(280, 24))) {
+                        RunTextureValidationTests(true);
+                    }
+                    ImGui::Spacing();
+                    for (const auto& r : m_textureTestResults) {
+                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+                        if (!r.details.empty()) {
+                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
+                // BM-TX3: Paint & Layer Engine Audit Suite (PT-1 .. PT-10)
+                if (ImGui::TreeNodeEx("Audit Suite BM-TX3 (PT-1 .. PT-10)##PaintTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::Button("Esegui Audit Paint BM-TX3 (Re-Run)##RerunPaintTests", ImVec2(280, 24))) {
+                        RunPaintValidationTests(true);
+                    }
+                    ImGui::Spacing();
+                    for (const auto& r : m_paintTestResults) {
+                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+                        if (!r.details.empty()) {
+                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
+                // BM-TX4: 3D Surface Brush & Painting Suite (BP-1 .. BP-15)
+                if (ImGui::TreeNodeEx("Audit Suite BM-TX4 (BP-1 .. BP-15)##SurfacePaintTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::Button("Esegui Audit Surface Paint BM-TX4 (Re-Run)##RerunSurfacePaintTests", ImVec2(280, 24))) {
+                        RunSurfacePaintValidationTests(true);
+                    }
+                    ImGui::Spacing();
+                    for (const auto& r : m_surfacePaintTestResults) {
+                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+                        if (!r.details.empty()) {
+                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
+                // BM-UV2: Universal UV Contract & Primitive Mapping Suite (UVP-1 .. UVP-15)
+                if (ImGui::TreeNodeEx("Audit Suite BM-UV2 (UVP-1 .. UVP-15)##PrimitiveUVTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+                    if (ImGui::Button("Esegui Audit UV BM-UV2 (Re-Run)##RerunPrimitiveUVTests", ImVec2(280, 24))) {
+                        RunPrimitiveUVValidationTests(true);
+                    }
+                    ImGui::Spacing();
+                    for (const auto& r : m_primitiveUVTestResults) {
+                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+                        if (!r.details.empty()) {
+                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Mappatura UV & Superfici Semantiche (BM-C)");
 
@@ -5024,6 +6092,40 @@ void BlockMakerState::DrawUI() {
                         if (ImGui::Checkbox("Specchia V##SurfMirV", &surf.uvTransform.mirrorV)) {
                             mat.revision++;
                             isDirty = true;
+                        }
+
+                        // BM-TX2: Override Texture Superficie Dedicate
+                        if (ImGui::Checkbox("Texture Dedicate Superficie (BM-TX2)##SurfTexToggle", &surf.textures.useExplicitTextures)) {
+                            mat.revision++;
+                            isDirty = true;
+                        }
+                        if (surf.textures.useExplicitTextures) {
+                            auto drawSurfTexField = [&](const char* label, std::string& pathRef, const std::string& suffix) {
+                                char buf[256];
+                                strncpy(buf, pathRef.c_str(), sizeof(buf));
+                                ImGui::PushID(label);
+                                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
+                                if (ImGui::InputText("##surfpath", buf, sizeof(buf))) {
+                                    pathRef = buf;
+                                    mat.revision++;
+                                    isDirty = true;
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::Button("Sfoglia...##btn", ImVec2(75, 0))) {
+                                    std::string picked = BrowseForImage();
+                                    if (!picked.empty()) {
+                                        pathRef = CopyTextureToAssets(picked, m_selectedBlockId, suffix + "_s" + std::to_string(curSurfId));
+                                        mat.revision++;
+                                        isDirty = true;
+                                    }
+                                }
+                                ImGui::PopID();
+                                ImGui::Text("  %s", label);
+                            };
+                            drawSurfTexField("Albedo Superficie", surf.textures.albedoPath, "albedo");
+                            drawSurfTexField("Normal Superficie", surf.textures.normalPath, "normal");
+                            drawSurfTexField("ORM Superficie", surf.textures.ormPath, "orm");
+                            drawSurfTexField("Emissive Superficie", surf.textures.emissivePath, "emissive");
                         }
                     }
                     ImGui::TreePop();
@@ -5905,4 +7007,200 @@ void BlockMakerState::DrawMeshSelectionVisualFeedback() {
         }
     }
 }
+
+void BlockMakerState::DrawSculptBrushVisualFeedback() {
+    if (!m_sculptModeActive || !m_context) {
+        return;
+    }
+
+    if (m_activeEditableMesh.GetVertexCount() == 0) {
+        m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+
+    float groundY = 0.0f;
+    if (m_context->blockRegistry) {
+        const fw::SimBlockDef& def = m_context->blockRegistry->GetBlock(m_selectedBlockId);
+        if (!m_cachedGeometryMesh.vertices.empty()) {
+            fw::AABB bounds = m_cachedGeometryMesh.bounds();
+            glm::vec3 corners[8] = {
+                { bounds.min.x, bounds.min.y, bounds.min.z },
+                { bounds.min.x, bounds.min.y, bounds.max.z },
+                { bounds.min.x, bounds.max.y, bounds.min.z },
+                { bounds.min.x, bounds.max.y, bounds.max.z },
+                { bounds.max.x, bounds.min.y, bounds.min.z },
+                { bounds.max.x, bounds.min.y, bounds.max.z },
+                { bounds.max.x, bounds.max.y, bounds.min.z },
+                { bounds.max.x, bounds.max.y, bounds.max.z }
+            };
+
+            glm::mat4 mShapeInAsset = glm::mat4(1.0f);
+            mShapeInAsset = mShapeInAsset * glm::mat4_cast(glm::quat(glm::radians(def.localRotation)));
+            mShapeInAsset = glm::scale(mShapeInAsset, def.localScale);
+            mShapeInAsset = glm::translate(mShapeInAsset, -def.pivotOffset);
+
+            float minShapeY = 1e9f;
+            for (int i = 0; i < 8; ++i) {
+                glm::vec4 tc = mShapeInAsset * glm::vec4(corners[i], 1.0f);
+                if (tc.y < minShapeY) minShapeY = tc.y;
+            }
+            groundY = -0.50f - minShapeY;
+        }
+
+        glm::quat qPreview = glm::quat(glm::radians(m_blockEulerAngles));
+        glm::quat qAsset = glm::quat(glm::radians(def.localRotation));
+
+        glm::mat4 presMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, groundY + m_simPosY, 0.0f))
+                          * glm::mat4_cast(qPreview);
+
+        glm::mat4 assetMat = glm::translate(glm::mat4(1.0f), def.localPosition)
+                           * glm::mat4_cast(qAsset)
+                           * glm::scale(glm::mat4(1.0f), def.localScale)
+                           * glm::translate(glm::mat4(1.0f), -def.pivotOffset);
+
+        glm::mat4 worldMat = presMat * assetMat;
+
+        fw::CameraViewportContext ctx;
+        ctx.viewMatrix = m_context->activeCameraView.viewMatrix;
+        ctx.projMatrix = m_projNoFlip;
+        ctx.viewportPos = vp ? glm::vec2(vp->Pos.x, vp->Pos.y) : glm::vec2(0.0f);
+        ctx.viewportSize = vp ? glm::vec2(vp->Size.x, vp->Size.y) : glm::vec2(io.DisplaySize.x, io.DisplaySize.y);
+        ctx.modelMatrix = worldMat;
+
+        glm::vec2 mousePos(io.MousePos.x, io.MousePos.y);
+        fw::PickRay worldRay = fw::MeshSelectionService::ComputeWorldRayFromScreen(mousePos, ctx);
+
+        // Raycast contro le facce di EditableMesh
+        fw::PickHit hit = m_selectionService.Pick(worldRay, m_activeEditableMesh, ctx);
+
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
+        if (!drawList) return;
+
+        auto ProjectToScreen = [&](const glm::vec3& objPos, glm::vec2& outScreen, float& outDepth) -> bool {
+            glm::vec4 worldPos = ctx.modelMatrix * glm::vec4(objPos, 1.0f);
+            glm::vec4 clipPos = ctx.projMatrix * ctx.viewMatrix * worldPos;
+            if (clipPos.w <= 0.001f) return false;
+            glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+            if (ndc.z < -1.0f || ndc.z > 1.0f) return false;
+            outScreen.x = ctx.viewportPos.x + (ndc.x * 0.5f + 0.5f) * ctx.viewportSize.x;
+            outScreen.y = ctx.viewportPos.y + ((1.0f - (ndc.y * 0.5f + 0.5f))) * ctx.viewportSize.y;
+            outDepth = clipPos.w;
+            return true;
+        };
+
+        if (hit.hit) {
+            glm::vec2 centerScreen;
+            float depth;
+            if (ProjectToScreen(hit.localHitPoint, centerScreen, depth)) {
+                // Calcola raggio apparente in pixel
+                glm::vec3 tangentPoint = hit.localHitPoint + glm::vec3(m_sculptService.GetSettings().radius, 0.0f, 0.0f);
+                glm::vec2 tangentScreen;
+                float tDepth;
+                float pixelRadius = 30.0f;
+                if (ProjectToScreen(tangentPoint, tangentScreen, tDepth)) {
+                    pixelRadius = std::max(5.0f, glm::length(tangentScreen - centerScreen));
+                }
+
+                // Cerchio cursore pennello principale
+                drawList->AddCircle(ImVec2(centerScreen.x, centerScreen.y), pixelRadius, IM_COL32(255, 200, 0, 220), 32, 2.0f);
+                drawList->AddCircleFilled(ImVec2(centerScreen.x, centerScreen.y), 3.0f, IM_COL32(255, 100, 50, 255));
+
+                // Se simmetria attiva (es. X), disegna anche il cursore specchiato
+                auto sym = m_sculptService.GetSettings().symmetry;
+                if (sym != fw::SymmetryPlane::None) {
+                    glm::vec3 symPoint = hit.localHitPoint;
+                    if (sym == fw::SymmetryPlane::X) symPoint.x = -symPoint.x;
+                    else if (sym == fw::SymmetryPlane::Y) symPoint.y = -symPoint.y;
+                    else if (sym == fw::SymmetryPlane::Z) symPoint.z = -symPoint.z;
+
+                    glm::vec2 symScreen;
+                    float sDepth;
+                    if (ProjectToScreen(symPoint, symScreen, sDepth)) {
+                        drawList->AddCircle(ImVec2(symScreen.x, symScreen.y), pixelRadius, IM_COL32(0, 200, 255, 180), 32, 1.5f);
+                        drawList->AddCircleFilled(ImVec2(symScreen.x, symScreen.y), 2.5f, IM_COL32(0, 220, 255, 220));
+                    }
+                }
+            }
+
+            // Gestione Mouse Stroke
+            bool canSculpt = !m_isGizmoInteracting && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver() && !io.WantCaptureMouse;
+            if (canSculpt) {
+                glm::vec3 hitNormal = fw::MeshModelingService::CalculateFaceNormal(m_activeEditableMesh, hit.faceId);
+                fw::StrokePoint sp;
+                sp.hitPoint = hit.localHitPoint;
+                sp.surfaceNormal = hitNormal;
+                sp.hitFace = hit.faceId;
+
+                if (io.MouseClicked[0]) {
+                    m_isSculptStroking = true;
+                    m_lastSculptStrokePoint = sp;
+                    bool begun = m_sculptService.BeginStroke(m_activeEditableMesh, sp);
+                    if (begun) {
+                        m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Sculpt Stroke", fw::HistoryCommandType::GeometryDelta);
+                        if (m_sculptService.GetSettings().brushType != fw::SculptBrushType::Grab) {
+                            m_sculptLiveGpuDirty = true;
+                        }
+                    }
+                } else if (io.MouseDown[0] && m_isSculptStroking) {
+                    m_lastSculptStrokePoint = sp;
+                    bool modified = m_sculptService.UpdateStroke(m_activeEditableMesh, sp);
+                    if (modified) {
+                        m_sculptLiveGpuDirty = true;
+                    }
+                }
+            }
+        }
+
+        if (m_isSculptStroking) {
+            // Live GPU Coalesced Update: aggiornamento in tempo reale durante il trascinamento dello stroke
+            if (m_sculptLiveGpuDirty && m_sculptLiveGpuCooldown <= 0.0f) {
+                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                m_cachedGeometryMesh = compMesh;
+                if (m_previewWorld) {
+                    m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                }
+                m_sculptLiveGpuDirty = false;
+                m_sculptLiveGpuCooldown = 0.033f; // Coalesce a max ~30 FPS durante il drag per non saturare la VRAM
+            }
+
+            if (io.MouseReleased[0]) {
+                m_isSculptStroking = false;
+                auto sRes = m_sculptService.EndStroke(m_activeEditableMesh);
+                if (sRes.geometryChanged) {
+                    std::vector<fw::VertexPositionDelta> deltas;
+                    deltas.reserve(sRes.positionDeltas.size());
+                    for (const auto& d : sRes.positionDeltas) {
+                        deltas.push_back({d.id, d.oldPos, d.newPos});
+                    }
+                    m_meshHistoryService.RecordVertexDeltas(deltas);
+                    m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+
+                    if (m_factoryOrchestrator.IsDraftOpen()) {
+                        m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+                    }
+
+                    auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                    m_cachedGeometryMesh = compMesh;
+                    m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                } else {
+                    m_meshHistoryService.CancelTransaction();
+                }
+                m_sculptLiveGpuDirty = false;
+                m_sculptLiveGpuCooldown = 0.0f;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_Escape) || io.MouseClicked[1]) {
+                m_isSculptStroking = false;
+                m_sculptService.CancelStroke(m_activeEditableMesh);
+                m_meshHistoryService.CancelTransaction();
+                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                m_cachedGeometryMesh = compMesh;
+                m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                m_sculptLiveGpuDirty = false;
+                m_sculptLiveGpuCooldown = 0.0f;
+            }
+        }
+    }
+}
+
 

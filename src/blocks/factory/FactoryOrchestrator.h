@@ -38,6 +38,11 @@ public:
     bool SaveDraftToFile(const std::string& filepath) const;
     bool LoadDraftFromFile(const std::string& filepath);
 
+    // --- Sculpt & Modeling Mesh Integration (BM-S9) ---
+    void SetDraftSculptMesh(const EditableMesh& mesh);
+    const EditableMesh* GetDraftSculptMesh() const;
+    EditableMesh* GetDraftSculptMeshMutable();
+
     // --- Navigazione e Controllo Stazioni ---
     bool SetActiveStation(ProductionStationID id);
     ProductionStationID GetActiveStation() const { return m_activeStation; }

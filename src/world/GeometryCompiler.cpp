@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GeometryCompiler.h"
+#include "blocks/sculpt/EditableMesh.h"
 #include <cmath>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -918,6 +919,119 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
     }
 
     result.success = true;
+    return result;
+}
+
+GeometryCompileResult GeometryCompiler::CompileEditableMesh(const EditableMesh& mesh, const GeometryCompileOptions& options) {
+    GeometryCompileResult result;
+    result.mesh.name = "EditableMeshCompiled";
+    result.mesh.type = MeshType::Editor;
+
+    if (mesh.IsEmpty() || mesh.GetFaceCount() == 0) {
+        result.success = false;
+        result.errorMessage = "EditableMesh e' vuota o priva di facce attive.";
+        return result;
+    }
+
+    auto activeFaces = mesh.GetActiveFaceIDs();
+    if (activeFaces.empty()) {
+        result.success = false;
+        result.errorMessage = "Nessuna faccia attiva trovata nella EditableMesh.";
+        return result;
+    }
+
+    for (FaceID fId : activeFaces) {
+        const auto* face = mesh.GetFace(fId);
+        if (!face || face->isDeleted) continue;
+
+        auto faceVerts = mesh.GetFaceVertices(fId);
+        auto faceCorners = mesh.GetFaceCorners(fId);
+        size_t vCount = faceVerts.size();
+        if (vCount < 3) continue;
+
+        // Triangolazione deterministica (Ear Clipping / fan fallback)
+        std::vector<uint32_t> localTriIndices;
+        if (!mesh.TriangulateFace(fId, localTriIndices) || localTriIndices.empty()) {
+            localTriIndices.clear();
+            for (uint32_t i = 1; i + 1 < static_cast<uint32_t>(vCount); ++i) {
+                localTriIndices.push_back(0);
+                localTriIndices.push_back(i);
+                localTriIndices.push_back(i + 1);
+            }
+        }
+
+        // Risoluzione SurfaceOverride (BM-C / BM-S)
+        uint32_t resolvedMatId = (face->materialId != 0) ? face->materialId : options.defaultMaterialId;
+        const SurfaceOverride* matchedOverride = nullptr;
+        if (options.surfaceOverrides) {
+            for (const auto& so : *options.surfaceOverrides) {
+                if (so.surfaceId == face->surfaceId) {
+                    matchedOverride = &so;
+                    if (so.useExplicitMaterial) {
+                        resolvedMatId = so.materialId;
+                    }
+                    break;
+                }
+            }
+        }
+
+        uint32_t baseVertexIdx = static_cast<uint32_t>(result.mesh.vertices.size());
+
+        // Genera vertici dedicati per preservare UV seams e discontinuità
+        for (size_t i = 0; i < vCount; ++i) {
+            const auto* v = mesh.GetVertex(faceVerts[i]);
+            Vertex vert{};
+            if (v) {
+                vert.position = { v->position.x, v->position.y, v->position.z };
+                vert.normal = { face->faceNormal.x, face->faceNormal.y, face->faceNormal.z };
+            }
+
+            glm::vec2 cornerUv = (i < faceCorners.size()) ? faceCorners[i].uv : glm::vec2(0.0f);
+            if (matchedOverride && !matchedOverride->uvTransform.IsIdentity()) {
+                cornerUv = matchedOverride->uvTransform.Transform(cornerUv);
+            } else if (options.defaultUVTransform) {
+                cornerUv = options.defaultUVTransform->Transform(cornerUv);
+            }
+
+            if (matchedOverride && matchedOverride->overridePbr) {
+                vert.color = { matchedOverride->baseColorFallback.x, matchedOverride->baseColorFallback.y, matchedOverride->baseColorFallback.z, 1.0f };
+                vert.roughMetal = { matchedOverride->roughness, matchedOverride->metallic };
+                vert.emissive = matchedOverride->emissive;
+            } else {
+                if (i < faceCorners.size()) {
+                    vert.color = { faceCorners[i].color.r, faceCorners[i].color.g, faceCorners[i].color.b, faceCorners[i].color.a };
+                } else {
+                    vert.color = { 1.0f, 1.0f, 1.0f, 1.0f };
+                }
+                // Bridge dati: coordinate UV in roughMetal per preservare l'ABI Vulkan a 64 byte
+                vert.roughMetal = { cornerUv.x, cornerUv.y };
+                vert.emissive = 0.0f;
+            }
+
+            vert.materialID = resolvedMatId;
+            vert.ao = 1.0f;
+            vert.light = 1.0f;
+
+            result.mesh.vertices.push_back(vert);
+        }
+
+        // Aggiunge le facce triangolate al MeshComponent
+        for (size_t t = 0; t + 2 < localTriIndices.size(); t += 3) {
+            Face triFace;
+            triFace.indices = {
+                static_cast<int>(baseVertexIdx + localTriIndices[t]),
+                static_cast<int>(baseVertexIdx + localTriIndices[t + 1]),
+                static_cast<int>(baseVertexIdx + localTriIndices[t + 2])
+            };
+            triFace.faceNormal = { face->faceNormal.x, face->faceNormal.y, face->faceNormal.z };
+            triFace.matIndex = static_cast<int>(resolvedMatId);
+            result.mesh.faces.push_back(triFace);
+        }
+    }
+
+    result.mesh.cachedBounds = mesh.ComputeAABB();
+    result.mesh.boundsCalculated = true;
+    result.success = !result.mesh.vertices.empty();
     return result;
 }
 
