@@ -1,5 +1,7 @@
 #include "pch.h"
+#ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
+#endif
 #include "MobManager.h"
 #include "Player.h"
 #include "World.h"

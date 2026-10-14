@@ -145,6 +145,7 @@ public:
 
     const SimBlockDef& GetBlock(uint8_t id) const;
     const SimBlockDef& GetBlock(const std::string& stringId) const;
+    uint8_t GetBlockIdByString(const std::string& stringId) const;
     
     SimBlockDef& GetBlockMutable(uint8_t id);
 

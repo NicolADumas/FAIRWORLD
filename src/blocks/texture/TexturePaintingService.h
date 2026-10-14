@@ -64,6 +64,7 @@ struct PaintUndoRecord {
 class TexturePaintingService {
 public:
     TexturePaintingService();
+    TexturePaintingService(uint32_t width, uint32_t height);
     ~TexturePaintingService() = default;
 
     // --- Gestione Dimensioni Canvas ---
@@ -82,6 +83,12 @@ public:
 
     PaintLayer* GetLayer(uint32_t layerId);
     const PaintLayer* GetLayer(uint32_t layerId) const;
+    PaintLayer* GetLayerMutable(size_t index) {
+        return (index < m_layers.size()) ? &m_layers[index] : nullptr;
+    }
+    const PaintLayer* GetLayerMutable(size_t index) const {
+        return (index < m_layers.size()) ? &m_layers[index] : nullptr;
+    }
     std::vector<PaintLayer>& GetLayers() { return m_layers; }
     const std::vector<PaintLayer>& GetLayers() const { return m_layers; }
     size_t GetLayerCount() const { return m_layers.size(); }
@@ -95,6 +102,7 @@ public:
     // --- Pennellate Transazionali (BM-TX3.5 & BM-TX3.6) ---
     bool BeginStroke(uint32_t layerId, bool targetMask = false);
     bool ApplyDab(glm::vec2 pixelCoords, const PaintBrush& brush);
+    bool AddDab(glm::vec2 pixelCoords, const PaintBrush& brush) { return ApplyDab(pixelCoords, brush); }
     bool UpdateStroke(glm::vec2 prevCoords, glm::vec2 curCoords, const PaintBrush& brush);
     PaintDirtyRect EndStroke();
     bool CancelStroke();
@@ -104,12 +112,14 @@ public:
     // --- Blending & Compositing Incrementale (BM-TX3.4 & BM-TX3.8) ---
     static glm::vec4 BlendPixelsLinear(const glm::vec4& srcColor, float srcAlpha, 
                                        const glm::vec4& dstColor, float dstAlpha, 
-                                       LayerBlendMode mode);
+                                       PaintLayerBlendMode mode);
 
     bool CompositeLayers(ImageBitmap& outComposite, const PaintDirtyRect* subRect = nullptr) const;
 
     // --- Zero-Work & Revision Tracking ---
     uint64_t GetCompositionRevision() const { return m_compositionRevision; }
+    uint64_t GetRevision() const { return m_compositionRevision; }
+    void IncrementRevision() { m_compositionRevision++; }
     uint64_t ComputeCombinedFingerprint() const;
 
     // --- Paint History (Undo/Redo Separato da MeshHistory) ---

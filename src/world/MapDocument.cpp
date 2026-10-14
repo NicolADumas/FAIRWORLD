@@ -1403,7 +1403,7 @@ uint64_t ComputeRuleHash(const ResolvedTerrainRules& resolved) {
         add_data(&layer.maxDepth, sizeof(float));
         add_data(&layer.noiseStrength, sizeof(float));
         add_data(&layer.noiseScale, sizeof(float));
-        add_data(&layer.blendMode, sizeof(LayerBlendMode));
+        add_data(&layer.blendMode, sizeof(MapLayerBlendMode));
     }
     
     // Hash Caves

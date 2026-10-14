@@ -89,23 +89,23 @@ namespace {
 // BM-TX3.4 — BLEND MODES STRING CONVERSION
 // =============================================================================
 
-const char* LayerBlendModeToString(LayerBlendMode mode) {
+const char* LayerBlendModeToString(PaintLayerBlendMode mode) {
     switch (mode) {
-        case LayerBlendMode::Normal:   return "Normal";
-        case LayerBlendMode::Multiply: return "Multiply";
-        case LayerBlendMode::Additive: return "Additive";
-        case LayerBlendMode::Screen:   return "Screen";
-        case LayerBlendMode::Overlay:  return "Overlay";
+        case PaintLayerBlendMode::Normal:   return "Normal";
+        case PaintLayerBlendMode::Multiply: return "Multiply";
+        case PaintLayerBlendMode::Additive: return "Additive";
+        case PaintLayerBlendMode::Screen:   return "Screen";
+        case PaintLayerBlendMode::Overlay:  return "Overlay";
         default: return "Normal";
     }
 }
 
-LayerBlendMode StringToLayerBlendMode(const std::string& str) {
-    if (str == "Multiply") return LayerBlendMode::Multiply;
-    if (str == "Additive" || str == "Add") return LayerBlendMode::Additive;
-    if (str == "Screen")   return LayerBlendMode::Screen;
-    if (str == "Overlay")  return LayerBlendMode::Overlay;
-    return LayerBlendMode::Normal;
+PaintLayerBlendMode StringToLayerBlendMode(const std::string& str) {
+    if (str == "Multiply") return PaintLayerBlendMode::Multiply;
+    if (str == "Additive" || str == "Add") return PaintLayerBlendMode::Additive;
+    if (str == "Screen")   return PaintLayerBlendMode::Screen;
+    if (str == "Overlay")  return PaintLayerBlendMode::Overlay;
+    return PaintLayerBlendMode::Normal;
 }
 
 // =============================================================================
@@ -164,7 +164,7 @@ PaintLayer::PaintLayer(uint32_t id, const std::string& layerName, uint32_t width
     , isVisible(true)
     , isLocked(false)
     , opacity(1.0f)
-    , blendMode(LayerBlendMode::Normal)
+    , blendMode(PaintLayerBlendMode::Normal)
     , pixelBuffer(width, height, TexturePixelFormat::RGBA8, TextureColorSpace::Linear, fillColor)
     , mask(std::nullopt)
     , revision(1) {}

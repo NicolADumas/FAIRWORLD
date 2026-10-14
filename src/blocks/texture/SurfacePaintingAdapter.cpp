@@ -110,6 +110,7 @@ ResolvedPaintTarget TextureTargetResolver::ResolveTarget(const SurfacePaintHit& 
             if (isolatedService->GetLayerCount() > 0) {
                 *isolatedService->GetLayerMutable(0)->GetBitmapMutable() = compSnapshot;
                 isolatedService->GetLayerMutable(0)->SetName("COW_BaseLayer_Surf" + std::to_string(hit.surfaceId));
+                isolatedService->IncrementRevision();
             }
             res.width = w;
             res.height = h;
@@ -375,14 +376,11 @@ float SurfacePaintingAdapter::ComputeSurfaceMetricPixels(const EditableMesh& mes
 // =============================================================================
 
 bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh, 
-                                          const glm::vec3& rayOrigin, 
-                                          const glm::vec3& rayDirection, 
+                                          const SurfacePaintHit& hit, 
                                           const PaintBrush& brush, 
                                           uint32_t targetLayerId, 
-                                          bool targetMask,
-                                          const glm::mat4& modelMatrix) 
+                                          bool targetMask) 
 {
-    SurfacePaintHit hit = RaycastMesh(mesh, rayOrigin, rayDirection, 1000.0f, modelMatrix);
     if (!hit.valid) return false;
 
     // Risoluzione Target con Copy-On-Write se disponibile
@@ -415,6 +413,9 @@ bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh,
 
     m_paintingService->ApplyDab(pxCoords, effectiveBrush);
 
+    float metricR = (brush.radiusMetric > 0.0f) ? brush.radiusMetric : (brush.radiusPixels * 0.05f);
+    PropagateCrossSeamDab(mesh, hit, effectiveBrush, metricR);
+
     m_isStroking = true;
     m_raycastLost = false;
     m_strokeOriginNormal = hit.worldNormal;
@@ -428,15 +429,24 @@ bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh,
     return true;
 }
 
+bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh, 
+                                          const glm::vec3& rayOrigin, 
+                                          const glm::vec3& rayDirection, 
+                                          const PaintBrush& brush, 
+                                          uint32_t targetLayerId, 
+                                          bool targetMask,
+                                          const glm::mat4& modelMatrix) 
+{
+    SurfacePaintHit hit = RaycastMesh(mesh, rayOrigin, rayDirection, 1000.0f, modelMatrix);
+    return BeginStroke3D(mesh, hit, brush, targetLayerId, targetMask);
+}
+
 bool SurfacePaintingAdapter::UpdateStroke3D(const EditableMesh& mesh, 
-                                           const glm::vec3& rayOrigin, 
-                                           const glm::vec3& rayDirection, 
-                                           const PaintBrush& brush,
-                                           const glm::mat4& modelMatrix) 
+                                           const SurfacePaintHit& hit, 
+                                           const PaintBrush& brush) 
 {
     if (!m_isStroking || !m_paintingService) return false;
 
-    SurfacePaintHit hit = RaycastMesh(mesh, rayOrigin, rayDirection, 1000.0f, modelMatrix);
     if (!hit.valid) {
         // Cursore temporaneamente fuori dalla mesh: impostiamo raycastLost per evitare linee spurie al rientro
         m_raycastLost = true;
@@ -489,9 +499,24 @@ bool SurfacePaintingAdapter::UpdateStroke3D(const EditableMesh& mesh,
         m_paintingService->UpdateStroke(m_prevPixelCoords, curPx, effectiveBrush);
     }
 
+    float metricR = (brush.radiusMetric > 0.0f) ? brush.radiusMetric : (brush.radiusPixels * 0.05f);
+    PropagateCrossSeamDab(mesh, hit, effectiveBrush, metricR);
+
     m_lastHit = hit;
     m_prevPixelCoords = curPx;
     return true;
+}
+
+bool SurfacePaintingAdapter::UpdateStroke3D(const EditableMesh& mesh, 
+                                           const glm::vec3& rayOrigin, 
+                                           const glm::vec3& rayDirection, 
+                                           const PaintBrush& brush,
+                                           const glm::mat4& modelMatrix) 
+{
+    if (!m_isStroking || !m_paintingService) return false;
+
+    SurfacePaintHit hit = RaycastMesh(mesh, rayOrigin, rayDirection, 1000.0f, modelMatrix);
+    return UpdateStroke3D(mesh, hit, brush);
 }
 
 PaintDirtyRect SurfacePaintingAdapter::EndStroke3D() {
@@ -532,6 +557,62 @@ PaintGPUStagingToken SurfacePaintingAdapter::GenerateGPUStagingToken(const std::
         token.textureRevision = m_paintingService->GetRevision();
     }
     return token;
+}
+
+void SurfacePaintingAdapter::PropagateCrossSeamDab(const EditableMesh& mesh, 
+                                                   const SurfacePaintHit& hit, 
+                                                   const PaintBrush& brush, 
+                                                   float metricRadius) {
+    if (!m_paintingService || !mesh.IsValid(hit.faceId)) return;
+
+    const auto* face = mesh.GetFace(hit.faceId);
+    if (!face || !face->halfEdge.IsValid()) return;
+
+    HalfEdgeID startHe = face->halfEdge;
+    HalfEdgeID curHe = startHe;
+    do {
+        const auto* he = mesh.GetHalfEdge(curHe);
+        if (!he) break;
+
+        const auto* edge = mesh.GetEdge(he->edge);
+        bool isSeamEdge = edge && (edge->seamWeight > 0.0f);
+
+        // Se l'edge e marcato come cucitura ed ha un gemello valido dall'altra parte
+        if (isSeamEdge && he->twin.IsValid()) {
+            const auto* twinHe = mesh.GetHalfEdge(he->twin);
+            if (twinHe && twinHe->face.IsValid()) {
+                const auto* neighborFace = mesh.GetFace(twinHe->face);
+                if (neighborFace) {
+                    if (m_isolateBySurfaceId && neighborFace->surfaceId != m_activeSurfaceId) {
+                        curHe = he->next;
+                        continue;
+                    }
+
+                    const auto* v0 = mesh.GetVertex(he->origin);
+                    const auto* nextHe = mesh.GetHalfEdge(he->next);
+                    const auto* v1 = nextHe ? mesh.GetVertex(nextHe->origin) : nullptr;
+                    if (v0 && v1) {
+                        glm::vec3 segA = v0->position;
+                        glm::vec3 segB = v1->position;
+                        glm::vec3 p = hit.localPosition;
+                        glm::vec3 ab = segB - segA;
+                        float t = glm::clamp(glm::dot(p - segA, ab) / std::max(glm::dot(ab, ab), 1e-6f), 0.0f, 1.0f);
+                        glm::vec3 closestP = segA + t * ab;
+                        float distToEdge = glm::distance(p, closestP);
+
+                        if (distToEdge <= metricRadius) {
+                            glm::vec2 neighborUV = twinHe->corner.uv;
+                            glm::vec2 neighborPx = MapUVToPixelCoords(neighborUV, m_uvConfig);
+                            PaintBrush crossBrush = brush;
+                            crossBrush.opacity *= (1.0f - (distToEdge / std::max(metricRadius, 1e-4f)));
+                            m_paintingService->ApplyDab(neighborPx, crossBrush);
+                        }
+                    }
+                }
+            }
+        }
+        curHe = he->next;
+    } while (curHe != startHe && curHe.IsValid());
 }
 
 } // namespace fw

@@ -10,6 +10,9 @@
 #include "blocks/texture/PBRTexturePack.h"
 #include "blocks/texture/TextureAsset.h"
 #include "blocks/uv/PrimitiveUVMapper.h"
+#include "blocks/uv/GeneralUVMapper.h"
+#include "blocks/uv/UVAtlasPacker.h"
+#include "blocks/uv/TextureReprojectionService.h"
 #include "blocks/sculpt/MeshBridgeService.h"
 #include <filesystem>
 #include <cmath>
@@ -227,25 +230,103 @@ public:
             }
         }
 
-        // BM-UV2: Generazione autoritativa del layout UV su EditableMesh
+        // BM-UV8: Conservazione preventiva di snapshot se l'asset ha pittura pregressa
+        bool hasExistingPaint = !context.draft.paintLayers.empty() || 
+                               (context.draft.textures.has_value() && context.draft.textures->IsValid());
+        bool hasPreviousUV = context.draft.uvLayout.has_value() && context.draft.uvLayout->isValid;
+        
+        UVLayout previousLayout;
+        EditableMesh previousMesh;
+        if (hasExistingPaint && hasPreviousUV) {
+            previousLayout = *context.draft.uvLayout;
+            if (context.draft.sculptMesh.has_value()) {
+                previousMesh = *context.draft.sculptMesh;
+            } else {
+                previousMesh = MeshBridgeService::CreateMeshFromShape(context.draft.shape);
+            }
+        }
+
+        // BM-UV2 & BM-UV3: Generazione autoritativa del layout UV su EditableMesh
         EditableMesh workMesh;
-        if (context.draft.sculptMesh.has_value()) {
+        bool isSculpted = context.draft.sculptMesh.has_value();
+        if (isSculpted) {
             workMesh = *context.draft.sculptMesh;
         } else {
             workMesh = MeshBridgeService::CreateMeshFromShape(context.draft.shape);
         }
 
-        PrimitiveUVOptions opt;
-        opt.markSeamEdges = true;
-        auto mapRes = m_uvMapper.AnalyzeAndMap(workMesh, context.draft.shape.type, context.draft.shape.parameters, opt);
+        GeneralUVOptions opt;
+        opt.seamOptions.seamOnSharpEdges = true;
+        opt.seamOptions.autoCutClosedComponents = true;
+
+        auto mapRes = m_generalUVMapper.UnwrapWithAutoDispatch(workMesh, 
+                                                               context.draft.shape.type, 
+                                                               context.draft.shape.parameters, 
+                                                               isSculpted, 
+                                                               opt);
+
+        // BM-UV4: Packing deterministico delle isole UV in Texture Atlas
+        AtlasPackOptions packOpt;
+        packOpt.targetWidth = 1024;
+        packOpt.targetHeight = 1024;
+        packOpt.paddingPixels = 4.0f;
+        packOpt.allowRotation = true;
+        packOpt.allowMultiAtlas = true;
+        auto packRes = m_atlasPacker.PackLayout(workMesh, mapRes.layout, packOpt);
+
+        if (!packRes.success) {
+            for (const auto& err : packRes.errors) {
+                m_diagnostic.warnings.push_back("AtlasPacking error: " + err);
+            }
+        }
+
+        // BM-UV8: Rilevamento modifiche effettive UV e invocazione transazionale di TextureReprojectionService
+        if (hasExistingPaint && hasPreviousUV) {
+            bool uvActuallyChanged = (previousLayout.uvRevision != mapRes.layout.uvRevision) ||
+                                     (previousLayout.atlasRevision != mapRes.layout.atlasRevision) ||
+                                     (previousLayout.islands.size() != mapRes.layout.islands.size());
+
+            if (uvActuallyChanged) {
+                // Distinzione tra modifica UV pura e alterazione topologica della mesh
+                bool topologyChanged = (previousMesh.GetTopologyRevision() != workMesh.GetTopologyRevision()) ||
+                                       (previousMesh.GetFaceCount() != workMesh.GetFaceCount());
+
+                if (topologyChanged) {
+                    m_diagnostic.warnings.push_back("TextureReprojection: Rilevata modifica topologica senza corrispondenza esplicita (REQUIRES_CORRESPONDENCE). Migrazione pittura sospesa in sicurezza per prevenire corruzioni.");
+                } else if (!context.draft.paintLayers.empty()) {
+                    TexturePaintingService tempPainter;
+                    tempPainter.InitializeCanvas(previousLayout.atlasTargetWidth, previousLayout.atlasTargetHeight);
+                    tempPainter.GetLayers() = context.draft.paintLayers;
+
+                    ReprojectionOptions reprojOpt;
+                    reprojOpt.strategy = ReprojectionStrategy::Auto;
+                    reprojOpt.preserveLayersIndividually = true;
+
+                    auto reprojReport = m_reprojectionService.ReprojectPaintingService(
+                        previousMesh, previousLayout, tempPainter,
+                        workMesh, mapRes.layout, reprojOpt);
+
+                    if (reprojReport.status == ReprojectionStatus::Success || reprojReport.status == ReprojectionStatus::ZeroWorkNoOp) {
+                        context.draft.paintLayers = std::move(tempPainter.GetLayers());
+                        m_diagnostic.warnings.push_back("TextureReprojection: Pittura migrata con successo sul nuovo layout UV (" + 
+                            std::to_string(reprojReport.totalLayersProcessed) + " layer riproiettati).");
+                    } else {
+                        m_diagnostic.warnings.push_back("TextureReprojection: Fallimento transazione (" + 
+                            std::string(GetReprojectionStatusName(reprojReport.status)) + "). Ripristinato layout precedente.");
+                    }
+                }
+            }
+        }
 
         context.draft.uvLayout = mapRes.layout;
         context.draft.uvRevision = mapRes.layout.uvRevision;
 
-        if (mapRes.status == PrimitiveMappingStatus::NEEDS_BM_UV3) {
-            m_diagnostic.warnings.push_back("Forma complessa: richiede solver generale BM-UV3. Applicato fallback.");
-        } else if (mapRes.status == PrimitiveMappingStatus::UNSUPPORTED_MAPPING) {
-            m_diagnostic.warnings.push_back("Forma volumetrica non parametrizzabile analiticamente.");
+        if (isSculpted) {
+            context.draft.sculptMesh = workMesh;
+        }
+
+        if (mapRes.topologyClassification == TopologySupportClassification::RequiresRepair) {
+            m_diagnostic.warnings.push_back("Mesh topologicamente problematica: richiede riparazione manifold.");
         }
 
         for (const auto& w : mapRes.validation.warnings) {
@@ -266,6 +347,9 @@ private:
     StationDiagnostic m_diagnostic;
     uint64_t m_lastRevision = 0;
     PrimitiveUVMapper m_uvMapper;
+    GeneralUVMapper m_generalUVMapper;
+    UVAtlasPacker m_atlasPacker;
+    TextureReprojectionService m_reprojectionService;
 };
 
 // =============================================================================

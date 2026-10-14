@@ -17,7 +17,7 @@ namespace fw {
 // BM-TX3.4 — BLEND MODES
 // =============================================================================
 
-enum class LayerBlendMode : uint8_t {
+enum class PaintLayerBlendMode : uint8_t {
     Normal = 0,    // Alpha Over: C_out = C_src * a_src + C_dst * (1 - a_src)
     Multiply = 1,  // C_out = C_src * C_dst
     Additive = 2,  // C_out = min(1.0, C_src + C_dst)
@@ -25,8 +25,8 @@ enum class LayerBlendMode : uint8_t {
     Overlay = 4    // C_dst < 0.5 ? 2*C_src*C_dst : 1 - 2*(1-C_src)*(1-C_dst)
 };
 
-const char* LayerBlendModeToString(LayerBlendMode mode);
-LayerBlendMode StringToLayerBlendMode(const std::string& str);
+const char* LayerBlendModeToString(PaintLayerBlendMode mode);
+PaintLayerBlendMode StringToLayerBlendMode(const std::string& str);
 
 // =============================================================================
 // BM-TX3.7 — DIRTY RECT TRACKING
@@ -85,6 +85,11 @@ struct PaintDirtyRect {
 
     uint32_t GetWidth() const { return isEmpty ? 0 : (xMax - xMin + 1); }
     uint32_t GetHeight() const { return isEmpty ? 0 : (yMax - yMin + 1); }
+    bool IsEmpty() const { return isEmpty; }
+    bool IsValid() const { return !isEmpty; }
+    uint32_t Width() const { return GetWidth(); }
+    uint32_t Height() const { return GetHeight(); }
+    uint32_t GetArea() const { return GetWidth() * GetHeight(); }
 };
 
 // =============================================================================
@@ -114,6 +119,8 @@ public:
 
     const ImageBitmap& GetBitmap() const { return m_bitmap; }
     ImageBitmap& GetBitmapMutable() { return m_bitmap; }
+    void SetBitmap(const ImageBitmap& bitmap) { m_bitmap = bitmap; }
+    void SetBitmap(ImageBitmap&& bitmap) { m_bitmap = std::move(bitmap); }
 
     uint64_t ComputeFingerprint() const;
 
@@ -131,7 +138,7 @@ struct PaintLayer {
     bool isVisible = true;
     bool isLocked = false;
     float opacity = 1.0f; // Intervallo rigoroso [0.0, 1.0]
-    LayerBlendMode blendMode = LayerBlendMode::Normal;
+    PaintLayerBlendMode blendMode = PaintLayerBlendMode::Normal;
 
     ImageBitmap pixelBuffer;             // Buffer colore RGBA8 del livello
     std::optional<PaintMask> mask;       // Maschera alfanumerica R8 opzionale
@@ -144,6 +151,11 @@ struct PaintLayer {
     bool HasMask() const { return mask.has_value() && mask->IsValid(); }
     void EnsureMask(float defaultVal = 1.0f);
     void RemoveMask();
+
+    const ImageBitmap& GetBitmap() const { return pixelBuffer; }
+    ImageBitmap* GetBitmapMutable() { return &pixelBuffer; }
+    void SetName(const std::string& n) { name = n; }
+    const std::string& GetName() const { return name; }
 
     uint64_t ComputeFingerprint() const;
 

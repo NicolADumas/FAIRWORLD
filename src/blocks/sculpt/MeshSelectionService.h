@@ -77,6 +77,11 @@ public:
     void DeselectVertex(VertexID id);
     bool IsVertexSelected(VertexID id) const;
     const std::unordered_set<VertexID>& GetSelectedVertices() const { return m_selectedVertices; }
+    void SetSelectedVertices(const std::unordered_set<VertexID>& verts) {
+        m_selectedVertices = verts;
+        m_mode = SelectionMode::Vertex;
+        IncrementRevision();
+    }
     VertexID GetActiveVertex() const { return m_activeVertex; }
     void SetActiveVertex(VertexID id) { m_activeVertex = id; }
 
@@ -95,6 +100,11 @@ public:
     const std::unordered_set<FaceID>& GetSelectedFaces() const { return m_selectedFaces; }
     FaceID GetActiveFace() const { return m_activeFace; }
     void SetActiveFace(FaceID id) { m_activeFace = id; }
+
+    void Select(FaceID id, SelectionMode mode = SelectionMode::Face) {
+        SetMode(mode);
+        SelectFace(id);
+    }
 
     // --- Operazioni Comuni ---
     void Clear();

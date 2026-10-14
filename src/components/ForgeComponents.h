@@ -76,6 +76,16 @@ struct Vertex {
     float emissive;   // 4
 };
 
+static_assert(sizeof(Vertex) == 64, "fw::Vertex must be exactly 64 bytes");
+static_assert(offsetof(Vertex, position) == 0, "fw::Vertex::position offset must be 0");
+static_assert(offsetof(Vertex, color) == 12, "fw::Vertex::color offset must be 12");
+static_assert(offsetof(Vertex, roughMetal) == 28, "fw::Vertex::roughMetal offset must be 28");
+static_assert(offsetof(Vertex, materialID) == 36, "fw::Vertex::materialID offset must be 36");
+static_assert(offsetof(Vertex, normal) == 40, "fw::Vertex::normal offset must be 40");
+static_assert(offsetof(Vertex, ao) == 52, "fw::Vertex::ao offset must be 52");
+static_assert(offsetof(Vertex, light) == 56, "fw::Vertex::light offset must be 56");
+static_assert(offsetof(Vertex, emissive) == 60, "fw::Vertex::emissive offset must be 60");
+
 struct Face {
     std::vector<int> indices;
     Vec3 faceNormal;

@@ -27,6 +27,10 @@
 #include "blocks/texture/SurfacePaintingAdapter.h"
 #include "blocks/uv/PrimitiveUVContractTests.h"
 #include "blocks/uv/PrimitiveUVMapper.h"
+#include "blocks/uv/UVEditorDocument.h"
+#include "blocks/uv/UVEditorPanel.h"
+#include "blocks/uv/TextureReprojectionService.h"
+#include "imgui.h"
 struct SharedContext;
 
 class BlockMakerState : public State {
@@ -462,6 +466,22 @@ private:
     bool m_primitiveUVTestsExecuted = false;
     void RunPrimitiveUVValidationTests(bool isManualTrigger = false);
     fw::PrimitiveUVMapper m_primitiveUVMapper;
+
+    // --- BM-UV8 2D UV Editor State & UI ---
+    fw::UVEditorPanel m_uvEditorPanel;
+    std::unique_ptr<fw::UVEditorDocument> m_uvEditorDocument;
+    std::vector<fw::UVEditorPanel::IslandDrawOutline> m_cachedUVOutlines;
+    uint64_t m_cachedUVOutlineTopologyRev = 0;
+    uint64_t m_cachedUVOutlineAtlasRev = 0;
+    uint64_t m_cachedUVOutlineSelectionRev = 0;
+    void DrawUVEditorStationUI();
+
+    // --- BM-UV8 3D Painting Viewport Input State ---
+    bool m_is3DPaintStroking = false;
+    fw::PaintBrush m_paintBrush;
+    fw::PaintChannel m_activePaintChannel = fw::PaintChannel::BaseColor;
+    void Handle3DPaintInput();
+    void ComputeMouseRay(const ImVec2& mousePos, glm::vec3& outOrigin, glm::vec3& outDir);
 
     std::unique_ptr<fw::GameWorld> m_previewWorld;
 };

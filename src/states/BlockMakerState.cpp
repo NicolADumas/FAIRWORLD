@@ -16,6 +16,8 @@
 #include "MaterialRegistry.h"
 #include "VulkanDmaManager.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/matrix.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
@@ -332,12 +334,12 @@ void BlockMakerState::ExecuteCreateBlock(const std::string& stringId, const std:
         SetAssetFeedback("ERRORE: Registri non inizializzati!", true);
         return;
     }
-    uint8_t assignedId = 0;
-    auto res = m_context->blockRegistry->CreateBlock(stringId, displayName, &assignedId);
+    auto res = m_context->blockRegistry->CreateBlock(stringId, displayName);
     if (!res.success) {
         SetAssetFeedback(std::string("Creazione fallita: ") + res.message, true);
         return;
     }
+    uint8_t assignedId = res.allocatedId;
     m_context->materialRegistry->InitDefaultMaterial(assignedId);
 
     // Snapshot baselines for zero false dirty states on newly created block
@@ -381,12 +383,12 @@ void BlockMakerState::ExecuteDuplicateBlock(uint8_t sourceId) {
         SetAssetFeedback("ERRORE: Registri non disponibili!", true);
         return;
     }
-    uint8_t newId = 0;
-    auto res = m_context->blockRegistry->DuplicateBlock(sourceId, &newId);
+    auto res = m_context->blockRegistry->DuplicateBlock(sourceId);
     if (!res.success) {
         SetAssetFeedback(std::string("Duplicazione fallita: ") + res.message, true);
         return;
     }
+    uint8_t newId = res.allocatedId;
     m_context->materialRegistry->DuplicateMaterial(sourceId, newId);
 
     const auto& dupDef = m_context->blockRegistry->GetBlock(newId);
@@ -1557,8 +1559,8 @@ void BlockMakerState::RunAssetManagementValidationTests(bool isManualTrigger) {
             srcDef.physics.restitution = 0.75f;
             srcDef.localScale = glm::vec3(1.5f, 2.5f, 0.5f);
 
-            uint8_t cloneId = 0;
-            auto dupRes = bReg->DuplicateBlock(srcId, &cloneId);
+            auto dupRes = bReg->DuplicateBlock(srcId);
+            uint8_t cloneId = dupRes.allocatedId;
             if (dupRes.success && cloneId > 0 && cloneId != srcId) {
                 mReg->DuplicateMaterial(srcId, cloneId);
 
@@ -1816,7 +1818,7 @@ void BlockMakerState::RunGeometryValidationTests(bool isManualTrigger) {
 
     auto* bReg = m_context->blockRegistry;
     auto* mReg = m_context->materialRegistry;
-    auto* sReg = m_context->shapeRegistry.get();
+    auto* sReg = m_context->shapeRegistry;
 
     // GM-1 — Risoluzione Canonica ShapeHandle & Default Cube (BM-B2)
     {
@@ -2010,8 +2012,8 @@ void BlockMakerState::RunGeometryValidationTests(bool isManualTrigger) {
         uint8_t idA = resA.allocatedId;
         uint8_t idB = resB.allocatedId;
 
-        auto& matA = mReg->GetMaterial(idA);
-        auto& matB = mReg->GetMaterial(idB);
+        auto& matA = mReg->GetMaterialMutable(idA);
+        auto& matB = mReg->GetMaterialMutable(idB);
         matA.sharedShape = sharedHandle;
         matB.sharedShape = sharedHandle;
 
@@ -2164,7 +2166,7 @@ void BlockMakerState::RunUVValidationTests(bool isManualTrigger) {
 
     auto* bReg = m_context->blockRegistry;
     auto* mReg = m_context->materialRegistry;
-    auto* sReg = m_context->shapeRegistry.get();
+    auto* sReg = m_context->shapeRegistry;
 
     // UV-1 — Semantic Surface Contract Stability (BM-C2)
     {
@@ -2325,7 +2327,7 @@ void BlockMakerState::RunUVValidationTests(bool isManualTrigger) {
                         if (idx >= 0 && idx < (int)result.mesh.vertices.size()) {
                             const auto& v = result.mesh.vertices[idx];
                             if (v.materialID == 42) topHasMat42 = true;
-                            if (std::abs(v.color.g - 0.85f) > 0.05f) pbrColorIsolated = false;
+                            if (std::abs(v.color.y - 0.85f) > 0.05f) pbrColorIsolated = false;
                         }
                     }
                 } else {
@@ -2508,7 +2510,7 @@ void BlockMakerState::RunFactoryCoreValidationTests(bool isManualTrigger) {
 
     auto* bReg = m_context->blockRegistry;
     auto* mReg = m_context->materialRegistry;
-    auto* sReg = m_context->shapeRegistry.get();
+    auto* sReg = m_context->shapeRegistry;
 
     fw::FactoryOrchestrator orch;
 
@@ -3606,6 +3608,9 @@ void BlockMakerState::Update(float dt) {
         }
     }
 
+    // BM-UV8: 3D Surface Painting Viewport Input Loop
+    Handle3DPaintInput();
+
     // Undo / Redo Shortcuts (BM-S8.9: Ctrl+Z / Ctrl+Y)
     if (!io.WantTextInput) {
         if (io.KeyCtrl) {
@@ -3891,7 +3896,7 @@ void BlockMakerState::UpdatePreviewMesh() {
 
     if (needsRecompile) {
         fw::GeometryCompileOptions options;
-        if (m_context) options.shapeRegistry = m_context->shapeRegistry.get();
+        if (m_context) options.shapeRegistry = m_context->shapeRegistry;
         options.surfaceOverrides = &mat.surfaces;
         options.defaultUVTransform = &mat.baseUVTransform;
         options.defaultProjection = mat.baseProjection;
@@ -3950,7 +3955,7 @@ void BlockMakerState::UpdatePreviewMesh() {
         if (v.materialID == 0) {
             v.materialID = (uint32_t)m_selectedBlockId;
         }
-        if (v.color.r == 1.0f && v.color.g == 1.0f && v.color.b == 1.0f) {
+        if (v.color.x == 1.0f && v.color.y == 1.0f && v.color.z == 1.0f) {
             v.color = {mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z, 1.0f};
         }
     }
@@ -4176,7 +4181,7 @@ void BlockMakerState::DrawUI() {
             } else if (!isImplemented) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 0.6f));
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-            } else if (status == fw::StationStatus::Passed || status == fw::StationStatus::Completed) {
+            } else if (status == fw::StationStatus::Completed) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.35f, 0.15f, 0.8f));
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 1.0f, 0.7f, 1.0f));
             } else if (status == fw::StationStatus::Dirty) {
@@ -4198,7 +4203,6 @@ void BlockMakerState::DrawUI() {
                 ImGui::Text("Descrizione: %s", st ? st->GetDescription() : "-");
                 ImGui::Text("Stato: %s", !isImplemented ? "NON IMPLEMENTATA (Prevista in BM-S)" :
                     (status == fw::StationStatus::Completed ? "COMPLETATA" :
-                     status == fw::StationStatus::Passed ? "SUPERATA (QC PASS)" :
                      status == fw::StationStatus::Dirty ? "DIRTY (Modifiche a monte)" : "PRONTA"));
                 ImGui::EndTooltip();
             }
@@ -4217,7 +4221,7 @@ void BlockMakerState::DrawUI() {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[NON ANCORA IMPLEMENTATA — Prevista in BM-S]");
             } else {
                 auto stStatus = curSt->GetStatus();
-                if (stStatus == fw::StationStatus::Completed || stStatus == fw::StationStatus::Passed) {
+                if (stStatus == fw::StationStatus::Completed) {
                     ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "[COMPLETATA]");
                 } else if (stStatus == fw::StationStatus::Dirty) {
                     ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[DIRTY — Richiede riesecuzione]");
@@ -4229,7 +4233,7 @@ void BlockMakerState::DrawUI() {
         }
 
         if (ImGui::Button("Esegui Audit QC##FactoryQC", ImVec2(160, 22))) {
-            auto val = m_factoryOrchestrator.RunQualityControlAudit(m_context->shapeRegistry.get(), m_context->materialRegistry, m_context->blockRegistry);
+            auto val = m_factoryOrchestrator.RunQualityControlAudit(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
             if (val.isValid) {
                 m_factoryOpFeedback = "Quality Control: ASSET VALIDO (0 errori, " + std::to_string(val.warnings.size()) + " avvisi)";
                 m_factoryOpFeedbackIsError = false;
@@ -4241,7 +4245,7 @@ void BlockMakerState::DrawUI() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Compila Pacchetto & Pubblica##FactoryPub", ImVec2(220, 22))) {
-            auto pkg = m_factoryOrchestrator.BuildPackage(m_context->shapeRegistry.get(), m_context->materialRegistry, m_context->blockRegistry);
+            auto pkg = m_factoryOrchestrator.BuildPackage(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
             if (pkg.has_value()) {
                 bool pubOk = m_factoryOrchestrator.PublishToRegistries(*m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
                 if (pubOk) {
@@ -4265,6 +4269,20 @@ void BlockMakerState::DrawUI() {
         }
         ImGui::EndChild();
         ImGui::Separator();
+
+        // BM-UV8: Pannelli dedicati per le Stazioni Surface & UV e Painter
+        if (activeStation == fw::ProductionStationID::SurfaceUV) {
+            DrawUVEditorStationUI();
+            ImGui::Separator();
+        } else if (activeStation == fw::ProductionStationID::Painter) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.6f, 1.0f), "3D SURFACE PAINTER (BM-TX4 & BM-UV8)");
+            ImGui::SliderFloat("Brush Radius##PntRad", &m_paintBrush.radiusPixels, 2.0f, 64.0f, "%.1f px");
+            ImGui::SliderFloat("Brush Strength##PntStr", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
+            ImGui::ColorEdit4("Brush Color##PntCol", &m_paintBrush.color.x);
+            ImGui::Checkbox("Erase Mode##PntErase", &m_paintBrush.eraseMode);
+            ImGui::Separator();
+        }
 
         fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
         fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
@@ -5403,23 +5421,22 @@ void BlockMakerState::DrawUI() {
                 
                 // Validazione in tempo reale dello String ID (BM-A4.1, BM-A4.3)
                 std::string currentInputStr = m_inputStringId;
-                fw::AssetValidationCode valCode = m_context->blockRegistry->ValidateStringId(currentInputStr);
-                bool isTaken = (valCode == fw::AssetValidationCode::Success && m_context->blockRegistry->IsStringIdTaken(currentInputStr, m_selectedBlockId));
+                std::string valErr;
+                bool isValidId = m_context->blockRegistry->ValidateStringId(currentInputStr, &valErr);
+                bool isTaken = (isValidId && m_context->blockRegistry->IsStringIdTaken(currentInputStr, m_selectedBlockId));
                 
-                if (valCode == fw::AssetValidationCode::Success && !isTaken) {
+                if (isValidId && !isTaken) {
                     ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "OK: Formato valido e identificatore disponibile");
                 } else if (isTaken) {
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: Identificatore gia assegnato a un altro blocco!");
-                } else if (valCode == fw::AssetValidationCode::EmptyStringId) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: String ID non puo essere vuoto");
-                } else if (valCode == fw::AssetValidationCode::InvalidCharacters) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: Caratteri ammessi 'fairworld:<a-z0-9_->' (minuscolo)");
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: %s", valErr.c_str());
                 }
 
                 ImGui::InputText("Display Name", m_inputDisplayName, sizeof(m_inputDisplayName));
 
                 bool isRenamed = (currentInputStr != def.stringId || std::string(m_inputDisplayName) != def.displayName);
-                bool canApplyRename = isRenamed && (valCode == fw::AssetValidationCode::Success) && !isTaken && !m_context->blockRegistry->IsReservedBlock(m_selectedBlockId);
+                bool canApplyRename = isRenamed && isValidId && !isTaken && !m_context->blockRegistry->IsReservedBlock(m_selectedBlockId);
                 
                 if (isRenamed) {
                     if (!canApplyRename) ImGui::BeginDisabled();
@@ -6107,6 +6124,7 @@ void BlockMakerState::DrawUI() {
                                 ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
                                 if (ImGui::InputText("##surfpath", buf, sizeof(buf))) {
                                     pathRef = buf;
+                                    surf.textures.useExplicitTextures = true;
                                     mat.revision++;
                                     isDirty = true;
                                 }
@@ -6115,6 +6133,7 @@ void BlockMakerState::DrawUI() {
                                     std::string picked = BrowseForImage();
                                     if (!picked.empty()) {
                                         pathRef = CopyTextureToAssets(picked, m_selectedBlockId, suffix + "_s" + std::to_string(curSurfId));
+                                        surf.textures.useExplicitTextures = true;
                                         mat.revision++;
                                         isDirty = true;
                                     }
@@ -6122,10 +6141,10 @@ void BlockMakerState::DrawUI() {
                                 ImGui::PopID();
                                 ImGui::Text("  %s", label);
                             };
-                            drawSurfTexField("Albedo Superficie", surf.textures.albedoPath, "albedo");
-                            drawSurfTexField("Normal Superficie", surf.textures.normalPath, "normal");
-                            drawSurfTexField("ORM Superficie", surf.textures.ormPath, "orm");
-                            drawSurfTexField("Emissive Superficie", surf.textures.emissivePath, "emissive");
+                            drawSurfTexField("Albedo Superficie", surf.textures.albedoMapPath, "albedo");
+                            drawSurfTexField("Normal Superficie", surf.textures.normalMapPath, "normal");
+                            drawSurfTexField("ORM Superficie", surf.textures.ormMapPath, "orm");
+                            drawSurfTexField("Emissive Superficie", surf.textures.emissiveMapPath, "emissive");
                         }
                     }
                     ImGui::TreePop();
@@ -7198,6 +7217,231 @@ void BlockMakerState::DrawSculptBrushVisualFeedback() {
                 m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
                 m_sculptLiveGpuDirty = false;
                 m_sculptLiveGpuCooldown = 0.0f;
+            }
+        }
+    }
+}
+
+// =============================================================================
+// BM-UV8 FACTORY INTEGRATION: RAYCAST, PAINT INPUT, 2D UV EDITOR UI
+// =============================================================================
+
+void BlockMakerState::ComputeMouseRay(const ImVec2& mousePos, glm::vec3& outOrigin, glm::vec3& outDir) {
+    float screenW = 1920.0f;
+    float screenH = 1080.0f;
+    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+        screenW = static_cast<float>(m_context->engine->GetRenderManager()->GetWindowWidth());
+        screenH = static_cast<float>(m_context->engine->GetRenderManager()->GetWindowHeight());
+    }
+    if (screenW <= 0.0f) screenW = 1920.0f;
+    if (screenH <= 0.0f) screenH = 1080.0f;
+
+    float ndcX = (2.0f * mousePos.x) / screenW - 1.0f;
+    float ndcY = 1.0f - (2.0f * mousePos.y) / screenH;
+
+    glm::mat4 invVP = glm::inverse(m_projNoFlip * m_context->activeCameraView.viewMatrix);
+
+    glm::vec4 nearPoint = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+    glm::vec4 farPoint = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+
+    if (nearPoint.w != 0.0f) nearPoint /= nearPoint.w;
+    if (farPoint.w != 0.0f) farPoint /= farPoint.w;
+
+    outOrigin = glm::vec3(nearPoint);
+    outDir = glm::normalize(glm::vec3(farPoint - nearPoint));
+}
+
+void BlockMakerState::Handle3DPaintInput() {
+    bool isPainterActive = (m_factoryOrchestrator.GetActiveStation() == fw::ProductionStationID::Painter);
+    if (!isPainterActive) {
+        if (m_is3DPaintStroking) {
+            m_surfacePaintingAdapter.CancelStroke3D();
+            m_is3DPaintStroking = false;
+        }
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    // Protezione: non dipingere se ImGui cattura il mouse o se il gizmo e in interazione
+    if (io.WantCaptureMouse || m_isGizmoInteracting) {
+        if (m_is3DPaintStroking) {
+            m_surfacePaintingAdapter.CancelStroke3D();
+            m_is3DPaintStroking = false;
+        }
+        return;
+    }
+
+    if (m_activeEditableMesh.GetFaceCount() == 0) {
+        return;
+    }
+
+    // Assicura associazione autoritativa di UVLayout
+    if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->uvLayout.has_value()) {
+        m_surfacePaintingAdapter.SetUVLayout(&m_factoryOrchestrator.GetCurrentDraft()->uvLayout.value());
+    }
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        glm::vec3 rayOrigin, rayDir;
+        ComputeMouseRay(io.MousePos, rayOrigin, rayDir);
+        fw::SurfacePaintHit hit = fw::SurfacePaintingAdapter::RaycastMesh(m_activeEditableMesh, rayOrigin, rayDir);
+        if (hit.valid) {
+            m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
+            m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush);
+            m_is3DPaintStroking = true;
+        }
+    } else if (m_is3DPaintStroking && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        glm::vec3 rayOrigin, rayDir;
+        ComputeMouseRay(io.MousePos, rayOrigin, rayDir);
+        fw::SurfacePaintHit hit = fw::SurfacePaintingAdapter::RaycastMesh(m_activeEditableMesh, rayOrigin, rayDir);
+        if (hit.valid) {
+            m_surfacePaintingAdapter.UpdateStroke3D(m_activeEditableMesh, hit, m_paintBrush);
+        }
+    } else if (m_is3DPaintStroking && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        m_surfacePaintingAdapter.EndStroke3D();
+        m_is3DPaintStroking = false;
+    }
+}
+
+void BlockMakerState::DrawUVEditorStationUI() {
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "2D UV EDITOR & ATLAS STATION (BM-UV5 & BM-UV8)");
+    ImGui::Separator();
+
+    if (!m_factoryOrchestrator.IsDraftOpen() || !m_factoryOrchestrator.GetCurrentDraft()->uvLayout.has_value()) {
+        ImGui::TextDisabled("Nessun UVLayout generato per la bozza corrente.");
+        if (ImGui::Button("Esegui Unwrapping Stazione Surface & UV##RunUVUnwrap", ImVec2(280, 24))) {
+            m_factoryOrchestrator.ExecuteStation(fw::ProductionStationID::SurfaceUV, 
+                m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+            UpdatePreviewMesh();
+        }
+        return;
+    }
+
+    auto& layout = m_factoryOrchestrator.GetCurrentDraft()->uvLayout.value();
+
+    if (!m_uvEditorDocument || &m_uvEditorDocument->GetMesh() != &m_activeEditableMesh) {
+        m_uvEditorDocument = std::make_unique<fw::UVEditorDocument>(m_activeEditableMesh, layout);
+    }
+
+    // Controlli vista 2D (Zoom, Pan, Active Page)
+    auto& viewState = m_uvEditorPanel.GetViewState();
+    ImGui::BeginChild("UVControlsBar", ImVec2(0, 36), true);
+    ImGui::Text("Zoom:");
+    ImGui::SameLine();
+    ImGui::SliderFloat("##UVZoom", &viewState.zoom, 0.2f, 10.0f, "%.1fx");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset View##UVResetView")) {
+        viewState.zoom = 1.0f;
+        viewState.panOffset = glm::vec2(0.0f);
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Checkerboard##UVCheck", &viewState.showCheckerboard);
+    ImGui::SameLine();
+    ImGui::Checkbox("Seams##UVSeams", &viewState.showSeams);
+    ImGui::SameLine();
+    if (layout.totalAtlasPages > 1) {
+        int page = static_cast<int>(viewState.activeAtlasPage);
+        ImGui::SetNextItemWidth(100.0f);
+        if (ImGui::SliderInt("Pagina Atlas##UVPage", &page, 0, static_cast<int>(layout.totalAtlasPages - 1))) {
+            viewState.activeAtlasPage = static_cast<uint32_t>(page);
+            m_uvEditorDocument->SetActiveAtlasPage(viewState.activeAtlasPage);
+        }
+    }
+    ImGui::EndChild();
+
+    // Strumenti trasformazione e selezione
+    ImGui::BeginChild("UVToolsBar", ImVec2(0, 32), false);
+    if (ImGui::Button("Trasla (+0.05 U)##UVTransU")) {
+        m_uvEditorDocument->TranslateSelectedIslands(glm::vec2(0.05f, 0.0f));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Ruota (+90 deg)##UVRot90")) {
+        m_uvEditorDocument->RotateSelectedIslands(90.0f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Scala (1.1x)##UVSclUp")) {
+        m_uvEditorDocument->ScaleSelectedIslands(glm::vec2(1.1f, 1.1f));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Undo UV##UVUndo", ImVec2(70, 0))) {
+        m_uvEditorDocument->Undo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Redo UV##UVRedo", ImVec2(70, 0))) {
+        m_uvEditorDocument->Redo();
+    }
+    if (m_uvEditorDocument->RequiresTextureMigration()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[Migrazione Richiesta]");
+    }
+    ImGui::EndChild();
+
+    // Canvas ImGui 2D con Caching a revisione (Zero-Work per-frame)
+    uint64_t topoRev = m_activeEditableMesh.GetTopologyRevision();
+    uint64_t atlasRev = layout.atlasRevision;
+    uint64_t selRev = m_uvEditorDocument->GetSelectionRevision();
+
+    if (topoRev != m_cachedUVOutlineTopologyRev || 
+        atlasRev != m_cachedUVOutlineAtlasRev || 
+        selRev != m_cachedUVOutlineSelectionRev ||
+        m_cachedUVOutlines.empty()) 
+    {
+        m_cachedUVOutlines = m_uvEditorPanel.BuildDrawOutlines(*m_uvEditorDocument);
+        m_cachedUVOutlineTopologyRev = topoRev;
+        m_cachedUVOutlineAtlasRev = atlasRev;
+        m_cachedUVOutlineSelectionRev = selRev;
+    }
+
+    ImVec2 canvasSize(400.0f, 400.0f);
+    ImVec2 canvasP0 = ImGui::GetCursorScreenPos();
+    ImVec2 canvasP1 = ImVec2(canvasP0.x + canvasSize.x, canvasP0.y + canvasSize.y);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(canvasP0, canvasP1, IM_COL32(30, 30, 35, 255));
+    drawList->AddRect(canvasP0, canvasP1, IM_COL32(80, 80, 90, 255));
+
+    glm::vec2 origin(canvasP0.x, canvasP0.y);
+    glm::vec2 size(canvasSize.x, canvasSize.y);
+
+    // Disegna isole e cuciture dalla cache
+    for (const auto& outline : m_cachedUVOutlines) {
+        if (outline.atlasPage != viewState.activeAtlasPage) continue;
+
+        ImU32 col = outline.isSelected ? IM_COL32(255, 200, 50, 255) : IM_COL32(100, 180, 255, 200);
+
+        if (outline.boundaryVerticesAtlasUV.size() >= 3) {
+            for (size_t i = 0; i < outline.boundaryVerticesAtlasUV.size(); ++i) {
+                glm::vec2 uvA = outline.boundaryVerticesAtlasUV[i];
+                glm::vec2 uvB = outline.boundaryVerticesAtlasUV[(i + 1) % outline.boundaryVerticesAtlasUV.size()];
+                glm::vec2 scrA = m_uvEditorPanel.AtlasUVToScreen(uvA, origin, size);
+                glm::vec2 scrB = m_uvEditorPanel.AtlasUVToScreen(uvB, origin, size);
+                drawList->AddLine(ImVec2(scrA.x, scrA.y), ImVec2(scrB.x, scrB.y), col, outline.isSelected ? 2.5f : 1.5f);
+            }
+        }
+
+        if (viewState.showSeams) {
+            for (const auto& seam : outline.seamSegmentsAtlasUV) {
+                glm::vec2 scrA = m_uvEditorPanel.AtlasUVToScreen(seam.first, origin, size);
+                glm::vec2 scrB = m_uvEditorPanel.AtlasUVToScreen(seam.second, origin, size);
+                drawList->AddLine(ImVec2(scrA.x, scrA.y), ImVec2(scrB.x, scrB.y), IM_COL32(255, 60, 60, 255), 2.0f);
+            }
+        }
+    }
+
+    ImGui::Dummy(canvasSize);
+
+    // Selezione isola via click su canvas
+    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        ImVec2 mousePos = ImGui::GetMousePos();
+        glm::vec2 clickUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+
+        for (const auto& isl : layout.islands) {
+            if (isl.atlasPage != viewState.activeAtlasPage) continue;
+            if (clickUV.x >= isl.atlasTransform.z && clickUV.x <= (isl.atlasTransform.z + isl.atlasTransform.x) &&
+                clickUV.y >= isl.atlasTransform.w && clickUV.y <= (isl.atlasTransform.w + isl.atlasTransform.y)) 
+            {
+                m_uvEditorDocument->SelectIsland(isl.id, ImGui::GetIO().KeyShift);
+                break;
             }
         }
     }

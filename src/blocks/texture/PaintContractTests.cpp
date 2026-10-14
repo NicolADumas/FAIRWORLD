@@ -140,8 +140,8 @@ std::vector<PaintTestResult> PaintContractTests::RunContractTests() {
         glm::vec4 red(1.0f, 0.0f, 0.0f, 1.0f);
         glm::vec4 green(0.0f, 1.0f, 0.0f, 1.0f);
 
-        glm::vec4 fullOver = TexturePaintingService::BlendPixelsLinear(red, 1.0f, green, 1.0f, LayerBlendMode::Normal);
-        glm::vec4 halfOver = TexturePaintingService::BlendPixelsLinear(red, 0.5f, green, 1.0f, LayerBlendMode::Normal);
+        glm::vec4 fullOver = TexturePaintingService::BlendPixelsLinear(red, 1.0f, green, 1.0f, PaintLayerBlendMode::Normal);
+        glm::vec4 halfOver = TexturePaintingService::BlendPixelsLinear(red, 0.5f, green, 1.0f, PaintLayerBlendMode::Normal);
 
         bool fullOk = (std::abs(fullOver.r - 1.0f) < 1e-4f && std::abs(fullOver.g - 0.0f) < 1e-4f);
         bool halfOk = (std::abs(halfOver.r - 0.5f) < 1e-4f && std::abs(halfOver.g - 0.5f) < 1e-4f && std::abs(halfOver.a - 1.0f) < 1e-4f);
@@ -167,13 +167,13 @@ std::vector<PaintTestResult> PaintContractTests::RunContractTests() {
         glm::vec4 src(0.4f, 0.4f, 0.4f, 1.0f);
         glm::vec4 dst(0.6f, 0.6f, 0.6f, 1.0f);
 
-        glm::vec4 mul = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dst, 1.0f, LayerBlendMode::Multiply);
-        glm::vec4 add = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dst, 1.0f, LayerBlendMode::Additive);
-        glm::vec4 scr = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dst, 1.0f, LayerBlendMode::Screen);
+        glm::vec4 mul = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dst, 1.0f, PaintLayerBlendMode::Multiply);
+        glm::vec4 add = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dst, 1.0f, PaintLayerBlendMode::Additive);
+        glm::vec4 scr = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dst, 1.0f, PaintLayerBlendMode::Screen);
 
         // Overlay per Cd < 0.5
         glm::vec4 dstDark(0.25f, 0.25f, 0.25f, 1.0f);
-        glm::vec4 ovlDark = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dstDark, 1.0f, LayerBlendMode::Overlay);
+        glm::vec4 ovlDark = TexturePaintingService::BlendPixelsLinear(src, 1.0f, dstDark, 1.0f, PaintLayerBlendMode::Overlay);
 
         bool mulOk = (std::abs(mul.r - 0.24f) < 1e-4f);
         bool addOk = (std::abs(add.r - 1.00f) < 1e-4f);
@@ -361,7 +361,7 @@ std::vector<PaintTestResult> PaintContractTests::RunContractTests() {
         TexturePaintingService original;
         original.InitializeCanvas(32, 32, glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
         uint32_t l2 = original.AddLayer("Decal", glm::vec4(0.5f, 0.0f, 0.0f, 0.8f));
-        original.GetLayer(l2)->blendMode = LayerBlendMode::Additive;
+        original.GetLayer(l2)->blendMode = PaintLayerBlendMode::Additive;
         original.AddMaskToLayer(l2, 0.7f);
 
         uint64_t hashOriginal = original.ComputeCombinedFingerprint();
@@ -380,7 +380,7 @@ std::vector<PaintTestResult> PaintContractTests::RunContractTests() {
 
         const PaintLayer* restLayer2 = restored.GetLayer(l2);
         bool paramsOk = (restLayer2 != nullptr && 
-                         restLayer2->blendMode == LayerBlendMode::Additive && 
+                         restLayer2->blendMode == PaintLayerBlendMode::Additive && 
                          restLayer2->mask.has_value());
 
         bool passed = loaded && structureOk && paramsOk && (hashOriginal == hashRestored);

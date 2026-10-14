@@ -42,6 +42,10 @@ TexturePaintingService::TexturePaintingService() {
     InitializeCanvas(512, 512, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
 }
 
+TexturePaintingService::TexturePaintingService(uint32_t width, uint32_t height) {
+    InitializeCanvas(width, height, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+}
+
 void TexturePaintingService::InitializeCanvas(uint32_t width, uint32_t height, const glm::vec4& baseColor) {
     if (m_activeTransaction.isActive) {
         CancelStroke();
@@ -316,7 +320,7 @@ void TexturePaintingService::ApplyDabInternal(PaintLayer& layer, glm::vec2 cente
                         } else {
                             // Blending progressivo del dab sul pixel corrente del layer
                             float dabAlpha = brush.color.a * factor;
-                            newCol = BlendPixelsLinear(brush.color, dabAlpha, curCol, curCol.a, LayerBlendMode::Normal);
+                            newCol = BlendPixelsLinear(brush.color, dabAlpha, curCol, curCol.a, PaintLayerBlendMode::Normal);
                         }
                         layer.pixelBuffer.SetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y), newCol);
                     }
@@ -393,7 +397,7 @@ bool TexturePaintingService::CancelStroke() {
 
 glm::vec4 TexturePaintingService::BlendPixelsLinear(const glm::vec4& srcColor, float srcAlpha, 
                                                    const glm::vec4& dstColor, float dstAlpha, 
-                                                   LayerBlendMode mode) 
+                                                   PaintLayerBlendMode mode) 
 {
     // Se la sorgente è trasparente, non altera la destinazione
     if (srcAlpha <= 1e-6f) {
@@ -409,19 +413,19 @@ glm::vec4 TexturePaintingService::BlendPixelsLinear(const glm::vec4& srcColor, f
     glm::vec3 B(0.0f);
 
     switch (mode) {
-        case LayerBlendMode::Normal:
+        case PaintLayerBlendMode::Normal:
             B = Cs;
             break;
-        case LayerBlendMode::Multiply:
+        case PaintLayerBlendMode::Multiply:
             B = Cs * Cd;
             break;
-        case LayerBlendMode::Additive:
+        case PaintLayerBlendMode::Additive:
             B = glm::min(glm::vec3(1.0f), Cs + Cd);
             break;
-        case LayerBlendMode::Screen:
+        case PaintLayerBlendMode::Screen:
             B = glm::vec3(1.0f) - (glm::vec3(1.0f) - Cs) * (glm::vec3(1.0f) - Cd);
             break;
-        case LayerBlendMode::Overlay: {
+        case PaintLayerBlendMode::Overlay: {
             for (int i = 0; i < 3; ++i) {
                 if (Cd[i] < 0.5f) {
                     B[i] = 2.0f * Cs[i] * Cd[i];

@@ -40,7 +40,7 @@ EditableMesh MeshBridgeService::CreateMeshFromShape(const ShapeDefinition& shape
         std::vector<VertexID> vIds;
         vIds.reserve(res.mesh.vertices.size());
         for (const auto& v : res.mesh.vertices) {
-            vIds.push_back(mesh.AddVertex(toGlm(v.position)));
+            vIds.push_back(mesh.AddVertex(glm::vec3(v.position.x, v.position.y, v.position.z)));
         }
         for (const auto& f : res.mesh.faces) {
             if (f.indices.size() < 3) continue;
@@ -284,12 +284,14 @@ std::vector<BridgeTestResult> MeshBridgeService::RunContractTests() {
         auto vIds = mesh.GetActiveVertexIDs();
         glm::vec3 origPos = mesh.GetVertex(vIds[0])->position;
 
-        history.BeginTransaction("TestDeform", HistoryMutationType::GeometryOnly);
-        mesh.SetVertexPosition(vIds[0], origPos + glm::vec3(0.0f, 0.5f, 0.0f));
+        history.BeginTransaction(1, "TestDeform", HistoryCommandType::GeometryDelta);
+        glm::vec3 newPos = origPos + glm::vec3(0.0f, 0.5f, 0.0f);
+        history.RecordVertexDelta(vIds[0], origPos, newPos);
+        mesh.SetVertexPosition(vIds[0], newPos);
         history.CommitTransaction(mesh);
 
         uint64_t revBeforeUndo = mesh.GetGeometryRevision();
-        bool undoOk = history.Undo(mesh);
+        bool undoOk = history.Undo(mesh, 1).success;
         uint64_t revAfterUndo = mesh.GetGeometryRevision();
 
         SynchronizeEditableMeshToDraft(mesh, draft, nullptr);
@@ -357,20 +359,22 @@ std::vector<BridgeTestResult> MeshBridgeService::RunContractTests() {
         tr.expectedDesc = "Mesh 1 approvata con successo; Mesh 2 bloccata con errore QC";
 
         QualityControlStationAdapter qcAdapter;
-        StationContext ctx1;
-        ctx1.draft.manifest.assetId = "fairworld:valid_sculpt";
-        ctx1.draft.completedStationsMask = 0x0F;
-        ctx1.draft.sculptMesh = EditableMesh::CreateCube(1.0f);
+        RawAssetDraft draft1;
+        draft1.manifest.assetId = "fairworld:valid_sculpt";
+        draft1.completedStationsMask = 0x0F;
+        draft1.sculptMesh = EditableMesh::CreateCube(1.0f);
+        StationContext ctx1{ draft1 };
 
         bool pass1 = qcAdapter.Execute(ctx1);
 
-        StationContext ctx2;
-        ctx2.draft.manifest.assetId = "fairworld:corrupted_sculpt";
-        ctx2.draft.completedStationsMask = 0x0F;
+        RawAssetDraft draft2;
+        draft2.manifest.assetId = "fairworld:corrupted_sculpt";
+        draft2.completedStationsMask = 0x0F;
         auto badMesh = EditableMesh::CreateCube(1.0f);
         auto badVIds = badMesh.GetActiveVertexIDs();
         badMesh.SetVertexPosition(badVIds[0], glm::vec3(NAN, 0.0f, 0.0f));
-        ctx2.draft.sculptMesh = badMesh;
+        draft2.sculptMesh = badMesh;
+        StationContext ctx2{ draft2 };
 
         bool pass2 = qcAdapter.Execute(ctx2);
 

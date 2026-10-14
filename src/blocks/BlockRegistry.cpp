@@ -565,6 +565,19 @@ const SimBlockDef& BlockRegistry::GetBlock(const std::string& stringId) const {
     return m_fallbackBlock;
 }
 
+uint8_t BlockRegistry::GetBlockIdByString(const std::string& stringId) const {
+    auto it = m_stringToIdMap.find(stringId);
+    if (it != m_stringToIdMap.end()) {
+        return it->second;
+    }
+    std::string low = toLowerStr(stringId);
+    it = m_stringToIdMap.find(low);
+    if (it != m_stringToIdMap.end()) {
+        return it->second;
+    }
+    return 0;
+}
+
 SimBlockDef& BlockRegistry::GetBlockMutable(uint8_t id) {
     if (id < 256) {
         if (m_blocks[id].id == 0 && id > 0) {

@@ -417,23 +417,27 @@ bool ImageBitmap::DecodeFromMemory(const uint8_t* data, size_t sizeBytes, Textur
 std::vector<uint8_t> ImageBitmap::EncodeToPngMemory() const {
     if (!IsValid()) return {};
 
-    int len = 0;
     int channels = (m_format == TexturePixelFormat::RGBA8) ? 4 : 1;
     int stride = m_width * channels;
+    std::vector<uint8_t> result;
 
-    unsigned char* pngData = stbi_write_png_to_mem(
-        m_pixels.data(),
-        stride,
+    auto writeFunc = [](void* context, void* data, int size) {
+        auto* outVec = reinterpret_cast<std::vector<uint8_t>*>(context);
+        const auto* byteData = reinterpret_cast<const uint8_t*>(data);
+        outVec->insert(outVec->end(), byteData, byteData + size);
+    };
+
+    int success = stbi_write_png_to_func(
+        writeFunc,
+        &result,
         static_cast<int>(m_width),
         static_cast<int>(m_height),
         channels,
-        &len
+        m_pixels.data(),
+        stride
     );
 
-    if (!pngData || len <= 0) return {};
-
-    std::vector<uint8_t> result(pngData, pngData + len);
-    free(pngData);
+    if (!success) return {};
     return result;
 }
 

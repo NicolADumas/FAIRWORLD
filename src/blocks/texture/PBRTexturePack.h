@@ -51,6 +51,10 @@ public:
     bool HasMetallic() const { return m_metallic.has_value() && m_metallic->IsValid(); }
     bool HasEmissive() const { return m_emissive.has_value() && m_emissive->IsValid(); }
     bool HasORM() const { return m_orm.has_value() && m_orm->IsValid(); }
+    bool IsValid() const {
+        return HasBaseColor() || HasNormal() || HasAmbientOcclusion() || 
+               HasRoughness() || HasMetallic() || HasEmissive() || HasORM();
+    }
 
     // --- Valori Scalari di Fallback (BM-TX2.5) ---
     glm::vec4 fallbackBaseColor{1.0f, 1.0f, 1.0f, 1.0f}; // RGBA sRGB

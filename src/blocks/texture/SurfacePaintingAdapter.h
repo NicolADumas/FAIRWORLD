@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "blocks/sculpt/EditableMesh.h"
+#include "blocks/uv/UVLayout.h"
 #include "blocks/texture/TexturePaintingService.h"
 #include "blocks/texture/ImageBitmap.h"
 #include "blocks/texture/TextureAsset.h"
@@ -223,6 +224,11 @@ public:
     void SetTargetResolver(TextureTargetResolver* resolver) { m_targetResolver = resolver; }
     TextureTargetResolver* GetTargetResolver() { return m_targetResolver; }
 
+    // --- Integrazione UVLayout & Cross-Seam Painting (BM-UV5.6 & BM-UV5.7) ---
+    void SetUVLayout(const UVLayout* layout) { m_uvLayout = layout; }
+    const UVLayout* GetUVLayout() const { return m_uvLayout; }
+    void PropagateCrossSeamDab(const EditableMesh& mesh, const SurfacePaintHit& hit, const PaintBrush& brush, float metricRadius);
+
     // --- Raycast sulla Mesh con gestione Transform / Normal Matrix ---
     static SurfacePaintHit RaycastMesh(const EditableMesh& mesh, 
                                       const glm::vec3& rayOrigin, 
@@ -270,11 +276,21 @@ public:
                        bool targetMask = false,
                        const glm::mat4& modelMatrix = glm::mat4(1.0f));
 
+    bool BeginStroke3D(const EditableMesh& mesh, 
+                       const SurfacePaintHit& hit, 
+                       const PaintBrush& brush, 
+                       uint32_t targetLayerId = 0, 
+                       bool targetMask = false);
+
     bool UpdateStroke3D(const EditableMesh& mesh, 
                         const glm::vec3& rayOrigin, 
                         const glm::vec3& rayDirection, 
                         const PaintBrush& brush,
                         const glm::mat4& modelMatrix = glm::mat4(1.0f));
+
+    bool UpdateStroke3D(const EditableMesh& mesh, 
+                        const SurfacePaintHit& hit, 
+                        const PaintBrush& brush);
 
     PaintDirtyRect EndStroke3D();
     bool CancelStroke3D();
@@ -291,6 +307,7 @@ public:
 private:
     TexturePaintingService* m_paintingService = nullptr;
     TextureTargetResolver*  m_targetResolver = nullptr;
+    const UVLayout*         m_uvLayout = nullptr;
     UVToPixelConfig m_uvConfig;
 
     BrushSpaceMode m_brushSpaceMode = BrushSpaceMode::UVSpace;

@@ -195,8 +195,10 @@ PrimitiveMappingResult PrimitiveUVMapper::GeneratePlanarMapping(EditableMesh& me
     glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
 
     AABB bounds = mesh.ComputeAABB();
-    glm::vec3 center = bounds.getCenter();
-    glm::vec3 size = bounds.getSize();
+    Vec3 bC = bounds.center();
+    Vec3 bS = bounds.size();
+    glm::vec3 center(bC.x, bC.y, bC.z);
+    glm::vec3 size(bS.x, bS.y, bS.z);
     float extentU = std::max(0.001f, std::abs(glm::dot(size, tangent)));
     float extentV = std::max(0.001f, std::abs(glm::dot(size, bitangent)));
 
@@ -264,8 +266,10 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateBoxMapping(EditableMesh& mesh,
     }
 
     AABB bounds = mesh.ComputeAABB();
-    glm::vec3 bCenter = bounds.getCenter();
-    glm::vec3 bSize = bounds.getSize();
+    Vec3 bC = bounds.center();
+    Vec3 bS = bounds.size();
+    glm::vec3 bCenter(bC.x, bC.y, bC.z);
+    glm::vec3 bSize(bS.x, bS.y, bS.z);
     if (bSize.x < 1e-4f) bSize.x = size.x > 0 ? size.x : 1.0f;
     if (bSize.y < 1e-4f) bSize.y = size.y > 0 ? size.y : 1.0f;
     if (bSize.z < 1e-4f) bSize.z = size.z > 0 ? size.z : 1.0f;
@@ -407,7 +411,7 @@ PrimitiveMappingResult PrimitiveUVMapper::GeneratePyramidMapping(EditableMesh& m
     if (isFrustum) outLayout.islands[5].semanticName = "Top Cap (+Y)";
 
     AABB bounds = mesh.ComputeAABB();
-    float halfH = (height > 1e-4f ? height : bounds.getSize().y) * 0.5f;
+    float halfH = (height > 1e-4f ? height : bounds.size().y) * 0.5f;
 
     for (FaceID fId : mesh.GetActiveFaceIDs()) {
         const auto* face = mesh.GetFace(fId);
@@ -542,8 +546,8 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateCylindricalMapping(EditableMes
     }
 
     AABB bounds = mesh.ComputeAABB();
-    float safeH = (height > 1e-4f) ? height : std::max(0.001f, bounds.getSize().y);
-    float safeR = (radius > 1e-4f) ? radius : std::max(0.001f, bounds.getSize().x * 0.5f);
+    float safeH = (height > 1e-4f) ? height : std::max(0.001f, bounds.size().y);
+    float safeR = (radius > 1e-4f) ? radius : std::max(0.001f, bounds.size().x * 0.5f);
 
     glm::vec3 cNorm = glm::normalize(cutNormal);
     if (std::abs(cNorm.y) < 1e-4f) cNorm = glm::vec3(0, 1, 0);
@@ -975,8 +979,8 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateCavityMapping(EditableMesh& me
                     u = (angle / glm::two_pi<float>()) + 0.5f;
                     vCoord = (p.y / (2.0f * (yMax > 1e-4f ? yMax : 1.0f))) + 0.5f;
                 } else {
-                    u = (p.x / (bounds.getSize().x > 1e-4f ? bounds.getSize().x : 1.0f)) + 0.5f;
-                    vCoord = (p.z / (bounds.getSize().z > 1e-4f ? bounds.getSize().z : 1.0f)) + 0.5f;
+                    u = (p.x / (bounds.size().x > 1e-4f ? bounds.size().x : 1.0f)) + 0.5f;
+                    vCoord = (p.z / (bounds.size().z > 1e-4f ? bounds.size().z : 1.0f)) + 0.5f;
                 }
 
                 u = glm::clamp(u, 0.0f, 1.0f);

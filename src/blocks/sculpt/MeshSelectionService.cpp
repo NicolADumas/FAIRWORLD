@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MeshSelectionService.h"
+#include "SurfaceDefinition.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

@@ -41,18 +41,21 @@ set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "Disable warnings as errors in Jolt" FORC
 set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "Use dynamic MSVC runtime for Jolt" FORCE)
 FetchContent_MakeAvailable(joltphysics)
 
-file(GLOB_RECURSE CORE_SOURCES "src/*.cpp")
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 list(REMOVE_ITEM CORE_SOURCES 
     "${CMAKE_SOURCE_DIR}/src/modules/Modeling.cpp"
     "${CMAKE_SOURCE_DIR}/src/modules/Sculpting.cpp"
     "${CMAKE_SOURCE_DIR}/src/modules/GeometryNodes.cpp"
+    "${CMAKE_SOURCE_DIR}/src/core/app/main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/blocks/uv/uv_tests_main.cpp"
 )
-file(GLOB IMGUI_SOURCES "third_party/imgui/*.cpp")
+file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
 
-add_executable(FairworldCore ${CORE_SOURCES} ${IMGUI_SOURCES})
+# --- 2. LIBRERIA STATICA CENTRALE (FairworldCore) ---
+add_library(FairworldCore STATIC ${CORE_SOURCES} ${IMGUI_SOURCES})
 
 # Includiamo le directory per gli 8 Pilastri Fondamentali
-target_include_directories(FairworldCore PRIVATE 
+target_include_directories(FairworldCore PUBLIC 
     src
     src/states
     src/blocks
@@ -80,50 +83,15 @@ target_include_directories(FairworldCore PRIVATE
     ${joltphysics_SOURCE_DIR}
 )
 
-# Linkiamo Vulkan, Jolt e librerie OS al Core
-target_link_libraries(FairworldCore PRIVATE Vulkan::Vulkan Jolt Shell32)
-target_link_libraries(FairworldCore PRIVATE ${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll.lib)
-target_link_libraries(FairworldCore PRIVATE ${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/lib/openxr_loader.lib)
+# --- 1.1 Supporto nlohmann_json ---
+add_library(nlohmann_json INTERFACE)
+target_include_directories(nlohmann_json INTERFACE ${CMAKE_SOURCE_DIR}/third_party)
+add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
 
-# Comando Post-Build per copiare le DLL dinamiche accanto all'eseguibile (così non crasha all'avvio)
-add_custom_command(TARGET FairworldCore POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/vert.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/frag.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/sky_vert.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/sky_frag.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/chunk_culling.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/terrain_generation.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/forge_vert.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/src/render/forge_frag.spv"
-        $<TARGET_FILE_DIR:FairworldCore>
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/assets/definitions"
-        "$<TARGET_FILE_DIR:FairworldCore>/assets/definitions"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/assets/textures"
-        "$<TARGET_FILE_DIR:FairworldCore>/assets/textures"
-)
+# Linkiamo Vulkan, Jolt, nlohmann_json e librerie OS al Core
+target_link_libraries(FairworldCore PUBLIC Vulkan::Vulkan Jolt Shell32 nlohmann_json::nlohmann_json)
+target_link_libraries(FairworldCore PUBLIC ${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll.lib)
+target_link_libraries(FairworldCore PUBLIC ${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/lib/openxr_loader.lib)
 
 # Ottimizzazioni specifiche per il compilatore (MSVC vs GCC/Clang)
 if(MSVC)
@@ -131,6 +99,55 @@ if(MSVC)
 else()
     target_compile_options(FairworldCore PRIVATE $<$<CONFIG:Release>:-O3> -ffast-math -pthread)
 endif()
+
+# --- 3. APPLICAZIONE PRINCIPALE (FairworldEditor) ---
+add_executable(FairworldEditor src/core/app/main.cpp)
+target_link_libraries(FairworldEditor PRIVATE FairworldCore)
+
+# Comando Post-Build per copiare le DLL dinamiche e asset accanto all'eseguibile FairworldEditor
+add_custom_command(TARGET FairworldEditor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/vert.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/frag.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/sky_vert.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/sky_frag.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/chunk_culling.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/terrain_generation.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/forge_vert.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/render/forge_frag.spv"
+        $<TARGET_FILE_DIR:FairworldEditor>
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/definitions"
+        "$<TARGET_FILE_DIR:FairworldEditor>/assets/definitions"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/textures"
+        "$<TARGET_FILE_DIR:FairworldEditor>/assets/textures"
+)
+
+# --- 4. TEST RUNNER HEADLESS (FairworldUVTests) ---
+add_executable(FairworldUVTests src/blocks/uv/uv_tests_main.cpp)
+target_link_libraries(FairworldUVTests PRIVATE FairworldCore)
+
 
 # --- 3. I MODULI DINAMICI (Hot-Reloading) ---
 # Compiliamo ogni workspace come libreria condivisa (.dll / .so)

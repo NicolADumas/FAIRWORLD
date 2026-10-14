@@ -97,8 +97,24 @@ struct IslandDistortion {
     bool isAcceptable = true;
 };
 
+// Spazi di coordinate UV formalmente distinti (BM-UV4.3)
+enum class UVCoordinateSpace : uint8_t {
+    LocalIsland = 0,    // Spazio locale normalizzato dell'isola [0, 1] pre-packing
+    AtlasNormalized,    // Spazio globale dell'atlas UV [0, 1] post-packing
+    PixelCoordinates    // Spazio raster intero in pixel [0, W-1] x [0, H-1]
+};
+
+inline const char* GetUVCoordinateSpaceName(UVCoordinateSpace s) {
+    switch (s) {
+        case UVCoordinateSpace::LocalIsland:      return "LocalIsland";
+        case UVCoordinateSpace::AtlasNormalized:  return "AtlasNormalized";
+        case UVCoordinateSpace::PixelCoordinates: return "PixelCoordinates";
+        default:                                  return "Unknown";
+    }
+}
+
 // =============================================================================
-// CONTRATTO UVISLAND (BM-UV1.4 / BM-UV2.2)
+// CONTRATTO UVISLAND (BM-UV1.4 / BM-UV2.2 / BM-UV4.6)
 // Componente connessa bidimensionale di facce orientate nel piano UV
 // =============================================================================
 
@@ -117,7 +133,9 @@ struct UVIsland {
     // Trasformazione nello spazio atlas finale [scaleU, scaleV, offsetU, offsetV]
     // Identita (1, 1, 0, 0) prima di BM-UV4 Atlas Packing per prevenire doppie trasformazioni
     glm::vec4 atlasTransform{1.0f, 1.0f, 0.0f, 0.0f};
-    float rotationDegrees = 0.0f;
+    float rotationDegrees = 0.0f; // 0, 90, 180, 270
+
+    uint32_t atlasPage = 0; // AtlasPageID per supporto Multi-Atlas (BM-UV4.6)
 
     float surfaceArea3D = 0.0f;
     float area2D = 0.0f;
@@ -150,6 +168,7 @@ struct UVLayout {
     // Parametri target atlas
     uint32_t atlasTargetWidth = 1024;
     uint32_t atlasTargetHeight = 1024;
+    uint32_t totalAtlasPages = 1;     // Pagine totali generate dall'AtlasPacker (BM-UV4.6)
     float paddingPixels = 4.0f;
     float globalTexelDensity = 0.0f;
     float atlasOccupancyRatio = 0.0f; // Percentuale texel utilizzati (0.0 .. 1.0)
@@ -253,6 +272,7 @@ inline void to_json(nlohmann::json& j, const UVIsland& island) {
         {"localUVBounds", {island.localUVBounds.x, island.localUVBounds.y, island.localUVBounds.z, island.localUVBounds.w}},
         {"atlasTransform", {island.atlasTransform.x, island.atlasTransform.y, island.atlasTransform.z, island.atlasTransform.w}},
         {"rotationDegrees", island.rotationDegrees},
+        {"atlasPage", island.atlasPage},
         {"surfaceArea3D", island.surfaceArea3D},
         {"area2D", island.area2D},
         {"texelDensity", island.texelDensity},
@@ -285,6 +305,7 @@ inline void from_json(const nlohmann::json& j, UVIsland& island) {
     }
 
     island.rotationDegrees = j.value("rotationDegrees", 0.0f);
+    island.atlasPage = j.value("atlasPage", (uint32_t)0);
     island.surfaceArea3D = j.value("surfaceArea3D", 0.0f);
     island.area2D = j.value("area2D", 0.0f);
     island.texelDensity = j.value("texelDensity", 0.0f);
@@ -304,6 +325,7 @@ inline void to_json(nlohmann::json& j, const UVLayout& layout) {
         {"islands", layout.islands},
         {"atlasTargetWidth", layout.atlasTargetWidth},
         {"atlasTargetHeight", layout.atlasTargetHeight},
+        {"totalAtlasPages", layout.totalAtlasPages},
         {"paddingPixels", layout.paddingPixels},
         {"globalTexelDensity", layout.globalTexelDensity},
         {"atlasOccupancyRatio", layout.atlasOccupancyRatio},
@@ -333,6 +355,7 @@ inline void from_json(const nlohmann::json& j, UVLayout& layout) {
     }
     layout.atlasTargetWidth = j.value("atlasTargetWidth", (uint32_t)1024);
     layout.atlasTargetHeight = j.value("atlasTargetHeight", (uint32_t)1024);
+    layout.totalAtlasPages = j.value("totalAtlasPages", (uint32_t)1);
     layout.paddingPixels = j.value("paddingPixels", 4.0f);
     layout.globalTexelDensity = j.value("globalTexelDensity", 0.0f);
     layout.atlasOccupancyRatio = j.value("atlasOccupancyRatio", 0.0f);

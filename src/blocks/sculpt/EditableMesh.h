@@ -52,6 +52,11 @@ struct ElementID {
     }
 };
 
+template<typename Tag>
+constexpr bool IsValid(ElementID<Tag> id) noexcept {
+    return id.IsValid();
+}
+
 struct VertexTag {};
 struct HalfEdgeTag {};
 struct EdgeTag {};

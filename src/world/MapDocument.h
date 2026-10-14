@@ -34,7 +34,7 @@ enum class RegionShape : int {
 // FASE 4.1: SMART TERRAIN GENERATION RULES
 // ==========================================
 
-enum class LayerBlendMode {
+enum class MapLayerBlendMode {
     Solid = 0,
     Dithered,
     Noise
@@ -47,7 +47,7 @@ struct TerrainLayer {
     
     float noiseStrength = 0.0f;
     float noiseScale = 0.03f;
-    LayerBlendMode blendMode = LayerBlendMode::Solid;
+    MapLayerBlendMode blendMode = MapLayerBlendMode::Solid;
 };
 
 enum class TerrainAlgorithmType : uint8_t {

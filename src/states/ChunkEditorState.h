@@ -6,7 +6,9 @@
 #include <glm/glm.hpp>
 #include <unordered_set>
 
+#ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
+#endif
 #include <glm/gtx/hash.hpp>
 
 #include "../world/MapDocument.h"
