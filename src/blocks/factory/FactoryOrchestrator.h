@@ -8,6 +8,8 @@
 #include "RawAssetContract.h"
 #include "ProductionStationContract.h"
 #include "AssetDependencyGraph.h"
+#include "TextureBakingService.h"
+#include "AssetPackagingService.h"
 
 namespace fw {
 
@@ -60,9 +62,17 @@ public:
     // Notifica di modifica proprietà con fingerprinting per invalidazione selettiva Zero-Work
     void NotifyPropertyModified(DependencyNodeID nodeId, uint64_t newFingerprint);
 
+    // --- Texture Atlas Baking (BM-F2B) ---
+    TextureBakingService& GetTextureBakingService() { return m_textureBakingService; }
+    const TextureBakingService& GetTextureBakingService() const { return m_textureBakingService; }
+    TextureBakeResult BakeCurrentDraftAlbedo(bool forceRewrite = false);
+
     // --- Quality Control & Packaging ---
     RawAssetValidation RunQualityControlAudit(ShapeRegistry* sReg = nullptr, MaterialRegistry* mReg = nullptr, BlockRegistry* bReg = nullptr);
     std::optional<RawAssetPackage> BuildPackage(ShapeRegistry* sReg = nullptr, MaterialRegistry* mReg = nullptr, BlockRegistry* bReg = nullptr);
+
+    AssetPackagingService& GetAssetPackagingService() { return m_packagingService; }
+    const AssetPackagingService& GetAssetPackagingService() const { return m_packagingService; }
 
     // Pubblica il pacchetto compilato direttamente nei Registri autorevoli di FAIRWORLD
     bool PublishToRegistries(BlockRegistry& bReg, MaterialRegistry& mReg, ShapeRegistry& sReg);
@@ -71,6 +81,35 @@ public:
     AssetDependencyGraph& GetDependencyGraph() { return m_dependencyGraph; }
     const AssetDependencyGraph& GetDependencyGraph() const { return m_dependencyGraph; }
 
+    // --- Telemetria e Zero-Work Geometry Compilation (BM-F3) ---
+    uint64_t GetGeometryCompileCallCount() const { return m_geometryCompileCallCount; }
+    void ResetGeometryCompileCallCount() { m_geometryCompileCallCount = 0; }
+    void InvalidateGeometryCache();
+
+    struct CompiledGeometryCache {
+        GeometrySource source = GeometrySource::Primitive;
+        uint64_t shapeRev = 0;
+        uint64_t geomRev = 0;
+        uint64_t topoRev = 0;
+        uint64_t attrRev = 0;
+        uint64_t uvRev = 0;
+        size_t surfaceCount = 0;
+        uint32_t defaultMatId = 0;
+        GeometryCompileResult result;
+
+        void Invalidate() {
+            source = GeometrySource::Primitive;
+            shapeRev = 0;
+            geomRev = 0;
+            topoRev = 0;
+            attrRev = 0;
+            uvRev = 0;
+            surfaceCount = 0;
+            defaultMatId = 0;
+            result = GeometryCompileResult{};
+        }
+    };
+
 private:
     void InitializeStations();
     uint64_t ComputeStationFingerprint(ProductionStationID id) const;
@@ -78,7 +117,12 @@ private:
     std::optional<RawAssetDraft> m_activeDraft;
     ProductionStationID m_activeStation = ProductionStationID::Shape;
 
+    CompiledGeometryCache m_compiledGeometryCache;
+    mutable uint64_t m_geometryCompileCallCount = 0;
+
     AssetDependencyGraph m_dependencyGraph;
+    TextureBakingService m_textureBakingService;
+    AssetPackagingService m_packagingService;
     std::unordered_map<ProductionStationID, std::unique_ptr<IProductionStation>> m_stations;
 };
 

@@ -406,8 +406,13 @@ bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh,
         effectiveBrush.radiusPixels = ComputeSurfaceMetricPixels(mesh, hit, metricR, m_uvConfig);
     }
 
+    uint32_t resolvedLayerId = targetLayerId;
+    if (resolvedLayerId == 0 && m_paintingService->GetLayerCount() > 0) {
+        resolvedLayerId = m_paintingService->GetLayers()[0].layerId;
+    }
+
     // Inizia la transazione sul painting service
-    if (!m_paintingService->BeginStroke(targetLayerId, targetMask)) {
+    if (!m_paintingService->BeginStroke(resolvedLayerId, targetMask)) {
         return false;
     }
 
@@ -423,7 +428,7 @@ bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh,
     m_prevPixelCoords = pxCoords;
     m_activeSurfaceId = hit.surfaceId;
     m_activeMaterialId = hit.materialId;
-    m_activeLayerId = targetLayerId;
+    m_activeLayerId = resolvedLayerId;
     m_activeTargetMask = targetMask;
 
     return true;

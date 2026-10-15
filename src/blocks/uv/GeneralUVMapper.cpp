@@ -135,6 +135,30 @@ GeneralUVResult GeneralUVMapper::UnwrapWithAutoDispatch(EditableMesh& mesh,
                                                        const ShapeParameters& params, 
                                                        bool isMeshSculptedOrModified, 
                                                        const GeneralUVOptions& options) {
+    if (options.dispatchMode == UVUnwrapDispatchMode::PreserveExisting) {
+        GeneralUVResult res;
+        res.modeUsed = UVUnwrapDispatchMode::PreserveExisting;
+        res.layout.id = 1;
+        res.layout.strategyUsed = UVMappingStrategy::Auto;
+        res.layout.meshTopologyRevision = mesh.GetTopologyRevision();
+        res.layout.meshAttributeRevision = mesh.GetAttributeRevision();
+        res.layout.uvRevision = 1;
+        res.layout.atlasRevision = 1;
+
+        UVIsland island;
+        island.id = 0;
+        island.semanticName = "PreservedUVIsland";
+        for (FaceID fId : mesh.GetActiveFaceIDs()) {
+            island.faces.push_back(fId);
+            res.layout.faceToIslandMap[fId] = 0;
+        }
+        res.layout.islands.push_back(island);
+        res.layout.isValid = true;
+        res.success = true;
+        res.diagnosticMessage = "Coordinate UV esistenti preservate integralmente.";
+        return res;
+    }
+
     // Dispatching intelligente (BM-UV3.9)
     if (options.dispatchMode == UVUnwrapDispatchMode::AnalyticMapping || 
         (options.dispatchMode == UVUnwrapDispatchMode::Auto && !isMeshSculptedOrModified && 

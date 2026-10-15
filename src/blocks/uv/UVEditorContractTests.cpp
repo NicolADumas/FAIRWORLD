@@ -90,20 +90,26 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
         auto [mesh, layout] = setupCubeLayout();
         UVEditorDocument doc(mesh, layout);
 
-        doc.SelectIsland(1, false);
-        const auto& islFaces = layout.islands[1].faces;
+        bool passed = false;
+        std::string obs;
+        if (layout.islands.size() > 1) {
+            doc.SelectIsland(1, false);
+            const auto& islFaces = layout.islands[1].faces;
 
-        bool allFacesSelected = true;
-        for (FaceID f : islFaces) {
-            if (!doc.IsFaceSelected(f)) {
-                allFacesSelected = false;
-                break;
+            bool allFacesSelected = true;
+            for (FaceID f : islFaces) {
+                if (!doc.IsFaceSelected(f)) {
+                    allFacesSelected = false;
+                    break;
+                }
             }
-        }
 
-        bool passed = allFacesSelected && !islFaces.empty();
-        std::string obs = "Island 1 Faces: " + std::to_string(islFaces.size()) +
-                          ", AllSelected: " + std::string(allFacesSelected ? "true" : "false");
+            passed = allFacesSelected && !islFaces.empty();
+            obs = "Island 1 Faces: " + std::to_string(islFaces.size()) +
+                  ", AllSelected: " + std::string(allFacesSelected ? "true" : "false");
+        } else {
+            obs = "Insufficient islands: " + std::to_string(layout.islands.size());
+        }
 
         addTest("UVE-3", "2D to 3D Synchronized Selection",
                 "Selezione dell'isola UV 2D nell'editor",

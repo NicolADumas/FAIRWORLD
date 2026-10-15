@@ -365,6 +365,15 @@ ShapeHandle ShapeRegistry::RegisterShape(const ShapeDefinition& def) {
     return { newId, newDef.revision };
 }
 
+bool ShapeRegistry::UnregisterShape(ShapeHandle handle) {
+    if (!handle.IsValid()) return false;
+    if (handle.id == m_defaultCube.id) return false;
+    auto it = m_shapes.find(handle.id);
+    if (it == m_shapes.end()) return false;
+    m_shapes.erase(it);
+    return true;
+}
+
 bool ShapeRegistry::UpdateShape(ShapeHandle handle, const ShapeParameters& newParams) {
     auto it = m_shapes.find(handle.id);
     if (it == m_shapes.end()) return false;

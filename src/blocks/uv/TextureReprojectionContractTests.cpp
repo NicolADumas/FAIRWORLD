@@ -328,7 +328,9 @@ std::vector<ReprojectionTestResult> TextureReprojectionContractTests::RunAllTest
 
         TexturePaintingService paintService;
         paintService.InitializeCanvas(256, 256);
+        uint32_t bgId = paintService.GetLayers()[0].layerId;
         uint32_t l1 = paintService.AddLayer("Base", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        paintService.RemoveLayer(bgId);
         uint32_t l2 = paintService.AddLayer("Detail", glm::vec4(0.0f, 1.0f, 0.0f, 0.5f));
 
         service.InvalidateCache();

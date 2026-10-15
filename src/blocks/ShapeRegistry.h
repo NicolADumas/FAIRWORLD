@@ -147,6 +147,7 @@ public:
     
     // Core registry operations
     ShapeHandle RegisterShape(const ShapeDefinition& def);
+    bool UnregisterShape(ShapeHandle handle);
     bool UpdateShape(ShapeHandle handle, const ShapeParameters& newParams);
     
     ShapeValidationResult ValidateParameters(ShapeType type, const ShapeParameters& params, ShapeID selfId = 0, const std::unordered_map<ShapeID, ShapeDefinition>* contextGraph = nullptr) const;

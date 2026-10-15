@@ -464,6 +464,7 @@ std::vector<AtlasUVTestResult> AtlasUVContractTests::RunAllTests() {
         auto res = mapper.UnwrapMesh(mesh, opt);
 
         AtlasPackOptions pOpt;
+        pOpt.enableZeroWork = true;
         uint64_t prevAtlasRev = res.layout.atlasRevision;
         packer.PackLayout(mesh, res.layout, pOpt);
 

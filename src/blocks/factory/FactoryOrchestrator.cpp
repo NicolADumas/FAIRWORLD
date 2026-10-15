@@ -4,6 +4,7 @@
 #include "blocks/BlockRegistry.h"
 #include "blocks/MaterialRegistry.h"
 #include "blocks/ShapeRegistry.h"
+#include "blocks/sculpt/MeshBridgeService.h"
 #include "world/GeometryCompiler.h"
 #include <fstream>
 #include <iostream>
@@ -74,9 +75,16 @@ bool FactoryOrchestrator::LoadDraftFromRegistry(uint8_t blockId, BlockRegistry& 
     // Geometria
     if (sDef) {
         draft.shape = *sDef;
+        if (sDef->type == ShapeType::TriangleMesh) {
+            draft.geometrySource = GeometrySource::SculptedMesh;
+            draft.sculptMesh = MeshBridgeService::CreateMeshFromShape(draft.shape);
+        } else {
+            draft.geometrySource = GeometrySource::Primitive;
+        }
     } else {
         draft.shape.type = ShapeType::Cube;
         draft.shape.supportsVisualCompilation = true;
+        draft.geometrySource = GeometrySource::Primitive;
     }
 
     // Trasformazioni
@@ -117,6 +125,7 @@ bool FactoryOrchestrator::LoadDraftFromRegistry(uint8_t blockId, BlockRegistry& 
     ExecuteStation(ProductionStationID::Shape, &sReg, &mReg, &bReg);
     ExecuteStation(ProductionStationID::SurfaceUV, &sReg, &mReg, &bReg);
     ExecuteStation(ProductionStationID::Texture, &sReg, &mReg, &bReg);
+    ExecuteStation(ProductionStationID::Painter, &sReg, &mReg, &bReg);
     ExecuteStation(ProductionStationID::Material, &sReg, &mReg, &bReg);
     ExecuteStation(ProductionStationID::RawPhysics, &sReg, &mReg, &bReg);
     return true;
@@ -158,10 +167,15 @@ bool FactoryOrchestrator::LoadDraftFromFile(const std::string& filepath) {
 void FactoryOrchestrator::SetDraftSculptMesh(const EditableMesh& mesh) {
     if (m_activeDraft.has_value()) {
         m_activeDraft->sculptMesh = mesh;
+        m_activeDraft->geometrySource = GeometrySource::SculptedMesh;
         m_activeDraft->MarkDirty();
         uint64_t fp = mesh.GetTopologyRevision() * 100003ULL + mesh.GetGeometryRevision();
         m_dependencyGraph.InvalidateNode(DependencyNodeID::SculptGeometry, fp);
     }
+}
+
+void FactoryOrchestrator::InvalidateGeometryCache() {
+    m_compiledGeometryCache.Invalidate();
 }
 
 const EditableMesh* FactoryOrchestrator::GetDraftSculptMesh() const {
@@ -211,6 +225,7 @@ bool FactoryOrchestrator::ExecuteStation(ProductionStationID id, ShapeRegistry* 
             case ProductionStationID::Sculpt: matchedNode = DependencyNodeID::SculptGeometry; break;
             case ProductionStationID::SurfaceUV: matchedNode = DependencyNodeID::SurfaceLayout; break;
             case ProductionStationID::Texture: matchedNode = DependencyNodeID::TextureResources; break;
+            case ProductionStationID::Painter: matchedNode = DependencyNodeID::PaintLayers; break;
             case ProductionStationID::Material: matchedNode = DependencyNodeID::MaterialParameters; break;
             case ProductionStationID::RawPhysics: matchedNode = DependencyNodeID::RawPhysicsProxy; break;
             case ProductionStationID::QualityControl: matchedNode = DependencyNodeID::QualityControlAudit; break;
@@ -235,6 +250,7 @@ bool FactoryOrchestrator::ExecutePipelineUpTo(ProductionStationID targetStation,
         ProductionStationID::Sculpt,
         ProductionStationID::SurfaceUV,
         ProductionStationID::Texture,
+        ProductionStationID::Painter,
         ProductionStationID::Material,
         ProductionStationID::RawPhysics,
         ProductionStationID::QualityControl,
@@ -272,6 +288,8 @@ RawAssetValidation FactoryOrchestrator::RunQualityControlAudit(ShapeRegistry* sR
     // Assicurati che le stazioni a monte siano eseguite
     ExecuteStation(ProductionStationID::Shape, sReg, mReg, bReg);
     ExecuteStation(ProductionStationID::SurfaceUV, sReg, mReg, bReg);
+    ExecuteStation(ProductionStationID::Texture, sReg, mReg, bReg);
+    ExecuteStation(ProductionStationID::Painter, sReg, mReg, bReg);
     ExecuteStation(ProductionStationID::Material, sReg, mReg, bReg);
     ExecuteStation(ProductionStationID::RawPhysics, sReg, mReg, bReg);
 
@@ -289,12 +307,39 @@ RawAssetValidation FactoryOrchestrator::RunQualityControlAudit(ShapeRegistry* sR
     return report;
 }
 
+TextureBakeResult FactoryOrchestrator::BakeCurrentDraftAlbedo(bool forceRewrite) {
+    if (!m_activeDraft.has_value()) {
+        TextureBakeResult res;
+        res.success = false;
+        res.errorCode = BakingErrorCode::InvalidSourceImage;
+        res.errorMessage = "Nessun draft aperto.";
+        return res;
+    }
+
+    auto* painterStation = dynamic_cast<PainterStationAdapter*>(GetStation(ProductionStationID::Painter));
+    if (!painterStation) {
+        TextureBakeResult res;
+        res.success = false;
+        res.errorCode = BakingErrorCode::InvalidSourceImage;
+        res.errorMessage = "Stazione Painter non trovata.";
+        return res;
+    }
+
+    return m_textureBakingService.BakeDraftAlbedo(*m_activeDraft, *painterStation, forceRewrite);
+}
+
 std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* sReg, MaterialRegistry* mReg, BlockRegistry* bReg) {
     if (!m_activeDraft.has_value()) return std::nullopt;
 
     auto valReport = RunQualityControlAudit(sReg, mReg, bReg);
     if (!valReport.isValid) {
         return std::nullopt;
+    }
+
+    // BM-F2B: Se Painter e' completata e il Draft ha layers ma albedoPath e' vuoto, effettua il bake automatico
+    if ((m_activeDraft->completedStationsMask & (1u << static_cast<uint8_t>(ProductionStationID::Painter))) &&
+        !m_activeDraft->paintLayers.empty() && m_activeDraft->albedoPath.empty()) {
+        BakeCurrentDraftAlbedo(false);
     }
 
     bool packOk = ExecuteStation(ProductionStationID::Packaging, sReg, mReg, bReg);
@@ -313,14 +358,68 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
     opts.defaultProjection = m_activeDraft->baseProjection;
 
     GeometryCompileResult compRes;
-    if (m_activeDraft->sculptMesh.has_value()) {
-        compRes = GeometryCompiler::CompileEditableMesh(*m_activeDraft->sculptMesh, opts);
+    bool isSculpt = (m_activeDraft->geometrySource == GeometrySource::SculptedMesh || m_activeDraft->sculptMesh.has_value());
+    if (isSculpt) {
+        if (!m_activeDraft->sculptMesh.has_value() || m_activeDraft->sculptMesh->IsEmpty() || m_activeDraft->sculptMesh->GetFaceCount() == 0) {
+            // Fallimento esplicito: NESSUN fallback silenzioso a primitiva
+            return std::nullopt;
+        }
+
+        bool canReuse = (m_compiledGeometryCache.source == GeometrySource::SculptedMesh &&
+                         m_compiledGeometryCache.geomRev == m_activeDraft->sculptMesh->GetGeometryRevision() &&
+                         m_compiledGeometryCache.topoRev == m_activeDraft->sculptMesh->GetTopologyRevision() &&
+                         m_compiledGeometryCache.attrRev == m_activeDraft->sculptMesh->GetAttributeRevision() &&
+                         m_compiledGeometryCache.uvRev == m_activeDraft->uvRevision &&
+                         m_compiledGeometryCache.surfaceCount == m_activeDraft->surfaces.size() &&
+                         m_compiledGeometryCache.defaultMatId == opts.defaultMaterialId &&
+                         m_compiledGeometryCache.result.success);
+        if (canReuse) {
+            compRes = m_compiledGeometryCache.result;
+        } else {
+            m_geometryCompileCallCount++;
+            compRes = MeshBridgeService::CompileSculptedMesh(*m_activeDraft->sculptMesh, opts, nullptr);
+            if (!compRes.success) {
+                return std::nullopt;
+            }
+            m_compiledGeometryCache.source = GeometrySource::SculptedMesh;
+            m_compiledGeometryCache.geomRev = m_activeDraft->sculptMesh->GetGeometryRevision();
+            m_compiledGeometryCache.topoRev = m_activeDraft->sculptMesh->GetTopologyRevision();
+            m_compiledGeometryCache.attrRev = m_activeDraft->sculptMesh->GetAttributeRevision();
+            m_compiledGeometryCache.uvRev = m_activeDraft->uvRevision;
+            m_compiledGeometryCache.surfaceCount = m_activeDraft->surfaces.size();
+            m_compiledGeometryCache.defaultMatId = opts.defaultMaterialId;
+            m_compiledGeometryCache.result = compRes;
+        }
+
+        package.geometrySource = GeometrySource::SculptedMesh;
         package.sculptTopologyJson = m_activeDraft->sculptMesh->ToJson().dump();
+        package.shape = MeshBridgeService::CreateShapeDefinitionFromMesh(*m_activeDraft->sculptMesh, compRes);
     } else {
-        compRes = GeometryCompiler::Compile(m_activeDraft->shape, opts);
-    }
-    if (!compRes.success) {
-        return std::nullopt;
+        bool canReuse = (m_compiledGeometryCache.source == GeometrySource::Primitive &&
+                         m_compiledGeometryCache.shapeRev == m_activeDraft->shape.revision &&
+                         m_compiledGeometryCache.uvRev == m_activeDraft->uvRevision &&
+                         m_compiledGeometryCache.surfaceCount == m_activeDraft->surfaces.size() &&
+                         m_compiledGeometryCache.defaultMatId == opts.defaultMaterialId &&
+                         m_compiledGeometryCache.result.success);
+        if (canReuse) {
+            compRes = m_compiledGeometryCache.result;
+        } else {
+            m_geometryCompileCallCount++;
+            compRes = GeometryCompiler::Compile(m_activeDraft->shape, opts);
+            if (!compRes.success) {
+                return std::nullopt;
+            }
+            m_compiledGeometryCache.source = GeometrySource::Primitive;
+            m_compiledGeometryCache.shapeRev = m_activeDraft->shape.revision;
+            m_compiledGeometryCache.uvRev = m_activeDraft->uvRevision;
+            m_compiledGeometryCache.surfaceCount = m_activeDraft->surfaces.size();
+            m_compiledGeometryCache.defaultMatId = opts.defaultMaterialId;
+            m_compiledGeometryCache.result = compRes;
+        }
+
+        package.geometrySource = GeometrySource::Primitive;
+        package.sculptTopologyJson = "";
+        package.shape = m_activeDraft->shape;
     }
 
     package.geometry.vertices = compRes.mesh.vertices;
@@ -332,20 +431,43 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
     // Proprietà fisiche congelate
     package.compiledPhysics = m_activeDraft->physics;
 
+    // Parametri visivi compilati (BM-F2C)
+    package.baseColorFallback = m_activeDraft->baseColorFallback;
+    package.roughnessFallback = m_activeDraft->roughnessFallback;
+    package.metallicFallback = m_activeDraft->metallicFallback;
+    package.emissiveStrength = m_activeDraft->emissiveStrength;
+    package.alphaFallback = m_activeDraft->alphaFallback;
+    package.behaviors = m_activeDraft->behaviors;
+
     // Trasformazioni congelate
     package.packagePosition = m_activeDraft->localPosition;
     package.packageRotation = m_activeDraft->localRotation;
     package.packageScale = m_activeDraft->localScale;
     package.packagePivot = m_activeDraft->pivotOffset;
 
-    // Texture URIs
+    // Texture URIs & Fingerprints (BM-F2B)
     package.albedoMapUri = m_activeDraft->albedoPath;
     package.normalMapUri = m_activeDraft->normalPath;
     package.ormMapUri = m_activeDraft->ormPath;
 
+    auto* painterStation = dynamic_cast<const PainterStationAdapter*>(GetStation(ProductionStationID::Painter));
+    if (painterStation && painterStation->HasCompositeAlbedo()) {
+        package.paintFingerprint = painterStation->GetCompositeAlbedo().ComputeContentHash();
+        package.textureFingerprint = package.paintFingerprint;
+    }
+
     // Fingerprint sintetico deterministico
     package.packageFingerprint = m_activeDraft->manifest.revision * 1000003ULL + 
                                  static_cast<uint64_t>(package.geometry.vertexCount);
+    if (isSculpt && m_activeDraft->sculptMesh.has_value()) {
+        package.packageFingerprint = package.packageFingerprint * 1000003ULL +
+                                     m_activeDraft->sculptMesh->GetGeometryRevision() * 1009ULL +
+                                     m_activeDraft->sculptMesh->GetTopologyRevision();
+    }
+
+    // Checksum di distribuzione e digest crittografico SHA-256 (BM-F4 / BM-F4.1)
+    package.distributionChecksum = package.ComputeDistributionChecksum();
+    package.contentDigestSha256 = package.ComputeContentDigestSha256(m_packagingService.GetRootAssetDirectory());
 
     return package;
 }
@@ -354,59 +476,17 @@ bool FactoryOrchestrator::PublishToRegistries(BlockRegistry& bReg, MaterialRegis
     if (!m_activeDraft.has_value()) return false;
 
     auto pkgOpt = BuildPackage(&sReg, &mReg, &bReg);
-    if (!pkgOpt.has_value() || !pkgOpt->IsPublishable()) {
+    if (!pkgOpt.has_value()) {
         return false;
     }
 
-    const auto& pkg = *pkgOpt;
-    uint8_t targetVoxelId = pkg.manifest.targetRuntimeVoxelId;
-
-    // Se l'asset non ha ancora uno slot assegnato, allochiamone uno
-    if (targetVoxelId == 0 || !bReg.IsBlockValid(targetVoxelId)) {
-        auto createRes = bReg.CreateBlock(pkg.manifest.assetId, pkg.manifest.displayName);
-        if (!createRes.success) {
-            return false;
-        }
-        targetVoxelId = createRes.allocatedId;
-        m_activeDraft->manifest.targetRuntimeVoxelId = targetVoxelId;
+    auto publishRes = m_packagingService.PublishPackageTransactional(*pkgOpt, bReg, mReg, sReg);
+    if (!publishRes.success) {
+        return false;
     }
 
-    // 1. Registrazione Forma in ShapeRegistry
-    ShapeHandle assignedShape = sReg.RegisterShape(m_activeDraft->shape);
-
-    // 2. Sincronizzazione SimBlockDef in BlockRegistry
-    SimBlockDef& bDef = bReg.GetBlockMutable(targetVoxelId);
-    bDef.stringId = pkg.manifest.assetId;
-    bDef.displayName = pkg.manifest.displayName;
-    bDef.physics = pkg.compiledPhysics;
-    bDef.localPosition = pkg.packagePosition;
-    bDef.localRotation = pkg.packageRotation;
-    bDef.localScale = pkg.packageScale;
-    bDef.pivotOffset = pkg.packagePivot;
-    bDef.thermal_resistance = m_activeDraft->thermalResistance;
-    bDef.thermal_capacity = m_activeDraft->thermalCapacity;
-    bDef.lightEmissionLevel = m_activeDraft->lightEmission;
-    bDef.SyncLegacyPhysicsFields();
-
-    // 3. Sincronizzazione PBRMaterialDef in MaterialRegistry
-    PBRMaterialDef& matDef = mReg.GetMaterialMutable(targetVoxelId);
-    matDef.target_block_id = targetVoxelId;
-    matDef.sharedShape = assignedShape;
-    matDef.baseColorFallback = m_activeDraft->baseColorFallback;
-    matDef.roughnessFallback = m_activeDraft->roughnessFallback;
-    matDef.metallicFallback = m_activeDraft->metallicFallback;
-    matDef.emissiveStrength = m_activeDraft->emissiveStrength;
-    matDef.alphaFallback = m_activeDraft->alphaFallback;
-    matDef.albedoPath = pkg.albedoMapUri;
-    matDef.normalPath = pkg.normalMapUri;
-    matDef.ormPath = pkg.ormMapUri;
-    matDef.behaviors = m_activeDraft->behaviors;
-    matDef.baseUVTransform = m_activeDraft->baseUVTransform;
-    matDef.baseProjection = m_activeDraft->baseProjection;
-    matDef.surfaces = m_activeDraft->surfaces;
-    matDef.revision++;
-
     m_activeDraft->manifest.stage = RawAssetStage::Published;
+    m_activeDraft->manifest.targetRuntimeVoxelId = publishRes.targetVoxelId;
     m_activeDraft->isDirty = false;
     return true;
 }
@@ -417,6 +497,8 @@ uint64_t FactoryOrchestrator::ComputeStationFingerprint(ProductionStationID id) 
     uint64_t rev = m_activeDraft->manifest.revision;
     if (id == ProductionStationID::Sculpt && m_activeDraft->sculptMesh.has_value()) {
         rev = rev * 1000003ULL + m_activeDraft->sculptMesh->GetTopologyRevision() * 1009ULL + m_activeDraft->sculptMesh->GetGeometryRevision();
+    } else if (id == ProductionStationID::Painter) {
+        rev = rev * 1000003ULL + m_activeDraft->paintRevision * 1009ULL + static_cast<uint64_t>(m_activeDraft->paintLayers.size());
     }
     return (rev * 2654435761ULL) ^ (static_cast<uint64_t>(id) << 32);
 }

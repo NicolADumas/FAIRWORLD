@@ -228,6 +228,9 @@ bool TexturePaintingService::InvertLayerMask(uint32_t layerId) {
 // =============================================================================
 
 bool TexturePaintingService::BeginStroke(uint32_t layerId, bool targetMask) {
+    if (layerId == 0 && !m_layers.empty()) {
+        layerId = m_layers[0].layerId;
+    }
     PaintLayer* l = GetLayer(layerId);
     if (!l || l->isLocked) return false;
     if (targetMask && (!l->mask.has_value() || !l->mask->IsValid())) return false;

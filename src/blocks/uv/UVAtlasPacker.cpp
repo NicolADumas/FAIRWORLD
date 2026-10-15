@@ -243,7 +243,8 @@ AtlasPackResult UVAtlasPacker::PackLayout(EditableMesh& mesh,
 
     // 1. Verifica Zero-Work Cache (BM-UV4.8)
     uint64_t fp = ComputeFingerprint(layout, options);
-    if (options.enableZeroWork && m_cacheValid && m_lastFingerprint == fp) {
+    if (options.enableZeroWork && m_cacheValid && m_lastFingerprint == fp &&
+        layout.atlasRevision > 0 && mesh.GetAttributeRevision() == layout.meshAttributeRevision) {
         result = m_cachedResult;
         result.zeroWorkCacheHit = true;
         return result;
@@ -420,7 +421,7 @@ AtlasPackResult UVAtlasPacker::PackLayout(EditableMesh& mesh,
     result.globalTexelDensity = layout.globalTexelDensity;
 
     // Aggiornamento cache Zero-Work
-    m_lastFingerprint = fp;
+    m_lastFingerprint = ComputeFingerprint(layout, options);
     m_cachedResult = result;
     m_cacheValid = true;
 

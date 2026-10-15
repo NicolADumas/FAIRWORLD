@@ -90,6 +90,7 @@ struct Face {
     std::vector<int> indices;
     Vec3 faceNormal;
     int matIndex = 0;
+    uint32_t surfaceId = 0;
 };
 
 enum class MeshType { Standard, Chunk, Prefab, Editor };

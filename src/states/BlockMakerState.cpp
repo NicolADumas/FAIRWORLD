@@ -3295,6 +3295,230 @@ void BlockMakerState::RunSurfacePaintValidationTests(bool isManualTrigger) {
     std::cout << "====================================================================================\n\n";
 }
 
+void BlockMakerState::RunPainterStationValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::PainterStationTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_painterStationTestResults = s_sessionCachedResults;
+        m_painterStationTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST PAINTER STATION (BM-F2A / PNT-01 .. PNT-08):\n";
+    std::cout << "====================================================================================\n";
+
+    m_painterStationTestResults = fw::PainterStationContractTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_painterStationTestResults;
+    m_painterStationTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_painterStationTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F2A PAINTER STATION AUDIT REPORT: " 
+              << totalPass << "/" << m_painterStationTestResults.size() << " PASS (" 
+              << (totalPass == m_painterStationTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunTextureBakingValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::TextureBakingTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_textureBakingTestResults = s_sessionCachedResults;
+        m_textureBakingTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST TEXTURE BAKING (BM-F2B / TXB-01 .. TXB-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_textureBakingTestResults = fw::TextureBakingContractTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_textureBakingTestResults;
+    m_textureBakingTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_textureBakingTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F2B TEXTURE BAKING AUDIT REPORT: " 
+              << totalPass << "/" << m_textureBakingTestResults.size() << " PASS (" 
+              << (totalPass == m_textureBakingTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunAssetPackagingValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::AssetPackagingTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetPackagingTestResults = s_sessionCachedResults;
+        m_assetPackagingTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST ASSET PACKAGING (BM-F2C / PKG-01 .. PKG-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetPackagingTestResults = fw::AssetPackagingContractTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetPackagingTestResults;
+    m_assetPackagingTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetPackagingTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F2C ASSET PACKAGING AUDIT REPORT: " 
+              << totalPass << "/" << m_assetPackagingTestResults.size() << " PASS (" 
+              << (totalPass == m_assetPackagingTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunTransactionAuditValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::TransactionAuditTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_transactionAuditTestResults = s_sessionCachedResults;
+        m_transactionAuditTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST AUDIT TRANSAZIONALE (BM-F2C.1 / TRX-01 .. TRX-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_transactionAuditTestResults = fw::TransactionIntegrityAuditTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_transactionAuditTestResults;
+    m_transactionAuditTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_transactionAuditTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F2C.1 TRANSACTION INTEGRITY AUDIT REPORT: " 
+              << totalPass << "/" << m_transactionAuditTestResults.size() << " PASS (" 
+              << (totalPass == m_transactionAuditTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunSculptedMeshBridgeValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::SculptedBridgeTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_sculptedBridgeTestResults = s_sessionCachedResults;
+        m_sculptedBridgeTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST SCULPTED MESH RUNTIME BRIDGE (BM-F3 / SBR-01 .. SBR-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_sculptedBridgeTestResults = fw::SculptedMeshRuntimeBridgeTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_sculptedBridgeTestResults;
+    m_sculptedBridgeTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_sculptedBridgeTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F3 SCULPTED MESH RUNTIME BRIDGE AUDIT REPORT: " 
+              << totalPass << "/" << m_sculptedBridgeTestResults.size() << " PASS (" 
+              << (totalPass == m_sculptedBridgeTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunAssetIntegrityValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::AssetIntegrityTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetIntegrityTestResults = s_sessionCachedResults;
+        m_assetIntegrityTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST ASSET INTEGRITY & ROUND-TRIP (BM-F4 / INT-01 .. INT-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetIntegrityTestResults = fw::AssetIntegrityRoundTripTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetIntegrityTestResults;
+    m_assetIntegrityTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetIntegrityTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4 ASSET INTEGRITY & ROUND-TRIP AUDIT REPORT: " 
+              << totalPass << "/" << m_assetIntegrityTestResults.size() << " PASS (" 
+              << (totalPass == m_assetIntegrityTestResults.size() ? "100% SUCCESS - AUDITED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunAssetIntegrityHardeningValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::AssetHardeningTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetHardeningTestResults = s_sessionCachedResults;
+        m_assetHardeningTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST ASSET INTEGRITY HARDENING (BM-F4.1 / SEC-01 .. SEC-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetHardeningTestResults = fw::AssetIntegrityHardeningTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetHardeningTestResults;
+    m_assetHardeningTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetHardeningTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4.1 ASSET INTEGRITY HARDENING AUDIT REPORT: " 
+              << totalPass << "/" << m_assetHardeningTestResults.size() << " PASS (" 
+              << (totalPass == m_assetHardeningTestResults.size() ? "100% SUCCESS - HARDENED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
 void BlockMakerState::RunPrimitiveUVValidationTests(bool isManualTrigger) {
     static bool s_hasRunInSession = false;
     static std::vector<fw::PrimitiveUVTestResult> s_sessionCachedResults;
@@ -3563,6 +3787,13 @@ bool BlockMakerState::Init() {
     RunTextureValidationTests(false);
     RunPaintValidationTests(false);
     RunSurfacePaintValidationTests(false);
+    RunPainterStationValidationTests(false);
+    RunTextureBakingValidationTests(false);
+    RunAssetPackagingValidationTests(false);
+    RunTransactionAuditValidationTests(false);
+    RunSculptedMeshBridgeValidationTests(false);
+    RunAssetIntegrityValidationTests(false);
+    RunAssetIntegrityHardeningValidationTests(false);
     RunPrimitiveUVValidationTests(false);
     if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
         m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);

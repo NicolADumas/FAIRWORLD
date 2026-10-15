@@ -69,6 +69,10 @@ public:
 
     // --- Gestione Dimensioni Canvas ---
     void InitializeCanvas(uint32_t width, uint32_t height, const glm::vec4& baseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    void SetCanvasDimensions(uint32_t width, uint32_t height) {
+        m_canvasWidth = std::clamp(width, 16u, 4096u);
+        m_canvasHeight = std::clamp(height, 16u, 4096u);
+    }
     uint32_t GetCanvasWidth() const { return m_canvasWidth; }
     uint32_t GetCanvasHeight() const { return m_canvasHeight; }
 

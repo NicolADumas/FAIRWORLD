@@ -21,7 +21,8 @@ enum class DependencyNodeID : uint8_t {
     RawPhysicsProxy = 5,     // Collider proxy e parametri di massa
     QualityControlAudit = 6, // Report di conformità e validazione
     PackageArtifact = 7,     // Pacchetto finale congelato
-    SculptGeometry = 8       // EditableMesh / scultura CPU-authoritative (BM-S)
+    SculptGeometry = 8,      // EditableMesh / scultura CPU-authoritative (BM-S)
+    PaintLayers = 9          // Layer di pittura e maschere texture (BM-F2A)
 };
 
 inline const char* GetDependencyNodeName(DependencyNodeID id) {
@@ -35,6 +36,7 @@ inline const char* GetDependencyNodeName(DependencyNodeID id) {
         case DependencyNodeID::QualityControlAudit: return "QualityControlAudit";
         case DependencyNodeID::PackageArtifact:     return "PackageArtifact";
         case DependencyNodeID::SculptGeometry:      return "SculptGeometry";
+        case DependencyNodeID::PaintLayers:         return "PaintLayers";
         default:                                    return "UnknownNode";
     }
 }
@@ -79,6 +81,7 @@ public:
         RegisterNode(DependencyNodeID::RawPhysicsProxy, ProductionStationID::RawPhysics);
         RegisterNode(DependencyNodeID::QualityControlAudit, ProductionStationID::QualityControl);
         RegisterNode(DependencyNodeID::PackageArtifact, ProductionStationID::Packaging);
+        RegisterNode(DependencyNodeID::PaintLayers, ProductionStationID::Painter);
 
         // 2. Definizione archi diretti di dipendenza (Upstream -> Downstream)
         // ShapeGeometry -> SculptGeometry (la mesh editabile consuma la forma parametrica iniziale se presente)
@@ -94,6 +97,9 @@ public:
         AddDependency(DependencyNodeID::RawPhysicsProxy, DependencyNodeID::ShapeGeometry, false);
         AddDependency(DependencyNodeID::RawPhysicsProxy, DependencyNodeID::SculptGeometry, true);
 
+        // TopologyUV -> PaintLayers (la pittura si ancora alle coordinate del layout UV)
+        AddDependency(DependencyNodeID::PaintLayers, DependencyNodeID::TopologyUV, true);
+
         // SurfaceLayout -> MaterialParameters (l'override dei materiali si ancora alle superfici)
         AddDependency(DependencyNodeID::MaterialParameters, DependencyNodeID::SurfaceLayout, false);
 
@@ -105,6 +111,7 @@ public:
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::SculptGeometry, true);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::TopologyUV, false);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::SurfaceLayout, false);
+        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::PaintLayers, true);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::MaterialParameters, false);
         AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::RawPhysicsProxy, false);
 

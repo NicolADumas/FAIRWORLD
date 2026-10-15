@@ -6,17 +6,118 @@
 #include "blocks/sculpt/MeshModelingService.h"
 #include <cmath>
 #include <sstream>
+#include <iostream>
 
 namespace fw {
 
 // =============================================================================
-// CONVERSIONE SHAPE -> EDITABLE MESH (BM-S9.1)
+// CONVERSIONE SHAPE -> EDITABLE MESH (BM-S9.1 / FG-01R MG-3B)
 // =============================================================================
 
-EditableMesh MeshBridgeService::CreateMeshFromShape(const ShapeDefinition& shapeDef) {
-    if (shapeDef.type == ShapeType::Cube) {
-        return EditableMesh::CreateCube(1.0f);
+EditableMesh MeshBridgeService::CreateMeshFromCompiledTopology(const CompiledTopology& topo, std::string* outError) {
+    if (outError) outError->clear();
+
+    // 1. Validazione integrita strutturale CompiledTopology
+    const size_t numPositions = topo.geometricPositions.size();
+    if (numPositions == 0 || topo.faces.empty()) {
+        std::string err = "CompiledTopology is empty (positions=" + std::to_string(numPositions) + 
+                          ", faces=" + std::to_string(topo.faces.size()) + ")";
+        std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+        if (outError) *outError = "Invalid topology: " + err;
+        return EditableMesh{};
     }
+
+    // 2. Pre-validazione rigorosa di tutti gli indici dei corner e dei perimetri delle facce
+    for (size_t fIdx = 0; fIdx < topo.faces.size(); ++fIdx) {
+        const auto& f = topo.faces[fIdx];
+        if (f.corners.size() < 3) {
+            std::string err = "Face " + std::to_string(fIdx) + " has fewer than 3 corners (" + 
+                              std::to_string(f.corners.size()) + ")";
+            std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+            if (outError) *outError = "Invalid topology: " + err;
+            return EditableMesh{};
+        }
+        for (size_t cIdx = 0; cIdx < f.corners.size(); ++cIdx) {
+            uint32_t vIdx = f.corners[cIdx].geometricVertexIndex;
+            if (vIdx >= numPositions) {
+                std::string err = "Face " + std::to_string(fIdx) + " corner " + std::to_string(cIdx) + 
+                                  " has out-of-bounds vertex index " + std::to_string(vIdx) + 
+                                  " (total positions: " + std::to_string(numPositions) + ")";
+                std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+                if (outError) *outError = "Invalid topology: " + err;
+                return EditableMesh{};
+            }
+        }
+        // Controllo vertici duplicati nel perimetro della singola faccia
+        for (size_t i = 0; i < f.corners.size(); ++i) {
+            for (size_t j = i + 1; j < f.corners.size(); ++j) {
+                if (f.corners[i].geometricVertexIndex == f.corners[j].geometricVertexIndex) {
+                    std::string err = "Face " + std::to_string(fIdx) + " has duplicate vertex index " + 
+                                      std::to_string(f.corners[i].geometricVertexIndex) + " in perimeter";
+                    std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+                    if (outError) *outError = "Invalid topology: " + err;
+                    return EditableMesh{};
+                }
+            }
+        }
+    }
+
+    EditableMesh mesh;
+    std::vector<VertexID> vIds;
+    vIds.reserve(numPositions);
+
+    // 3. Creazione deterministica di un VertexID per ciascuna voce di geometricPositions, SENZA welding per coordinate
+    for (size_t i = 0; i < numPositions; ++i) {
+        VertexID vId = mesh.AddVertex(topo.geometricPositions[i]);
+        if (!vId.IsValid()) {
+            std::string err = "Failed to allocate VertexID for index " + std::to_string(i);
+            std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+            if (outError) *outError = "Invalid topology: " + err;
+            mesh.Clear();
+            return EditableMesh{};
+        }
+        vIds.push_back(vId);
+    }
+
+    // 4. Trasferimento delle facce e degli attributi per-corner (UV, normali, colori, surfaceId, materialId)
+    for (size_t fIdx = 0; fIdx < topo.faces.size(); ++fIdx) {
+        const auto& f = topo.faces[fIdx];
+        std::vector<VertexID> fv;
+        fv.reserve(f.corners.size());
+        std::vector<CornerAttributes> corners;
+        corners.reserve(f.corners.size());
+
+        for (const auto& c : f.corners) {
+            fv.push_back(vIds[c.geometricVertexIndex]);
+            CornerAttributes ca;
+            ca.uv = c.uv;
+            ca.normal = c.normal;
+            ca.color = c.color;
+            ca.customWeight = 1.0f;
+            corners.push_back(ca);
+        }
+
+        FaceID faceId = mesh.AddFace(fv, f.surfaceId, f.materialId, &corners);
+        if (!faceId.IsValid()) {
+            std::string err = "AddFace failed for face " + std::to_string(fIdx) + 
+                              " (non-manifold edge, duplicate directed edge, or invalid orientation)";
+            std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+            if (outError) *outError = "Invalid topology: " + err;
+            mesh.Clear(); // Invariante: nessuna mesh parziale restituita
+            return EditableMesh{};
+        }
+    }
+
+    // ComputeVertexNormals() calcola le normali d'area dei vertici (MeshVertex::normal)
+    // senza alterare CornerAttributes::normal memorizzati sui perimetri degli half-edge
+    mesh.ComputeVertexNormals();
+
+    return mesh;
+}
+
+EditableMesh MeshBridgeService::CreateMeshFromShape(const ShapeDefinition& shapeDef, std::string* outError) {
+    if (outError) outError->clear();
+
     if (shapeDef.type == ShapeType::TriangleMesh) {
         if (std::holds_alternative<ShapeParamsTriangleMesh>(shapeDef.parameters)) {
             const auto& p = std::get<ShapeParamsTriangleMesh>(shapeDef.parameters);
@@ -28,34 +129,77 @@ EditableMesh MeshBridgeService::CreateMeshFromShape(const ShapeDefinition& shape
                 return EditableMesh::CreateFromIndexedMesh(p.vertices, faces, nullptr, 0, 0);
             }
         }
-        return EditableMesh::CreateCube(1.0f);
+        std::string err = "Invalid shape parameters: TriangleMesh parameters empty or invalid";
+        std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+        if (outError) *outError = err;
+        return EditableMesh{};
     }
 
-    // Per tutte le altre forme procedurali/parametriche, compila tramite GeometryCompiler
+    // Compilazione della forma geometrica tramite GeometryCompiler
     GeometryCompileOptions opt;
     opt.maxResolution = 16;
     auto res = GeometryCompiler::Compile(shapeDef, opt);
-    if (res.success && !res.mesh.vertices.empty()) {
-        EditableMesh mesh;
-        std::vector<VertexID> vIds;
-        vIds.reserve(res.mesh.vertices.size());
-        for (const auto& v : res.mesh.vertices) {
-            vIds.push_back(mesh.AddVertex(glm::vec3(v.position.x, v.position.y, v.position.z)));
+
+    // Errore esplicito se la compilazione fallisce: nessun fallback silenzioso
+    if (!res.success) {
+        std::string err = "GeometryCompiler error: " + res.errorMessage;
+        std::cerr << "[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType " 
+                  << static_cast<int>(shapeDef.type) << ": " << res.errorMessage << "\n";
+        if (outError) *outError = err;
+        return EditableMesh{};
+    }
+
+    // Se CompiledTopology e disponibile, usarla come sorgente autorevole esclusiva
+    if (res.topology.has_value()) {
+        EditableMesh mesh = CreateMeshFromCompiledTopology(*res.topology, outError);
+        if (mesh.IsEmpty()) {
+            std::cerr << "[MeshBridgeService] ERROR: CompiledTopology present but invalid for ShapeType " 
+                      << static_cast<int>(shapeDef.type) << ". Explicit failure without fallback.\n";
+            return EditableMesh{};
         }
+        return mesh;
+    }
+
+    // Se CompiledTopology e assente: mantenere temporaneamente il percorso legacy per primitive non migrate con diagnostica esplicita
+    std::cerr << "[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType " 
+              << static_cast<int>(shapeDef.type) 
+              << ". Using legacy unrolled fallback.\n";
+
+    if (res.mesh.vertices.empty()) {
+        std::string err = "Legacy conversion failed: empty vertices produced for ShapeType " + 
+                          std::to_string(static_cast<int>(shapeDef.type));
+        std::cerr << "[MeshBridgeService] ERROR: " << err << ".\n";
+        if (outError) *outError = err;
+        return EditableMesh{};
+    }
+
+    EditableMesh mesh;
+    std::vector<VertexID> vIds;
+    vIds.reserve(res.mesh.vertices.size());
+    for (const auto& v : res.mesh.vertices) {
+        vIds.push_back(mesh.AddVertex(glm::vec3(v.position.x, v.position.y, v.position.z)));
+    }
+    if (!res.mesh.faces.empty()) {
         for (const auto& f : res.mesh.faces) {
             if (f.indices.size() < 3) continue;
             std::vector<VertexID> fv;
             for (int idx : f.indices) {
-                if (idx >= 0 && idx < (int)vIds.size()) fv.push_back(vIds[idx]);
+                if (idx >= 0 && idx < static_cast<int>(vIds.size())) {
+                    fv.push_back(vIds[idx]);
+                }
             }
-            mesh.AddFace(fv, f.matIndex, 0);
+            if (fv.size() >= 3) {
+                mesh.AddFace(fv, f.matIndex, 0);
+            }
         }
-        mesh.ComputeAllFaceNormals();
-        mesh.ComputeVertexNormals();
-        return mesh;
+    } else {
+        for (size_t i = 0; i + 2 < vIds.size(); i += 3) {
+            mesh.AddFace({ vIds[i], vIds[i + 1], vIds[i + 2] }, 0, 0);
+        }
     }
-
-    return EditableMesh::CreateCube(1.0f);
+    mesh.ComputeAllFaceNormals();
+    mesh.ComputeVertexNormals();
+    return mesh;
 }
 
 // =============================================================================
@@ -91,6 +235,7 @@ bool MeshBridgeService::NeedsPreviewRecompile(const EditableMesh& mesh, uint32_t
     if (cache.isGpuBufferDirty) return true;
     if (cache.lastEvaluatedTopologyRevision != mesh.GetTopologyRevision()) return true;
     if (cache.lastEvaluatedGeometryRevision != mesh.GetGeometryRevision()) return true;
+    if (cache.lastEvaluatedAttributeRevision != mesh.GetAttributeRevision()) return true;
     if (cache.lastMaterialId != materialId) return true;
     return false;
 }
@@ -106,6 +251,81 @@ GeometryCompileResult MeshBridgeService::CompileForPreview(const EditableMesh& m
         cache.cachedMesh = result.mesh;
     }
     return result;
+}
+
+// =============================================================================
+// AUTHORITATIVE SCULPTED MESH RUNTIME BRIDGE (BM-F3)
+// =============================================================================
+
+GeometryCompileResult MeshBridgeService::CompileSculptedMesh(const EditableMesh& mesh, const GeometryCompileOptions& options, BridgePreviewCache* cache) {
+    GeometryCompileResult result;
+    if (mesh.IsEmpty() || mesh.GetFaceCount() == 0) {
+        result.success = false;
+        result.errorMessage = "EditableMesh e' vuota o priva di facce attive.";
+        return result;
+    }
+
+    if (cache && !NeedsPreviewRecompile(mesh, options.defaultMaterialId, *cache)) {
+        result.success = true;
+        result.mesh = cache->cachedMesh;
+        return result;
+    }
+
+    result = GeometryCompiler::CompileEditableMesh(mesh, options);
+    if (result.success && cache) {
+        cache->lastEvaluatedTopologyRevision = mesh.GetTopologyRevision();
+        cache->lastEvaluatedGeometryRevision = mesh.GetGeometryRevision();
+        cache->lastEvaluatedAttributeRevision = mesh.GetAttributeRevision();
+        cache->lastMaterialId = options.defaultMaterialId;
+        cache->isGpuBufferDirty = false;
+        cache->cachedMesh = result.mesh;
+    }
+    return result;
+}
+
+ShapeDefinition MeshBridgeService::CreateShapeDefinitionFromMesh(const EditableMesh& mesh, const GeometryCompileResult& compiled) {
+    ShapeDefinition def;
+    def.type = ShapeType::TriangleMesh;
+    def.revision = static_cast<uint32_t>(mesh.GetGeometryRevision() > 0 ? mesh.GetGeometryRevision() : 1);
+    def.supportsVisualCompilation = true;
+    def.supportsCollisionCompilation = true;
+
+    ShapeParamsTriangleMesh p;
+    p.vertices.reserve(compiled.mesh.vertices.size());
+    for (const auto& v : compiled.mesh.vertices) {
+        p.vertices.push_back(glm::vec3(v.position.x, v.position.y, v.position.z));
+    }
+    for (const auto& f : compiled.mesh.faces) {
+        for (int idx : f.indices) {
+            p.indices.push_back(static_cast<uint32_t>(idx));
+        }
+    }
+    def.parameters = p;
+    return def;
+}
+
+bool MeshBridgeService::ReconstructMeshFromPackage(const RawAssetPackage& package, EditableMesh& outMesh, std::string* outError) {
+    if (package.geometrySource == GeometrySource::SculptedMesh) {
+        if (!package.sculptTopologyJson.empty()) {
+            try {
+                auto j = nlohmann::json::parse(package.sculptTopologyJson);
+                if (outMesh.FromJson(j)) {
+                    return true;
+                }
+            } catch (const std::exception& e) {
+                if (outError) *outError = std::string("Errore deserializzazione sculptTopologyJson: ") + e.what();
+            }
+        }
+        if (package.shape.type == ShapeType::TriangleMesh) {
+            outMesh = CreateMeshFromShape(package.shape, outError);
+            return !outMesh.IsEmpty();
+        }
+        if (outError) *outError = "Package dichiarato SculptedMesh ma privo di topologia scolpita valida.";
+        return false;
+    } else {
+        outMesh = CreateMeshFromShape(package.shape, outError);
+        return !outMesh.IsEmpty();
+    }
 }
 
 // =============================================================================

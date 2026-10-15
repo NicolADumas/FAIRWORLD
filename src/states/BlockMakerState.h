@@ -23,6 +23,13 @@
 #include "blocks/texture/TextureContractTests.h"
 #include "blocks/texture/PaintContractTests.h"
 #include "blocks/texture/TexturePaintingService.h"
+#include "blocks/factory/PainterStationContractTests.h"
+#include "blocks/factory/TextureBakingContractTests.h"
+#include "blocks/factory/AssetPackagingContractTests.h"
+#include "blocks/factory/TransactionIntegrityAuditTests.h"
+#include "blocks/factory/SculptedMeshRuntimeBridgeTests.h"
+#include "blocks/factory/AssetIntegrityRoundTripTests.h"
+#include "blocks/factory/AssetIntegrityHardeningTests.h"
 #include "blocks/texture/SurfacePaintContractTests.h"
 #include "blocks/texture/SurfacePaintingAdapter.h"
 #include "blocks/uv/PrimitiveUVContractTests.h"
@@ -460,6 +467,41 @@ private:
     bool m_surfacePaintTestsExecuted = false;
     void RunSurfacePaintValidationTests(bool isManualTrigger = false);
     fw::SurfacePaintingAdapter m_surfacePaintingAdapter;
+
+    // --- BM-F2A Painter Station Contract Suite (PNT-01 .. PNT-08) ---
+    std::vector<fw::PainterStationTestResult> m_painterStationTestResults;
+    bool m_painterStationTestsExecuted = false;
+    void RunPainterStationValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F2B Texture Atlas Baking Suite (TXB-01 .. TXB-10) ---
+    std::vector<fw::TextureBakingTestResult> m_textureBakingTestResults;
+    bool m_textureBakingTestsExecuted = false;
+    void RunTextureBakingValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F2C Asset Packaging & Registry Binding Suite (PKG-01 .. PKG-10) ---
+    std::vector<fw::AssetPackagingTestResult> m_assetPackagingTestResults;
+    bool m_assetPackagingTestsExecuted = false;
+    void RunAssetPackagingValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F2C.1 Transaction Integrity & Persistence Audit Suite (TRX-01 .. TRX-10) ---
+    std::vector<fw::TransactionAuditTestResult> m_transactionAuditTestResults;
+    bool m_transactionAuditTestsExecuted = false;
+    void RunTransactionAuditValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F3 Sculpted Mesh Runtime Bridge Suite (SBR-01 .. SBR-10) ---
+    std::vector<fw::SculptedBridgeTestResult> m_sculptedBridgeTestResults;
+    bool m_sculptedBridgeTestsExecuted = false;
+    void RunSculptedMeshBridgeValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4 Asset Integrity & End-to-End Round-Trip Suite (INT-01 .. INT-10) ---
+    std::vector<fw::AssetIntegrityTestResult> m_assetIntegrityTestResults;
+    bool m_assetIntegrityTestsExecuted = false;
+    void RunAssetIntegrityValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4.1 Asset Integrity Hardening Gate Suite (SEC-01 .. SEC-10) ---
+    std::vector<fw::AssetHardeningTestResult> m_assetHardeningTestResults;
+    bool m_assetHardeningTestsExecuted = false;
+    void RunAssetIntegrityHardeningValidationTests(bool isManualTrigger = false);
 
     // --- BM-UV2 Universal UV Contract & Primitive Mapping Suite (UVP-1 .. UVP-15) ---
     std::vector<fw::PrimitiveUVTestResult> m_primitiveUVTestResults;

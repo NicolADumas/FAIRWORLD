@@ -445,13 +445,21 @@ bool EditableMesh::DeleteFace(FaceID id, bool deleteUnusedEdges, bool deleteUnus
     std::vector<HalfEdgeID> faceHEs = GetFaceHalfEdges(id);
     std::vector<VertexID> faceVerts = GetFaceVertices(id);
 
-    // 1. Rimuove gli half-edge dalla directed lookup map e scollega twin
+    // 1. Rimuove gli half-edge dalla directed lookup map prima di cancellare
+    std::vector<DirectedEdgeKey> keysToRemove;
+    for (HalfEdgeID heId : faceHEs) {
+        const auto* he = GetHalfEdge(heId);
+        if (he && he->next.index < m_halfEdges.size()) {
+            keysToRemove.push_back({ he->origin.index, m_halfEdges[he->next.index].origin.index });
+        }
+    }
+    for (const auto& key : keysToRemove) {
+        m_directedEdgeLookup.erase(key);
+    }
+
     for (HalfEdgeID heId : faceHEs) {
         auto* he = GetHalfEdgeMutable(heId);
         if (!he) continue;
-
-        DirectedEdgeKey key{ he->origin.index, GetHalfEdge(he->next)->origin.index };
-        m_directedEdgeLookup.erase(key);
 
         if (IsValid(he->twin)) {
             auto* twinHe = GetHalfEdgeMutable(he->twin);

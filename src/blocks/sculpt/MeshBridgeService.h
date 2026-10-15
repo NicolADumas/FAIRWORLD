@@ -51,7 +51,8 @@ struct BridgeTestResult {
 class MeshBridgeService {
 public:
     // --- Conversione e Inizializzazione Shape -> Sculpt ---
-    static EditableMesh CreateMeshFromShape(const ShapeDefinition& shapeDef);
+    static EditableMesh CreateMeshFromShape(const ShapeDefinition& shapeDef, std::string* outError = nullptr);
+    static EditableMesh CreateMeshFromCompiledTopology(const CompiledTopology& topo, std::string* outError = nullptr);
 
     // --- Sincronizzazione Bidirezionale con RawAssetDraft ---
     static bool SynchronizeDraftToEditableMesh(const RawAssetDraft& draft, EditableMesh& outMesh);
@@ -60,6 +61,11 @@ public:
     // --- Zero-Work & Preview Compilation ---
     static bool NeedsPreviewRecompile(const EditableMesh& mesh, uint32_t materialId, const BridgePreviewCache& cache);
     static GeometryCompileResult CompileForPreview(const EditableMesh& mesh, const GeometryCompileOptions& options, BridgePreviewCache& cache);
+
+    // --- Authoritative Sculpted Mesh Runtime Bridge (BM-F3) ---
+    static GeometryCompileResult CompileSculptedMesh(const EditableMesh& mesh, const GeometryCompileOptions& options, BridgePreviewCache* cache = nullptr);
+    static ShapeDefinition CreateShapeDefinitionFromMesh(const EditableMesh& mesh, const GeometryCompileResult& compiled);
+    static bool ReconstructMeshFromPackage(const RawAssetPackage& package, EditableMesh& outMesh, std::string* outError = nullptr);
 
     // --- Validazione e Integration Contract Suite (BRG-1 .. BRG-10) ---
     static std::vector<BridgeTestResult> RunContractTests();

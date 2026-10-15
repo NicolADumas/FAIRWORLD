@@ -160,4 +160,4 @@ target_include_directories(Module_Modeling PRIVATE src/core src/core/ecs src/cor
 target_include_directories(Module_Sculpting PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
 target_include_directories(Module_GeometryNodes PRIVATE src/core src/core/ecs src/core/memory src/core/entities src/core/app src/core/utils third_party)
 
-# Trigger CMake re-generation for ChunkEditorState, PlanetMapperState, AppBaseState, PlanetSystems, Sculpting (BM-S2 EditableMesh & BM-S3 MeshSelectionService).
+# Trigger CMake re-generation for ChunkEditorState, PlanetMapperState, AppBaseState, PlanetSystems, Sculpting (BM-S2 EditableMesh & BM-S3 MeshSelectionService), MeshBridge (FG-01R MG-3B MeshBridgeContractTests).

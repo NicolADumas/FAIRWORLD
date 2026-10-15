@@ -9,6 +9,7 @@
 #include "blocks/texture/ImageBitmap.h"
 #include "blocks/texture/PBRTexturePack.h"
 #include "blocks/texture/TextureAsset.h"
+#include "blocks/texture/TexturePaintingService.h"
 #include "blocks/uv/PrimitiveUVMapper.h"
 #include "blocks/uv/GeneralUVMapper.h"
 #include "blocks/uv/UVAtlasPacker.h"
@@ -493,32 +494,156 @@ private:
 };
 
 // =============================================================================
-// 5. PAINTER STATION ADAPTER (NOT_IMPLEMENTED in Phase 1)
+// 5. PAINTER STATION ADAPTER (BM-F2A)
 // =============================================================================
 class PainterStationAdapter : public IProductionStation {
 public:
     ProductionStationID GetID() const override { return ProductionStationID::Painter; }
     const char* GetName() const override { return "Painter Station"; }
-    const char* GetDescription() const override { return "Pittura texture e mascheratura vertex color (Pianificata)."; }
+    const char* GetDescription() const override { return "Pittura texture multi-layer, compositing CPU e sincronizzazione pittura (BM-F2A)."; }
 
     std::vector<ProductionStationID> GetPrerequisiteStations() const override {
-        return { ProductionStationID::SurfaceUV, ProductionStationID::Texture };
+        return { ProductionStationID::SurfaceUV };
     }
-    std::vector<StationRequirement> GetRequiredInputs() const override { return {}; }
-    std::vector<StationArtifact> GetProducedOutputs() const override { return {}; }
+    std::vector<StationRequirement> GetRequiredInputs() const override {
+        return { {"UVLayout", false}, {"PaintLayers", false} };
+    }
+    std::vector<StationArtifact> GetProducedOutputs() const override {
+        return { 
+            {"PaintLayers", "std::vector<PaintLayer>"},
+            {"CompositeAlbedo", "ImageBitmap"}
+        };
+    }
 
-    StationStatus GetStatus() const override { return StationStatus::NotImplemented; }
-    uint64_t GetLastProcessedRevision() const override { return 0; }
+    StationStatus GetStatus() const override { return m_status; }
+    uint64_t GetLastProcessedRevision() const override { return m_lastRevision; }
     const StationDiagnostic& GetDiagnostic() const override { return m_diagnostic; }
 
-    bool IsImplemented() const override { return false; }
-    bool CanExecute(const StationContext&) const override { return false; }
-    bool Execute(StationContext&) override { return false; }
-    void Invalidate() override {}
-    void Reset() override {}
+    bool IsImplemented() const override { return true; }
+
+    bool CanExecute(const StationContext& context) const override {
+        // La stazione può essere eseguita se la SurfaceUV station è stata completata
+        return (context.draft.completedStationsMask & (1u << static_cast<uint8_t>(ProductionStationID::SurfaceUV))) != 0;
+    }
+
+    bool Execute(StationContext& context) override {
+        m_diagnostic.Clear();
+        m_status = StationStatus::Processing;
+
+        // 1. Calcolo del fingerprint d'ingresso per invariante Zero-Work
+        uint64_t currentFp = 14695981039346656037ULL;
+        currentFp ^= context.draft.paintRevision;
+        currentFp *= 1099511628211ULL;
+        currentFp ^= context.draft.uvRevision;
+        currentFp *= 1099511628211ULL;
+        currentFp ^= static_cast<uint64_t>(context.draft.paintLayers.size());
+        currentFp *= 1099511628211ULL;
+
+        for (const auto& layer : context.draft.paintLayers) {
+            currentFp ^= layer.layerId;
+            currentFp *= 1099511628211ULL;
+            currentFp ^= static_cast<uint64_t>(layer.blendMode);
+            currentFp *= 1099511628211ULL;
+            currentFp ^= layer.pixelBuffer.GetWidth();
+            currentFp *= 1099511628211ULL;
+            currentFp ^= layer.pixelBuffer.GetHeight();
+            currentFp *= 1099511628211ULL;
+            // Hashing del contenuto reale dei pixel per rilevare ogni variazione pittorica
+            currentFp ^= layer.pixelBuffer.ComputeContentHash();
+            currentFp *= 1099511628211ULL;
+        }
+
+        // BM-F2A: Zero-Work - se input stabile e stato Completed, nessun ricalcolo
+        if (m_status == StationStatus::Completed && currentFp == m_lastFingerprint && m_lastFingerprint != 0) {
+            return true;
+        }
+
+        // 2. Se non sono presenti layer nel Draft, la stazione completa con successo senza alterare o fabbricare layer vuoti
+        if (context.draft.paintLayers.empty()) {
+            m_compositeAlbedo.Clear();
+            m_lastRevision = context.draft.manifest.revision;
+            m_lastFingerprint = currentFp;
+            m_status = StationStatus::Completed;
+            context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::Painter));
+            return true;
+        }
+
+        // 3. Verifica presenza UVLayout valido quando sono presenti layer di pittura
+        if (!context.draft.uvLayout.has_value() || !context.draft.uvLayout->isValid) {
+            m_diagnostic.warnings.push_back("UVLayout non disponibile o non valido nel draft: pittura preservata senza compositing 3D.");
+        }
+
+        // 4. Validazione di integrità dei layer di pittura esistenti
+        uint32_t expectedW = context.draft.paintLayers.front().pixelBuffer.GetWidth();
+        uint32_t expectedH = context.draft.paintLayers.front().pixelBuffer.GetHeight();
+
+        for (size_t i = 0; i < context.draft.paintLayers.size(); ++i) {
+            const auto& layer = context.draft.paintLayers[i];
+            if (!layer.pixelBuffer.IsValid()) {
+                m_diagnostic.errors.push_back("PaintLayer #" + std::to_string(i) + " ('" + layer.name + "'): buffer pixel non valido o vuoto.");
+                m_status = StationStatus::Failed;
+                return false;
+            }
+            // Controllo rigoroso dimensioni: impedire compositing con layer eterogenei che corromperebbero l'output
+            if (layer.pixelBuffer.GetWidth() != expectedW || layer.pixelBuffer.GetHeight() != expectedH) {
+                m_diagnostic.errors.push_back("PaintLayer #" + std::to_string(i) + " ('" + layer.name + "'): dimensioni non uniformi con gli altri layer (" +
+                    std::to_string(layer.pixelBuffer.GetWidth()) + "x" + std::to_string(layer.pixelBuffer.GetHeight()) + " vs " +
+                    std::to_string(expectedW) + "x" + std::to_string(expectedH) + "). Compositing bloccato per prevenire output corrotto.");
+                m_status = StationStatus::Failed;
+                return false;
+            }
+            if (layer.opacity < 0.0f || layer.opacity > 1.0f) {
+                m_diagnostic.warnings.push_back("PaintLayer #" + std::to_string(i) + " ('" + layer.name + "'): opacita fuori scala [0, 1]. Clamp applicato.");
+            }
+        }
+
+        // 5. Compositing non distruttivo attraverso il backend TexturePaintingService
+        TexturePaintingService painter;
+        painter.InitializeCanvas(expectedW > 0 ? expectedW : 512, expectedH > 0 ? expectedH : 512);
+        painter.GetLayers() = context.draft.paintLayers;
+
+        ImageBitmap compositeResult;
+        bool compositeOk = painter.CompositeLayers(compositeResult);
+        if (!compositeOk) {
+            m_diagnostic.errors.push_back("Errore durante il compositing dei layer di pittura.");
+            m_status = StationStatus::Failed;
+            return false;
+        }
+
+        // Memorizzazione del risultato compositato per il successivo consumo da parte del packaging / baking
+        m_compositeAlbedo = std::move(compositeResult);
+
+        m_lastRevision = context.draft.manifest.revision;
+        m_lastFingerprint = currentFp;
+        m_status = StationStatus::Completed;
+        context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::Painter));
+        return true;
+    }
+
+    void Invalidate() override { 
+        m_status = StationStatus::Dirty; 
+        m_lastFingerprint = 0;
+        m_compositeAlbedo.Clear();
+    }
+
+    void Reset() override { 
+        m_status = StationStatus::Uninitialized; 
+        m_diagnostic.Clear(); 
+        m_lastRevision = 0; 
+        m_lastFingerprint = 0;
+        m_compositeAlbedo.Clear();
+    }
+
+    // Accesso all'artefatto compositato per Packaging e Baking (BM-F2B)
+    const ImageBitmap& GetCompositeAlbedo() const { return m_compositeAlbedo; }
+    bool HasCompositeAlbedo() const { return m_compositeAlbedo.IsValid(); }
 
 private:
-    mutable StationDiagnostic m_diagnostic;
+    StationStatus m_status = StationStatus::Uninitialized;
+    StationDiagnostic m_diagnostic;
+    uint64_t m_lastRevision = 0;
+    uint64_t m_lastFingerprint = 0;
+    ImageBitmap m_compositeAlbedo;
 };
 
 // =============================================================================
@@ -813,7 +938,12 @@ public:
         opts.defaultProjection = context.draft.baseProjection;
 
         GeometryCompileResult compRes;
-        if (context.draft.sculptMesh.has_value()) {
+        if (context.draft.geometrySource == GeometrySource::SculptedMesh || context.draft.sculptMesh.has_value()) {
+            if (!context.draft.sculptMesh.has_value() || context.draft.sculptMesh->IsEmpty() || context.draft.sculptMesh->GetFaceCount() == 0) {
+                m_diagnostic.errors.push_back("Geometria Sculpt non valida o assente nel draft.");
+                m_status = StationStatus::Failed;
+                return false;
+            }
             compRes = GeometryCompiler::CompileEditableMesh(*context.draft.sculptMesh, opts);
         } else {
             compRes = GeometryCompiler::Compile(context.draft.shape, opts);

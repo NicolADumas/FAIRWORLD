@@ -89,14 +89,23 @@ DegeneracyReport MeshRepairService::DetectDegeneracies(const EditableMesh& mesh,
         }
     }
 
-    // 3. Analisi Vertici Isolati
+    // 3. Analisi Vertici Isolati & Non-Manifold Pinched
+    std::unordered_map<VertexID, std::vector<FaceID>> vertexIncidentFaces;
+    for (FaceID fId : activeFaces) {
+        for (VertexID vid : mesh.GetFaceVertices(fId)) {
+            vertexIncidentFaces[vid].push_back(fId);
+        }
+    }
+
     auto activeVerts = mesh.GetActiveVertexIDs();
     for (VertexID vId : activeVerts) {
-        auto incFaces = mesh.GetVertexIncidentFaces(vId);
-        if (incFaces.empty()) {
+        auto it = vertexIncidentFaces.find(vId);
+        if (it == vertexIncidentFaces.end() || it->second.empty()) {
             report.isolatedVertices.push_back(vId);
             continue;
         }
+
+        const auto& incFaces = it->second;
 
         // 4. Analisi Vertici Non-Manifold a clessidra / pinched (ventagli disconnessi)
         if (incFaces.size() > 1) {

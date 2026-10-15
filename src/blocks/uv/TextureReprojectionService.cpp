@@ -479,8 +479,9 @@ ReprojectionDiagnosticReport TextureReprojectionService::ReprojectPaintingServic
         }
     }
 
-    paintingService.InitializeCanvas(targetW, targetH);
-    m_lastFingerprint = currentFingerprint;
+    paintingService.SetCanvasDimensions(targetW, targetH);
+    paintingService.IncrementRevision();
+    m_lastFingerprint = ComputeReprojectionFingerprint(sourceLayout, destLayout, paintingService, options);
     report.status = ReprojectionStatus::Success;
     return report;
 }
