@@ -30,6 +30,11 @@
 #include "blocks/factory/SculptedMeshRuntimeBridgeTests.h"
 #include "blocks/factory/AssetIntegrityRoundTripTests.h"
 #include "blocks/factory/AssetIntegrityHardeningTests.h"
+#include "blocks/factory/AssetDigestTrustTests.h"
+#include "blocks/factory/AssetCrashRecoveryTests.h"
+#include "blocks/factory/AssetCrashRecoveryHardeningTests.h"
+#include "blocks/factory/AssetDependencyContractTests.h"
+#include "blocks/factory/AssetSchemaMigrationTests.h"
 #include "blocks/texture/SurfacePaintContractTests.h"
 #include "blocks/texture/SurfacePaintingAdapter.h"
 #include "blocks/uv/PrimitiveUVContractTests.h"
@@ -502,6 +507,31 @@ private:
     std::vector<fw::AssetHardeningTestResult> m_assetHardeningTestResults;
     bool m_assetHardeningTestsExecuted = false;
     void RunAssetIntegrityHardeningValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4.2 Digest Verification, Trust Policy & Zero-Work Safety Suite (DGV-01 .. DGV-10) ---
+    std::vector<fw::AssetDigestTestResult> m_assetDigestTestResults;
+    bool m_assetDigestTestsExecuted = false;
+    void RunAssetDigestTrustValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4.3 Transactional Asset Publication & Crash Recovery Suite (CRH-01 .. CRH-10) ---
+    std::vector<fw::CrashRecoveryTestResult> m_assetCrashRecoveryTestResults;
+    bool m_assetCrashRecoveryTestsExecuted = false;
+    void RunAssetCrashRecoveryValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4.3.1 Crash Recovery Hardening & Commit Semantics Suite (CRH-H01 .. CRH-H08) ---
+    std::vector<fw::CrashRecoveryHardeningTestResult> m_crashRecoveryHardeningTestResults;
+    bool m_crashRecoveryHardeningTestsExecuted = false;
+    void RunCrashRecoveryHardeningValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4.4 Asset Dependency Graph & Referential Integrity Suite (DEP-01 .. DEP-10) ---
+    std::vector<fw::AssetDependencyTestResult> m_assetDependencyTestResults;
+    bool m_assetDependencyTestsExecuted = false;
+    void RunAssetDependencyValidationTests(bool isManualTrigger = false);
+
+    // --- BM-F4.5 Asset Schema Migration & Backward Compatibility Suite (MIG-01 .. MIG-10) ---
+    std::vector<fw::AssetSchemaMigrationTestResult> m_assetSchemaMigrationTestResults;
+    bool m_assetSchemaMigrationTestsExecuted = false;
+    void RunAssetSchemaMigrationValidationTests(bool isManualTrigger = false);
 
     // --- BM-UV2 Universal UV Contract & Primitive Mapping Suite (UVP-1 .. UVP-15) ---
     std::vector<fw::PrimitiveUVTestResult> m_primitiveUVTestResults;

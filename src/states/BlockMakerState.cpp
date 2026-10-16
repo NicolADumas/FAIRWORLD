@@ -3519,6 +3519,166 @@ void BlockMakerState::RunAssetIntegrityHardeningValidationTests(bool isManualTri
     std::cout << "====================================================================================\n\n";
 }
 
+void BlockMakerState::RunAssetDigestTrustValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::AssetDigestTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetDigestTestResults = s_sessionCachedResults;
+        m_assetDigestTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST ASSET DIGEST & TRUST POLICY (BM-F4.2 / DGV-01 .. DGV-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetDigestTestResults = fw::AssetDigestTrustTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetDigestTestResults;
+    m_assetDigestTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetDigestTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4.2 ASSET DIGEST & TRUST POLICY AUDIT REPORT: " 
+              << totalPass << "/" << m_assetDigestTestResults.size() << " PASS (" 
+              << (totalPass == m_assetDigestTestResults.size() ? "100% SUCCESS - VERIFIED & SECURE" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunAssetCrashRecoveryValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::CrashRecoveryTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetCrashRecoveryTestResults = s_sessionCachedResults;
+        m_assetCrashRecoveryTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST CRASH RECOVERY & TRANSACTIONAL ASSET (BM-F4.3 / CRH-01 .. CRH-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetCrashRecoveryTestResults = fw::AssetCrashRecoveryTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetCrashRecoveryTestResults;
+    m_assetCrashRecoveryTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetCrashRecoveryTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4.3 ASSET CRASH RECOVERY AUDIT REPORT: " 
+              << totalPass << "/" << m_assetCrashRecoveryTestResults.size() << " PASS (" 
+              << (totalPass == m_assetCrashRecoveryTestResults.size() ? "100% SUCCESS - TRANSACTIONAL DURABILITY VERIFIED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunCrashRecoveryHardeningValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::CrashRecoveryHardeningTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_crashRecoveryHardeningTestResults = s_sessionCachedResults;
+        m_crashRecoveryHardeningTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST CRASH RECOVERY HARDENING (BM-F4.3.1 / CRH-H01 .. CRH-H08):\n";
+    std::cout << "====================================================================================\n";
+
+    m_crashRecoveryHardeningTestResults = fw::AssetCrashRecoveryHardeningTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_crashRecoveryHardeningTestResults;
+    m_crashRecoveryHardeningTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_crashRecoveryHardeningTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4.3.1 CRASH RECOVERY HARDENING AUDIT REPORT: " 
+              << totalPass << "/" << m_crashRecoveryHardeningTestResults.size() << " PASS (" 
+              << (totalPass == m_crashRecoveryHardeningTestResults.size() ? "100% SUCCESS - COMMIT SEMANTICS HARDENED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunAssetDependencyValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::AssetDependencyTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetDependencyTestResults = s_sessionCachedResults;
+        m_assetDependencyTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST ASSET DEPENDENCY GRAPH (BM-F4.4 / DEP-01 .. DEP-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetDependencyTestResults = fw::AssetDependencyContractTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetDependencyTestResults;
+    m_assetDependencyTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetDependencyTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4.4 ASSET DEPENDENCY AUDIT REPORT: " 
+              << totalPass << "/" << m_assetDependencyTestResults.size() << " PASS (" 
+              << (totalPass == m_assetDependencyTestResults.size() ? "100% SUCCESS - REFERENTIAL INTEGRITY VERIFIED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
+void BlockMakerState::RunAssetSchemaMigrationValidationTests(bool isManualTrigger) {
+    static bool s_hasRunInSession = false;
+    static std::vector<fw::AssetSchemaMigrationTestResult> s_sessionCachedResults;
+
+    if (!isManualTrigger && s_hasRunInSession) {
+        m_assetSchemaMigrationTestResults = s_sessionCachedResults;
+        m_assetSchemaMigrationTestsExecuted = true;
+        return;
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST SCHEMA MIGRATION (BM-F4.5 / MIG-01 .. MIG-10):\n";
+    std::cout << "====================================================================================\n";
+
+    m_assetSchemaMigrationTestResults = fw::AssetSchemaMigrationTests::RunAllTests();
+    s_hasRunInSession = true;
+    s_sessionCachedResults = m_assetSchemaMigrationTestResults;
+    m_assetSchemaMigrationTestsExecuted = true;
+
+    size_t totalPass = 0;
+    for (const auto& r : m_assetSchemaMigrationTestResults) {
+        if (r.passed) totalPass++;
+        std::cout << "  [" << (r.passed ? "PASS" : "FAIL") << "] " << r.testName << " | " << r.observedDesc << "\n";
+    }
+
+    std::cout << "\n====================================================================================\n";
+    std::cout << "[BlockMakerState] BM-F4.5 SCHEMA MIGRATION AUDIT REPORT: " 
+              << totalPass << "/" << m_assetSchemaMigrationTestResults.size() << " PASS (" 
+              << (totalPass == m_assetSchemaMigrationTestResults.size() ? "100% SUCCESS - DETERMINISTIC LOSSLESS MIGRATION VERIFIED" : "CON ANOMALIE") << ")\n";
+    std::cout << "====================================================================================\n\n";
+}
+
 void BlockMakerState::RunPrimitiveUVValidationTests(bool isManualTrigger) {
     static bool s_hasRunInSession = false;
     static std::vector<fw::PrimitiveUVTestResult> s_sessionCachedResults;
@@ -3794,6 +3954,11 @@ bool BlockMakerState::Init() {
     RunSculptedMeshBridgeValidationTests(false);
     RunAssetIntegrityValidationTests(false);
     RunAssetIntegrityHardeningValidationTests(false);
+    RunAssetDigestTrustValidationTests(false);
+    RunAssetCrashRecoveryValidationTests(false);
+    RunCrashRecoveryHardeningValidationTests(false);
+    RunAssetDependencyValidationTests(false);
+    RunAssetSchemaMigrationValidationTests(false);
     RunPrimitiveUVValidationTests(false);
     if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
         m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);

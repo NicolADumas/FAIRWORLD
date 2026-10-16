@@ -18,6 +18,7 @@
 #include "blocks/texture/PaintLayer.h"
 #include "blocks/uv/UVLayout.h"
 #include "Sha256.h"
+#include "AssetFilesystemAdapter.h"
 
 namespace fw {
 
@@ -36,30 +37,185 @@ enum class RawAssetStage : uint8_t {
     Deprecated = 4   // Dismesso o sostituito
 };
 
+// =============================================================================
+// BM-F4.4: DEPENDENCY CONTRACT & REFERENTIAL INTEGRITY
+// =============================================================================
+
+enum class AssetDependencyType : uint8_t {
+    Custom = 0,
+    Shape = 1,
+    Material = 2,
+    Texture = 3,
+    ParentAsset = 4
+};
+
+inline const char* AssetDependencyTypeToString(AssetDependencyType type) {
+    switch (type) {
+        case AssetDependencyType::Shape: return "shape";
+        case AssetDependencyType::Material: return "material";
+        case AssetDependencyType::Texture: return "texture";
+        case AssetDependencyType::ParentAsset: return "parent_asset";
+        default: return "custom";
+    }
+}
+
+inline AssetDependencyType StringToAssetDependencyType(const std::string& str) {
+    if (str == "shape") return AssetDependencyType::Shape;
+    if (str == "material") return AssetDependencyType::Material;
+    if (str == "texture") return AssetDependencyType::Texture;
+    if (str == "parent_asset") return AssetDependencyType::ParentAsset;
+    return AssetDependencyType::Custom;
+}
+
+enum class DependencyRevisionPolicy : uint8_t {
+    Exact = 0,  // Richiede rigorosamente la targetRevision specificata
+    Active = 1  // Si aggancia alla revisione correntemente active dell'asset dipendente
+};
+
+inline const char* DependencyRevisionPolicyToString(DependencyRevisionPolicy pol) {
+    switch (pol) {
+        case DependencyRevisionPolicy::Exact: return "Exact";
+        case DependencyRevisionPolicy::Active: return "Active";
+        default: return "Unknown";
+    }
+}
+
 // Dependency declaration between assets or derived artifacts
 struct RawAssetDependency {
-    std::string dependencyType; // "shape", "texture", "material", "parent_asset"
-    std::string targetId;       // ID o URI della risorsa dipendente
-    uint64_t requiredRevision = 0;
-    bool isOptional = false;
+    std::string dependencyType = "custom"; // "shape", "texture", "material", "parent_asset", "custom"
+    std::string targetId;                  // ID o URI della risorsa dipendente (es. "fairworld:brick_mat")
+    uint64_t requiredRevision = 0;         // Revisione richiesta quando revisionPolicy == Exact
+    bool isOptional = false;               // True se la dipendenza non e' bloccante per la pubblicazione
+    DependencyRevisionPolicy revisionPolicy = DependencyRevisionPolicy::Exact;
+    std::string expectedDigestSha256;     // SHA-256 atteso per dipendenze immutabili (opzionale)
+
+    std::string GetAssetId() const { return targetId; }
+    void SetAssetId(const std::string& id) { targetId = id; }
+    AssetDependencyType GetTypeEnum() const { return StringToAssetDependencyType(dependencyType); }
+    void SetTypeEnum(AssetDependencyType t) { dependencyType = AssetDependencyTypeToString(t); }
 
     bool operator==(const RawAssetDependency& other) const {
         return dependencyType == other.dependencyType &&
                targetId == other.targetId &&
                requiredRevision == other.requiredRevision &&
-               isOptional == other.isOptional;
+               isOptional == other.isOptional &&
+               revisionPolicy == other.revisionPolicy &&
+               expectedDigestSha256 == other.expectedDigestSha256;
     }
 };
+
+using AssetDependency = RawAssetDependency;
+
+// =============================================================================
+// BM-F4.5: SCHEMA VERSION CONTRACTS & MIGRATION STATES
+// =============================================================================
+
+constexpr uint32_t CURRENT_RAW_ASSET_SCHEMA_VERSION = 2;
+constexpr uint32_t LEGACY_RAW_ASSET_SCHEMA_VERSION = 1;
+
+enum class SchemaVersionState : uint8_t {
+    CurrentSchema = 0,     // Schema V2 (corrente, autoritativo e conforme a Strict)
+    LegacySchema = 1,      // Schema V1 (supportato retrocompatibilmente o migrabile)
+    MigrationRequired = 2, // Schema V1 in contesto che impone migrazione obbligatoria
+    UnsupportedSchema = 3, // Schema sconosciuto o non supportato (es. V0, V99)
+    MigrationFailed = 4    // Migrazione tentata e non andata a buon fine
+};
+
+inline const char* SchemaVersionStateToString(SchemaVersionState state) {
+    switch (state) {
+        case SchemaVersionState::CurrentSchema: return "CurrentSchema";
+        case SchemaVersionState::LegacySchema: return "LegacySchema";
+        case SchemaVersionState::MigrationRequired: return "MigrationRequired";
+        case SchemaVersionState::UnsupportedSchema: return "UnsupportedSchema";
+        case SchemaVersionState::MigrationFailed: return "MigrationFailed";
+        default: return "Unknown";
+    }
+}
+
+// =============================================================================
+// BM-F4.2: TRUST POLICY & INTEGRITY STATUS CONTRACTS
+// =============================================================================
+
+enum class AssetTrustPolicy : uint8_t {
+    Strict = 0,
+    AllowLegacy = 1
+};
+
+enum class AssetIntegrityStatus : uint8_t {
+    Verified = 0,
+    LegacyUnverified = 1,
+    Rejected = 2
+};
+
+enum class AssetIntegrityErrorCode : uint8_t {
+    None = 0,
+    MissingDigest,
+    InvalidDigestFormat,
+    DigestMismatch,
+    UnsupportedSchema,
+    MissingDependency,
+    TextureDecodeFailure,
+    FileReadFailure,
+    LegacyUnverified
+};
+
+inline const char* AssetTrustPolicyToString(AssetTrustPolicy policy) {
+    switch (policy) {
+        case AssetTrustPolicy::Strict: return "Strict";
+        case AssetTrustPolicy::AllowLegacy: return "AllowLegacy";
+        default: return "Unknown";
+    }
+}
+
+inline const char* AssetIntegrityStatusToString(AssetIntegrityStatus status) {
+    switch (status) {
+        case AssetIntegrityStatus::Verified: return "Verified";
+        case AssetIntegrityStatus::LegacyUnverified: return "LegacyUnverified";
+        case AssetIntegrityStatus::Rejected: return "Rejected";
+        default: return "Unknown";
+    }
+}
+
+inline const char* AssetIntegrityErrorCodeToString(AssetIntegrityErrorCode code) {
+    switch (code) {
+        case AssetIntegrityErrorCode::None: return "None";
+        case AssetIntegrityErrorCode::MissingDigest: return "MissingDigest";
+        case AssetIntegrityErrorCode::InvalidDigestFormat: return "InvalidDigestFormat";
+        case AssetIntegrityErrorCode::DigestMismatch: return "DigestMismatch";
+        case AssetIntegrityErrorCode::UnsupportedSchema: return "UnsupportedSchema";
+        case AssetIntegrityErrorCode::MissingDependency: return "MissingDependency";
+        case AssetIntegrityErrorCode::TextureDecodeFailure: return "TextureDecodeFailure";
+        case AssetIntegrityErrorCode::FileReadFailure: return "FileReadFailure";
+        case AssetIntegrityErrorCode::LegacyUnverified: return "LegacyUnverified";
+        default: return "Unknown";
+    }
+}
+
+inline bool IsValidSha256HexFormat(const std::string& hex) {
+    if (hex.size() != 64) return false;
+    for (char c : hex) {
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // Validation report produced by Quality Control and station checks
 struct RawAssetValidation {
     bool isValid = false;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
+    AssetIntegrityStatus integrityStatus = AssetIntegrityStatus::Rejected;
+    AssetIntegrityErrorCode primaryErrorCode = AssetIntegrityErrorCode::None;
 
-    void AddError(const std::string& err) {
+    void AddError(const std::string& err, AssetIntegrityErrorCode code = AssetIntegrityErrorCode::None) {
         errors.push_back(err);
         isValid = false;
+        integrityStatus = AssetIntegrityStatus::Rejected;
+        if (primaryErrorCode == AssetIntegrityErrorCode::None && code != AssetIntegrityErrorCode::None) {
+            primaryErrorCode = code;
+        }
     }
 
     void AddWarning(const std::string& warn) {
@@ -70,6 +226,8 @@ struct RawAssetValidation {
         isValid = true;
         errors.clear();
         warnings.clear();
+        integrityStatus = AssetIntegrityStatus::Rejected;
+        primaryErrorCode = AssetIntegrityErrorCode::None;
     }
 };
 
@@ -89,6 +247,15 @@ struct RawAssetManifest {
 
     // Backward-compatibility slot (0 = unmapped, 1..255 = legacy BlockRegistry ID)
     uint8_t targetRuntimeVoxelId = 0;
+
+    // BM-F4.5: Tracciamento della provenienza per migrazioni di schema
+    struct MigrationProvenance {
+        bool wasMigrated = false;
+        uint32_t sourceSchemaVersion = 0;
+        uint64_t migrationTimestamp = 0;
+        uint64_t originalDistributionChecksum = 0;
+        std::string migrationNotes;
+    } migrationProvenance;
 };
 
 // =============================================================================
@@ -449,14 +616,51 @@ struct RawAssetPackage {
         return ctx.FinalizeHex();
     }
 
-    bool VerifyContentDigest(const std::string& assetRootDir = "", std::string* outExpected = nullptr, std::string* outComputed = nullptr) const {
-        if (contentDigestSha256.empty()) {
-            return manifest.schemaVersion == 1;
+    bool VerifyContentDigest(
+        const std::string& assetRootDir = "",
+        std::string* outExpected = nullptr,
+        std::string* outComputed = nullptr,
+        AssetTrustPolicy policy = AssetTrustPolicy::Strict,
+        AssetIntegrityErrorCode* outError = nullptr
+    ) const {
+        if (outError) *outError = AssetIntegrityErrorCode::None;
+
+        if (manifest.schemaVersion == 0 || manifest.schemaVersion > 2) {
+            if (outError) *outError = AssetIntegrityErrorCode::UnsupportedSchema;
+            return false;
         }
+
+        if (manifest.schemaVersion == 1) {
+            if (policy == AssetTrustPolicy::Strict) {
+                if (outError) *outError = AssetIntegrityErrorCode::UnsupportedSchema;
+                return false;
+            }
+            if (contentDigestSha256.empty()) {
+                if (outError) *outError = AssetIntegrityErrorCode::LegacyUnverified;
+                return true;
+            }
+        }
+
+        if (contentDigestSha256.empty()) {
+            if (outError) *outError = AssetIntegrityErrorCode::MissingDigest;
+            return false;
+        }
+
+        if (!IsValidSha256HexFormat(contentDigestSha256)) {
+            if (outError) *outError = AssetIntegrityErrorCode::InvalidDigestFormat;
+            return false;
+        }
+
         std::string computed = ComputeContentDigestSha256(assetRootDir);
         if (outExpected) *outExpected = contentDigestSha256;
         if (outComputed) *outComputed = computed;
-        return (contentDigestSha256 == computed);
+
+        if (contentDigestSha256 != computed) {
+            if (outError) *outError = AssetIntegrityErrorCode::DigestMismatch;
+            return false;
+        }
+
+        return true;
     }
 
     bool IsPublishable() const {
@@ -475,15 +679,19 @@ inline void to_json(nlohmann::json& j, const RawAssetDependency& d) {
         {"type", d.dependencyType},
         {"targetId", d.targetId},
         {"requiredRevision", d.requiredRevision},
-        {"isOptional", d.isOptional}
+        {"isOptional", d.isOptional},
+        {"revisionPolicy", static_cast<uint8_t>(d.revisionPolicy)},
+        {"expectedDigestSha256", d.expectedDigestSha256}
     };
 }
 
 inline void from_json(const nlohmann::json& j, RawAssetDependency& d) {
-    d.dependencyType = j.value("type", "");
+    d.dependencyType = j.value("type", "custom");
     d.targetId = j.value("targetId", "");
     d.requiredRevision = j.value("requiredRevision", static_cast<uint64_t>(0));
     d.isOptional = j.value("isOptional", false);
+    d.revisionPolicy = static_cast<DependencyRevisionPolicy>(j.value("revisionPolicy", static_cast<uint8_t>(DependencyRevisionPolicy::Exact)));
+    d.expectedDigestSha256 = j.value("expectedDigestSha256", "");
 }
 
 inline void to_json(nlohmann::json& j, const RawAssetManifest& m) {
@@ -501,6 +709,15 @@ inline void to_json(nlohmann::json& j, const RawAssetManifest& m) {
     if (!m.dependencies.empty()) {
         j["dependencies"] = m.dependencies;
     }
+    if (m.migrationProvenance.wasMigrated) {
+        j["migrationProvenance"] = {
+            {"wasMigrated", m.migrationProvenance.wasMigrated},
+            {"sourceSchemaVersion", m.migrationProvenance.sourceSchemaVersion},
+            {"migrationTimestamp", m.migrationProvenance.migrationTimestamp},
+            {"originalDistributionChecksum", m.migrationProvenance.originalDistributionChecksum},
+            {"migrationNotes", m.migrationProvenance.migrationNotes}
+        };
+    }
 }
 
 inline void from_json(const nlohmann::json& j, RawAssetManifest& m) {
@@ -515,6 +732,14 @@ inline void from_json(const nlohmann::json& j, RawAssetManifest& m) {
     m.targetRuntimeVoxelId = j.value("targetRuntimeVoxelId", static_cast<uint8_t>(0));
     if (j.contains("dependencies") && j["dependencies"].is_array()) {
         m.dependencies = j["dependencies"].get<std::vector<RawAssetDependency>>();
+    }
+    if (j.contains("migrationProvenance")) {
+        const auto& mp = j["migrationProvenance"];
+        m.migrationProvenance.wasMigrated = mp.value("wasMigrated", false);
+        m.migrationProvenance.sourceSchemaVersion = mp.value("sourceSchemaVersion", 0u);
+        m.migrationProvenance.migrationTimestamp = mp.value("migrationTimestamp", static_cast<uint64_t>(0));
+        m.migrationProvenance.originalDistributionChecksum = mp.value("originalDistributionChecksum", static_cast<uint64_t>(0));
+        m.migrationProvenance.migrationNotes = mp.value("migrationNotes", "");
     }
 }
 
@@ -935,34 +1160,9 @@ inline bool RawAssetPackage::SaveToFile(const std::string& filepath) const {
     try {
         nlohmann::json j;
         to_json(j, *this);
-        std::filesystem::path finalPath(filepath);
-        std::filesystem::path parentDir = finalPath.parent_path();
-        std::error_code ec;
-        if (!parentDir.empty()) {
-            std::filesystem::create_directories(parentDir, ec);
-        }
-        std::string tempPath = filepath + ".tmp." + std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-        {
-            std::ofstream out(tempPath);
-            if (!out.is_open()) return false;
-            out << j.dump(4);
-            out.flush();
-            if (!out.good()) {
-                out.close();
-                std::filesystem::remove(tempPath, ec);
-                return false;
-            }
-        }
-        std::filesystem::rename(tempPath, finalPath, ec);
-        if (ec) {
-            std::filesystem::remove(finalPath, ec);
-            std::filesystem::rename(tempPath, finalPath, ec);
-            if (ec) {
-                std::filesystem::remove(tempPath, ec);
-                return false;
-            }
-        }
-        return true;
+        std::string jsonStr = j.dump(4);
+        std::string err;
+        return AssetFilesystemAdapter::DurableWriteFile(filepath, jsonStr, false, &err);
     } catch (...) {
         return false;
     }

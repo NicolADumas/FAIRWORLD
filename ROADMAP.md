@@ -22,7 +22,12 @@ Stato: **ACTIVE**
 | **BM-F2C.1**| Transaction Integrity & Fault Injection Audit | **COMPLETED** | 2026-10-15 | 10/10 PASS (TRX-01..TRX-10) |
 | **BM-F3**  | Sculpted Mesh Runtime Bridge (DCEL $\to$ Runtime)| **COMPLETED** | 2026-10-15 | 10/10 PASS (SBR-01..SBR-10) |
 | **BM-F4**  | Asset Integrity & End-to-End Round-Trip | **COMPLETED** | 2026-10-15 | 10/10 PASS (INT-01..INT-10) |
-| **BM-F4.1**| **Asset Integrity Hardening Gate (SHA-256 / PNG Cache)** | **FUNCTIONAL CLOSURE** | 2026-10-15 | Contratti SEC-01..SEC-10 implementati; verifica compilazione in BUILD-RECOVERY-01 |
+| **BM-F4.1**| **Asset Integrity Hardening Gate (SHA-256 / PNG Cache)** | **COMPLETED** | 2026-10-15 | Contratti SEC-01..SEC-10 implementati |
+| **BM-F4.2**| **Digest Verification, Trust Policy & Zero-Work Safety** | **COMPLETED** | 2026-10-16 | 10/10 PASS (DGV-01..DGV-10); Trust Policy (Strict/AllowLegacy), Zero-Work Safety |
+| **BM-F4.3**| **Transactional Asset Publication & Crash Recovery** | **COMPLETED** | 2026-10-16 | 10/10 PASS (CRH-01..CRH-10); Persistent Staging, Journaled Commit, Idempotent Recovery |
+| **BM-F4.3.1**| **Crash Recovery Hardening & Commit Semantics** | **COMPLETED** | 2026-10-16 | 8/8 PASS (CRH-H01..H08); Commit Authority, Safe Recovery, Win32 Atomic Replace |
+| **BM-F4.4**| **Asset Dependency Graph & Referential Integrity** | **COMPLETED** | 2026-10-16 | 10/10 PASS (DEP-01..DEP-10); Cycle Detection, Topological Order, Zero-Work Invalidation |
+| **BM-F4.5**| **Asset Schema Migration & Backward Compatibility** | **COMPLETED** | 2026-10-16 | 10/10 PASS (MIG-01..MIG-10); Deterministic V1->V2 Migration, Lossless Conservation, Strict Verification |
 
 ---
 

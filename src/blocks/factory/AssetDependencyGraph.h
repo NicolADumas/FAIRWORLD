@@ -4,250 +4,128 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
-#include <algorithm>
-#include <cstdint>
-#include <functional>
-#include "ProductionStationContract.h"
+#include <optional>
+#include "RawAssetContract.h"
 
 namespace fw {
 
-// Nodi tipizzati del grafo di dipendenza
-enum class DependencyNodeID : uint8_t {
-    ShapeGeometry = 0,       // Mesh / geometria poligonale pura
-    TopologyUV = 1,          // Parametrizzazione e coordinate UV
-    SurfaceLayout = 2,       // Identificazione facce e partizioni semantiche
-    TextureResources = 3,    // File texture e binding GPU
-    MaterialParameters = 4,  // Parametri PBR e fallbacks
-    RawPhysicsProxy = 5,     // Collider proxy e parametri di massa
-    QualityControlAudit = 6, // Report di conformità e validazione
-    PackageArtifact = 7,     // Pacchetto finale congelato
-    SculptGeometry = 8,      // EditableMesh / scultura CPU-authoritative (BM-S)
-    PaintLayers = 9          // Layer di pittura e maschere texture (BM-F2A)
+class AssetPackagingService;
+
+// =============================================================================
+// BM-F4.4: REPORT DI VALIDAZIONE GRAFO DELLE DIPENDENZE
+// =============================================================================
+
+struct DependencyGraphValidation {
+    bool isValid = true;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+    std::vector<std::vector<std::string>> detectedCycles;
+    std::vector<std::string> missingDependencies;
+    std::vector<std::string> incompatibleRevisions;
+    std::vector<std::string> digestMismatches;
+    AssetIntegrityErrorCode primaryErrorCode = AssetIntegrityErrorCode::None;
+
+    void AddError(const std::string& err, AssetIntegrityErrorCode code = AssetIntegrityErrorCode::MissingDependency) {
+        errors.push_back(err);
+        isValid = false;
+        if (primaryErrorCode == AssetIntegrityErrorCode::None) {
+            primaryErrorCode = code;
+        }
+    }
+
+    void AddWarning(const std::string& warn) {
+        warnings.push_back(warn);
+    }
 };
 
-inline const char* GetDependencyNodeName(DependencyNodeID id) {
-    switch (id) {
-        case DependencyNodeID::ShapeGeometry:       return "ShapeGeometry";
-        case DependencyNodeID::TopologyUV:          return "TopologyUV";
-        case DependencyNodeID::SurfaceLayout:       return "SurfaceLayout";
-        case DependencyNodeID::TextureResources:    return "TextureResources";
-        case DependencyNodeID::MaterialParameters:  return "MaterialParameters";
-        case DependencyNodeID::RawPhysicsProxy:     return "RawPhysicsProxy";
-        case DependencyNodeID::QualityControlAudit: return "QualityControlAudit";
-        case DependencyNodeID::PackageArtifact:     return "PackageArtifact";
-        case DependencyNodeID::SculptGeometry:      return "SculptGeometry";
-        case DependencyNodeID::PaintLayers:         return "PaintLayers";
-        default:                                    return "UnknownNode";
-    }
-}
+// =============================================================================
+// BM-F4.4: INFORMAZIONI NODO GRAFO DIPENDENZE
+// =============================================================================
+
+struct DependencyNodeInfo {
+    std::string assetId;
+    uint64_t revision = 0;
+    std::string contentDigestSha256;
+    std::vector<AssetDependency> dependencies;
+    bool isCommitted = false;
+    bool isActive = false;
+    AssetTrustPolicy trustPolicy = AssetTrustPolicy::Strict;
+    AssetIntegrityStatus integrityStatus = AssetIntegrityStatus::Verified;
+};
 
 // =============================================================================
-// ASSET DEPENDENCY GRAPH (BM-FC4)
-// Grafo diretto e aciclico (DAG) con invalidazione selettiva e fingerprinting
+// BM-F4.4: ASSET DEPENDENCY GRAPH & REFERENTIAL INTEGRITY
+// Gestisce nodi, archi diretti/inversi, ordinamento topologico deterministico,
+// rilevamento cicli, validazione referenziale e invalidazione mirata Zero-Work.
 // =============================================================================
+
 class AssetDependencyGraph {
 public:
-    struct DependencyEdge {
-        DependencyNodeID source; // Nodo a monte (prerequisito)
-        bool isOptional = false; // Se opzionale, un'invalidazione non blocca l'esecuzione
-    };
+    AssetDependencyGraph() = default;
+    ~AssetDependencyGraph() = default;
 
-    struct NodeInfo {
-        DependencyNodeID id;
-        ProductionStationID station;
-        std::vector<DependencyEdge> upstreamInputs;  // Nodi da cui dipende
-        std::vector<DependencyNodeID> downstreamOutputs; // Nodi che dipendono da questo
+    // Registrazione / aggiornamento nodo nel grafo
+    void AddNode(
+        const std::string& assetId,
+        uint64_t revision,
+        const std::string& digest,
+        const std::vector<AssetDependency>& deps,
+        bool isCommitted = true,
+        bool isActive = true,
+        AssetTrustPolicy trustPolicy = AssetTrustPolicy::Strict,
+        AssetIntegrityStatus integrityStatus = AssetIntegrityStatus::Verified
+    );
 
-        bool isDirty = true;
-        uint64_t lastEvaluatedFingerprint = 0;
-        uint64_t nodeRevision = 1;
-    };
+    void RemoveNode(const std::string& assetId);
+    void Clear();
 
-    AssetDependencyGraph() {
-        InitializeStandardGraph();
-    }
+    bool HasNode(const std::string& assetId) const;
+    const DependencyNodeInfo* GetNode(const std::string& assetId) const;
+    size_t GetNodeCount() const { return m_nodes.size(); }
+    const std::unordered_map<std::string, DependencyNodeInfo>& GetNodes() const { return m_nodes; }
 
-    // Configura la topologia canonica della pipeline di fabbrica
-    void InitializeStandardGraph() {
-        m_nodes.clear();
+    // Rilevamento cicli (DFS deterministico con colorazione White/Gray/Black)
+    bool DetectCycles(std::vector<std::vector<std::string>>* outCycles = nullptr) const;
 
-        // 1. Registrazione Nodi
-        RegisterNode(DependencyNodeID::ShapeGeometry, ProductionStationID::Shape);
-        RegisterNode(DependencyNodeID::SculptGeometry, ProductionStationID::Sculpt);
-        RegisterNode(DependencyNodeID::SurfaceLayout, ProductionStationID::SurfaceUV);
-        RegisterNode(DependencyNodeID::TopologyUV, ProductionStationID::SurfaceUV);
-        RegisterNode(DependencyNodeID::TextureResources, ProductionStationID::Texture);
-        RegisterNode(DependencyNodeID::MaterialParameters, ProductionStationID::Material);
-        RegisterNode(DependencyNodeID::RawPhysicsProxy, ProductionStationID::RawPhysics);
-        RegisterNode(DependencyNodeID::QualityControlAudit, ProductionStationID::QualityControl);
-        RegisterNode(DependencyNodeID::PackageArtifact, ProductionStationID::Packaging);
-        RegisterNode(DependencyNodeID::PaintLayers, ProductionStationID::Painter);
+    // Ordinamento topologico deterministico (Kahn / DFS post-order invertito)
+    // Ritorna false se e' presente almeno un ciclo
+    bool GetTopologicalOrder(std::vector<std::string>& outOrder, std::string* outError = nullptr) const;
 
-        // 2. Definizione archi diretti di dipendenza (Upstream -> Downstream)
-        // ShapeGeometry -> SculptGeometry (la mesh editabile consuma la forma parametrica iniziale se presente)
-        AddDependency(DependencyNodeID::SculptGeometry, DependencyNodeID::ShapeGeometry, true);
+    // Dipendenze dirette o transitive di un asset (assetId dipende da...)
+    std::vector<std::string> GetDependencies(const std::string& assetId, bool recursive = true) const;
 
-        // Geometria (Shape o Sculpt) -> TopologyUV & SurfaceLayout & RawPhysicsProxy
-        AddDependency(DependencyNodeID::TopologyUV, DependencyNodeID::ShapeGeometry, false);
-        AddDependency(DependencyNodeID::TopologyUV, DependencyNodeID::SculptGeometry, true);
+    // Dipendenti diretti o transitivi (chi dipende da assetId) per Zero-Work
+    std::vector<std::string> GetDependents(const std::string& assetId, bool recursive = true) const;
 
-        AddDependency(DependencyNodeID::SurfaceLayout, DependencyNodeID::ShapeGeometry, false);
-        AddDependency(DependencyNodeID::SurfaceLayout, DependencyNodeID::SculptGeometry, true);
+    // Conteggio referenze (quanti nodi dipendono da targetId)
+    size_t GetReferenceCount(const std::string& assetId) const;
+    bool IsReferenced(const std::string& assetId) const;
 
-        AddDependency(DependencyNodeID::RawPhysicsProxy, DependencyNodeID::ShapeGeometry, false);
-        AddDependency(DependencyNodeID::RawPhysicsProxy, DependencyNodeID::SculptGeometry, true);
+    // Validazione referenziale completa di tutti i nodi del grafo
+    DependencyGraphValidation ValidateGraph(
+        const std::string& rootDir,
+        const AssetPackagingService& service,
+        AssetTrustPolicy policy = AssetTrustPolicy::Strict
+    ) const;
 
-        // TopologyUV -> PaintLayers (la pittura si ancora alle coordinate del layout UV)
-        AddDependency(DependencyNodeID::PaintLayers, DependencyNodeID::TopologyUV, true);
+    // Validazione preliminare delle dipendenze di un package prima del commit (Verify Before Commit)
+    static DependencyGraphValidation ValidatePackageDependencies(
+        const RawAssetPackage& package,
+        const std::string& rootDir,
+        const AssetPackagingService& service,
+        AssetTrustPolicy policy = AssetTrustPolicy::Strict
+    );
 
-        // SurfaceLayout -> MaterialParameters (l'override dei materiali si ancora alle superfici)
-        AddDependency(DependencyNodeID::MaterialParameters, DependencyNodeID::SurfaceLayout, false);
-
-        // TextureResources -> MaterialParameters (i layer PBR consumano le texture opzionali)
-        AddDependency(DependencyNodeID::MaterialParameters, DependencyNodeID::TextureResources, true);
-
-        // Tutti i componenti a monte convergono nel QualityControlAudit
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::ShapeGeometry, false);
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::SculptGeometry, true);
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::TopologyUV, false);
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::SurfaceLayout, false);
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::PaintLayers, true);
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::MaterialParameters, false);
-        AddDependency(DependencyNodeID::QualityControlAudit, DependencyNodeID::RawPhysicsProxy, false);
-
-        // QualityControlAudit -> PackageArtifact (solo se audit passa, si genera il Package)
-        AddDependency(DependencyNodeID::PackageArtifact, DependencyNodeID::QualityControlAudit, false);
-    }
-
-    void RegisterNode(DependencyNodeID id, ProductionStationID station) {
-        NodeInfo node;
-        node.id = id;
-        node.station = station;
-        node.isDirty = true;
-        m_nodes[id] = node;
-    }
-
-    void AddDependency(DependencyNodeID downstream, DependencyNodeID upstream, bool isOptional) {
-        if (m_nodes.find(downstream) != m_nodes.end() && m_nodes.find(upstream) != m_nodes.end()) {
-            m_nodes[downstream].upstreamInputs.push_back({upstream, isOptional});
-            m_nodes[upstream].downstreamOutputs.push_back(downstream);
-        }
-    }
-
-    // Invalida selettivamente un nodo e propaga lo stato dirty ESCLUSIVAMENTE verso il basso
-    bool InvalidateNode(DependencyNodeID id, uint64_t newFingerprint) {
-        auto it = m_nodes.find(id);
-        if (it == m_nodes.end()) return false;
-
-        // Invariante Zero-Work: se il fingerprint di input è identico, nessun ricalcolo
-        if (it->second.lastEvaluatedFingerprint == newFingerprint && !it->second.isDirty) {
-            return false;
-        }
-
-        it->second.isDirty = true;
-        it->second.lastEvaluatedFingerprint = newFingerprint;
-        it->second.nodeRevision++;
-
-        // Propaga ricorsivamente solo ai nodi a valle
-        std::unordered_set<DependencyNodeID> visited;
-        PropagateDirtyDownstream(id, visited);
-        return true;
-    }
-
-    // Contrassegna un nodo come calcolato e pulito
-    void MarkNodeClean(DependencyNodeID id, uint64_t evaluatedFingerprint) {
-        auto it = m_nodes.find(id);
-        if (it != m_nodes.end()) {
-            it->second.isDirty = false;
-            it->second.lastEvaluatedFingerprint = evaluatedFingerprint;
-        }
-    }
-
-    bool IsNodeDirty(DependencyNodeID id) const {
-        auto it = m_nodes.find(id);
-        return (it != m_nodes.end()) ? it->second.isDirty : false;
-    }
-
-    uint64_t GetNodeRevision(DependencyNodeID id) const {
-        auto it = m_nodes.find(id);
-        return (it != m_nodes.end()) ? it->second.nodeRevision : 0;
-    }
-
-    // Restituisce l'ordine topologico di esecuzione dei soli nodi dirty
-    std::vector<DependencyNodeID> GetEvaluationOrder() const {
-        std::vector<DependencyNodeID> order;
-        std::unordered_set<DependencyNodeID> visited;
-        std::unordered_set<DependencyNodeID> inStack;
-
-        std::function<void(DependencyNodeID)> dfs = [&](DependencyNodeID current) {
-            if (visited.count(current)) return;
-            inStack.insert(current);
-
-            auto it = m_nodes.find(current);
-            if (it != m_nodes.end()) {
-                for (const auto& edge : it->second.upstreamInputs) {
-                    dfs(edge.source);
-                }
-            }
-
-            inStack.erase(current);
-            visited.insert(current);
-            order.push_back(current);
-        };
-
-        for (const auto& pair : m_nodes) {
-            if (!visited.count(pair.first)) {
-                dfs(pair.first);
-            }
-        }
-
-        // Filtra lasciando solo i nodi che risultano effettivamente sporchi
-        std::vector<DependencyNodeID> dirtyOrder;
-        for (auto id : order) {
-            if (IsNodeDirty(id)) {
-                dirtyOrder.push_back(id);
-            }
-        }
-        return dirtyOrder;
-    }
-
-    // Verifica se tutti i prerequisiti obbligatori di un nodo sono puliti
-    bool ArePrerequisitesSatisfied(DependencyNodeID id) const {
-        auto it = m_nodes.find(id);
-        if (it == m_nodes.end()) return false;
-
-        for (const auto& edge : it->second.upstreamInputs) {
-            if (!edge.isOptional && IsNodeDirty(edge.source)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    const NodeInfo* GetNodeInfo(DependencyNodeID id) const {
-        auto it = m_nodes.find(id);
-        return (it != m_nodes.end()) ? &it->second : nullptr;
-    }
+    // Costruzione del grafo completo da tutti i package committed in published/
+    static AssetDependencyGraph BuildFromCommitted(
+        const std::string& rootDir,
+        const AssetPackagingService& service
+    );
 
 private:
-    void PropagateDirtyDownstream(DependencyNodeID current, std::unordered_set<DependencyNodeID>& visited) {
-        if (visited.count(current)) return;
-        visited.insert(current);
-
-        auto it = m_nodes.find(current);
-        if (it == m_nodes.end()) return;
-
-        for (auto downstreamId : it->second.downstreamOutputs) {
-            auto dIt = m_nodes.find(downstreamId);
-            if (dIt != m_nodes.end()) {
-                dIt->second.isDirty = true;
-                dIt->second.nodeRevision++;
-                PropagateDirtyDownstream(downstreamId, visited);
-            }
-        }
-    }
-
-    std::unordered_map<DependencyNodeID, NodeInfo> m_nodes;
+    std::unordered_map<std::string, DependencyNodeInfo> m_nodes;
+    std::unordered_map<std::string, std::vector<AssetDependency>> m_adjacency;
+    std::unordered_map<std::string, std::vector<std::string>> m_reverseAdjacency;
 };
 
 } // namespace fw

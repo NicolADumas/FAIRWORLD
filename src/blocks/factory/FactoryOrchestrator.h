@@ -76,6 +76,7 @@ public:
 
     // Pubblica il pacchetto compilato direttamente nei Registri autorevoli di FAIRWORLD
     bool PublishToRegistries(BlockRegistry& bReg, MaterialRegistry& mReg, ShapeRegistry& sReg);
+    bool PublishPersistentToRegistries(BlockRegistry& bReg, MaterialRegistry& mReg, ShapeRegistry& sReg);
 
     // Accesso al grafo di dipendenze
     AssetDependencyGraph& GetDependencyGraph() { return m_dependencyGraph; }

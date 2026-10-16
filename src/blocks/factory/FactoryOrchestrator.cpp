@@ -32,6 +32,7 @@ bool FactoryOrchestrator::OpenDraft(const RawAssetID& id, const std::string& dis
     RawAssetDraft draft;
     draft.manifest.assetId = id;
     draft.manifest.displayName = displayName;
+    draft.manifest.schemaVersion = 2; // BM-F4.2
     draft.manifest.revision = 1;
     draft.manifest.stage = RawAssetStage::Draft;
 
@@ -347,6 +348,7 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
 
     RawAssetPackage package;
     package.manifest = m_activeDraft->manifest;
+    package.manifest.schemaVersion = 2; // BM-F4.2
     package.manifest.stage = RawAssetStage::Packaged;
     package.validationReport = valReport;
 
@@ -481,6 +483,25 @@ bool FactoryOrchestrator::PublishToRegistries(BlockRegistry& bReg, MaterialRegis
     }
 
     auto publishRes = m_packagingService.PublishPackageTransactional(*pkgOpt, bReg, mReg, sReg);
+    if (!publishRes.success) {
+        return false;
+    }
+
+    m_activeDraft->manifest.stage = RawAssetStage::Published;
+    m_activeDraft->manifest.targetRuntimeVoxelId = publishRes.targetVoxelId;
+    m_activeDraft->isDirty = false;
+    return true;
+}
+
+bool FactoryOrchestrator::PublishPersistentToRegistries(BlockRegistry& bReg, MaterialRegistry& mReg, ShapeRegistry& sReg) {
+    if (!m_activeDraft.has_value()) return false;
+
+    auto pkgOpt = BuildPackage(&sReg, &mReg, &bReg);
+    if (!pkgOpt.has_value()) {
+        return false;
+    }
+
+    auto publishRes = m_packagingService.PublishPackagePersistent(*pkgOpt, bReg, mReg, sReg);
     if (!publishRes.success) {
         return false;
     }
