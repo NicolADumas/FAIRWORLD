@@ -1,0 +1,198 @@
+{
+    "fingerprints": {
+        "contentDigestSha256": "",
+        "distributionChecksum": 0,
+        "packageFingerprint": 987654321,
+        "paintFingerprint": 0
+    },
+    "geometry": {
+        "bounds": {
+            "max": [
+                -1000000000.0,
+                -1000000000.0,
+                -1000000000.0
+            ],
+            "min": [
+                1000000000.0,
+                1000000000.0,
+                1000000000.0
+            ]
+        },
+        "triangleCount": 0,
+        "vertexCount": 4,
+        "vertices": [
+            {
+                "ao": 0.0,
+                "color": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 0.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 0.0,
+                "color": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 0.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 0.0,
+                "color": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 0.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 0.0,
+                "color": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 0.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            }
+        ]
+    },
+    "geometrySource": 0,
+    "graphics": {
+        "albedoMapUri": "",
+        "alpha": 1.0,
+        "baseColor": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "behaviors": 0,
+        "emissive": 0.0,
+        "emissiveMapUri": "",
+        "metallic": 0.0,
+        "normalMapUri": "",
+        "ormMapUri": "",
+        "roughness": 1.0,
+        "textureFingerprint": 0
+    },
+    "manifest": {
+        "assetId": "fairworld:reboot_asset",
+        "author": "LocalAuthor",
+        "creationTimestamp": 0,
+        "displayName": "Reboot Block",
+        "lastModifiedTimestamp": 0,
+        "revision": 1,
+        "schemaVersion": 1,
+        "stage": 1,
+        "targetRuntimeVoxelId": 0
+    },
+    "physics": {
+        "collisionEnabled": true,
+        "density": 800.0,
+        "friction": 0.6000000238418579,
+        "mass": 3.5,
+        "massMode": 0,
+        "motionType": 0,
+        "restitution": 0.0
+    },
+    "sculptTopologyJson": "",
+    "shape": {
+        "id": 0,
+        "revision": 1,
+        "supportsCollisionCompilation": false,
+        "supportsVisualCompilation": true,
+        "type": 1
+    },
+    "transform": {
+        "pivot": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "position": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "rotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "scale": [
+            1.0,
+            1.0,
+            1.0
+        ]
+    }
+}

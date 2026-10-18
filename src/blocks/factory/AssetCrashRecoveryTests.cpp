@@ -19,6 +19,7 @@
 #include "AssetIntegrityRoundTripTests.h"
 #include "AssetIntegrityHardeningTests.h"
 #include "AssetDigestTrustTests.h"
+#include "TestRunContext.h"
 
 #include <filesystem>
 #include <fstream>
@@ -474,47 +475,69 @@ std::vector<AssetCrashRecoveryTestResult> AssetCrashRecoveryTests::RunAllTests()
         r.inputDesc = "Esecuzione completa di TOP(36), PNT(10), TXB(10), PKG(10), TRX(10), SBR(10), INT(10), SEC(10), DGV(10)";
         r.expectedDesc = "Tutti i 116 test contrattuali delle 9 suite precedenti risultano superati al 100%";
 
-        auto topRes = CompiledTopologyTests::RunAllTests();
-        auto pntRes = PainterStationContractTests::RunAllTests();
-        auto txbRes = TextureBakingContractTests::RunAllTests();
-        auto pkgRes = AssetPackagingContractTests::RunAllTests();
-        auto trxRes = TransactionIntegrityAuditTests::RunAllTests();
-        auto sbrRes = SculptedMeshRuntimeBridgeTests::RunAllTests();
-        auto intRes = AssetIntegrityRoundTripTests::RunAllTests();
-        auto secRes = AssetIntegrityHardeningTests::RunAllTests();
-        auto dgvRes = AssetDigestTrustTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"TOP", 36}, {"PNT", 10}, {"TXB", 10}, {"PKG", 10}, {"TRX", 10}, {"SBR", 10}, {"INT", 10}, {"SEC", 10}, {"DGV", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t topPass = 0, pntPass = 0, txbPass = 0, pkgPass = 0, trxPass = 0, sbrPass = 0, intPass = 0, secPass = 0, dgvPass = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "TOP") topPass = c.passedCount;
+                if (c.suiteCode == "PNT") pntPass = c.passedCount;
+                if (c.suiteCode == "TXB") txbPass = c.passedCount;
+                if (c.suiteCode == "PKG") pkgPass = c.passedCount;
+                if (c.suiteCode == "TRX") trxPass = c.passedCount;
+                if (c.suiteCode == "SBR") sbrPass = c.passedCount;
+                if (c.suiteCode == "INT") intPass = c.passedCount;
+                if (c.suiteCode == "SEC") secPass = c.passedCount;
+                if (c.suiteCode == "DGV") dgvPass = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/36, PNT: " + std::to_string(pntPass) + "/10, TXB: " + std::to_string(txbPass) + "/10, PKG: " + std::to_string(pkgPass) + "/10, TRX: " + std::to_string(trxPass) + "/10, SBR: " + std::to_string(sbrPass) + "/10, INT: " + std::to_string(intPass) + "/10, SEC: " + std::to_string(secPass) + "/10, DGV: " + std::to_string(dgvPass) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto topRes = CompiledTopologyTests::RunAllTests();
+            auto pntRes = PainterStationContractTests::RunAllTests();
+            auto txbRes = TextureBakingContractTests::RunAllTests();
+            auto pkgRes = AssetPackagingContractTests::RunAllTests();
+            auto trxRes = TransactionIntegrityAuditTests::RunAllTests();
+            auto sbrRes = SculptedMeshRuntimeBridgeTests::RunAllTests();
+            auto intRes = AssetIntegrityRoundTripTests::RunAllTests();
+            auto secRes = AssetIntegrityHardeningTests::RunAllTests();
+            auto dgvRes = AssetDigestTrustTests::RunAllTests();
 
-        size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
-        size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
-        size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
-        size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
-        size_t trxPass = 0; for (const auto& rr : trxRes) if (rr.passed) trxPass++;
-        size_t sbrPass = 0; for (const auto& sr : sbrRes) if (sr.passed) sbrPass++;
-        size_t intPass = 0; for (const auto& ir : intRes) if (ir.passed) intPass++;
-        size_t secPass = 0; for (const auto& sc : secRes) if (sc.passed) secPass++;
-        size_t dgvPass = 0; for (const auto& dg : dgvRes) if (dg.passed) dgvPass++;
+            size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
+            size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
+            size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
+            size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
+            size_t trxPass = 0; for (const auto& rr : trxRes) if (rr.passed) trxPass++;
+            size_t sbrPass = 0; for (const auto& sr : sbrRes) if (sr.passed) sbrPass++;
+            size_t intPass = 0; for (const auto& ir : intRes) if (ir.passed) intPass++;
+            size_t secPass = 0; for (const auto& sc : secRes) if (sc.passed) secPass++;
+            size_t dgvPass = 0; for (const auto& dg : dgvRes) if (dg.passed) dgvPass++;
 
-        bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
-                       (pntPass == pntRes.size() && pntRes.size() == 10) &&
-                       (txbPass == txbRes.size() && txbRes.size() == 10) &&
-                       (pkgPass == pkgRes.size() && pkgRes.size() == 10) &&
-                       (trxPass == trxRes.size() && trxRes.size() == 10) &&
-                       (sbrPass == sbrRes.size() && sbrRes.size() == 10) &&
-                       (intPass == intRes.size() && intRes.size() == 10) &&
-                       (secPass == secRes.size() && secRes.size() == 10) &&
-                       (dgvPass == dgvRes.size() && dgvRes.size() == 10);
+            bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
+                           (pntPass == pntRes.size() && pntRes.size() == 10) &&
+                           (txbPass == txbRes.size() && txbRes.size() == 10) &&
+                           (pkgPass == pkgRes.size() && pkgRes.size() == 10) &&
+                           (trxPass == trxRes.size() && trxRes.size() == 10) &&
+                           (sbrPass == sbrRes.size() && sbrRes.size() == 10) &&
+                           (intPass == intRes.size() && intRes.size() == 10) &&
+                           (secPass == secRes.size() && secRes.size() == 10) &&
+                           (dgvPass == dgvRes.size() && dgvRes.size() == 10);
 
-        r.passed = allPass;
-        r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
-                         ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
-                         ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
-                         ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size()) +
-                         ", TRX: " + std::to_string(trxPass) + "/" + std::to_string(trxRes.size()) +
-                         ", SBR: " + std::to_string(sbrPass) + "/" + std::to_string(sbrRes.size()) +
-                         ", INT: " + std::to_string(intPass) + "/" + std::to_string(intRes.size()) +
-                         ", SEC: " + std::to_string(secPass) + "/" + std::to_string(secRes.size()) +
-                         ", DGV: " + std::to_string(dgvPass) + "/" + std::to_string(dgvRes.size());
-        r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+            r.passed = allPass;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
+                             ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
+                             ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
+                             ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size()) +
+                             ", TRX: " + std::to_string(trxPass) + "/" + std::to_string(trxRes.size()) +
+                             ", SBR: " + std::to_string(sbrPass) + "/" + std::to_string(sbrRes.size()) +
+                             ", INT: " + std::to_string(intPass) + "/" + std::to_string(intRes.size()) +
+                             ", SEC: " + std::to_string(secPass) + "/" + std::to_string(secRes.size()) +
+                             ", DGV: " + std::to_string(dgvPass) + "/" + std::to_string(dgvRes.size());
+            r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+        }
         results.push_back(r);
     }
 

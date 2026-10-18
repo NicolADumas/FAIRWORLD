@@ -45,12 +45,14 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
 
         pkg.geometry.vertices.resize(24);
         for (size_t i = 0; i < 24; ++i) {
-            pkg.geometry.vertices[i].position = glm::vec3(static_cast<float>(i % 2), static_cast<float>((i / 2) % 2), static_cast<float>((i / 4) % 2));
-            pkg.geometry.vertices[i].normal = glm::vec3(0.0f, 1.0f, 0.0f);
-            pkg.geometry.vertices[i].uv = glm::vec2(0.0f, 0.0f);
-            pkg.geometry.vertices[i].color = glm::vec4(1.0f);
+            pkg.geometry.vertices[i].position = fw::Vec3{static_cast<float>(i % 2), static_cast<float>((i / 2) % 2), static_cast<float>((i / 4) % 2)};
+            pkg.geometry.vertices[i].normal = fw::Vec3{0.0f, 1.0f, 0.0f};
+            pkg.geometry.vertices[i].color = fw::Vec4{1.0f, 1.0f, 1.0f, 1.0f};
             pkg.geometry.vertices[i].materialID = 1;
-            pkg.geometry.vertices[i].roughMetal = glm::vec2(0.5f, 0.0f);
+            pkg.geometry.vertices[i].roughMetal = fw::Vec2{0.5f, 0.0f};
+            pkg.geometry.vertices[i].ao = 1.0f;
+            pkg.geometry.vertices[i].light = 1.0f;
+            pkg.geometry.vertices[i].emissive = 0.0f;
         }
         pkg.geometry.vertexCount = 24;
 
@@ -304,10 +306,10 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         service.SetTrustPolicy(AssetTrustPolicy::Strict);
 
         size_t count1 = service.ReconstructRegistriesFromCommitted(bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
-        size_t blocks1 = bReg.GetRegisteredBlockCount();
+        size_t blocks1 = bReg.GetActiveBlockCount();
 
         size_t count2 = service.ReconstructRegistriesFromCommitted(bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
-        size_t blocks2 = bReg.GetRegisteredBlockCount();
+        size_t blocks2 = bReg.GetActiveBlockCount();
 
         r.passed = (count1 > 0) && (count1 == count2) && (blocks1 == blocks2);
         r.observedDesc = "Pass 1: " + std::to_string(count1) + " pacchetti (" + std::to_string(blocks1) + " blocchi) | " +

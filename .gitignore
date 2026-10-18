@@ -12,6 +12,8 @@ vulkan-sdk-installer.exe
 # Build output e binari compilati
 bin/
 out/
+build/
+build_validation/
 
 # ImGui layout (runtime)
 imgui.ini

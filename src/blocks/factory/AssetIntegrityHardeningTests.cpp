@@ -17,6 +17,7 @@
 #include "TransactionIntegrityAuditTests.h"
 #include "SculptedMeshRuntimeBridgeTests.h"
 #include "AssetIntegrityRoundTripTests.h"
+#include "TestRunContext.h"
 
 #include <filesystem>
 #include <fstream>
@@ -95,11 +96,15 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
         r.expectedDesc = "SHA-256 conforme al 100% ai vettori NIST e digest package deterministico";
 
         // 1. Vettore NIST 1: Stringa vuota
-        std::string nistEmpty = Sha256::ComputeHex("");
+        Sha256 emptyCtx;
+        emptyCtx.Update("");
+        std::string nistEmpty = emptyCtx.FinalizeHex();
         bool nistEmptyOk = (nistEmpty == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
         // 2. Vettore NIST 2: "abc"
-        std::string nistAbc = Sha256::ComputeHex("abc");
+        Sha256 abcCtx;
+        abcCtx.Update("abc");
+        std::string nistAbc = abcCtx.FinalizeHex();
         bool nistAbcOk = (nistAbc == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 
         // 3. Streaming multi-blocco equivalente
@@ -526,39 +531,59 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
         r.inputDesc = "Esecuzione di TOP(36), PNT(10), TXB(10), PKG(10), TRX(10), SBR(10), INT(10)";
         r.expectedDesc = "Tutti i 96 test delle suite preesistenti superati al 100% (211 baseline totale)";
 
-        auto topRes = CompiledTopologyTests::RunAllTests();
-        auto pntRes = PainterStationContractTests::RunAllTests();
-        auto txbRes = TextureBakingContractTests::RunAllTests();
-        auto pkgRes = AssetPackagingContractTests::RunAllTests();
-        auto trxRes = TransactionIntegrityAuditTests::RunAllTests();
-        auto sbrRes = SculptedMeshRuntimeBridgeTests::RunAllTests();
-        auto intRes = AssetIntegrityRoundTripTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"TOP", 36}, {"PNT", 10}, {"TXB", 10}, {"PKG", 10}, {"TRX", 10}, {"SBR", 10}, {"INT", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t topPass = 0, pntPass = 0, txbPass = 0, pkgPass = 0, trxPass = 0, sbrPass = 0, intPass = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "TOP") topPass = c.passedCount;
+                if (c.suiteCode == "PNT") pntPass = c.passedCount;
+                if (c.suiteCode == "TXB") txbPass = c.passedCount;
+                if (c.suiteCode == "PKG") pkgPass = c.passedCount;
+                if (c.suiteCode == "TRX") trxPass = c.passedCount;
+                if (c.suiteCode == "SBR") sbrPass = c.passedCount;
+                if (c.suiteCode == "INT") intPass = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/36, PNT: " + std::to_string(pntPass) + "/10, TXB: " + std::to_string(txbPass) + "/10, PKG: " + std::to_string(pkgPass) + "/10, TRX: " + std::to_string(trxPass) + "/10, SBR: " + std::to_string(sbrPass) + "/10, INT: " + std::to_string(intPass) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto topRes = CompiledTopologyTests::RunAllTests();
+            auto pntRes = PainterStationContractTests::RunAllTests();
+            auto txbRes = TextureBakingContractTests::RunAllTests();
+            auto pkgRes = AssetPackagingContractTests::RunAllTests();
+            auto trxRes = TransactionIntegrityAuditTests::RunAllTests();
+            auto sbrRes = SculptedMeshRuntimeBridgeTests::RunAllTests();
+            auto intRes = AssetIntegrityRoundTripTests::RunAllTests();
 
-        size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
-        size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
-        size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
-        size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
-        size_t trxPass = 0; for (const auto& rr : trxRes) if (rr.passed) trxPass++;
-        size_t sbrPass = 0; for (const auto& sr : sbrRes) if (sr.passed) sbrPass++;
-        size_t intPass = 0; for (const auto& ir : intRes) if (ir.passed) intPass++;
+            size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
+            size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
+            size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
+            size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
+            size_t trxPass = 0; for (const auto& rr : trxRes) if (rr.passed) trxPass++;
+            size_t sbrPass = 0; for (const auto& sr : sbrRes) if (sr.passed) sbrPass++;
+            size_t intPass = 0; for (const auto& ir : intRes) if (ir.passed) intPass++;
 
-        bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
-                       (pntPass == pntRes.size() && pntRes.size() == 10) &&
-                       (txbPass == txbRes.size() && txbRes.size() == 10) &&
-                       (pkgPass == pkgRes.size() && pkgRes.size() == 10) &&
-                       (trxPass == trxRes.size() && trxRes.size() == 10) &&
-                       (sbrPass == sbrRes.size() && sbrRes.size() == 10) &&
-                       (intPass == intRes.size() && intRes.size() == 10);
+            bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
+                           (pntPass == pntRes.size() && pntRes.size() == 10) &&
+                           (txbPass == txbRes.size() && txbRes.size() == 10) &&
+                           (pkgPass == pkgRes.size() && pkgRes.size() == 10) &&
+                           (trxPass == trxRes.size() && trxRes.size() == 10) &&
+                           (sbrPass == sbrRes.size() && sbrRes.size() == 10) &&
+                           (intPass == intRes.size() && intRes.size() == 10);
 
-        r.passed = allPass;
-        r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
-                         ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
-                         ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
-                         ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size()) +
-                         ", TRX: " + std::to_string(trxPass) + "/" + std::to_string(trxRes.size()) +
-                         ", SBR: " + std::to_string(sbrPass) + "/" + std::to_string(sbrRes.size()) +
-                         ", INT: " + std::to_string(intPass) + "/" + std::to_string(intRes.size());
-        r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+            r.passed = allPass;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
+                             ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
+                             ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
+                             ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size()) +
+                             ", TRX: " + std::to_string(trxPass) + "/" + std::to_string(trxRes.size()) +
+                             ", SBR: " + std::to_string(sbrPass) + "/" + std::to_string(sbrRes.size()) +
+                             ", INT: " + std::to_string(intPass) + "/" + std::to_string(intRes.size());
+            r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+        }
         results.push_back(r);
     }
 

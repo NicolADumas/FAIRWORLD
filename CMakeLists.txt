@@ -147,6 +147,14 @@ add_custom_command(TARGET FairworldEditor POST_BUILD
 # --- 4. TEST RUNNER HEADLESS (FairworldUVTests) ---
 add_executable(FairworldUVTests src/blocks/uv/uv_tests_main.cpp)
 target_link_libraries(FairworldUVTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldUVTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldUVTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldUVTests>
+)
 
 
 # --- 3. I MODULI DINAMICI (Hot-Reloading) ---

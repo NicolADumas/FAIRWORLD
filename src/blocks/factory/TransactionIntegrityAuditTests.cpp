@@ -6,6 +6,7 @@
 #include "PainterStationContractTests.h"
 #include "AssetPackagingContractTests.h"
 #include "blocks/uv/CompiledTopologyTests.h"
+#include "TestRunContext.h"
 #include "blocks/BlockRegistry.h"
 #include "blocks/MaterialRegistry.h"
 #include "blocks/ShapeRegistry.h"
@@ -364,27 +365,44 @@ std::vector<TransactionAuditTestResult> TransactionIntegrityAuditTests::RunAllTe
         r.inputDesc = "Esecuzione delle suite pregresse: CompiledTopology (36), Painter (10), Baking (10), Packaging (10)";
         r.expectedDesc = "Tutti i 66 test delle suite sopra menzionate risultano PASS (100% successo)";
 
-        auto topRes = CompiledTopologyTests::RunAllTests();
-        auto pntRes = PainterStationContractTests::RunAllTests();
-        auto txbRes = TextureBakingContractTests::RunAllTests();
-        auto pkgRes = AssetPackagingContractTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"TOP", 36}, {"PNT", 10}, {"TXB", 10}, {"PKG", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t topPass = 0, pntPass = 0, txbPass = 0, pkgPass = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "TOP") topPass = c.passedCount;
+                if (c.suiteCode == "PNT") pntPass = c.passedCount;
+                if (c.suiteCode == "TXB") txbPass = c.passedCount;
+                if (c.suiteCode == "PKG") pkgPass = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/36, PNT: " + std::to_string(pntPass) + "/10, TXB: " + std::to_string(txbPass) + "/10, PKG: " + std::to_string(pkgPass) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto topRes = CompiledTopologyTests::RunAllTests();
+            auto pntRes = PainterStationContractTests::RunAllTests();
+            auto txbRes = TextureBakingContractTests::RunAllTests();
+            auto pkgRes = AssetPackagingContractTests::RunAllTests();
 
-        size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
-        size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
-        size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
-        size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
+            size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
+            size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
+            size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
+            size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
 
-        bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
-                       (pntPass == pntRes.size() && pntRes.size() == 10) &&
-                       (txbPass == txbRes.size() && txbRes.size() == 10) &&
-                       (pkgPass == pkgRes.size() && pkgRes.size() == 10);
+            bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
+                           (pntPass == pntRes.size() && pntRes.size() == 10) &&
+                           (txbPass == txbRes.size() && txbRes.size() == 10) &&
+                           (pkgPass == pkgRes.size() && pkgRes.size() == 10);
 
-        r.passed = allPass;
-        r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
-                         ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
-                         ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
-                         ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size());
-        r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+            r.passed = allPass;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
+                             ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
+                             ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
+                             ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size());
+            r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+        }
         results.push_back(r);
     }
 

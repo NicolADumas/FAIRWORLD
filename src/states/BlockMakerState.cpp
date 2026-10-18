@@ -3553,7 +3553,7 @@ void BlockMakerState::RunAssetDigestTrustValidationTests(bool isManualTrigger) {
 
 void BlockMakerState::RunAssetCrashRecoveryValidationTests(bool isManualTrigger) {
     static bool s_hasRunInSession = false;
-    static std::vector<fw::CrashRecoveryTestResult> s_sessionCachedResults;
+    static std::vector<fw::AssetCrashRecoveryTestResult> s_sessionCachedResults;
 
     if (!isManualTrigger && s_hasRunInSession) {
         m_assetCrashRecoveryTestResults = s_sessionCachedResults;

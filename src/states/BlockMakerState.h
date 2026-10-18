@@ -514,7 +514,7 @@ private:
     void RunAssetDigestTrustValidationTests(bool isManualTrigger = false);
 
     // --- BM-F4.3 Transactional Asset Publication & Crash Recovery Suite (CRH-01 .. CRH-10) ---
-    std::vector<fw::CrashRecoveryTestResult> m_assetCrashRecoveryTestResults;
+    std::vector<fw::AssetCrashRecoveryTestResult> m_assetCrashRecoveryTestResults;
     bool m_assetCrashRecoveryTestsExecuted = false;
     void RunAssetCrashRecoveryValidationTests(bool isManualTrigger = false);
 

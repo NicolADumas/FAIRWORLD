@@ -5,6 +5,7 @@
 #include "AssetCrashRecoveryTests.h"
 #include "AssetCrashRecoveryHardeningTests.h"
 #include "AssetDigestTrustTests.h"
+#include "TestRunContext.h"
 #include "blocks/BlockRegistry.h"
 #include "blocks/MaterialRegistry.h"
 #include "blocks/ShapeRegistry.h"
@@ -47,12 +48,14 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
 
         pkg.geometry.vertices.resize(24);
         for (size_t i = 0; i < 24; ++i) {
-            pkg.geometry.vertices[i].position = glm::vec3(static_cast<float>(i % 2), static_cast<float>((i / 2) % 2), static_cast<float>((i / 4) % 2));
-            pkg.geometry.vertices[i].normal = glm::vec3(0.0f, 1.0f, 0.0f);
-            pkg.geometry.vertices[i].uv = glm::vec2(0.0f, 0.0f);
-            pkg.geometry.vertices[i].color = glm::vec4(1.0f);
+            pkg.geometry.vertices[i].position = fw::Vec3{static_cast<float>(i % 2), static_cast<float>((i / 2) % 2), static_cast<float>((i / 4) % 2)};
+            pkg.geometry.vertices[i].normal = fw::Vec3{0.0f, 1.0f, 0.0f};
+            pkg.geometry.vertices[i].color = fw::Vec4{1.0f, 1.0f, 1.0f, 1.0f};
             pkg.geometry.vertices[i].materialID = 1;
-            pkg.geometry.vertices[i].roughMetal = glm::vec2(0.4f, 0.0f);
+            pkg.geometry.vertices[i].roughMetal = fw::Vec2{0.4f, 0.0f};
+            pkg.geometry.vertices[i].ao = 1.0f;
+            pkg.geometry.vertices[i].light = 1.0f;
+            pkg.geometry.vertices[i].emissive = 0.0f;
         }
         pkg.geometry.vertexCount = 24;
 
@@ -447,27 +450,44 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.inputDesc = "Esecuzione suites CRH-01..10 (BM-F4.3), CRH-H01..08 (BM-F4.3.1), DGV-01..10 (BM-F4.2)";
         r.expectedDesc = "Tutte le suite storiche superate al 100% senza regressioni";
 
-        auto crhRes = AssetCrashRecoveryTests::RunAllTests();
-        auto crhHardRes = AssetCrashRecoveryHardeningTests::RunAllTests();
-        auto dgvRes = AssetDigestTrustTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"CRH", 10}, {"CRH-H", 8}, {"DGV", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t passCrh = 0, passCrhHard = 0, passDgv = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "CRH") passCrh = c.passedCount;
+                if (c.suiteCode == "CRH-H") passCrhHard = c.passedCount;
+                if (c.suiteCode == "DGV") passDgv = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "CRH: " + std::to_string(passCrh) + "/10 | CRH-H: " + std::to_string(passCrhHard) + "/8 | DGV: " + std::to_string(passDgv) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto crhRes = AssetCrashRecoveryTests::RunAllTests();
+            auto crhHardRes = AssetCrashRecoveryHardeningTests::RunAllTests();
+            auto dgvRes = AssetDigestTrustTests::RunAllTests();
 
-        size_t passCrh = 0;
-        for (const auto& t : crhRes) if (t.passed) passCrh++;
+            size_t passCrh = 0;
+            for (const auto& t : crhRes) if (t.passed) passCrh++;
 
-        size_t passCrhHard = 0;
-        for (const auto& t : crhHardRes) if (t.passed) passCrhHard++;
+            size_t passCrhHard = 0;
+            for (const auto& t : crhHardRes) if (t.passed) passCrhHard++;
 
-        size_t passDgv = 0;
-        for (const auto& t : dgvRes) if (t.passed) passDgv++;
+            size_t passDgv = 0;
+            for (const auto& t : dgvRes) if (t.passed) passDgv++;
 
-        bool allPass = (passCrh == crhRes.size()) &&
-                       (passCrhHard == crhHardRes.size()) &&
-                       (passDgv == dgvRes.size());
+            bool allPass = (passCrh == crhRes.size()) &&
+                           (passCrhHard == crhHardRes.size()) &&
+                           (passDgv == dgvRes.size());
 
-        r.passed = allPass;
-        r.observedDesc = "CRH: " + std::to_string(passCrh) + "/" + std::to_string(crhRes.size()) +
-                         " | CRH-H: " + std::to_string(passCrhHard) + "/" + std::to_string(crhHardRes.size()) +
-                         " | DGV: " + std::to_string(passDgv) + "/" + std::to_string(dgvRes.size());
+            r.passed = allPass;
+            r.observedDesc = "CRH: " + std::to_string(passCrh) + "/" + std::to_string(crhRes.size()) +
+                             " | CRH-H: " + std::to_string(passCrhHard) + "/" + std::to_string(crhHardRes.size()) +
+                             " | DGV: " + std::to_string(passDgv) + "/" + std::to_string(dgvRes.size());
+            r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+        }
         results.push_back(r);
     }
 

@@ -7,6 +7,7 @@
 #include "AssetCrashRecoveryHardeningTests.h"
 #include "AssetCrashRecoveryTests.h"
 #include "AssetDigestTrustTests.h"
+#include "TestRunContext.h"
 #include "blocks/BlockRegistry.h"
 #include "blocks/MaterialRegistry.h"
 #include "blocks/ShapeRegistry.h"
@@ -54,15 +55,15 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
 
         pkg.geometry.vertices.resize(24);
         for (size_t i = 0; i < 24; ++i) {
-            pkg.geometry.vertices[i].position = glm::vec3(
+            pkg.geometry.vertices[i].position = fw::Vec3{
                 static_cast<float>(i % 2),
                 static_cast<float>((i / 2) % 2),
                 static_cast<float>((i / 4) % 2)
-            );
-            pkg.geometry.vertices[i].normal = glm::vec3(0.0f, 1.0f, 0.0f);
-            pkg.geometry.vertices[i].color = glm::vec4(1.0f);
+            };
+            pkg.geometry.vertices[i].normal = fw::Vec3{0.0f, 1.0f, 0.0f};
+            pkg.geometry.vertices[i].color = fw::Vec4{1.0f, 1.0f, 1.0f, 1.0f};
             pkg.geometry.vertices[i].materialID = 1;
-            pkg.geometry.vertices[i].roughMetal = glm::vec2(0.35f, 0.25f);
+            pkg.geometry.vertices[i].roughMetal = fw::Vec2{0.35f, 0.25f};
             pkg.geometry.vertices[i].ao = 1.0f;
             pkg.geometry.vertices[i].light = 1.0f;
             pkg.geometry.vertices[i].emissive = 0.0f;
@@ -113,9 +114,9 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
                    (inspection.detectedVersion == 1) &&
                    !inspection.hasValidDigest &&
                    canMigrate;
-        r.observedDesc = "Stato: " + SchemaVersionStateToString(inspection.state) +
+        r.observedDesc = std::string("Stato: ") + SchemaVersionStateToString(inspection.state) +
                          ", DetectedVersion: " + std::to_string(inspection.detectedVersion) +
-                         ", CanMigrate: " + (canMigrate ? "true" : "false") +
+                         ", CanMigrate: " + std::string(canMigrate ? "true" : "false") +
                          ", Msg: " + inspection.message;
         r.details = r.passed ? "PASS" : "FAIL: Mancato riconoscimento schema V1 legacy";
         results.push_back(r);
@@ -142,9 +143,9 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         r.passed = (inspection.state == SchemaVersionState::CurrentSchema) &&
                    (inspection.detectedVersion == 2) &&
                    inspection.hasValidDigest;
-        r.observedDesc = "Stato: " + SchemaVersionStateToString(inspection.state) +
+        r.observedDesc = std::string("Stato: ") + SchemaVersionStateToString(inspection.state) +
                          ", DetectedVersion: " + std::to_string(inspection.detectedVersion) +
-                         ", ValidDigest: " + (inspection.hasValidDigest ? "true" : "false");
+                         ", ValidDigest: " + std::string(inspection.hasValidDigest ? "true" : "false");
         r.details = r.passed ? "PASS" : "FAIL: Mancato riconoscimento schema V2 corrente";
         results.push_back(r);
     }
@@ -179,8 +180,8 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
                    (valStrict.integrityStatus == AssetIntegrityStatus::Verified);
         r.observedDesc = "Success: " + std::string(migResult.success ? "true" : "false") +
                          ", Revision: " + std::to_string(migResult.migratedPackage.manifest.revision) +
-                         ", Provenance: " + (hasProvenance ? "true" : "false") +
-                         ", StrictStatus: " + AssetIntegrityStatusToString(valStrict.integrityStatus);
+                         ", Provenance: " + std::string(hasProvenance ? "true" : "false") +
+                         ", StrictStatus: " + std::string(AssetIntegrityStatusToString(valStrict.integrityStatus));
         r.details = r.passed ? "PASS" : "FAIL: Migrazione V1->V2 non conforme";
         results.push_back(r);
     }
@@ -215,10 +216,12 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         for (size_t i = 0; i < origG.vertices.size() && geomMatch; ++i) {
             const auto& vO = origG.vertices[i];
             const auto& vM = migG.vertices[i];
-            if (vO.position != vM.position || vO.normal != vM.normal ||
-                vO.color != vM.color || vO.roughMetal != vM.roughMetal ||
-                vO.materialID != vM.materialID || vO.ao != vM.ao ||
-                vO.light != vM.light || vO.emissive != vM.emissive) {
+            bool posEqual = (vO.position.x == vM.position.x && vO.position.y == vM.position.y && vO.position.z == vM.position.z);
+            bool normEqual = (vO.normal.x == vM.normal.x && vO.normal.y == vM.normal.y && vO.normal.z == vM.normal.z);
+            bool colEqual = (vO.color.x == vM.color.x && vO.color.y == vM.color.y && vO.color.z == vM.color.z && vO.color.w == vM.color.w);
+            bool rmEqual = (vO.roughMetal.x == vM.roughMetal.x && vO.roughMetal.y == vM.roughMetal.y);
+            bool scalarEqual = (vO.materialID == vM.materialID && vO.ao == vM.ao && vO.light == vM.light && vO.emissive == vM.emissive);
+            if (!posEqual || !normEqual || !colEqual || !rmEqual || !scalarEqual) {
                 geomMatch = false;
             }
         }
@@ -233,7 +236,7 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         r.passed = migResult.success && geomMatch;
         r.observedDesc = "VertexCount: " + std::to_string(migG.vertexCount) +
                          ", TriCount: " + std::to_string(migG.triangleCount) +
-                         ", GeometryLossless: " + (geomMatch ? "true" : "false");
+                         ", GeometryLossless: " + std::string(geomMatch ? "true" : "false");
         r.details = r.passed ? "PASS" : "FAIL: Discrepanze geometriche rilevate post-migrazione";
         results.push_back(r);
     }
@@ -308,16 +311,16 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
 
         auto legacyPkg = createLegacyV1Package("fairworld:mig06_composite", 1);
         RawAssetDependency dep1;
-        dep1.assetId = "fairworld:dep_wood";
-        dep1.targetRevision = 2;
-        dep1.revisionPolicy = DependencyRevisionPolicy::ExactRevision;
-        dep1.dependencyType = AssetDependencyType::MaterialPalette;
+        dep1.targetId = "fairworld:dep_wood";
+        dep1.requiredRevision = 2;
+        dep1.revisionPolicy = DependencyRevisionPolicy::Exact;
+        dep1.dependencyType = "material";
 
         RawAssetDependency dep2;
-        dep2.assetId = "fairworld:dep_stone";
-        dep2.targetRevision = 1;
-        dep2.revisionPolicy = DependencyRevisionPolicy::ActiveRevision;
-        dep2.dependencyType = AssetDependencyType::VoxelGeometry;
+        dep2.targetId = "fairworld:dep_stone";
+        dep2.requiredRevision = 1;
+        dep2.revisionPolicy = DependencyRevisionPolicy::Active;
+        dep2.dependencyType = "shape";
 
         legacyPkg.manifest.dependencies = { dep1, dep2 };
 
@@ -328,11 +331,11 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         if (depMatch) {
             const auto& d1 = migResult.migratedPackage.manifest.dependencies[0];
             const auto& d2 = migResult.migratedPackage.manifest.dependencies[1];
-            if (d1.assetId != dep1.assetId || d1.targetRevision != dep1.targetRevision ||
+            if (d1.targetId != dep1.targetId || d1.requiredRevision != dep1.requiredRevision ||
                 d1.revisionPolicy != dep1.revisionPolicy || d1.dependencyType != dep1.dependencyType) {
                 depMatch = false;
             }
-            if (d2.assetId != dep2.assetId || d2.targetRevision != dep2.targetRevision ||
+            if (d2.targetId != dep2.targetId || d2.requiredRevision != dep2.requiredRevision ||
                 d2.revisionPolicy != dep2.revisionPolicy || d2.dependencyType != dep2.dependencyType) {
                 depMatch = false;
             }
@@ -379,10 +382,10 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
                    (insp0.state == SchemaVersionState::UnsupportedSchema) &&
                    !can99 && !can0 &&
                    !mig99.success && !mig0.success;
-        r.observedDesc = "Insp99: " + SchemaVersionStateToString(insp99.state) +
-                         ", Can99: " + (can99 ? "true" : "false") +
-                         ", Insp0: " + SchemaVersionStateToString(insp0.state) +
-                         ", Can0: " + (can0 ? "true" : "false");
+        r.observedDesc = std::string("Insp99: ") + SchemaVersionStateToString(insp99.state) +
+                         ", Can99: " + std::string(can99 ? "true" : "false") +
+                         ", Insp0: " + std::string(SchemaVersionStateToString(insp0.state)) +
+                         ", Can0: " + std::string(can0 ? "true" : "false");
         r.details = r.passed ? "PASS" : "FAIL: Schema sconosciuto non rifiutato categoricamente";
         results.push_back(r);
     }
@@ -407,15 +410,15 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         auto corruptLegacy = createLegacyV1Package("fairworld:mig08_corrupt", 1);
         corruptLegacy.geometry.vertexCount = 999; // Discrepanza che causa fallimento precondizione
 
-        size_t initialBlockCount = bReg.GetCount();
+        size_t initialBlockCount = bReg.GetActiveBlockCount();
         auto migRes = service.MigrateAndPublishPersistent(corruptLegacy, bReg, mReg, sReg, testRoot, true);
 
-        bool registersUntouched = (bReg.GetCount() == initialBlockCount);
+        bool registersUntouched = (bReg.GetActiveBlockCount() == initialBlockCount);
         r.passed = !migRes.success && registersUntouched &&
                    (migRes.finalIntegrityStatus == AssetIntegrityStatus::Rejected);
         r.observedDesc = "Success: " + std::string(migRes.success ? "true" : "false") +
                          ", BlockCountBefore: " + std::to_string(initialBlockCount) +
-                         ", BlockCountAfter: " + std::to_string(bReg.GetCount()) +
+                         ", BlockCountAfter: " + std::to_string(bReg.GetActiveBlockCount()) +
                          ", Error: " + migRes.errorMessage;
         r.details = r.passed ? "PASS" : "FAIL: Rollback transazionale non rispettato su fallimento migrazione";
         results.push_back(r);
@@ -465,24 +468,35 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         r.inputDesc = "Esecuzione aggregata suite BM-F4.4 (DEP), BM-F4.3.1 (CRH-H), BM-F4.3 (CRH), BM-F4.2 (DGV)";
         r.expectedDesc = "Tutte le suite precedenti mantengono 100% PASS senza alcuna regressione";
 
-        auto depResults = AssetDependencyContractTests::RunAllTests();
-        auto crhHResults = AssetCrashRecoveryHardeningTests::RunAllTests();
-        auto crhResults = AssetCrashRecoveryTests::RunAllTests();
-        auto dgvResults = AssetDigestTrustTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"DEP", 10}, {"CRH-H", 8}, {"CRH", 10}, {"DGV", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            r.passed = eval.allDependenciesPassed && (eval.totalDiscovered >= 38) && (eval.totalFailed == 0);
+            r.observedDesc = "Suite storiche eseguite: " + std::to_string(eval.totalPassed) + "/" +
+                             std::to_string(eval.totalDiscovered) + " test superati";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto depResults = AssetDependencyContractTests::RunAllTests();
+            auto crhHResults = AssetCrashRecoveryHardeningTests::RunAllTests();
+            auto crhResults = AssetCrashRecoveryTests::RunAllTests();
+            auto dgvResults = AssetDigestTrustTests::RunAllTests();
 
-        bool allPassed = true;
-        size_t passCount = 0;
-        size_t totalCount = depResults.size() + crhHResults.size() + crhResults.size() + dgvResults.size();
+            bool allPassed = true;
+            size_t passCount = 0;
+            size_t totalCount = depResults.size() + crhHResults.size() + crhResults.size() + dgvResults.size();
 
-        for (const auto& res : depResults) { if (res.passed) passCount++; else allPassed = false; }
-        for (const auto& res : crhHResults) { if (res.passed) passCount++; else allPassed = false; }
-        for (const auto& res : crhResults) { if (res.passed) passCount++; else allPassed = false; }
-        for (const auto& res : dgvResults) { if (res.passed) passCount++; else allPassed = false; }
+            for (const auto& res : depResults) { if (res.passed) passCount++; else allPassed = false; }
+            for (const auto& res : crhHResults) { if (res.passed) passCount++; else allPassed = false; }
+            for (const auto& res : crhResults) { if (res.passed) passCount++; else allPassed = false; }
+            for (const auto& res : dgvResults) { if (res.passed) passCount++; else allPassed = false; }
 
-        r.passed = allPassed && (totalCount >= 38);
-        r.observedDesc = "Suite storiche eseguite: " + std::to_string(passCount) + "/" +
-                         std::to_string(totalCount) + " test superati";
-        r.details = r.passed ? "PASS" : "FAIL: Regressione riscontrata in una suite precedente";
+            r.passed = allPassed && (totalCount >= 38);
+            r.observedDesc = "Suite storiche eseguite: " + std::to_string(passCount) + "/" +
+                             std::to_string(totalCount) + " test superati";
+            r.details = r.passed ? "PASS" : "FAIL: Regressione riscontrata in una suite precedente";
+        }
         results.push_back(r);
     }
 

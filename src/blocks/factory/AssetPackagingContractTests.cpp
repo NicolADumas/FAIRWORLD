@@ -6,6 +6,7 @@
 #include "TextureBakingContractTests.h"
 #include "PainterStationContractTests.h"
 #include "blocks/uv/CompiledTopologyTests.h"
+#include "TestRunContext.h"
 #include "blocks/BlockRegistry.h"
 #include "blocks/MaterialRegistry.h"
 #include "blocks/ShapeRegistry.h"
@@ -470,28 +471,44 @@ std::vector<AssetPackagingTestResult> AssetPackagingContractTests::RunAllTests()
         r.inputDesc = "Esecuzione delle suite pregresse: CompiledTopology (36), Painter (10), TextureBaking (10)";
         r.expectedDesc = "Tutti i 56 test delle suite precedenti risultano superati al 100%";
 
-        auto topRes = CompiledTopologyTests::RunAllTests();
-        auto pntRes = PainterStationContractTests::RunAllTests();
-        auto txbRes = TextureBakingContractTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"TOP", 36}, {"PNT", 10}, {"TXB", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t topPass = 0, pntPass = 0, txbPass = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "TOP") topPass = c.passedCount;
+                if (c.suiteCode == "PNT") pntPass = c.passedCount;
+                if (c.suiteCode == "TXB") txbPass = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/36, PNT: " + std::to_string(pntPass) + "/10, TXB: " + std::to_string(txbPass) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto topRes = CompiledTopologyTests::RunAllTests();
+            auto pntRes = PainterStationContractTests::RunAllTests();
+            auto txbRes = TextureBakingContractTests::RunAllTests();
 
-        size_t topPass = 0;
-        for (const auto& tr : topRes) if (tr.passed) topPass++;
+            size_t topPass = 0;
+            for (const auto& tr : topRes) if (tr.passed) topPass++;
 
-        size_t pntPass = 0;
-        for (const auto& pr : pntRes) if (pr.passed) pntPass++;
+            size_t pntPass = 0;
+            for (const auto& pr : pntRes) if (pr.passed) pntPass++;
 
-        size_t txbPass = 0;
-        for (const auto& xr : txbRes) if (xr.passed) txbPass++;
+            size_t txbPass = 0;
+            for (const auto& xr : txbRes) if (xr.passed) txbPass++;
 
-        bool allTop = (topPass == topRes.size() && topRes.size() == 36);
-        bool allPnt = (pntPass == pntRes.size() && pntRes.size() == 10);
-        bool allTxb = (txbPass == txbRes.size() && txbRes.size() == 10);
+            bool allTop = (topPass == topRes.size() && topRes.size() == 36);
+            bool allPnt = (pntPass == pntRes.size() && pntRes.size() == 10);
+            bool allTxb = (txbPass == txbRes.size() && txbRes.size() == 10);
 
-        r.passed = allTop && allPnt && allTxb;
-        r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
-                         ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
-                         ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size());
-        r.details = r.passed ? "PASS" : "FAIL: Regressione riscontrata nelle suite topologia o texture";
+            r.passed = allTop && allPnt && allTxb;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
+                             ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
+                             ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size());
+            r.details = r.passed ? "PASS" : "FAIL: Regressione riscontrata nelle suite topologia o texture";
+        }
         results.push_back(r);
     }
 

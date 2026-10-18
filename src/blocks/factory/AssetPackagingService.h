@@ -14,6 +14,12 @@
 namespace fw {
 
 // =============================================================================
+// BM-F4.3: CONTRATTI DI TRANSAZIONE PERSISTENTE E CRASH RECOVERY
+// =============================================================================
+
+using TransactionID = std::string;
+
+// =============================================================================
 // BM-F2C: RISULTATO TRANSAZIONE DI PUBBLICAZIONE
 // =============================================================================
 
@@ -26,6 +32,7 @@ struct AssetPublishTransactionResult {
     bool wasRolledBack = false;
     AssetIntegrityStatus integrityStatus = AssetIntegrityStatus::Rejected;
     AssetIntegrityErrorCode errorCode = AssetIntegrityErrorCode::None;
+    TransactionID transactionId;
 };
 
 // =============================================================================
@@ -42,10 +49,8 @@ enum class PublishFaultInjectionPoint : uint8_t {
 };
 
 // =============================================================================
-// BM-F4.3: CONTRATTI DI TRANSAZIONE PERSISTENTE E CRASH RECOVERY
+// BM-F4.3: STATI TRANSAZIONE PERSISTENTE E FAULT POINTS
 // =============================================================================
-
-using TransactionID = std::string;
 
 enum class AssetTransactionState : uint8_t {
     Prepared = 0,    // Transazione allocata, staging dir creata, manifest pronto

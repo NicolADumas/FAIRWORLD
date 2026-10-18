@@ -258,19 +258,31 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     auto recIt = m_lastPublishedRecords.find(package.manifest.assetId);
     if (recIt != m_lastPublishedRecords.end() &&
         recIt->second.packageFingerprint == package.packageFingerprint &&
-        recIt->second.contentDigestSha256 == package.contentDigestSha256 &&
         recIt->second.integrityStatus == valReport.integrityStatus &&
         recIt->second.trustPolicy == effectivePolicy &&
         package.packageFingerprint != 0) {
-        if (existingId != 0 && bReg.IsBlockValid(existingId) && bReg.GetBlock(existingId).stringId == package.manifest.assetId) {
-            result.success = true;
-            result.targetVoxelId = existingId;
-            result.assignedShape = mReg.GetMaterial(existingId).sharedShape;
-            result.integrityStatus = valReport.integrityStatus;
-            result.errorCode = AssetIntegrityErrorCode::None;
-            result.wasZeroWorkHit = true;
-            result.wasRolledBack = false;
-            return result;
+        
+        bool digestMatches = (recIt->second.contentDigestSha256 == package.contentDigestSha256);
+        if (!digestMatches && package.manifest.stage != RawAssetStage::Published) {
+            RawAssetPackage simulated = package;
+            simulated.manifest.stage = RawAssetStage::Published;
+            simulated.manifest.targetRuntimeVoxelId = recIt->second.targetVoxelId;
+            if (simulated.ComputeContentDigestSha256(effectiveRoot) == recIt->second.contentDigestSha256) {
+                digestMatches = true;
+            }
+        }
+
+        if (digestMatches) {
+            if (existingId != 0 && bReg.IsBlockValid(existingId) && bReg.GetBlock(existingId).stringId == package.manifest.assetId) {
+                result.success = true;
+                result.targetVoxelId = existingId;
+                result.assignedShape = mReg.GetMaterial(existingId).sharedShape;
+                result.integrityStatus = valReport.integrityStatus;
+                result.errorCode = AssetIntegrityErrorCode::None;
+                result.wasZeroWorkHit = true;
+                result.wasRolledBack = false;
+                return result;
+            }
         }
     }
 
@@ -401,6 +413,9 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     // FASE 7: COMMIT TRANSAZIONE
     package.manifest.stage = RawAssetStage::Published;
     package.manifest.targetRuntimeVoxelId = targetVoxelId;
+    if (!package.contentDigestSha256.empty()) {
+        package.contentDigestSha256 = package.ComputeContentDigestSha256(effectiveRoot);
+    }
     m_lastPublishedFingerprints[package.manifest.assetId] = package.packageFingerprint;
     m_lastPublishedRecords[package.manifest.assetId] = PublishedAssetRecord{
         package.packageFingerprint,
@@ -550,6 +565,10 @@ std::string AssetPackagingService::GetPublishedPackagePath(const std::string& as
         return (std::filesystem::path(effectiveRoot) / "published" / sanitized / "active.rawpkg").string();
     }
     return (std::filesystem::path(effectiveRoot) / "published" / sanitized / ("rev_" + std::to_string(revision)) / "package.rawpkg").string();
+}
+
+std::string AssetPackagingService::GetActivePublishedPackagePath(const std::string& assetId, const std::string& rootDir) const {
+    return GetPublishedPackagePath(assetId, 0, rootDir);
 }
 
 bool AssetPackagingService::IsValidTransactionId(const TransactionID& txId) {
@@ -756,10 +775,22 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackagePersistent(
     if (std::filesystem::exists(activePkgPath, ec)) {
         RawAssetPackage existingCommitted;
         if (existingCommitted.LoadFromFile(activePkgPath)) {
+            bool digestMatches = (existingCommitted.contentDigestSha256 == package.contentDigestSha256);
+            if (!digestMatches && package.manifest.stage != RawAssetStage::Published) {
+                RawAssetPackage simulated = package;
+                simulated.manifest.stage = RawAssetStage::Published;
+                uint8_t existingId = bReg.GetBlockIdByString(package.manifest.assetId);
+                simulated.manifest.targetRuntimeVoxelId = existingId;
+                if (simulated.ComputeContentDigestSha256(effectiveRoot) == existingCommitted.contentDigestSha256) {
+                    digestMatches = true;
+                }
+            }
+
             if (existingCommitted.manifest.revision == package.manifest.revision &&
                 existingCommitted.packageFingerprint == package.packageFingerprint &&
-                existingCommitted.contentDigestSha256 == package.contentDigestSha256 &&
-                package.packageFingerprint != 0) {
+                digestMatches &&
+                package.packageFingerprint != 0 &&
+                existingCommitted.ComputeContentDigestSha256(effectiveRoot) == existingCommitted.contentDigestSha256) {
                 uint8_t existingId = bReg.GetBlockIdByString(package.manifest.assetId);
                 if (existingId != 0 && bReg.IsBlockValid(existingId)) {
                     result.success = true;
@@ -777,6 +808,7 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackagePersistent(
 
     // 3. Allocazione Transazione e Staging Directory (FASE 2 / FASE 3)
     TransactionID txId = GenerateTransactionId(package.manifest.assetId, package.manifest.revision);
+    result.transactionId = txId;
     std::filesystem::path stagingDir = std::filesystem::path(effectiveRoot) / ".staging" / txId;
     std::filesystem::create_directories(stagingDir, ec);
 
@@ -951,6 +983,13 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackagePersistent(
         return result;
     }
 
+    // Sincronizzazione durevole dei file di pubblicazione con lo stato finale committed e pubblicato
+    package.SaveToFile(activePathStr);
+    package.SaveToFile((pubRevDir / "package.rawpkg").string());
+    journal.contentDigestSha256 = package.contentDigestSha256;
+    journal.SaveToFile((pubRevDir / "commit.journal").string());
+    journal.SaveToFile((pubAssetDir / "active_journal.json").string());
+
     // 8. Pulizia staging completata con successo (SafeRemoveAll previene junction traversal)
     AssetFilesystemAdapter::SafeRemoveAll(stagingDir, effectiveRoot);
 
@@ -1095,7 +1134,10 @@ CrashRecoveryReport AssetPackagingService::RunCrashRecovery(
                             report.recoveredAssetIds.push_back(pkg.manifest.assetId);
 
                             if (bReg && mReg && sReg) {
-                                PublishPackageTransactional(pkg, *bReg, *mReg, *sReg, effectiveRoot, effectivePolicy);
+                                auto pub = PublishPackageTransactional(pkg, *bReg, *mReg, *sReg, effectiveRoot, effectivePolicy);
+                                if (pub.success) {
+                                    pkg.SaveToFile(activePkgFile.string());
+                                }
                             }
                         } else {
                             report.corruptedPackagesFound++;
@@ -1153,7 +1195,7 @@ size_t AssetPackagingService::ReconstructRegistriesFromCommitted(
                     RawAssetPackage pkg;
                     if (pkg.LoadFromFile(pkgPath.string())) {
                         auto val = ValidatePackage(pkg, effectiveRoot, effectivePolicy);
-                        if (val.isValid && VerifyContentDigest(pkg, effectiveRoot)) {
+                        if (val.isValid && pkg.VerifyContentDigest(effectiveRoot, nullptr, nullptr, effectivePolicy)) {
                             candidatePackages.push_back(std::move(pkg));
                         }
                     }

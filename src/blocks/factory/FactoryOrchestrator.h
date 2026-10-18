@@ -10,6 +10,7 @@
 #include "AssetDependencyGraph.h"
 #include "TextureBakingService.h"
 #include "AssetPackagingService.h"
+#include "world/GeometryCompiler.h"
 
 namespace fw {
 

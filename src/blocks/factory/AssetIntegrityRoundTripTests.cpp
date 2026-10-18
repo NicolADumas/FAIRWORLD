@@ -17,6 +17,7 @@
 #include "AssetPackagingContractTests.h"
 #include "TransactionIntegrityAuditTests.h"
 #include "SculptedMeshRuntimeBridgeTests.h"
+#include "TestRunContext.h"
 
 #include <filesystem>
 #include <fstream>
@@ -185,13 +186,13 @@ std::vector<AssetIntegrityTestResult> AssetIntegrityRoundTripTests::RunAllTests(
         // Configura layer pittorico
         PaintLayer layer;
         layer.name = "BaseAlbedo";
-        layer.visible = true;
+        layer.isVisible = true;
         layer.opacity = 1.0f;
-        layer.blendMode = PaintBlendMode::Normal;
-        layer.bitmap = ImageBitmap(16, 16, PixelFormat::RGBA8_Straight);
+        layer.blendMode = PaintLayerBlendMode::Normal;
+        layer.pixelBuffer = ImageBitmap(16, 16, TexturePixelFormat::RGBA8, TextureColorSpace::sRGB);
         for (uint32_t y = 0; y < 16; ++y) {
             for (uint32_t x = 0; x < 16; ++x) {
-                layer.bitmap.SetPixel(x, y, 200, 100, 50, 255);
+                layer.pixelBuffer.SetPixel(x, y, glm::vec4(200.0f / 255.0f, 100.0f / 255.0f, 50.0f / 255.0f, 1.0f));
             }
         }
         draft->paintLayers.push_back(layer);
@@ -480,12 +481,12 @@ std::vector<AssetIntegrityTestResult> AssetIntegrityRoundTripTests::RunAllTests(
         pkgB.geometry.vertices.resize(24);
         pkgB.geometry.vertexCount = 24;
 
-        packaging.SetFaultInjectionPoint(PublishFaultInjectionPoint::FailAfterMaterialMutation);
+        packaging.SetTestFaultInjection(PublishFaultInjectionPoint::FailAfterMaterialMutation);
         auto resB = packaging.PublishPackageTransactional(pkgB, bReg, mReg, sReg);
         bool bRolledBack = !resB.success && resB.wasRolledBack;
 
         // Reset fault injection
-        packaging.SetFaultInjectionPoint(PublishFaultInjectionPoint::None);
+        packaging.SetTestFaultInjection(PublishFaultInjectionPoint::None);
 
         // VERIFICA CRUCIALE: la forma in sReg deve esistere ancora!
         const auto* sDefAfter = sReg.GetShapeDef(sharedHandle);
@@ -552,35 +553,54 @@ std::vector<AssetIntegrityTestResult> AssetIntegrityRoundTripTests::RunAllTests(
         r.inputDesc = "Esecuzione di TOP(36), PNT(10), TXB(10), PKG(10), TRX(10), SBR(10)";
         r.expectedDesc = "Tutti gli 86 test delle suite sopra menzionate risultano PASS al 100%";
 
-        auto topRes = CompiledTopologyTests::RunAllTests();
-        auto pntRes = PainterStationContractTests::RunAllTests();
-        auto txbRes = TextureBakingContractTests::RunAllTests();
-        auto pkgRes = AssetPackagingContractTests::RunAllTests();
-        auto trxRes = TransactionIntegrityAuditTests::RunAllTests();
-        auto sbrRes = SculptedMeshRuntimeBridgeTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"TOP", 36}, {"PNT", 10}, {"TXB", 10}, {"PKG", 10}, {"TRX", 10}, {"SBR", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t topPass = 0, pntPass = 0, txbPass = 0, pkgPass = 0, trxPass = 0, sbrPass = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "TOP") topPass = c.passedCount;
+                if (c.suiteCode == "PNT") pntPass = c.passedCount;
+                if (c.suiteCode == "TXB") txbPass = c.passedCount;
+                if (c.suiteCode == "PKG") pkgPass = c.passedCount;
+                if (c.suiteCode == "TRX") trxPass = c.passedCount;
+                if (c.suiteCode == "SBR") sbrPass = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/36, PNT: " + std::to_string(pntPass) + "/10, TXB: " + std::to_string(txbPass) + "/10, PKG: " + std::to_string(pkgPass) + "/10, TRX: " + std::to_string(trxPass) + "/10, SBR: " + std::to_string(sbrPass) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto topRes = CompiledTopologyTests::RunAllTests();
+            auto pntRes = PainterStationContractTests::RunAllTests();
+            auto txbRes = TextureBakingContractTests::RunAllTests();
+            auto pkgRes = AssetPackagingContractTests::RunAllTests();
+            auto trxRes = TransactionIntegrityAuditTests::RunAllTests();
+            auto sbrRes = SculptedMeshRuntimeBridgeTests::RunAllTests();
 
-        size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
-        size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
-        size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
-        size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
-        size_t trxPass = 0; for (const auto& rr : trxRes) if (rr.passed) trxPass++;
-        size_t sbrPass = 0; for (const auto& sr : sbrRes) if (sr.passed) sbrPass++;
+            size_t topPass = 0; for (const auto& tr : topRes) if (tr.passed) topPass++;
+            size_t pntPass = 0; for (const auto& pr : pntRes) if (pr.passed) pntPass++;
+            size_t txbPass = 0; for (const auto& xr : txbRes) if (xr.passed) txbPass++;
+            size_t pkgPass = 0; for (const auto& kr : pkgRes) if (kr.passed) pkgPass++;
+            size_t trxPass = 0; for (const auto& rr : trxRes) if (rr.passed) trxPass++;
+            size_t sbrPass = 0; for (const auto& sr : sbrRes) if (sr.passed) sbrPass++;
 
-        bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
-                       (pntPass == pntRes.size() && pntRes.size() == 10) &&
-                       (txbPass == txbRes.size() && txbRes.size() == 10) &&
-                       (pkgPass == pkgRes.size() && pkgRes.size() == 10) &&
-                       (trxPass == trxRes.size() && trxRes.size() == 10) &&
-                       (sbrPass == sbrRes.size() && sbrRes.size() == 10);
+            bool allPass = (topPass == topRes.size() && topRes.size() == 36) &&
+                           (pntPass == pntRes.size() && pntRes.size() == 10) &&
+                           (txbPass == txbRes.size() && txbRes.size() == 10) &&
+                           (pkgPass == pkgRes.size() && pkgRes.size() == 10) &&
+                           (trxPass == trxRes.size() && trxRes.size() == 10) &&
+                           (sbrPass == sbrRes.size() && sbrRes.size() == 10);
 
-        r.passed = allPass;
-        r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
-                         ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
-                         ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
-                         ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size()) +
-                         ", TRX: " + std::to_string(trxPass) + "/" + std::to_string(trxRes.size()) +
-                         ", SBR: " + std::to_string(sbrPass) + "/" + std::to_string(sbrRes.size());
-        r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+            r.passed = allPass;
+            r.observedDesc = "TOP: " + std::to_string(topPass) + "/" + std::to_string(topRes.size()) +
+                             ", PNT: " + std::to_string(pntPass) + "/" + std::to_string(pntRes.size()) +
+                             ", TXB: " + std::to_string(txbPass) + "/" + std::to_string(txbRes.size()) +
+                             ", PKG: " + std::to_string(pkgPass) + "/" + std::to_string(pkgRes.size()) +
+                             ", TRX: " + std::to_string(trxPass) + "/" + std::to_string(trxRes.size()) +
+                             ", SBR: " + std::to_string(sbrPass) + "/" + std::to_string(sbrRes.size());
+            r.details = r.passed ? "PASS" : "FAIL: Regressione rilevata nelle suite precedenti";
+        }
         results.push_back(r);
     }
 

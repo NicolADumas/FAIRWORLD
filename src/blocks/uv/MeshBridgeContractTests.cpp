@@ -12,6 +12,7 @@
 #include "blocks/uv/TextureReprojectionContractTests.h"
 #include "blocks/uv/UVFactoryIntegrationTests.h"
 #include "blocks/uv/CompiledTopologyTests.h"
+#include "TestRunContext.h"
 #include <cmath>
 #include <set>
 #include <map>
@@ -486,34 +487,52 @@ std::vector<MeshBridgeContractTestResult> MeshBridgeContractTests::RunAllTests()
         int preDiscovered = 0;
         int prePassed = 0;
         int preFailed = 0;
+        bool passed = false;
+        std::string obs;
+        std::string det;
 
-        auto accumulate = [&](auto testResults) {
-            for (const auto& tr : testResults) {
-                preDiscovered++;
-                if (tr.passed) prePassed++;
-                else preFailed++;
-            }
-        };
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"UVP", 15}, {"UVG", 18}, {"UVK", 18}, {"UVE", 18},
+                {"UVR", 20}, {"UVI", 10}, {"TOP", 36}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            preDiscovered = static_cast<int>(eval.totalDiscovered);
+            prePassed = static_cast<int>(eval.totalPassed);
+            preFailed = static_cast<int>(eval.totalFailed);
+            passed = eval.allDependenciesPassed && (preDiscovered == 135) && (prePassed == 135) && (preFailed == 0);
+            obs = eval.observedSummary;
+            det = passed ? "Scudo di regressione perfetto: tutti i 135 test preesistenti superati."
+                         : eval.failureDetails;
+        } else {
+            auto accumulate = [&](auto testResults) {
+                for (const auto& tr : testResults) {
+                    preDiscovered++;
+                    if (tr.passed) prePassed++;
+                    else preFailed++;
+                }
+            };
 
-        accumulate(PrimitiveUVContractTests::RunAllTests());
-        accumulate(GeneralUVContractTests::RunAllTests());
-        accumulate(AtlasUVContractTests::RunAllTests());
-        accumulate(UVEditorContractTests::RunAllTests());
-        accumulate(TextureReprojectionContractTests::RunAllTests());
-        accumulate(UVFactoryIntegrationTests::RunAllTests());
-        accumulate(CompiledTopologyTests::RunAllTests());
+            accumulate(PrimitiveUVContractTests::RunAllTests());
+            accumulate(GeneralUVContractTests::RunAllTests());
+            accumulate(AtlasUVContractTests::RunAllTests());
+            accumulate(UVEditorContractTests::RunAllTests());
+            accumulate(TextureReprojectionContractTests::RunAllTests());
+            accumulate(UVFactoryIntegrationTests::RunAllTests());
+            accumulate(CompiledTopologyTests::RunAllTests());
 
-        bool passed = (preDiscovered == 135) && (prePassed == 135) && (preFailed == 0);
-        std::string obs = "Discovered: " + std::to_string(preDiscovered) +
-                          ", Passed: " + std::to_string(prePassed) +
-                          ", Failed: " + std::to_string(preFailed);
+            passed = (preDiscovered == 135) && (prePassed == 135) && (preFailed == 0);
+            obs = "Discovered: " + std::to_string(preDiscovered) +
+                  ", Passed: " + std::to_string(prePassed) +
+                  ", Failed: " + std::to_string(preFailed);
+            det = passed ? "Scudo di regressione perfetto: tutti i 135 test preesistenti superati."
+                         : "Rilevata regressione su uno o piu test preesistenti.";
+        }
 
         addResult("MBR-10", "Pre-existing 135 Tests Regression Shield",
                   "Esecuzione consolidata suites UVP(15), UVG(18), UVK(18), UVE(18), UVR(20), UVI(10), TOP(36)",
                   "135/135 test preesistenti PASS, 0 FAIL, 0 regressioni",
-                  obs, passed,
-                  passed ? "Scudo di regressione perfetto: tutti i 135 test preesistenti superati."
-                         : "Rilevata regressione su uno o piu test preesistenti.");
+                  obs, passed, det);
     }
 
     // -------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 #include "ProductionStationAdapters.h"
 #include "PainterStationContractTests.h"
 #include "blocks/uv/CompiledTopologyTests.h"
+#include "TestRunContext.h"
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -334,13 +335,13 @@ std::vector<TextureBakingTestResult> TextureBakingContractTests::RunAllTests() {
         auto* draft = orch.GetCurrentDraft();
         PaintLayer l1;
         l1.name = "LayerA";
-        l1.blendMode = PaintBlendMode::Normal;
+        l1.blendMode = PaintLayerBlendMode::Normal;
         l1.opacity = 0.8f;
         l1.pixelBuffer = ImageBitmap(32, 32, TexturePixelFormat::RGBA8, TextureColorSpace::sRGB, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
         PaintLayer l2;
         l2.name = "LayerB";
-        l2.blendMode = PaintBlendMode::Multiply;
+        l2.blendMode = PaintLayerBlendMode::Multiply;
         l2.opacity = 0.5f;
         l2.pixelBuffer = ImageBitmap(32, 32, TexturePixelFormat::RGBA8, TextureColorSpace::sRGB, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
 
@@ -359,8 +360,8 @@ std::vector<TextureBakingTestResult> TextureBakingContractTests::RunAllTests() {
         bool layersCountOk = (draft->paintLayers.size() == 2);
         bool name1Ok = (draft->paintLayers[0].name == "LayerA");
         bool name2Ok = (draft->paintLayers[1].name == "LayerB");
-        bool blend1Ok = (draft->paintLayers[0].blendMode == PaintBlendMode::Normal);
-        bool blend2Ok = (draft->paintLayers[1].blendMode == PaintBlendMode::Multiply);
+        bool blend1Ok = (draft->paintLayers[0].blendMode == PaintLayerBlendMode::Normal);
+        bool blend2Ok = (draft->paintLayers[1].blendMode == PaintLayerBlendMode::Multiply);
         bool hash1Ok = (draft->paintLayers[0].pixelBuffer.ComputeContentHash() == hashL1_pre);
         bool hash2Ok = (draft->paintLayers[1].pixelBuffer.ComputeContentHash() == hashL2_pre);
 
@@ -382,26 +383,42 @@ std::vector<TextureBakingTestResult> TextureBakingContractTests::RunAllTests() {
         r.inputDesc = "Esecuzione delle suite autorevoli CompiledTopologyTests (36) e PainterStationContractTests (10)";
         r.expectedDesc = "Tutti i test delle suite superati senza regressioni (46/46 PASS)";
 
-        auto topResults = CompiledTopologyTests::RunAllTests();
-        auto pntResults = PainterStationContractTests::RunAllTests();
+        if (TestRunContext::Instance().IsActive()) {
+            static const std::vector<std::pair<std::string, size_t>> deps = {
+                {"TOP", 36}, {"PNT", 10}
+            };
+            auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
+            size_t topPass = 0;
+            size_t pntPass = 0;
+            for (const auto& c : eval.checks) {
+                if (c.suiteCode == "TOP") topPass = c.passedCount;
+                if (c.suiteCode == "PNT") pntPass = c.passedCount;
+            }
+            r.passed = eval.allDependenciesPassed;
+            r.observedDesc = "CompiledTopology: " + std::to_string(topPass) + "/36, PainterStation: " + std::to_string(pntPass) + "/10";
+            r.details = r.passed ? "PASS" : "FAIL: " + eval.failureDetails;
+        } else {
+            auto topResults = CompiledTopologyTests::RunAllTests();
+            auto pntResults = PainterStationContractTests::RunAllTests();
 
-        size_t topPass = 0;
-        for (const auto& tr : topResults) {
-            if (tr.passed) topPass++;
+            size_t topPass = 0;
+            for (const auto& tr : topResults) {
+                if (tr.passed) topPass++;
+            }
+
+            size_t pntPass = 0;
+            for (const auto& pr : pntResults) {
+                if (pr.passed) pntPass++;
+            }
+
+            bool allTopPass = (topPass == topResults.size() && topResults.size() == 36);
+            bool allPntPass = (pntPass == pntResults.size() && pntResults.size() == 10);
+
+            r.passed = allTopPass && allPntPass;
+            r.observedDesc = "CompiledTopology: " + std::to_string(topPass) + "/" + std::to_string(topResults.size()) +
+                             ", PainterStation: " + std::to_string(pntPass) + "/" + std::to_string(pntResults.size());
+            r.details = r.passed ? "PASS" : "FAIL: Rilevata regressione in FG-01R o Painter";
         }
-
-        size_t pntPass = 0;
-        for (const auto& pr : pntResults) {
-            if (pr.passed) pntPass++;
-        }
-
-        bool allTopPass = (topPass == topResults.size() && topResults.size() == 36);
-        bool allPntPass = (pntPass == pntResults.size() && pntResults.size() == 10);
-
-        r.passed = allTopPass && allPntPass;
-        r.observedDesc = "CompiledTopology: " + std::to_string(topPass) + "/" + std::to_string(topResults.size()) +
-                         ", PainterStation: " + std::to_string(pntPass) + "/" + std::to_string(pntResults.size());
-        r.details = r.passed ? "PASS" : "FAIL: Rilevata regressione in FG-01R o Painter";
         results.push_back(r);
     }
 

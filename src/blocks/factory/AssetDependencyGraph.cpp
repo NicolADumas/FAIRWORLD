@@ -511,4 +511,142 @@ AssetDependencyGraph AssetDependencyGraph::BuildFromCommitted(
     return graph;
 }
 
+// =============================================================================
+// BM-FC4: DRAFT PRODUCTION PIPELINE DAG IMPLEMENTATION
+// =============================================================================
+
+void AssetDependencyGraph::InitializeStandardGraph() {
+    m_pipelineNodes.clear();
+    m_pipelineDownstream.clear();
+
+    for (uint8_t i = 0; i < static_cast<uint8_t>(DependencyNodeID::Count); ++i) {
+        DependencyNodeID id = static_cast<DependencyNodeID>(i);
+        m_pipelineNodes[id] = { false, 0 };
+    }
+
+    m_pipelineDownstream[DependencyNodeID::ShapeGeometry] = {
+        DependencyNodeID::TopologyUV,
+        DependencyNodeID::SurfaceLayout,
+        DependencyNodeID::RawPhysicsProxy,
+        DependencyNodeID::QualityControlAudit
+    };
+
+    m_pipelineDownstream[DependencyNodeID::SculptGeometry] = {
+        DependencyNodeID::TopologyUV,
+        DependencyNodeID::SurfaceLayout,
+        DependencyNodeID::RawPhysicsProxy,
+        DependencyNodeID::QualityControlAudit
+    };
+
+    m_pipelineDownstream[DependencyNodeID::SurfaceLayout] = {
+        DependencyNodeID::TextureResources,
+        DependencyNodeID::PaintLayers
+    };
+
+    m_pipelineDownstream[DependencyNodeID::TextureResources] = {
+        DependencyNodeID::MaterialParameters
+    };
+
+    m_pipelineDownstream[DependencyNodeID::PaintLayers] = {
+        DependencyNodeID::QualityControlAudit,
+        DependencyNodeID::PackageArtifact
+    };
+
+    m_pipelineDownstream[DependencyNodeID::MaterialParameters] = {
+        DependencyNodeID::QualityControlAudit,
+        DependencyNodeID::PackageArtifact
+    };
+
+    m_pipelineDownstream[DependencyNodeID::RawPhysicsProxy] = {
+        DependencyNodeID::QualityControlAudit,
+        DependencyNodeID::PackageArtifact
+    };
+
+    m_pipelineDownstream[DependencyNodeID::TopologyUV] = {
+        DependencyNodeID::QualityControlAudit,
+        DependencyNodeID::PackageArtifact
+    };
+
+    m_pipelineDownstream[DependencyNodeID::QualityControlAudit] = {
+        DependencyNodeID::PackageArtifact
+    };
+}
+
+bool AssetDependencyGraph::InvalidateNode(DependencyNodeID node, uint64_t fingerprint) {
+    if (m_pipelineDownstream.empty()) {
+        InitializeStandardGraph();
+    }
+
+    auto& st = m_pipelineNodes[node];
+    if (!st.dirty && st.fingerprint == fingerprint && fingerprint != 0) {
+        return false;
+    }
+
+    st.dirty = true;
+    st.fingerprint = fingerprint;
+
+    std::vector<DependencyNodeID> queue;
+    auto it = m_pipelineDownstream.find(node);
+    if (it != m_pipelineDownstream.end()) {
+        queue = it->second;
+    }
+
+    std::unordered_set<DependencyNodeID> visited;
+    for (auto d : queue) visited.insert(d);
+
+    size_t qIdx = 0;
+    while (qIdx < queue.size()) {
+        DependencyNodeID curr = queue[qIdx++];
+        m_pipelineNodes[curr].dirty = true;
+
+        auto dit = m_pipelineDownstream.find(curr);
+        if (dit != m_pipelineDownstream.end()) {
+            for (auto nextDown : dit->second) {
+                if (visited.insert(nextDown).second) {
+                    queue.push_back(nextDown);
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+void AssetDependencyGraph::MarkNodeClean(DependencyNodeID node, uint64_t fingerprint) {
+    auto& st = m_pipelineNodes[node];
+    st.dirty = false;
+    st.fingerprint = fingerprint;
+}
+
+bool AssetDependencyGraph::IsNodeDirty(DependencyNodeID node) const {
+    auto it = m_pipelineNodes.find(node);
+    if (it != m_pipelineNodes.end()) {
+        return it->second.dirty;
+    }
+    return true;
+}
+
+uint64_t AssetDependencyGraph::GetNodeFingerprint(DependencyNodeID node) const {
+    auto it = m_pipelineNodes.find(node);
+    if (it != m_pipelineNodes.end()) {
+        return it->second.fingerprint;
+    }
+    return 0;
+}
+
+std::vector<DependencyNodeID> AssetDependencyGraph::GetEvaluationOrder() const {
+    return {
+        DependencyNodeID::ShapeGeometry,
+        DependencyNodeID::SculptGeometry,
+        DependencyNodeID::SurfaceLayout,
+        DependencyNodeID::TextureResources,
+        DependencyNodeID::PaintLayers,
+        DependencyNodeID::MaterialParameters,
+        DependencyNodeID::RawPhysicsProxy,
+        DependencyNodeID::TopologyUV,
+        DependencyNodeID::QualityControlAudit,
+        DependencyNodeID::PackageArtifact
+    };
+}
+
 } // namespace fw

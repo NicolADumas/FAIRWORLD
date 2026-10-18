@@ -1,0 +1,1122 @@
+{
+    "fingerprints": {
+        "contentDigestSha256": "2b28556e12a6b0d3f8fc71154c46c0c67d9f01f55cd097bfe6f407abdb8d465d",
+        "distributionChecksum": 9136196054061474734,
+        "packageFingerprint": 1000039,
+        "paintFingerprint": 0
+    },
+    "geometry": {
+        "bounds": {
+            "max": [
+                0.5,
+                0.5,
+                0.5
+            ],
+            "min": [
+                -0.5,
+                -0.5,
+                -0.5
+            ]
+        },
+        "faces": [
+            {
+                "faceNormal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "indices": [
+                    0,
+                    1,
+                    2,
+                    5
+                ],
+                "matIndex": 0,
+                "surfaceId": 0
+            },
+            {
+                "faceNormal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "indices": [
+                    6,
+                    7,
+                    8,
+                    11
+                ],
+                "matIndex": 1,
+                "surfaceId": 1
+            },
+            {
+                "faceNormal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "indices": [
+                    12,
+                    13,
+                    14,
+                    17
+                ],
+                "matIndex": 2,
+                "surfaceId": 2
+            },
+            {
+                "faceNormal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "indices": [
+                    18,
+                    19,
+                    20,
+                    23
+                ],
+                "matIndex": 3,
+                "surfaceId": 3
+            },
+            {
+                "faceNormal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "indices": [
+                    24,
+                    25,
+                    26,
+                    29
+                ],
+                "matIndex": 4,
+                "surfaceId": 4
+            },
+            {
+                "faceNormal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "indices": [
+                    30,
+                    31,
+                    32,
+                    35
+                ],
+                "matIndex": 5,
+                "surfaceId": 5
+            }
+        ],
+        "triangleCount": 6,
+        "vertexCount": 36,
+        "vertices": [
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    -1.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    -0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    -0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "pos": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "ao": 1.0,
+                "color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "emissive": 0.0,
+                "light": 1.0,
+                "materialID": 0,
+                "normal": [
+                    0.0,
+                    1.0,
+                    0.0
+                ],
+                "pos": [
+                    -0.5,
+                    0.5,
+                    0.5
+                ],
+                "roughMetal": [
+                    0.0,
+                    1.0
+                ]
+            }
+        ]
+    },
+    "geometrySource": 0,
+    "graphics": {
+        "albedoMapUri": "",
+        "alpha": 1.0,
+        "baseColor": [
+            1.0,
+            1.0,
+            1.0
+        ],
+        "behaviors": 0,
+        "emissive": 0.0,
+        "emissiveMapUri": "",
+        "metallic": 0.0,
+        "normalMapUri": "",
+        "ormMapUri": "",
+        "roughness": 1.0,
+        "textureFingerprint": 0
+    },
+    "manifest": {
+        "assetId": "fairworld:pkg_roundtrip_03",
+        "author": "LocalAuthor",
+        "creationTimestamp": 1792361590,
+        "displayName": "PKG Roundtrip 03",
+        "lastModifiedTimestamp": 1792361590,
+        "revision": 1,
+        "schemaVersion": 2,
+        "stage": 2,
+        "targetRuntimeVoxelId": 0
+    },
+    "physics": {
+        "collisionEnabled": true,
+        "density": 1000.0,
+        "friction": 0.6000000238418579,
+        "mass": 1.0,
+        "massMode": 0,
+        "motionType": 0,
+        "restitution": 0.0
+    },
+    "sculptTopologyJson": "",
+    "shape": {
+        "id": 0,
+        "revision": 1,
+        "supportsCollisionCompilation": false,
+        "supportsVisualCompilation": true,
+        "type": 1
+    },
+    "transform": {
+        "pivot": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "position": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "rotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "scale": [
+            1.0,
+            1.0,
+            1.0
+        ]
+    }
+}

@@ -54,15 +54,42 @@ struct DependencyNodeInfo {
 };
 
 // =============================================================================
+// BM-FC4: DRAFT PRODUCTION PIPELINE DEPENDENCY NODES
+// =============================================================================
+
+enum class DependencyNodeID : uint8_t {
+    ShapeGeometry = 0,
+    SculptGeometry = 1,
+    TopologyUV = 2,
+    SurfaceLayout = 3,
+    TextureResources = 4,
+    PaintLayers = 5,
+    MaterialParameters = 6,
+    RawPhysicsProxy = 7,
+    QualityControlAudit = 8,
+    PackageArtifact = 9,
+    Count = 10
+};
+
+// =============================================================================
 // BM-F4.4: ASSET DEPENDENCY GRAPH & REFERENTIAL INTEGRITY
 // Gestisce nodi, archi diretti/inversi, ordinamento topologico deterministico,
 // rilevamento cicli, validazione referenziale e invalidazione mirata Zero-Work.
+// Supporta anche la pipeline DAG interna per la produzione del Draft (BM-FC4).
 // =============================================================================
 
 class AssetDependencyGraph {
 public:
     AssetDependencyGraph() = default;
     ~AssetDependencyGraph() = default;
+
+    // --- Draft Pipeline DAG Operations (BM-FC4 / FC-4 .. FC-6) ---
+    void InitializeStandardGraph();
+    bool InvalidateNode(DependencyNodeID node, uint64_t fingerprint);
+    void MarkNodeClean(DependencyNodeID node, uint64_t fingerprint);
+    bool IsNodeDirty(DependencyNodeID node) const;
+    uint64_t GetNodeFingerprint(DependencyNodeID node) const;
+    std::vector<DependencyNodeID> GetEvaluationOrder() const;
 
     // Registrazione / aggiornamento nodo nel grafo
     void AddNode(
@@ -126,6 +153,13 @@ private:
     std::unordered_map<std::string, DependencyNodeInfo> m_nodes;
     std::unordered_map<std::string, std::vector<AssetDependency>> m_adjacency;
     std::unordered_map<std::string, std::vector<std::string>> m_reverseAdjacency;
+
+    struct PipelineNodeState {
+        bool dirty = true;
+        uint64_t fingerprint = 0;
+    };
+    std::unordered_map<DependencyNodeID, PipelineNodeState> m_pipelineNodes;
+    std::unordered_map<DependencyNodeID, std::vector<DependencyNodeID>> m_pipelineDownstream;
 };
 
 } // namespace fw
