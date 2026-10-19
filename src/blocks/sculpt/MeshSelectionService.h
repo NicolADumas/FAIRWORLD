@@ -93,6 +93,10 @@ public:
     EdgeID GetActiveEdge() const { return m_activeEdge; }
     void SetActiveEdge(EdgeID id) { m_activeEdge = id; }
 
+    // --- Selezione Topologica Edge Loop & Ring (BM-S1) ---
+    bool SelectEdgeLoop(const EditableMesh& mesh, EdgeID startEdge = INVALID_EDGE_ID, SelectionOp op = SelectionOp::Replace);
+    bool SelectEdgeRing(const EditableMesh& mesh, EdgeID startEdge = INVALID_EDGE_ID, SelectionOp op = SelectionOp::Replace);
+
     // --- Gestione Selezione Facce ---
     void SelectFace(FaceID id, SelectionOp op = SelectionOp::Replace);
     void DeselectFace(FaceID id);

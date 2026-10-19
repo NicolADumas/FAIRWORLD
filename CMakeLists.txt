@@ -48,6 +48,7 @@ list(REMOVE_ITEM CORE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/modules/GeometryNodes.cpp"
     "${CMAKE_SOURCE_DIR}/src/core/app/main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/uv/uv_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/blocks/sculpt/sculpt_tests_main.cpp"
 )
 file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
 
@@ -154,6 +155,18 @@ add_custom_command(TARGET FairworldUVTests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different 
         "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
         $<TARGET_FILE_DIR:FairworldUVTests>
+)
+
+# --- 5. TEST RUNNER HEADLESS SCULPTING (FairworldSculptTests) ---
+add_executable(FairworldSculptTests src/blocks/sculpt/sculpt_tests_main.cpp)
+target_link_libraries(FairworldSculptTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldSculptTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldSculptTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldSculptTests>
 )
 
 

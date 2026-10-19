@@ -4,8 +4,34 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace fw {
+
+namespace {
+
+// =============================================================================
+// VERIFICA DI FINITEZZA IEEE-754 A LIVELLO DI BIT (IMMUNE A /fp:fast)
+// =============================================================================
+
+inline bool IsFiniteFloat(float val) noexcept {
+    static_assert(sizeof(float) == sizeof(uint32_t), "32-bit float required");
+    uint32_t bits = 0;
+    std::memcpy(&bits, &val, sizeof(float));
+    // In IEEE-754 single precision: esponente a 8 bit (bit 23-30).
+    // Se l'esponente e' 0xFF (maschera 0x7F800000u), il valore e' NaN o +/-Infinito.
+    return (bits & 0x7F800000u) != 0x7F800000u;
+}
+
+inline bool IsFiniteVec3(const glm::vec3& v) noexcept {
+    return IsFiniteFloat(v.x) && IsFiniteFloat(v.y) && IsFiniteFloat(v.z);
+}
+
+inline bool IsFiniteQuat(const glm::quat& q) noexcept {
+    return IsFiniteFloat(q.x) && IsFiniteFloat(q.y) && IsFiniteFloat(q.z) && IsFiniteFloat(q.w);
+}
+
+} // anonymous namespace
 
 // =============================================================================
 // QUERY GEOMETRICHE E HELPER
@@ -152,26 +178,26 @@ ModelingOperationResult MeshModelingService::Move(EditableMesh& mesh,
     res.oldGeometryRev = mesh.GetGeometryRevision();
     res.oldAttributeRev = mesh.GetAttributeRevision();
 
+    // 1. Rifiuto immediato di NaN, +Inf e -Inf PRIMA di qualsiasi operazione o controllo Zero-Work
+    if (!IsFiniteVec3(delta)) {
+        res.success = false;
+        res.errorMessage = "Move delta contains NaN or Infinite components.";
+        return res;
+    }
+
     glm::vec3 effectiveDelta(
         axisConstraint.x ? delta.x : 0.0f,
         axisConstraint.y ? delta.y : 0.0f,
         axisConstraint.z ? delta.z : 0.0f
     );
 
-    // Zero-Work contract: se delta e' nullo o nessun vertice selezionato, nessun incremento
+    // 2. Zero-Work contract: se delta e' nullo o nessun vertice selezionato, nessun incremento
     if (vertices.empty() || glm::length(effectiveDelta) < 1e-6f) {
         res.success = true;
         res.geometryChanged = false;
         res.newTopologyRev = res.oldTopologyRev;
         res.newGeometryRev = res.oldGeometryRev;
         res.newAttributeRev = res.oldAttributeRev;
-        return res;
-    }
-
-    // Validazione NaN / Inf
-    if (!std::isfinite(effectiveDelta.x) || !std::isfinite(effectiveDelta.y) || !std::isfinite(effectiveDelta.z)) {
-        res.success = false;
-        res.errorMessage = "Move delta contains NaN or Infinite components.";
         return res;
     }
 
@@ -215,19 +241,27 @@ ModelingOperationResult MeshModelingService::Rotate(EditableMesh& mesh,
     res.oldGeometryRev = mesh.GetGeometryRevision();
     res.oldAttributeRev = mesh.GetAttributeRevision();
 
+    // 1. Rifiuto immediato di parametri non finiti PRIMA di qualsiasi operazione o controllo Zero-Work
+    if (!IsFiniteQuat(rotation) || !IsFiniteVec3(pivot)) {
+        res.success = false;
+        res.errorMessage = "Rotate parameters contain NaN or Infinite values.";
+        return res;
+    }
+
     float angle = glm::angle(rotation);
+    if (!IsFiniteFloat(angle)) {
+        res.success = false;
+        res.errorMessage = "Rotate angle is non-finite.";
+        return res;
+    }
+
+    // 2. Zero-Work contract
     if (vertices.empty() || std::abs(angle) < 1e-6f) {
         res.success = true;
         res.geometryChanged = false;
         res.newTopologyRev = res.oldTopologyRev;
         res.newGeometryRev = res.oldGeometryRev;
         res.newAttributeRev = res.oldAttributeRev;
-        return res;
-    }
-
-    if (!std::isfinite(angle) || !std::isfinite(pivot.x) || !std::isfinite(pivot.y) || !std::isfinite(pivot.z)) {
-        res.success = false;
-        res.errorMessage = "Rotate parameters contain NaN or Infinite values.";
         return res;
     }
 
@@ -252,7 +286,7 @@ ModelingOperationResult MeshModelingService::Rotate(EditableMesh& mesh,
             axisConstraint.z ? candidatePos.z : v->position.z
         );
 
-        if (!std::isfinite(finalPos.x) || !std::isfinite(finalPos.y) || !std::isfinite(finalPos.z)) {
+        if (!IsFiniteVec3(finalPos)) {
             res.success = false;
             res.errorMessage = "Rotated position produced non-finite coordinates.";
             // Rollback
@@ -292,28 +326,35 @@ ModelingOperationResult MeshModelingService::Scale(EditableMesh& mesh,
     res.oldGeometryRev = mesh.GetGeometryRevision();
     res.oldAttributeRev = mesh.GetAttributeRevision();
 
+    // 1. Rifiuto immediato di parametri non finiti PRIMA di qualsiasi operazione o controllo Zero-Work
+    if (!IsFiniteVec3(scale) || !IsFiniteVec3(pivot)) {
+        res.success = false;
+        res.errorMessage = "Scale parameters contain NaN or Infinite values.";
+        return res;
+    }
+
     glm::vec3 effectiveScale(
         axisConstraint.x ? scale.x : 1.0f,
         axisConstraint.y ? scale.y : 1.0f,
         axisConstraint.z ? scale.z : 1.0f
     );
 
-    if (std::abs(effectiveScale.x - 1.0f) < 1e-6f &&
-        std::abs(effectiveScale.y - 1.0f) < 1e-6f &&
-        std::abs(effectiveScale.z - 1.0f) < 1e-6f) {
+    // Controllo scale degeneri (< 1e-6)
+    if (std::abs(effectiveScale.x) < 1e-6f || std::abs(effectiveScale.y) < 1e-6f || std::abs(effectiveScale.z) < 1e-6f) {
+        res.success = false;
+        res.errorMessage = "Scale factor is degenerate (< 1e-6).";
+        return res;
+    }
+
+    // 2. Zero-Work contract
+    if (vertices.empty() || (std::abs(effectiveScale.x - 1.0f) < 1e-6f &&
+                             std::abs(effectiveScale.y - 1.0f) < 1e-6f &&
+                             std::abs(effectiveScale.z - 1.0f) < 1e-6f)) {
         res.success = true;
         res.geometryChanged = false;
         res.newTopologyRev = res.oldTopologyRev;
         res.newGeometryRev = res.oldGeometryRev;
         res.newAttributeRev = res.oldAttributeRev;
-        return res;
-    }
-
-    // Controllo scale degeneri o non-finite
-    if (std::abs(effectiveScale.x) < 1e-6f || std::abs(effectiveScale.y) < 1e-6f || std::abs(effectiveScale.z) < 1e-6f ||
-        !std::isfinite(effectiveScale.x) || !std::isfinite(effectiveScale.y) || !std::isfinite(effectiveScale.z)) {
-        res.success = false;
-        res.errorMessage = "Scale factor is degenerate (< 1e-6) or non-finite.";
         return res;
     }
 
@@ -332,7 +373,7 @@ ModelingOperationResult MeshModelingService::Scale(EditableMesh& mesh,
         glm::vec3 scaledPos = relPos * effectiveScale;
         glm::vec3 finalPos = pivot + scaledPos;
 
-        if (!std::isfinite(finalPos.x) || !std::isfinite(finalPos.y) || !std::isfinite(finalPos.z)) {
+        if (!IsFiniteVec3(finalPos)) {
             res.success = false;
             res.errorMessage = "Scaled position produced non-finite coordinates.";
             for (const auto& item : res.positionDeltas) {
@@ -430,6 +471,12 @@ ModelingOperationResult MeshModelingService::ExtrudeFace(EditableMesh& mesh,
     if (!mesh.IsValid(faceId)) {
         res.success = false;
         res.errorMessage = "Target face is invalid or does not exist.";
+        return res;
+    }
+
+    if (!IsFiniteFloat(params.offset) || (!params.useFaceNormal && !IsFiniteVec3(params.customDirection))) {
+        res.success = false;
+        res.errorMessage = "Extrude parameters contain NaN or Infinite values.";
         return res;
     }
 
@@ -551,8 +598,23 @@ ModelingOperationResult MeshModelingService::ExtrudeRegion(EditableMesh& mesh,
     res.oldGeometryRev = mesh.GetGeometryRevision();
     res.oldAttributeRev = mesh.GetAttributeRevision();
 
+    if (!IsFiniteFloat(params.offset) || (!params.useFaceNormal && !IsFiniteVec3(params.customDirection))) {
+        res.success = false;
+        res.errorMessage = "ExtrudeRegion parameters contain NaN or Infinite values.";
+        return res;
+    }
+
     if (faceIds.empty()) {
         res.success = true;
+        return res;
+    }
+    if (std::abs(params.offset) < 1e-6f) {
+        res.success = true;
+        res.topologyChanged = false;
+        res.geometryChanged = false;
+        res.newTopologyRev = res.oldTopologyRev;
+        res.newGeometryRev = res.oldGeometryRev;
+        res.newAttributeRev = res.oldAttributeRev;
         return res;
     }
     if (faceIds.size() == 1) {
@@ -744,6 +806,12 @@ ModelingOperationResult MeshModelingService::ExtrudeBoundaryEdge(EditableMesh& m
         return res;
     }
 
+    if (!IsFiniteFloat(params.offset) || !IsFiniteVec3(params.customDirection)) {
+        res.success = false;
+        res.errorMessage = "ExtrudeBoundaryEdge parameters contain NaN or Infinite values.";
+        return res;
+    }
+
     if (!mesh.IsBoundaryEdge(edgeId)) {
         res.success = false;
         res.errorMessage = "Edge is not a boundary edge; extruding would create non-manifold geometry.";
@@ -862,6 +930,12 @@ ModelingOperationResult MeshModelingService::InsetFace(EditableMesh& mesh,
     if (!mesh.IsValid(faceId)) {
         res.success = false;
         res.errorMessage = "Face ID is invalid.";
+        return res;
+    }
+
+    if (!IsFiniteFloat(params.insetAmount) || !IsFiniteFloat(params.depthOffset)) {
+        res.success = false;
+        res.errorMessage = "InsetFace parameters contain NaN or Infinite values.";
         return res;
     }
 
@@ -1033,6 +1107,12 @@ ModelingOperationResult MeshModelingService::BevelEdge(EditableMesh& mesh,
         return res;
     }
 
+    if (!IsFiniteFloat(params.width) || !IsFiniteFloat(params.clamp)) {
+        res.success = false;
+        res.errorMessage = "BevelEdge parameters contain NaN or Infinite values.";
+        return res;
+    }
+
     if (mesh.IsBoundaryEdge(edgeId)) {
         res.success = false;
         res.errorMessage = "Bevel is only supported on manifold edges with 2 incident faces.";
@@ -1098,68 +1178,220 @@ ModelingOperationResult MeshModelingService::BevelEdge(EditableMesh& mesh,
     res.createdVertices.push_back(b1);
     res.createdVertices.push_back(b0);
 
-    // Memorizza definizioni originali delle due facce
+    // Individua le facce di testata alle due estremità v0 e v1
+    std::vector<FaceID> facesAtV0 = mesh.GetVertexIncidentFaces(v0);
+    std::vector<FaceID> facesAtV1 = mesh.GetVertexIncidentFaces(v1);
+
+    FaceID capF0_id = INVALID_FACE_ID;
+    for (FaceID fId : facesAtV0) {
+        if (fId != fA_id && fId != fB_id) {
+            capF0_id = fId;
+            break;
+        }
+    }
+
+    FaceID capF1_id = INVALID_FACE_ID;
+    for (FaceID fId : facesAtV1) {
+        if (fId != fA_id && fId != fB_id) {
+            capF1_id = fId;
+            break;
+        }
+    }
+
+    // Supporto per vertici di estremità a valenza 3 per preservare manifold chiuso
+    if (facesAtV0.size() != 3 || facesAtV1.size() != 3 || !mesh.IsValid(capF0_id) || !mesh.IsValid(capF1_id) || capF0_id == capF1_id) {
+        mesh = backup;
+        res.success = false;
+        res.errorMessage = "Bevel currently requires manifold edges whose end vertices have valence 3 with distinct end-caps.";
+        return res;
+    }
+
+    // Memorizza definizioni originali delle facce e attributi
     auto fA_verts = mesh.GetFaceVertices(fA_id);
     auto fB_verts = mesh.GetFaceVertices(fB_id);
+    auto fA_corners = mesh.GetFaceCorners(fA_id);
+    auto fB_corners = mesh.GetFaceCorners(fB_id);
+
     uint32_t sIdA = mesh.GetFace(fA_id)->surfaceId;
     uint32_t mIdA = mesh.GetFace(fA_id)->materialId;
     uint32_t sIdB = mesh.GetFace(fB_id)->surfaceId;
     uint32_t mIdB = mesh.GetFace(fB_id)->materialId;
 
+    uint32_t sIdCap0 = mesh.GetFace(capF0_id)->surfaceId;
+    uint32_t mIdCap0 = mesh.GetFace(capF0_id)->materialId;
+    uint32_t sIdCap1 = mesh.GetFace(capF1_id)->surfaceId;
+    uint32_t mIdCap1 = mesh.GetFace(capF1_id)->materialId;
+
     // Sostituisce v0 e v1 in fA con a0 e a1
     std::vector<VertexID> newVertsA;
+    std::vector<CornerAttributes> newCornersA;
     newVertsA.reserve(fA_verts.size());
-    for (auto vid : fA_verts) {
-        if (vid == v0) newVertsA.push_back(a0);
-        else if (vid == v1) newVertsA.push_back(a1);
-        else newVertsA.push_back(vid);
+    newCornersA.reserve(fA_verts.size());
+    for (size_t i = 0; i < fA_verts.size(); ++i) {
+        VertexID vid = fA_verts[i];
+        CornerAttributes c = (i < fA_corners.size()) ? fA_corners[i] : CornerAttributes{};
+        if (vid == v0) {
+            newVertsA.push_back(a0);
+            newCornersA.push_back(c);
+        } else if (vid == v1) {
+            newVertsA.push_back(a1);
+            newCornersA.push_back(c);
+        } else {
+            newVertsA.push_back(vid);
+            newCornersA.push_back(c);
+        }
     }
 
     // Sostituisce v0 e v1 in fB con b0 e b1
     std::vector<VertexID> newVertsB;
+    std::vector<CornerAttributes> newCornersB;
     newVertsB.reserve(fB_verts.size());
-    for (auto vid : fB_verts) {
-        if (vid == v0) newVertsB.push_back(b0);
-        else if (vid == v1) newVertsB.push_back(b1);
-        else newVertsB.push_back(vid);
+    newCornersB.reserve(fB_verts.size());
+    for (size_t i = 0; i < fB_verts.size(); ++i) {
+        VertexID vid = fB_verts[i];
+        CornerAttributes c = (i < fB_corners.size()) ? fB_corners[i] : CornerAttributes{};
+        if (vid == v0) {
+            newVertsB.push_back(b0);
+            newCornersB.push_back(c);
+        } else if (vid == v1) {
+            newVertsB.push_back(b1);
+            newCornersB.push_back(c);
+        } else {
+            newVertsB.push_back(vid);
+            newCornersB.push_back(c);
+        }
     }
 
-    // Elimina le 2 vecchie facce
-    mesh.DeleteFace(fA_id, false, false);
-    mesh.DeleteFace(fB_id, false, false);
-    res.removedFaces.push_back(fA_id);
-    res.removedFaces.push_back(fB_id);
+    // Costruisce la sequenza di vertici e attributi per le facce di testata (pentagoni)
+    auto buildCapFace = [&](FaceID capId, VertexID vEnd, VertexID aEnd, VertexID bEnd)
+        -> std::pair<std::vector<VertexID>, std::vector<CornerAttributes>> {
+        std::vector<VertexID> oldVerts = mesh.GetFaceVertices(capId);
+        std::vector<CornerAttributes> oldCorners = mesh.GetFaceCorners(capId);
+        std::vector<VertexID> newVerts;
+        std::vector<CornerAttributes> newCorners;
 
-    // Ricrea le due facce raccordate
-    FaceID newFA = mesh.AddFace(newVertsA, sIdA, mIdA);
-    FaceID newFB = mesh.AddFace(newVertsB, sIdB, mIdB);
-    if (!mesh.IsValid(newFA) || !mesh.IsValid(newFB)) {
+        size_t n = oldVerts.size();
+        size_t vIdx = n;
+        for (size_t i = 0; i < n; ++i) {
+            if (oldVerts[i] == vEnd) {
+                vIdx = i;
+                break;
+            }
+        }
+        if (vIdx >= n) return { {}, {} };
+
+        size_t prevIdx = (vIdx + n - 1) % n;
+        VertexID vPrev = oldVerts[prevIdx];
+
+        bool prevOnA = (std::find(fA_verts.begin(), fA_verts.end(), vPrev) != fA_verts.end());
+        bool prevOnB = (std::find(fB_verts.begin(), fB_verts.end(), vPrev) != fB_verts.end());
+        if (!prevOnA && !prevOnB) {
+            return { {}, {} };
+        }
+
+        CornerAttributes cEnd = (vIdx < oldCorners.size()) ? oldCorners[vIdx] : CornerAttributes{};
+        CornerAttributes cPrev = (prevIdx < oldCorners.size()) ? oldCorners[prevIdx] : CornerAttributes{};
+        size_t nextIdx = (vIdx + 1) % n;
+        CornerAttributes cNext = (nextIdx < oldCorners.size()) ? oldCorners[nextIdx] : CornerAttributes{};
+
+        float t = (edgeLen > 1e-5f) ? glm::clamp(w / edgeLen, 0.0f, 0.5f) : 0.0f;
+        CornerAttributes cA = cEnd;
+        CornerAttributes cB = cEnd;
+        if (prevOnA) {
+            cA.uv = glm::mix(cEnd.uv, cPrev.uv, t);
+            cB.uv = glm::mix(cEnd.uv, cNext.uv, t);
+        } else {
+            cB.uv = glm::mix(cEnd.uv, cPrev.uv, t);
+            cA.uv = glm::mix(cEnd.uv, cNext.uv, t);
+        }
+
+        for (size_t i = 0; i < n; ++i) {
+            if (i == vIdx) {
+                if (prevOnA) {
+                    newVerts.push_back(aEnd);
+                    newCorners.push_back(cA);
+                    newVerts.push_back(bEnd);
+                    newCorners.push_back(cB);
+                } else {
+                    newVerts.push_back(bEnd);
+                    newCorners.push_back(cB);
+                    newVerts.push_back(aEnd);
+                    newCorners.push_back(cA);
+                }
+            } else {
+                newVerts.push_back(oldVerts[i]);
+                newCorners.push_back((i < oldCorners.size()) ? oldCorners[i] : CornerAttributes{});
+            }
+        }
+        return { newVerts, newCorners };
+    };
+
+    auto cap0Data = buildCapFace(capF0_id, v0, a0, b0);
+    auto cap1Data = buildCapFace(capF1_id, v1, a1, b1);
+
+    if (cap0Data.first.empty() || cap1Data.first.empty()) {
         mesh = backup;
         res.success = false;
-        res.errorMessage = "Failed to rebuild adjacent faces during edge bevel.";
+        res.errorMessage = "Failed to construct end-cap vertex sequences.";
+        return res;
+    }
+
+    // Configura attributi standard per la faccetta di chamfer
+    std::vector<CornerAttributes> bevelCorners = {
+        CornerAttributes{ glm::vec2(0.0f, 0.0f) },
+        CornerAttributes{ glm::vec2(1.0f, 0.0f) },
+        CornerAttributes{ glm::vec2(1.0f, 1.0f) },
+        CornerAttributes{ glm::vec2(0.0f, 1.0f) }
+    };
+
+    // Elimina le 4 vecchie facce
+    mesh.DeleteFace(fA_id, false, false);
+    mesh.DeleteFace(fB_id, false, false);
+    mesh.DeleteFace(capF0_id, false, false);
+    mesh.DeleteFace(capF1_id, false, false);
+    res.removedFaces.push_back(fA_id);
+    res.removedFaces.push_back(fB_id);
+    res.removedFaces.push_back(capF0_id);
+    res.removedFaces.push_back(capF1_id);
+
+    // Ricrea le due facce raccordate, il chamfer e le due facce di testata
+    FaceID newFA = mesh.AddFace(newVertsA, sIdA, mIdA, &newCornersA);
+    FaceID newFB = mesh.AddFace(newVertsB, sIdB, mIdB, &newCornersB);
+    FaceID bevelFacet = mesh.AddFace({a1, a0, b0, b1}, sIdA, mIdA, &bevelCorners);
+    FaceID newCap0 = mesh.AddFace(cap0Data.first, sIdCap0, mIdCap0, &cap0Data.second);
+    FaceID newCap1 = mesh.AddFace(cap1Data.first, sIdCap1, mIdCap1, &cap1Data.second);
+
+    if (!mesh.IsValid(newFA) || !mesh.IsValid(newFB) || !mesh.IsValid(bevelFacet) ||
+        !mesh.IsValid(newCap0) || !mesh.IsValid(newCap1)) {
+        mesh = backup;
+        res.success = false;
+        res.errorMessage = "Failed to rebuild faces during edge bevel.";
         return res;
     }
     res.createdFaces.push_back(newFA);
     res.createdFaces.push_back(newFB);
-
-    // Inserisce il quad di bevel tra i due piani: [a0, a1, b1, b0]
-    FaceID bevelFacet = mesh.AddFace({a0, a1, b1, b0}, sIdA, mIdA);
-    if (!mesh.IsValid(bevelFacet)) {
-        mesh = backup;
-        res.success = false;
-        res.errorMessage = "Failed to insert bevel chamfer facet.";
-        return res;
-    }
     res.createdFaces.push_back(bevelFacet);
+    res.createdFaces.push_back(newCap0);
+    res.createdFaces.push_back(newCap1);
+
+    // Elimina i vertici originali se non più referenziati
+    if (mesh.GetVertexIncidentFaces(v0).empty()) {
+        mesh.DeleteVertex(v0);
+        res.removedVertices.push_back(v0);
+    }
+    if (mesh.GetVertexIncidentFaces(v1).empty()) {
+        mesh.DeleteVertex(v1);
+        res.removedVertices.push_back(v1);
+    }
 
     mesh.ComputeAllFaceNormals();
     mesh.ComputeVertexNormals();
 
     auto val = mesh.ValidateTopology();
-    if (!val.isValid) {
+    if (!val.isValid || !val.isClosedManifold) {
         mesh = backup;
         res.success = false;
-        res.errorMessage = "Topology validation failed after edge bevel.";
+        res.errorMessage = "Topology validation failed after edge bevel: manifold closure not preserved.";
         return res;
     }
 

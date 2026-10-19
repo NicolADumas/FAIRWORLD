@@ -583,7 +583,7 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         t.testId = "SCL-2";
         t.testName = "SCL-2 — Smooth Brush Relaxation";
         t.inputDesc = "Cube with one perturbed vertex at Z=0.8; Smooth brush applied with radius=0.6, strength=0.8";
-        t.expectedDesc = "Perturbed vertex relaxed towards neighbor centroid; Z strictly less than 0.8; topoRevision UNCHANGED";
+        t.expectedDesc = "Perturbed vertex relaxed towards neighbor centroid; distance to centroid strictly decreased; topoRevision UNCHANGED";
 
         auto mesh = EditableMesh::CreateCube(1.0f);
         uint64_t initialTopo = mesh.GetTopologyRevision();
@@ -599,6 +599,18 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         }
         mesh.SetVertexPosition(pertVid, glm::vec3(0.5f, 0.5f, 0.8f));
 
+        // Calcola il centroide teorico dell'1-ring dei vicini prima della deformazione
+        auto neighbors = mesh.GetVertexOneRingNeighbors(pertVid);
+        glm::vec3 neighborCentroid(0.0f);
+        for (auto nId : neighbors) {
+            const auto* nv = mesh.GetVertex(nId);
+            if (nv) neighborCentroid += nv->position;
+        }
+        if (!neighbors.empty()) {
+            neighborCentroid /= static_cast<float>(neighbors.size());
+        }
+        float initialDistToCentroid = glm::distance(glm::vec3(0.5f, 0.5f, 0.8f), neighborCentroid);
+
         MeshSculptService sculpt;
         SculptBrushSettings bs;
         bs.brushType = SculptBrushType::Smooth;
@@ -612,11 +624,17 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         sculpt.EndStroke(mesh);
 
         const auto* relaxedV = mesh.GetVertex(pertVid);
-        bool relaxed = relaxedV && (relaxedV->position.z < 0.75f) && (relaxedV->position.z >= 0.5f);
+        float finalDistToCentroid = relaxedV ? glm::distance(relaxedV->position, neighborCentroid) : 999.0f;
+
+        // Il vertice rilassato deve avvicinarsi strettamente al centroide e Z deve diminuire rispetto a 0.8
+        bool relaxedTowardsCentroid = relaxedV && (finalDistToCentroid < initialDistToCentroid * 0.5f) && 
+                                      (relaxedV->position.z < 0.75f) && (relaxedV->position.z > 0.20f);
         bool topoUntouched = (mesh.GetTopologyRevision() == initialTopo);
 
-        t.passed = relaxed && topoUntouched;
+        t.passed = relaxedTowardsCentroid && topoUntouched;
         t.observedDesc = "RelaxedZ=" + std::to_string(relaxedV ? relaxedV->position.z : 0.0f) + 
+                         ", DistBefore=" + std::to_string(initialDistToCentroid) + 
+                         ", DistAfter=" + std::to_string(finalDistToCentroid) + 
                          ", TopoUntouched=" + std::to_string(topoUntouched);
         t.details = t.passed ? "PASS" : "FAIL: Levigatura fallita";
         results.push_back(t);
@@ -628,7 +646,7 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         t.testId = "SCL-3";
         t.testName = "SCL-3 — Inflate Radial Outward Expansion";
         t.inputDesc = "Inflate brush applied at top center (0, 0, 0.5) with normal (0, 0, 1) and radius 0.8";
-        t.expectedDesc = "Top vertices displaced outward along normals; Z > 0.5; geoRevision bumped";
+        t.expectedDesc = "Top vertices displaced outward along normals; Z > 0.5 matching mathematical falloff; geoRevision bumped";
 
         auto mesh = EditableMesh::CreateCube(1.0f);
         uint64_t initialGeo = mesh.GetGeometryRevision();
@@ -647,10 +665,18 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         sculpt.BeginStroke(mesh, sp);
         auto res = sculpt.EndStroke(mesh);
 
+        // Dislocamento teorico: per vertice a dist = sqrt(0.5) ~= 0.7071
+        float dCorner = std::sqrt(0.5f);
+        float tNorm = dCorner / bs.radius;
+        float wFalloff = EvaluateFalloff(tNorm, bs.falloff);
+        float weight = wFalloff * bs.strength;
+        float expectedDispZ = (1.0f / std::sqrt(3.0f)) * (bs.radius * weight * 0.5f); // ~= 0.0043f
+        float expectedMinZ = 0.5f + expectedDispZ * 0.9f; // tolleranza 10%
+
         bool anyExpanded = false;
         for (auto vid : mesh.GetActiveVertexIDs()) {
             const auto* v = mesh.GetVertex(vid);
-            if (v && v->position.z > 0.52f) {
+            if (v && v->position.z > expectedMinZ) {
                 anyExpanded = true;
                 break;
             }
@@ -724,13 +750,20 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         sculpt.BeginStroke(mesh, sp);
         sculpt.EndStroke(mesh);
 
+        // Dislocamento teorico Clay: step = min(ceiling, r * 0.15) * falloff * strength
+        float dCorner = std::sqrt(0.5f);
+        float wFalloff = EvaluateFalloff(dCorner / bs.radius, bs.falloff);
+        float ceilingHeight = bs.radius * bs.clayCeiling;
+        float expectedStep = std::min(ceilingHeight, bs.radius * 0.15f) * wFalloff * bs.strength; // ~= 0.00448f
+        float expectedMinZ = 0.5f + expectedStep * 0.9f;
+
         bool builtUp = false;
         bool ceilingRespected = true;
         for (auto vid : mesh.GetActiveVertexIDs()) {
             const auto* v = mesh.GetVertex(vid);
-            if (v && v->position.z > 0.51f) {
+            if (v && v->position.z > expectedMinZ) {
                 builtUp = true;
-                if (v->position.z > 0.5f + bs.radius * bs.clayCeiling + 0.01f) {
+                if (v->position.z > 0.5f + ceilingHeight + 1e-4f) {
                     ceilingRespected = false;
                 }
             }
@@ -808,10 +841,31 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         SculptTestResult t;
         t.testId = "SCL-8";
         t.testName = "SCL-8 — Symmetry Reflection Deformation";
-        t.inputDesc = "Inflate dab on +X with SymmetryPlane::X enabled";
-        t.expectedDesc = "Mirrored deformation applied to corresponding vertex on -X";
+        t.inputDesc = "Inflate dab on corner (+X) with SymmetryPlane::X enabled";
+        t.expectedDesc = "Mirrored deformation applied to corresponding vertex on -X with specular magnitude";
 
         auto mesh = EditableMesh::CreateCube(1.0f);
+
+        // 1-4. Individua vertici e salva ID e posizioni iniziali PRIMA di BeginStroke
+        VertexID posVid = INVALID_VERTEX_ID;
+        VertexID negVid = INVALID_VERTEX_ID;
+        glm::vec3 posInit(0.0f);
+        glm::vec3 negInit(0.0f);
+
+        for (auto vid : mesh.GetActiveVertexIDs()) {
+            const auto* v = mesh.GetVertex(vid);
+            if (v) {
+                if (glm::distance(v->position, glm::vec3(0.5f, 0.5f, 0.5f)) < 1e-4f) {
+                    posVid = vid;
+                    posInit = v->position;
+                }
+                if (glm::distance(v->position, glm::vec3(-0.5f, 0.5f, 0.5f)) < 1e-4f) {
+                    negVid = vid;
+                    negInit = v->position;
+                }
+            }
+        }
+
         MeshSculptService sculpt;
         SculptBrushSettings bs;
         bs.brushType = SculptBrushType::Inflate;
@@ -821,24 +875,42 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         sculpt.SetSettings(bs);
 
         StrokePoint sp;
-        sp.hitPoint = glm::vec3(0.5f, 0.0f, 0.0f);
+        sp.hitPoint = glm::vec3(0.5f, 0.5f, 0.5f);
         sp.surfaceNormal = glm::vec3(1.0f, 0.0f, 0.0f);
 
         sculpt.BeginStroke(mesh, sp);
         sculpt.EndStroke(mesh);
 
-        bool posExpanded = false;
-        bool negExpanded = false;
-        for (auto vid : mesh.GetActiveVertexIDs()) {
-            const auto* v = mesh.GetVertex(vid);
-            if (v) {
-                if (v->position.x > 0.52f) posExpanded = true;
-                if (v->position.x < -0.52f) negExpanded = true;
-            }
+        // Dopo BeginStroke / EndStroke: recupera i vertici tramite i VertexID salvati
+        const auto* posV = mesh.GetVertex(posVid);
+        const auto* negV = mesh.GetVertex(negVid);
+
+        bool handlesValid = (posVid != INVALID_VERTEX_ID) && (negVid != INVALID_VERTEX_ID) && (posV != nullptr) && (negV != nullptr);
+        bool nonZeroDeformation = false;
+        bool specularX = false;
+        bool specularYZ = false;
+
+        if (handlesValid) {
+            glm::vec3 deltaPos = posV->position - posInit;
+            glm::vec3 deltaNeg = negV->position - negInit;
+
+            // Spostamento X deve essere realmente non nullo (almeno 0.05f)
+            nonZeroDeformation = (deltaPos.x > 0.05f) && (deltaNeg.x < -0.05f);
+
+            // Spostamenti X devono essere opposti: deltaPos.x == -deltaNeg.x
+            specularX = std::abs(deltaPos.x + deltaNeg.x) < 1e-4f;
+
+            // Spostamenti Y e Z devono essere coerenti con la riflessione su X (stesso verso e grandezza)
+            specularYZ = (std::abs(deltaPos.y - deltaNeg.y) < 1e-4f) && 
+                         (std::abs(deltaPos.z - deltaNeg.z) < 1e-4f) &&
+                         (deltaPos.y > 0.05f) && (deltaPos.z > 0.05f);
         }
 
-        t.passed = posExpanded && negExpanded;
-        t.observedDesc = "PosExpanded=" + std::to_string(posExpanded) + ", NegExpanded=" + std::to_string(negExpanded);
+        t.passed = handlesValid && nonZeroDeformation && specularX && specularYZ;
+        t.observedDesc = "HandlesValid=" + std::to_string(handlesValid) + 
+                         ", NonZero=" + std::to_string(nonZeroDeformation) + 
+                         ", SpecularX=" + std::to_string(specularX) + 
+                         ", SpecularYZ=" + std::to_string(specularYZ);
         t.details = t.passed ? "PASS" : "FAIL: Simmetria non applicata specularmente";
         results.push_back(t);
     }
@@ -859,7 +931,7 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         MeshSculptService sculpt;
         SculptBrushSettings bs;
         bs.brushType = SculptBrushType::Inflate;
-        bs.radius = 0.6f;
+        bs.radius = 0.8f;
         bs.strength = 1.0f;
         sculpt.SetSettings(bs);
 
@@ -888,7 +960,7 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
 
         // Verifica che l'indice spaziale sia coerente con le posizioni restaurate
         auto restoredCandidates = sculpt.GetSpatialIndex().QuerySphere(sp.hitPoint, bs.radius, mesh);
-        bool indexRestored = !restoredCandidates.empty();
+        bool indexRestored = (restoredCandidates.size() == 4); // I 4 vertici della faccia superiore a dist sqrt(0.5) < 0.8
 
         t.passed = exactlyRestored && geoRestored && topoRestored && indexRestored;
         t.observedDesc = "ExactlyRestored=" + std::to_string(exactlyRestored) + 
@@ -942,6 +1014,19 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         t.expectedDesc = "Vertices cleanly migrate to new grid cells; query on new position finds them without global rebuild";
 
         auto mesh = EditableMesh::CreateCube(1.0f);
+
+        // 1-3. Individua il vertice bersaglio e salva targetVid e originalPos PRIMA di BeginStroke
+        VertexID targetVid = INVALID_VERTEX_ID;
+        glm::vec3 originalPos(0.0f);
+        for (auto vid : mesh.GetActiveVertexIDs()) {
+            const auto* v = mesh.GetVertex(vid);
+            if (v && glm::distance(v->position, glm::vec3(0.5f, 0.5f, 0.5f)) < 1e-4f) {
+                targetVid = vid;
+                originalPos = v->position;
+                break;
+            }
+        }
+
         MeshSculptService sculpt;
         SculptBrushSettings bs;
         bs.brushType = SculptBrushType::Inflate;
@@ -949,48 +1034,50 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         bs.strength = 1.0f;
         sculpt.SetSettings(bs);
 
+        // 4. Calcola oldKey prima della deformazione (cellSize = 0.4 * 1.5 = 0.6; floor(0.5 / 0.6) = 0)
+        SpatialGridIndex::GridKey oldKey = {
+            static_cast<int>(std::floor(originalPos.x / (bs.radius * 1.5f))),
+            static_cast<int>(std::floor(originalPos.y / (bs.radius * 1.5f))),
+            static_cast<int>(std::floor(originalPos.z / (bs.radius * 1.5f)))
+        };
+
         StrokePoint sp;
         sp.hitPoint = glm::vec3(0.5f, 0.5f, 0.5f);
         sp.surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
         sculpt.BeginStroke(mesh, sp);
-
-        // Trova il vertice interessato
-        VertexID targetVid = INVALID_VERTEX_ID;
-        glm::vec3 originalPos(0.0f);
-        for (auto vid : mesh.GetActiveVertexIDs()) {
-            const auto* v = mesh.GetVertex(vid);
-            if (v && glm::distance(v->position, glm::vec3(0.5f, 0.5f, 0.5f)) < 0.1f) {
-                targetVid = vid;
-                originalPos = v->position;
-                break;
-            }
-        }
-
-        const auto* targetV = mesh.GetVertex(targetVid);
-        bool movedOutOfOldCell = false;
-        bool foundInNewCell = false;
-
-        if (targetV) {
-            float cellSize = sculpt.GetSpatialIndex().GetCellSize();
-            auto oldKey = sculpt.GetSpatialIndex().ComputeKey(originalPos);
-            auto newKey = sculpt.GetSpatialIndex().ComputeKey(targetV->position);
-
-            movedOutOfOldCell = (targetV->position.z > originalPos.z + 0.15f);
-            foundInNewCell = sculpt.GetSpatialIndex().ContainsVertexInCell(targetVid, targetV->position);
-
-            // Una seconda query sulla nuova posizione deve trovare il vertice tramite l'indice aggiornato
-            auto hits = sculpt.GetSpatialIndex().QuerySphere(targetV->position, 0.2f, mesh);
-            bool queryFound = std::find(hits.begin(), hits.end(), targetVid) != hits.end();
-            foundInNewCell = foundInNewCell && queryFound;
-        }
-
         sculpt.EndStroke(mesh);
 
-        t.passed = (targetVid != INVALID_VERTEX_ID) && movedOutOfOldCell && foundInNewCell;
-        t.observedDesc = "TargetFound=" + std::to_string(targetVid != INVALID_VERTEX_ID) + 
+        // 1-3. Dopo BeginStroke/EndStroke: recupera lo stesso vertice e leggi la posizione aggiornata
+        const auto* targetV = mesh.GetVertex(targetVid);
+        bool handleValid = mesh.IsValid(targetVid) && (targetV != nullptr);
+
+        bool movedOutOfOldCell = false;
+        bool absentFromOldCell = false;
+        bool foundInNewCell = false;
+        bool queryFound = false;
+
+        if (handleValid) {
+            // 4-5. Calcola newKey e verifica oldKey != newKey
+            auto computedOldKey = sculpt.GetSpatialIndex().ComputeKey(originalPos);
+            auto newKey = sculpt.GetSpatialIndex().ComputeKey(targetV->position);
+            movedOutOfOldCell = !(computedOldKey == newKey);
+
+            // 6-7. Verifica assenza dalla vecchia cella e presenza nella nuova cella
+            absentFromOldCell = !sculpt.GetSpatialIndex().ContainsVertexInCell(targetVid, originalPos);
+            foundInNewCell = sculpt.GetSpatialIndex().ContainsVertexInCell(targetVid, targetV->position);
+
+            // 8. Verifica che QuerySphere trovi il vertice nella posizione aggiornata
+            auto hits = sculpt.GetSpatialIndex().QuerySphere(targetV->position, 0.2f, mesh);
+            queryFound = std::find(hits.begin(), hits.end(), targetVid) != hits.end();
+        }
+
+        t.passed = handleValid && movedOutOfOldCell && absentFromOldCell && foundInNewCell && queryFound;
+        t.observedDesc = "HandleValid=" + std::to_string(handleValid) + 
                          ", MovedOutOfOld=" + std::to_string(movedOutOfOldCell) + 
-                         ", FoundInNewCell=" + std::to_string(foundInNewCell);
+                         ", AbsentOld=" + std::to_string(absentFromOldCell) + 
+                         ", FoundNew=" + std::to_string(foundInNewCell) + 
+                         ", QueryFound=" + std::to_string(queryFound);
         t.details = t.passed ? "PASS" : "FAIL: Migrazione inter-cella non riflessa nell'indice spaziale";
         results.push_back(t);
     }
@@ -1000,34 +1087,34 @@ std::vector<MeshSculptService::SculptTestResult> MeshSculptService::RunSculptCon
         SculptTestResult t;
         t.testId = "SCL-12";
         t.testName = "SCL-12 — Live Stroke Coalescence & Zero-Work Spacing Invariance";
-        t.inputDesc = "Stroke with initial dab, micro-move (< spacing), macro-move (> spacing), and EndStroke";
+        t.inputDesc = "Stroke on corner vertex with initial dab, micro-move (< spacing), macro-move (> spacing), and EndStroke";
         t.expectedDesc = "Micro-move skipped (Zero-Work, rev unchanged); Macro-move applied (rev bumped); deltas collected";
 
         auto mesh = EditableMesh::CreateCube(1.0f);
         MeshSculptService sculpt;
         SculptBrushSettings bs;
         bs.brushType = SculptBrushType::Inflate;
-        bs.radius = 0.5f;
-        bs.spacing = 0.2f; // Soglia minima di movimento = 0.1
+        bs.radius = 0.4f;
+        bs.spacing = 0.2f; // Soglia minima di movimento = max(0.01, 0.4 * 0.2) = 0.08
         bs.strength = 0.5f;
         sculpt.SetSettings(bs);
 
         StrokePoint sp1;
-        sp1.hitPoint = glm::vec3(0.0f, 0.0f, 0.5f);
+        sp1.hitPoint = glm::vec3(0.5f, 0.5f, 0.5f);
         sp1.surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
         sculpt.BeginStroke(mesh, sp1);
         uint64_t revAfterDab1 = mesh.GetGeometryRevision();
 
-        // Micro-move (delta 0.01 << 0.1 soglia)
+        // Micro-move (delta 0.02 << 0.08 soglia)
         StrokePoint spMicro = sp1;
-        spMicro.hitPoint += glm::vec3(0.01f, 0.0f, 0.0f);
+        spMicro.hitPoint += glm::vec3(0.02f, 0.0f, 0.0f);
         bool microResult = sculpt.UpdateStroke(mesh, spMicro);
         uint64_t revAfterMicro = mesh.GetGeometryRevision();
 
-        // Macro-move (delta 0.15 > 0.1 soglia)
+        // Macro-move (delta 0.12 > 0.08 soglia)
         StrokePoint spMacro = sp1;
-        spMacro.hitPoint += glm::vec3(0.15f, 0.0f, 0.0f);
+        spMacro.hitPoint += glm::vec3(0.12f, 0.0f, 0.0f);
         bool macroResult = sculpt.UpdateStroke(mesh, spMacro);
         uint64_t revAfterMacro = mesh.GetGeometryRevision();
 

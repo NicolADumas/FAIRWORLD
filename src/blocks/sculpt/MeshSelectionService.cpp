@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MeshSelectionService.h"
+#include "MeshTopologyService.h"
 #include "SurfaceDefinition.h"
 #include <algorithm>
 #include <cmath>
@@ -95,6 +96,228 @@ void MeshSelectionService::DeselectEdge(EdgeID id) {
 
 bool MeshSelectionService::IsEdgeSelected(EdgeID id) const {
     return m_selectedEdges.count(id) > 0;
+}
+
+// =============================================================================
+// BM-S1: TOPOLOGICAL EDGE LOOP & EDGE RING SELECTION
+// =============================================================================
+
+bool MeshSelectionService::SelectEdgeLoop(const EditableMesh& mesh, EdgeID startEdge, SelectionOp op) {
+    if (mesh.IsEmpty()) {
+        return false;
+    }
+
+    if (!startEdge.IsValid()) {
+        if (m_activeEdge.IsValid() && mesh.IsValid(m_activeEdge)) {
+            startEdge = m_activeEdge;
+        } else {
+            return false;
+        }
+    }
+
+    if (!mesh.IsValid(startEdge)) {
+        return false;
+    }
+
+    std::vector<EdgeID> rawLoop = MeshTopologyService::FindEdgeLoop(mesh, startEdge);
+    if (rawLoop.empty()) {
+        return false;
+    }
+
+    std::vector<EdgeID> validEdges;
+    std::unordered_set<EdgeID> uniqueEdges;
+    validEdges.reserve(rawLoop.size());
+    for (EdgeID eid : rawLoop) {
+        if (mesh.IsValid(eid) && uniqueEdges.insert(eid).second) {
+            validEdges.push_back(eid);
+        }
+    }
+
+    if (validEdges.empty()) {
+        return false;
+    }
+
+    m_mode = SelectionMode::Edge;
+
+    if (op == SelectionOp::Replace) {
+        if (m_selectedEdges.size() == uniqueEdges.size()) {
+            bool allMatch = true;
+            for (EdgeID eid : validEdges) {
+                if (m_selectedEdges.count(eid) == 0) {
+                    allMatch = false;
+                    break;
+                }
+            }
+            if (allMatch && m_activeEdge == startEdge) {
+                return true; // Zero-Work: nessuna mutazione, revisione stabile
+            }
+        }
+
+        m_selectedEdges.clear();
+        for (EdgeID eid : validEdges) {
+            m_selectedEdges.insert(eid);
+        }
+        m_activeEdge = startEdge;
+        IncrementRevision();
+        return true;
+    } else if (op == SelectionOp::Add) {
+        bool anyAdded = false;
+        for (EdgeID eid : validEdges) {
+            if (m_selectedEdges.insert(eid).second) {
+                anyAdded = true;
+            }
+        }
+        m_activeEdge = startEdge;
+        if (anyAdded) {
+            IncrementRevision();
+        }
+        return true;
+    } else if (op == SelectionOp::Subtract) {
+        bool anyRemoved = false;
+        for (EdgeID eid : validEdges) {
+            if (m_selectedEdges.erase(eid) > 0) {
+                anyRemoved = true;
+            }
+        }
+        if (m_activeEdge.IsValid() && m_selectedEdges.count(m_activeEdge) == 0) {
+            m_activeEdge = m_selectedEdges.empty() ? INVALID_EDGE_ID : *m_selectedEdges.begin();
+        }
+        if (anyRemoved) {
+            IncrementRevision();
+        }
+        return true;
+    } else if (op == SelectionOp::Toggle) {
+        bool changed = false;
+        for (EdgeID eid : validEdges) {
+            if (m_selectedEdges.count(eid) > 0) {
+                m_selectedEdges.erase(eid);
+                changed = true;
+            } else {
+                m_selectedEdges.insert(eid);
+                changed = true;
+            }
+        }
+        if (m_activeEdge.IsValid() && m_selectedEdges.count(m_activeEdge) == 0) {
+            m_activeEdge = m_selectedEdges.empty() ? INVALID_EDGE_ID : *m_selectedEdges.begin();
+        } else if (!m_selectedEdges.empty() && !m_activeEdge.IsValid()) {
+            m_activeEdge = startEdge;
+        }
+        if (changed) {
+            IncrementRevision();
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool MeshSelectionService::SelectEdgeRing(const EditableMesh& mesh, EdgeID startEdge, SelectionOp op) {
+    if (mesh.IsEmpty()) {
+        return false;
+    }
+
+    if (!startEdge.IsValid()) {
+        if (m_activeEdge.IsValid() && mesh.IsValid(m_activeEdge)) {
+            startEdge = m_activeEdge;
+        } else {
+            return false;
+        }
+    }
+
+    if (!mesh.IsValid(startEdge)) {
+        return false;
+    }
+
+    std::vector<EdgeID> rawRing = MeshTopologyService::FindEdgeRing(mesh, startEdge);
+    if (rawRing.empty()) {
+        return false;
+    }
+
+    std::vector<EdgeID> validEdges;
+    std::unordered_set<EdgeID> uniqueEdges;
+    validEdges.reserve(rawRing.size());
+    for (EdgeID eid : rawRing) {
+        if (mesh.IsValid(eid) && uniqueEdges.insert(eid).second) {
+            validEdges.push_back(eid);
+        }
+    }
+
+    if (validEdges.empty()) {
+        return false;
+    }
+
+    m_mode = SelectionMode::Edge;
+
+    if (op == SelectionOp::Replace) {
+        if (m_selectedEdges.size() == uniqueEdges.size()) {
+            bool allMatch = true;
+            for (EdgeID eid : validEdges) {
+                if (m_selectedEdges.count(eid) == 0) {
+                    allMatch = false;
+                    break;
+                }
+            }
+            if (allMatch && m_activeEdge == startEdge) {
+                return true; // Zero-Work: nessuna mutazione, revisione stabile
+            }
+        }
+
+        m_selectedEdges.clear();
+        for (EdgeID eid : validEdges) {
+            m_selectedEdges.insert(eid);
+        }
+        m_activeEdge = startEdge;
+        IncrementRevision();
+        return true;
+    } else if (op == SelectionOp::Add) {
+        bool anyAdded = false;
+        for (EdgeID eid : validEdges) {
+            if (m_selectedEdges.insert(eid).second) {
+                anyAdded = true;
+            }
+        }
+        m_activeEdge = startEdge;
+        if (anyAdded) {
+            IncrementRevision();
+        }
+        return true;
+    } else if (op == SelectionOp::Subtract) {
+        bool anyRemoved = false;
+        for (EdgeID eid : validEdges) {
+            if (m_selectedEdges.erase(eid) > 0) {
+                anyRemoved = true;
+            }
+        }
+        if (m_activeEdge.IsValid() && m_selectedEdges.count(m_activeEdge) == 0) {
+            m_activeEdge = m_selectedEdges.empty() ? INVALID_EDGE_ID : *m_selectedEdges.begin();
+        }
+        if (anyRemoved) {
+            IncrementRevision();
+        }
+        return true;
+    } else if (op == SelectionOp::Toggle) {
+        bool changed = false;
+        for (EdgeID eid : validEdges) {
+            if (m_selectedEdges.count(eid) > 0) {
+                m_selectedEdges.erase(eid);
+                changed = true;
+            } else {
+                m_selectedEdges.insert(eid);
+                changed = true;
+            }
+        }
+        if (m_activeEdge.IsValid() && m_selectedEdges.count(m_activeEdge) == 0) {
+            m_activeEdge = m_selectedEdges.empty() ? INVALID_EDGE_ID : *m_selectedEdges.begin();
+        } else if (!m_selectedEdges.empty() && !m_activeEdge.IsValid()) {
+            m_activeEdge = startEdge;
+        }
+        if (changed) {
+            IncrementRevision();
+        }
+        return true;
+    }
+
+    return false;
 }
 
 void MeshSelectionService::SelectFace(FaceID id, SelectionOp op) {
@@ -765,13 +988,18 @@ std::vector<MeshSelectionService::SelectionTestResult> MeshSelectionService::Run
         bool pickOk = hit.hit && hit.faceId.IsValid();
         const auto* f = cube.GetFace(hit.faceId);
         bool frontFace = f && (f->surfaceId == static_cast<uint32_t>(AssetCubeFace::Front));
-        bool distOk = std::abs(hit.distance - 4.0f) < 1e-2f; // Camera a Z=5, faccia a Z=1 -> dist = 4
+
+        // La fixture configura la telecamera a Z=5; calcoliamo la distanza dall'occhio a worldHitPoint
+        glm::vec3 cameraPos = glm::vec3(glm::inverse(ctx.viewMatrix)[3]);
+        float distanceToEye = glm::distance(cameraPos, hit.worldHitPoint);
+        bool distOk = std::abs(distanceToEye - 4.0f) < 1e-2f; // Camera a Z=5, faccia a Z=1 -> distEye = 4.0
 
         res.passed = pickOk && frontFace && distOk;
         res.observedDesc = "Hit=" + std::string(hit.hit ? "true" : "false") +
                            ", FaceID=" + std::to_string(hit.faceId.index) +
                            ", SurfaceID=" + (f ? std::to_string(f->surfaceId) : "none") +
-                           ", Dist=" + std::to_string(hit.distance);
+                           ", HitDist=" + std::to_string(hit.distance) +
+                           ", DistEye=" + std::to_string(distanceToEye);
         res.details = res.passed ? "PASS" : "FAIL: Incoerenza nel raycast facciale Möller-Trumbore";
         results.push_back(res);
     }
@@ -971,6 +1199,336 @@ std::vector<MeshSelectionService::SelectionTestResult> MeshSelectionService::Run
         res.observedDesc = "NgonHit=" + std::string(ngonHit ? "true" : "false") +
                            ", HitFaceID=" + std::to_string(hit.faceId.index);
         res.details = res.passed ? "PASS" : "FAIL: Mancata selezione dell'N-gon su triangoli non radice";
+        results.push_back(res);
+    }
+
+    // =========================================================================
+    // BM-S1: TEST DI CONTRATTO EDGE LOOP & EDGE RING (SEL-11 .. SEL-20)
+    // =========================================================================
+
+    // SEL-11 — Edge Loop Selection on Regular Quad Mesh (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-11";
+        res.testName = "SEL-11 — Edge Loop Selection on Regular Quad Mesh";
+        res.inputDesc = "Plane 3x3 quad grid; SelectEdgeLoop on central valence-4 edge";
+        res.expectedDesc = "Edge loop traversing continuous valence-4 vertices selected; mode is Edge";
+
+        EditableMesh plane = EditableMesh::CreatePlane(3, 3, 3.0f);
+        MeshSelectionService testSel;
+        auto allEdges = plane.GetActiveEdgeIDs();
+        EdgeID centerEdge = INVALID_EDGE_ID;
+        for (auto eid : allEdges) {
+            const auto* e = plane.GetEdge(eid);
+            if (e && e->twin.IsValid()) {
+                const auto* he = plane.GetHalfEdge(e->halfEdge);
+                if (he && plane.GetVertexOutgoingHalfEdges(he->origin).size() == 4) {
+                    centerEdge = eid;
+                    break;
+                }
+            }
+        }
+        if (!centerEdge.IsValid() && !allEdges.empty()) centerEdge = allEdges[allEdges.size() / 2];
+
+        bool ok = testSel.SelectEdgeLoop(plane, centerEdge, SelectionOp::Replace);
+        bool modeOk = (testSel.GetMode() == SelectionMode::Edge);
+        bool hasStart = testSel.IsEdgeSelected(centerEdge);
+        size_t count = testSel.GetSelectedCount();
+
+        res.passed = ok && modeOk && hasStart && (count >= 2);
+        res.observedDesc = "Success=" + std::string(ok ? "true" : "false") +
+                           ", Count=" + std::to_string(count) +
+                           ", Mode=" + std::to_string(static_cast<int>(testSel.GetMode()));
+        res.details = res.passed ? "PASS" : "FAIL: Selezione Edge Loop non riuscita su griglia quad regolare";
+        results.push_back(res);
+    }
+
+    // SEL-12 — Edge Ring Selection on Regular Quad Mesh (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-12";
+        res.testName = "SEL-12 — Edge Ring Selection on Regular Quad Mesh";
+        res.inputDesc = "Cube with 6 quads; SelectEdgeRing on vertical edge";
+        res.expectedDesc = "Finds and selects exactly 4 parallel edges forming the closed ring belt";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        MeshSelectionService testSel;
+        EdgeID startE = testCube.GetActiveEdgeIDs()[0];
+
+        bool ok = testSel.SelectEdgeRing(testCube, startE, SelectionOp::Replace);
+        bool countOk = (testSel.GetSelectedCount() == 4);
+        bool startSelected = testSel.IsEdgeSelected(startE);
+        bool modeOk = (testSel.GetMode() == SelectionMode::Edge);
+
+        res.passed = ok && countOk && startSelected && modeOk;
+        res.observedDesc = "Success=" + std::string(ok ? "true" : "false") +
+                           ", RingCount=" + std::to_string(testSel.GetSelectedCount()) +
+                           ", StartSelected=" + std::string(startSelected ? "true" : "false");
+        res.details = res.passed ? "PASS" : "FAIL: Ring selection non conforme (attesi 4 spigoli su cubo)";
+        results.push_back(res);
+    }
+
+    // SEL-13 — Open Loop Termination on Boundary (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-13";
+        res.testName = "SEL-13 — Open Loop Termination on Boundary";
+        res.inputDesc = "Plane 3x3 with boundaries; loop must terminate at boundary vertices (valence < 4)";
+        res.expectedDesc = "Loop terminates cleanly without cycling; bounded finite edge count";
+
+        EditableMesh plane = EditableMesh::CreatePlane(3, 3, 3.0f);
+        MeshSelectionService testSel;
+        EdgeID internalE = INVALID_EDGE_ID;
+        for (auto eid : plane.GetActiveEdgeIDs()) {
+            const auto* e = plane.GetEdge(eid);
+            if (e && e->twin.IsValid()) {
+                internalE = eid;
+                break;
+            }
+        }
+
+        bool ok = testSel.SelectEdgeLoop(plane, internalE, SelectionOp::Replace);
+        size_t count = testSel.GetSelectedCount();
+        bool finiteAndBounded = (count >= 2 && count <= 4);
+
+        res.passed = ok && finiteAndBounded;
+        res.observedDesc = "Success=" + std::string(ok ? "true" : "false") +
+                           ", Count=" + std::to_string(count) + " (Expected 2..4 bounded)";
+        res.details = res.passed ? "PASS" : "FAIL: Loop aperto non terminato correttamente al confine";
+        results.push_back(res);
+    }
+
+    // SEL-14 — Closed Loop Traversal on Subdivided Mesh (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-14";
+        res.testName = "SEL-14 — Closed Loop Traversal on Subdivided Mesh";
+        res.inputDesc = "Subdivided Cube (24 quads); SelectEdgeLoop along equatorial valence-4 junction";
+        res.expectedDesc = "Closed loop of 8 edges wrapping the entire perimeter back to start";
+
+        EditableMesh subCube = EditableMesh::CreateCube(1.0f);
+        SubdivideParams sp;
+        sp.iterations = 1;
+        sp.smooth = false;
+        MeshTopologyService::Subdivide(subCube, sp);
+
+        MeshSelectionService testSel;
+        EdgeID eqEdge = INVALID_EDGE_ID;
+        for (auto eid : subCube.GetActiveEdgeIDs()) {
+            const auto* e = subCube.GetEdge(eid);
+            if (e && e->twin.IsValid()) {
+                const auto* he0 = subCube.GetHalfEdge(e->halfEdge);
+                const auto* heNext = he0 ? subCube.GetHalfEdge(he0->next) : nullptr;
+                if (he0 && heNext) {
+                    if (subCube.GetVertexOutgoingHalfEdges(he0->origin).size() == 4 &&
+                        subCube.GetVertexOutgoingHalfEdges(heNext->origin).size() == 4) {
+                        eqEdge = eid;
+                        break;
+                    }
+                }
+            }
+        }
+
+        bool ok = false;
+        size_t count = 0;
+        if (eqEdge.IsValid()) {
+            ok = testSel.SelectEdgeLoop(subCube, eqEdge, SelectionOp::Replace);
+            count = testSel.GetSelectedCount();
+        }
+
+        bool closedLoopOk = ok && (count == 8);
+
+        res.passed = closedLoopOk;
+        res.observedDesc = "Success=" + std::string(ok ? "true" : "false") +
+                           ", ClosedLoopCount=" + std::to_string(count) + " (Expected 8)";
+        res.details = res.passed ? "PASS" : "FAIL: Loop chiuso non completato lungo la mezzeria del cubo suddiviso";
+        results.push_back(res);
+    }
+
+    // SEL-15 — Invalid Handle Rejection (Zero Mutation) (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-15";
+        res.testName = "SEL-15 — Invalid Handle Rejection (Zero Mutation)";
+        res.inputDesc = "SelectEdgeLoop and SelectEdgeRing called with INVALID_EDGE_ID and out-of-bounds index";
+        res.expectedDesc = "Operations return false; selection remains untouched; zero revision increment";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        MeshSelectionService testSel;
+        uint64_t revBefore = testSel.GetSelectionRevision();
+
+        bool loopRes = testSel.SelectEdgeLoop(testCube, INVALID_EDGE_ID);
+        bool ringRes = testSel.SelectEdgeRing(testCube, EdgeID{ 0xFFFFFFFF, 0 });
+        uint64_t revAfter = testSel.GetSelectionRevision();
+
+        bool rejected = (!loopRes && !ringRes);
+        bool zeroMut = (revAfter == revBefore) && !testSel.HasSelection();
+
+        res.passed = rejected && zeroMut;
+        res.observedDesc = "LoopRejected=" + std::string(!loopRes ? "true" : "false") +
+                           ", RingRejected=" + std::string(!ringRes ? "true" : "false") +
+                           ", RevStable=" + std::string(zeroMut ? "true" : "false");
+        res.details = res.passed ? "PASS" : "FAIL: Gestione handle invalido fallita o mutazione indesiderata";
+        results.push_back(res);
+    }
+
+    // SEL-16 — Stale Generational Handle Safety (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-16";
+        res.testName = "SEL-16 — Stale Generational Handle Safety";
+        res.inputDesc = "EdgeID with valid index but obsolete generation (simulating deleted/recycled edge)";
+        res.expectedDesc = "mesh.IsValid(stale) == false; SelectEdgeLoop/Ring safely rejected without crashing";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        MeshSelectionService testSel;
+
+        EdgeID realEdge = testCube.GetActiveEdgeIDs()[0];
+        EdgeID staleEdge{ realEdge.index, realEdge.generation + 999 };
+
+        bool isStaleValid = testCube.IsValid(staleEdge);
+        bool loopStale = testSel.SelectEdgeLoop(testCube, staleEdge);
+        bool ringStale = testSel.SelectEdgeRing(testCube, staleEdge);
+
+        bool safe = !isStaleValid && !loopStale && !ringStale && !testSel.HasSelection();
+
+        res.passed = safe;
+        res.observedDesc = "StaleValid=" + std::string(isStaleValid ? "true" : "false") +
+                           ", LoopStale=" + std::string(loopStale ? "true" : "false") +
+                           ", RingStale=" + std::string(ringStale ? "true" : "false");
+        res.details = res.passed ? "PASS" : "FAIL: Mancata protezione da handle generazionali obsoleti";
+        results.push_back(res);
+    }
+
+    // SEL-17 — Duplicate-Free Invariant (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-17";
+        res.testName = "SEL-17 — Duplicate-Free Invariant";
+        res.inputDesc = "SelectEdgeLoop on closed mesh; verify internal container contains strictly unique EdgeIDs";
+        res.expectedDesc = "std::unordered_set size equals total selected edge count (0 duplicate EdgeIDs)";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        MeshSelectionService testSel;
+        EdgeID startE = testCube.GetActiveEdgeIDs()[0];
+        testSel.SelectEdgeRing(testCube, startE, SelectionOp::Replace);
+
+        const auto& selEdges = testSel.GetSelectedEdges();
+        std::unordered_set<EdgeID> checkSet(selEdges.begin(), selEdges.end());
+        bool duplicateFree = (checkSet.size() == selEdges.size()) && (selEdges.size() == testSel.GetSelectedCount());
+
+        res.passed = duplicateFree && (selEdges.size() == 4);
+        res.observedDesc = "SelectedCount=" + std::to_string(selEdges.size()) +
+                           ", UniqueSetSize=" + std::to_string(checkSet.size());
+        res.details = res.passed ? "PASS" : "FAIL: Rilevati spigoli duplicati nella selezione";
+        results.push_back(res);
+    }
+
+    // SEL-18 — Additive Multi-Ring Selection (SelectionOp::Add) (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-18";
+        res.testName = "SEL-18 — Additive Multi-Ring Selection (SelectionOp::Add)";
+        res.inputDesc = "SelectEdgeRing on ring 1 (Replace), then SelectEdgeRing on perpendicular ring 2 (Add)";
+        res.expectedDesc = "Selection count accumulates both rings without clearing initial selection (count > 4)";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        MeshSelectionService testSel;
+        auto allEdges = testCube.GetActiveEdgeIDs();
+        EdgeID ring1E = allEdges[0];
+        testSel.SelectEdgeRing(testCube, ring1E, SelectionOp::Replace);
+        size_t countAfter1 = testSel.GetSelectedCount();
+
+        EdgeID ring2E = INVALID_EDGE_ID;
+        for (auto eid : allEdges) {
+            if (!testSel.IsEdgeSelected(eid)) {
+                ring2E = eid;
+                break;
+            }
+        }
+
+        bool addOk = false;
+        if (ring2E.IsValid()) {
+            addOk = testSel.SelectEdgeRing(testCube, ring2E, SelectionOp::Add);
+        }
+        size_t countAfter2 = testSel.GetSelectedCount();
+
+        bool accumulated = addOk && (countAfter1 == 4) && (countAfter2 > countAfter1);
+
+        res.passed = accumulated;
+        res.observedDesc = "Ring1Count=" + std::to_string(countAfter1) +
+                           ", Ring2AccumCount=" + std::to_string(countAfter2) +
+                           ", AddOk=" + std::string(addOk ? "true" : "false");
+        res.details = res.passed ? "PASS" : "FAIL: Selezione additiva non riuscita";
+        results.push_back(res);
+    }
+
+    // SEL-19 — Zero-Work Invariance on Unchanged Selection (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-19";
+        res.testName = "SEL-19 — Zero-Work Invariance on Unchanged Selection";
+        res.inputDesc = "Repeat SelectEdgeRing(startE, Replace) twice consecutively";
+        res.expectedDesc = "Second invocation detects identical set and does not increment selectionRevision";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        MeshSelectionService testSel;
+        EdgeID startE = testCube.GetActiveEdgeIDs()[0];
+
+        testSel.SelectEdgeRing(testCube, startE, SelectionOp::Replace);
+        uint64_t rev1 = testSel.GetSelectionRevision();
+
+        bool secondCallOk = testSel.SelectEdgeRing(testCube, startE, SelectionOp::Replace);
+        uint64_t rev2 = testSel.GetSelectionRevision();
+
+        bool zeroWorkPreserved = secondCallOk && (rev2 == rev1);
+
+        res.passed = zeroWorkPreserved;
+        res.observedDesc = "Rev1=" + std::to_string(rev1) +
+                           ", Rev2=" + std::to_string(rev2) +
+                           ", ZeroWork=" + std::string(zeroWorkPreserved ? "true" : "false");
+        res.details = res.passed ? "PASS" : "FAIL: Incremento superfluo di selectionRevision su selezione invariata";
+        results.push_back(res);
+    }
+
+    // SEL-20 — Revision Safety: Geometry & Topology Untouched (BM-S1)
+    {
+        SelectionTestResult res;
+        res.testId = "SEL-20";
+        res.testName = "SEL-20 — Revision Safety: Geometry & Topology Untouched";
+        res.inputDesc = "Track topologyRevision, geometryRevision, attributeRevision before and after edge loop & ring ops";
+        res.expectedDesc = "All mesh revisions remain strictly identical; vertex positions and faces unchanged";
+
+        EditableMesh testCube = EditableMesh::CreateCube(1.0f);
+        uint64_t topoBefore = testCube.GetTopologyRevision();
+        uint64_t geomBefore = testCube.GetGeometryRevision();
+        uint64_t attrBefore = testCube.GetAttributeRevision();
+        size_t vCountBefore = testCube.GetVertexCount();
+        size_t fCountBefore = testCube.GetFaceCount();
+
+        MeshSelectionService testSel;
+        auto allEdges = testCube.GetActiveEdgeIDs();
+        testSel.SelectEdgeLoop(testCube, allEdges[0], SelectionOp::Replace);
+        testSel.SelectEdgeRing(testCube, allEdges[0], SelectionOp::Replace);
+        testSel.SelectEdgeRing(testCube, allEdges[1], SelectionOp::Add);
+
+        uint64_t topoAfter = testCube.GetTopologyRevision();
+        uint64_t geomAfter = testCube.GetGeometryRevision();
+        uint64_t attrAfter = testCube.GetAttributeRevision();
+        size_t vCountAfter = testCube.GetVertexCount();
+        size_t fCountAfter = testCube.GetFaceCount();
+
+        bool topoSafe = (topoBefore == topoAfter);
+        bool geomSafe = (geomBefore == geomAfter);
+        bool attrSafe = (attrBefore == attrAfter);
+        bool countsSafe = (vCountBefore == vCountAfter) && (fCountBefore == fCountAfter);
+
+        res.passed = topoSafe && geomSafe && attrSafe && countsSafe;
+        res.observedDesc = "TopoSafe=" + std::string(topoSafe ? "true" : "false") +
+                           ", GeomSafe=" + std::string(geomSafe ? "true" : "false") +
+                           ", AttrSafe=" + std::string(attrSafe ? "true" : "false") +
+                           ", CountsSafe=" + std::string(countsSafe ? "true" : "false");
+        res.details = res.passed ? "PASS" : "FAIL: Modifica delle revisioni geometriche/topologiche a seguito della selezione";
         results.push_back(res);
     }
 

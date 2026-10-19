@@ -8,12 +8,29 @@
 
 namespace fw {
 
-EditableMesh::EditableMesh() {
+EditableMesh::EditableMesh() 
+    : m_generationLedger(std::make_shared<MeshGenerationLedger>()) {
     Clear();
 }
 
 EditableMesh::EditableMesh(const EditableMesh& other) {
     *this = other;
+}
+
+void EditableMesh::SyncLedgerWithCurrentElements() {
+    if (!m_generationLedger) return;
+    for (size_t i = 0; i < m_vertexGenerations.size(); ++i) {
+        m_generationLedger->RegisterVertexGeneration(static_cast<uint32_t>(i), m_vertexGenerations[i]);
+    }
+    for (size_t i = 0; i < m_halfEdgeGenerations.size(); ++i) {
+        m_generationLedger->RegisterHalfEdgeGeneration(static_cast<uint32_t>(i), m_halfEdgeGenerations[i]);
+    }
+    for (size_t i = 0; i < m_edgeGenerations.size(); ++i) {
+        m_generationLedger->RegisterEdgeGeneration(static_cast<uint32_t>(i), m_edgeGenerations[i]);
+    }
+    for (size_t i = 0; i < m_faceGenerations.size(); ++i) {
+        m_generationLedger->RegisterFaceGeneration(static_cast<uint32_t>(i), m_faceGenerations[i]);
+    }
 }
 
 EditableMesh& EditableMesh::operator=(const EditableMesh& other) {
@@ -45,6 +62,17 @@ EditableMesh& EditableMesh::operator=(const EditableMesh& other) {
     m_geometryRevision = other.m_geometryRevision;
     m_attributeRevision = other.m_attributeRevision;
 
+    // Generation Ledger (BM-S1.T12):
+    // Preserva il ledger di questa istanza se già presente (per non riavvolgerlo in caso di Undo/Redo snapshot),
+    // altrimenti adotta il ledger della sorgente.
+    if (!m_generationLedger) {
+        m_generationLedger = other.m_generationLedger;
+    }
+    // Sincronizza il ledger attivo con le generazioni degli elementi ripristinati/copiati
+    if (m_generationLedger) {
+        SyncLedgerWithCurrentElements();
+    }
+
     return *this;
 }
 
@@ -75,7 +103,7 @@ void EditableMesh::Clear() {
 }
 
 // =============================================================================
-// ALLOCATORI INTERNI SLOTMAP CON GENERAZIONE
+// ALLOCATORI INTERNI SLOTMAP CON GENERATION LEDGER (BM-S1.T12)
 // =============================================================================
 
 VertexID EditableMesh::AddVertex(const glm::vec3& position) {
@@ -83,8 +111,12 @@ VertexID EditableMesh::AddVertex(const glm::vec3& position) {
     if (!m_freeVertexIndices.empty()) {
         id.index = m_freeVertexIndices.back();
         m_freeVertexIndices.pop_back();
-        m_vertexGenerations[id.index]++;
-        id.generation = m_vertexGenerations[id.index];
+        uint32_t curGen = m_vertexGenerations[id.index];
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateVertexGeneration(id.index, curGen)
+            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
+        m_vertexGenerations[id.index] = nextGen;
+        id.generation = nextGen;
 
         auto& v = m_vertices[id.index];
         v.id = id;
@@ -94,8 +126,11 @@ VertexID EditableMesh::AddVertex(const glm::vec3& position) {
         v.isDeleted = false;
     } else {
         id.index = static_cast<uint32_t>(m_vertices.size());
-        id.generation = 1;
-        m_vertexGenerations.push_back(1);
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateVertexGeneration(id.index, 0)
+            : 1;
+        id.generation = nextGen;
+        m_vertexGenerations.push_back(nextGen);
 
         MeshVertex v;
         v.id = id;
@@ -115,8 +150,12 @@ HalfEdgeID EditableMesh::AllocateHalfEdge() {
     if (!m_freeHalfEdgeIndices.empty()) {
         id.index = m_freeHalfEdgeIndices.back();
         m_freeHalfEdgeIndices.pop_back();
-        m_halfEdgeGenerations[id.index]++;
-        id.generation = m_halfEdgeGenerations[id.index];
+        uint32_t curGen = m_halfEdgeGenerations[id.index];
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateHalfEdgeGeneration(id.index, curGen)
+            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
+        m_halfEdgeGenerations[id.index] = nextGen;
+        id.generation = nextGen;
 
         auto& he = m_halfEdges[id.index];
         he.id = id;
@@ -130,8 +169,11 @@ HalfEdgeID EditableMesh::AllocateHalfEdge() {
         he.isDeleted = false;
     } else {
         id.index = static_cast<uint32_t>(m_halfEdges.size());
-        id.generation = 1;
-        m_halfEdgeGenerations.push_back(1);
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateHalfEdgeGeneration(id.index, 0)
+            : 1;
+        id.generation = nextGen;
+        m_halfEdgeGenerations.push_back(nextGen);
 
         MeshHalfEdge he;
         he.id = id;
@@ -154,8 +196,12 @@ EdgeID EditableMesh::AllocateEdge() {
     if (!m_freeEdgeIndices.empty()) {
         id.index = m_freeEdgeIndices.back();
         m_freeEdgeIndices.pop_back();
-        m_edgeGenerations[id.index]++;
-        id.generation = m_edgeGenerations[id.index];
+        uint32_t curGen = m_edgeGenerations[id.index];
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateEdgeGeneration(id.index, curGen)
+            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
+        m_edgeGenerations[id.index] = nextGen;
+        id.generation = nextGen;
 
         auto& e = m_edges[id.index];
         e.id = id;
@@ -166,8 +212,11 @@ EdgeID EditableMesh::AllocateEdge() {
         e.isDeleted = false;
     } else {
         id.index = static_cast<uint32_t>(m_edges.size());
-        id.generation = 1;
-        m_edgeGenerations.push_back(1);
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateEdgeGeneration(id.index, 0)
+            : 1;
+        id.generation = nextGen;
+        m_edgeGenerations.push_back(nextGen);
 
         MeshEdge e;
         e.id = id;
@@ -187,8 +236,12 @@ FaceID EditableMesh::AllocateFace() {
     if (!m_freeFaceIndices.empty()) {
         id.index = m_freeFaceIndices.back();
         m_freeFaceIndices.pop_back();
-        m_faceGenerations[id.index]++;
-        id.generation = m_faceGenerations[id.index];
+        uint32_t curGen = m_faceGenerations[id.index];
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateFaceGeneration(id.index, curGen)
+            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
+        m_faceGenerations[id.index] = nextGen;
+        id.generation = nextGen;
 
         auto& f = m_faces[id.index];
         f.id = id;
@@ -200,8 +253,11 @@ FaceID EditableMesh::AllocateFace() {
         f.isDeleted = false;
     } else {
         id.index = static_cast<uint32_t>(m_faces.size());
-        id.generation = 1;
-        m_faceGenerations.push_back(1);
+        uint32_t nextGen = m_generationLedger 
+            ? m_generationLedger->AllocateFaceGeneration(id.index, 0)
+            : 1;
+        id.generation = nextGen;
+        m_faceGenerations.push_back(nextGen);
 
         MeshFace f;
         f.id = id;
@@ -769,6 +825,22 @@ AABB EditableMesh::ComputeAABB() const {
         b.expand(Vec3{p.x, p.y, p.z});
     }
     return b;
+}
+
+// =============================================================================
+// RICOSTRUZIONE LOOKUP SPIGOLI ORIENTATI
+// =============================================================================
+
+void EditableMesh::RebuildDirectedEdgeLookup() {
+    m_directedEdgeLookup.clear();
+    for (size_t i = 0; i < m_halfEdges.size(); ++i) {
+        if (m_halfEdges[i].isDeleted) continue;
+        const auto& he = m_halfEdges[i];
+        if (IsValid(he.next) && he.next.index < m_halfEdges.size()) {
+            DirectedEdgeKey dirKey{ he.origin.index, m_halfEdges[he.next.index].origin.index };
+            m_directedEdgeLookup[dirKey] = he.id;
+        }
+    }
 }
 
 // =============================================================================

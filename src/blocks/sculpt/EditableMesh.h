@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <memory>
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <cstdint>
@@ -85,6 +87,92 @@ namespace std {
 } // namespace std
 
 namespace fw {
+
+// =============================================================================
+// BM-S1.T12: GENERATION LEDGER
+// Registro per-documento delle generazioni massime assegnate agli slot.
+// Previene collisioni tra rami alternativi (Branching) e ricostruzioni (Subdivide).
+// =============================================================================
+class MeshGenerationLedger {
+public:
+    MeshGenerationLedger() = default;
+    ~MeshGenerationLedger() = default;
+
+    uint32_t AllocateVertexGeneration(uint32_t slotIndex, uint32_t currentSlotGen = 0) {
+        return AllocateGeneration(m_maxVertexGenerations, slotIndex, currentSlotGen);
+    }
+    uint32_t AllocateHalfEdgeGeneration(uint32_t slotIndex, uint32_t currentSlotGen = 0) {
+        return AllocateGeneration(m_maxHalfEdgeGenerations, slotIndex, currentSlotGen);
+    }
+    uint32_t AllocateEdgeGeneration(uint32_t slotIndex, uint32_t currentSlotGen = 0) {
+        return AllocateGeneration(m_maxEdgeGenerations, slotIndex, currentSlotGen);
+    }
+    uint32_t AllocateFaceGeneration(uint32_t slotIndex, uint32_t currentSlotGen = 0) {
+        return AllocateGeneration(m_maxFaceGenerations, slotIndex, currentSlotGen);
+    }
+
+    void RegisterVertexGeneration(uint32_t slotIndex, uint32_t gen) {
+        RegisterGeneration(m_maxVertexGenerations, slotIndex, gen);
+    }
+    void RegisterHalfEdgeGeneration(uint32_t slotIndex, uint32_t gen) {
+        RegisterGeneration(m_maxHalfEdgeGenerations, slotIndex, gen);
+    }
+    void RegisterEdgeGeneration(uint32_t slotIndex, uint32_t gen) {
+        RegisterGeneration(m_maxEdgeGenerations, slotIndex, gen);
+    }
+    void RegisterFaceGeneration(uint32_t slotIndex, uint32_t gen) {
+        RegisterGeneration(m_maxFaceGenerations, slotIndex, gen);
+    }
+
+    uint32_t GetMaxVertexGeneration(uint32_t slotIndex) const {
+        return (slotIndex < m_maxVertexGenerations.size()) ? m_maxVertexGenerations[slotIndex] : 0;
+    }
+    uint32_t GetMaxHalfEdgeGeneration(uint32_t slotIndex) const {
+        return (slotIndex < m_maxHalfEdgeGenerations.size()) ? m_maxHalfEdgeGenerations[slotIndex] : 0;
+    }
+    uint32_t GetMaxEdgeGeneration(uint32_t slotIndex) const {
+        return (slotIndex < m_maxEdgeGenerations.size()) ? m_maxEdgeGenerations[slotIndex] : 0;
+    }
+    uint32_t GetMaxFaceGeneration(uint32_t slotIndex) const {
+        return (slotIndex < m_maxFaceGenerations.size()) ? m_maxFaceGenerations[slotIndex] : 0;
+    }
+
+    void Clear() {
+        m_maxVertexGenerations.clear();
+        m_maxHalfEdgeGenerations.clear();
+        m_maxEdgeGenerations.clear();
+        m_maxFaceGenerations.clear();
+    }
+
+private:
+    static uint32_t AllocateGeneration(std::vector<uint32_t>& ledgerVec, uint32_t slotIndex, uint32_t currentSlotGen) {
+        if (slotIndex >= ledgerVec.size()) {
+            ledgerVec.resize(slotIndex + 1, 0);
+        }
+        uint32_t baseGen = std::max(currentSlotGen, ledgerVec[slotIndex]);
+        uint32_t nextGen = (baseGen == 0) ? 1 : (baseGen + 1);
+        if (nextGen == 0 || nextGen <= baseGen) {
+            // Saturazione esplicita uint32_t: impedisce il wraparound a 0 o 1, evitando il riciclo di vecchi handle
+            nextGen = 0xFFFFFFFF;
+        }
+        ledgerVec[slotIndex] = nextGen;
+        return nextGen;
+    }
+
+    static void RegisterGeneration(std::vector<uint32_t>& ledgerVec, uint32_t slotIndex, uint32_t gen) {
+        if (slotIndex >= ledgerVec.size()) {
+            ledgerVec.resize(slotIndex + 1, 0);
+        }
+        if (gen > ledgerVec[slotIndex]) {
+            ledgerVec[slotIndex] = gen;
+        }
+    }
+
+    std::vector<uint32_t> m_maxVertexGenerations;
+    std::vector<uint32_t> m_maxHalfEdgeGenerations;
+    std::vector<uint32_t> m_maxEdgeGenerations;
+    std::vector<uint32_t> m_maxFaceGenerations;
+};
 
 // =============================================================================
 // ATTRIBUTI PER CORNER / LOOP
@@ -239,6 +327,20 @@ public:
     std::vector<EdgeID>     GetActiveEdgeIDs() const;
     std::vector<FaceID>     GetActiveFaceIDs() const;
 
+    // --- Generation Ledger (BM-S1.T12) ---
+    std::shared_ptr<MeshGenerationLedger> GetGenerationLedger() const { return m_generationLedger; }
+    void SetGenerationLedger(std::shared_ptr<MeshGenerationLedger> ledger) { m_generationLedger = std::move(ledger); }
+    void ResetGenerationLedger() {
+        m_generationLedger = std::make_shared<MeshGenerationLedger>();
+        SyncLedgerWithCurrentElements();
+    }
+    void SyncLedgerWithCurrentElements();
+
+    const std::vector<uint32_t>& GetVertexGenerations() const { return m_vertexGenerations; }
+    const std::vector<uint32_t>& GetHalfEdgeGenerations() const { return m_halfEdgeGenerations; }
+    const std::vector<uint32_t>& GetEdgeGenerations() const { return m_edgeGenerations; }
+    const std::vector<uint32_t>& GetFaceGenerations() const { return m_faceGenerations; }
+
     // --- Manipolazione Geometria ---
     VertexID AddVertex(const glm::vec3& position);
     bool SetVertexPosition(VertexID id, const glm::vec3& newPos);
@@ -274,7 +376,8 @@ public:
     void ComputeVertexNormals();
     AABB ComputeAABB() const;
 
-    // --- Validazione Topologica ---
+    // --- Validazione Topologica & Ricostruzione Lookup ---
+    void RebuildDirectedEdgeLookup();
     MeshValidationReport ValidateTopology() const;
 
     // --- Primitivi di Partenza ---
@@ -354,6 +457,9 @@ private:
     HalfEdgeID AllocateHalfEdge();
     EdgeID     AllocateEdge();
     FaceID     AllocateFace();
+
+    // Generation Ledger per-documento per garantire identità branch-safe (BM-S1.T12)
+    std::shared_ptr<MeshGenerationLedger> m_generationLedger;
 };
 
 } // namespace fw

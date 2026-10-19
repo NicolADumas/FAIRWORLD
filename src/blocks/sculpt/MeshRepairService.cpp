@@ -319,26 +319,54 @@ RepairResult MeshRepairService::SplitPinchedVertices(EditableMesh& mesh) {
         return result;
     }
 
+    // Staging backup per garantire atomicità e rollback deterministico in caso di errore
+    EditableMesh backup = mesh;
+
+    // Costruzione dell'indice temporaneo di adiacenza faccia-vertice per i soli vertici pinched
+    // Questo evita traversal globale quadratico O(V*F) e identifica correttamente tutti i ventagli
+    std::unordered_set<VertexID> pinchedSet(
+        diag.pinchedNonManifoldVertices.begin(),
+        diag.pinchedNonManifoldVertices.end()
+    );
+    std::unordered_map<VertexID, std::vector<FaceID>> vertexIncidentFaces;
+    for (FaceID fId : mesh.GetActiveFaceIDs()) {
+        for (VertexID vid : mesh.GetFaceVertices(fId)) {
+            if (pinchedSet.count(vid)) {
+                vertexIncidentFaces[vid].push_back(fId);
+            }
+        }
+    }
+
     for (VertexID pVid : diag.pinchedNonManifoldVertices) {
         const auto* origV = mesh.GetVertex(pVid);
         if (!origV) continue;
         glm::vec3 pos = origV->position;
+        glm::vec3 normal = origV->normal;
 
-        auto incFaces = mesh.GetVertexIncidentFaces(pVid);
+        auto it = vertexIncidentFaces.find(pVid);
+        if (it == vertexIncidentFaces.end()) continue;
+        auto incFaces = it->second;
+
+        // Ordinamento deterministico per FaceID
+        std::sort(incFaces.begin(), incFaces.end(), [](FaceID a, FaceID b) {
+            return a.index < b.index;
+        });
+        incFaces.erase(std::unique(incFaces.begin(), incFaces.end()), incFaces.end());
+
         if (incFaces.size() <= 1) continue;
 
-        // Ripartiziona le facce in cluster connessi
+        // Ripartiziona le facce in cluster connessi topologicamente (componenti di ventaglio)
         std::vector<std::vector<FaceID>> clusters;
-        std::unordered_set<FaceID> unvisited(incFaces.begin(), incFaces.end());
+        std::unordered_set<FaceID> visited;
 
-        while (!unvisited.empty()) {
+        for (FaceID seedF : incFaces) {
+            if (visited.count(seedF)) continue;
+
             std::vector<FaceID> curCluster;
-            FaceID startF = *unvisited.begin();
-            unvisited.erase(startF);
-
             std::queue<FaceID> q;
-            q.push(startF);
-            curCluster.push_back(startF);
+            q.push(seedF);
+            visited.insert(seedF);
+            curCluster.push_back(seedF);
 
             while (!q.empty()) {
                 FaceID curF = q.front();
@@ -352,52 +380,112 @@ RepairResult MeshRepairService::SplitPinchedVertices(EditableMesh& mesh) {
                     if (!nextHe) continue;
 
                     if (he->origin == pVid || nextHe->origin == pVid) {
-                        if (he->twin.IsValid()) {
+                        if (mesh.IsValid(he->twin)) {
                             const auto* twinHe = mesh.GetHalfEdge(he->twin);
-                            if (twinHe && twinHe->face.IsValid() && unvisited.count(twinHe->face)) {
-                                unvisited.erase(twinHe->face);
-                                q.push(twinHe->face);
-                                curCluster.push_back(twinHe->face);
+                            if (twinHe && mesh.IsValid(twinHe->face) && !visited.count(twinHe->face)) {
+                                if (std::binary_search(incFaces.begin(), incFaces.end(), twinHe->face,
+                                    [](FaceID a, FaceID b) { return a.index < b.index; })) {
+                                    visited.insert(twinHe->face);
+                                    q.push(twinHe->face);
+                                    curCluster.push_back(twinHe->face);
+                                }
                             }
                         }
                     }
                 }
             }
+            std::sort(curCluster.begin(), curCluster.end(), [](FaceID a, FaceID b) {
+                return a.index < b.index;
+            });
             clusters.push_back(curCluster);
         }
 
         if (clusters.size() <= 1) continue;
 
-        // Lascia il cluster 0 agganciato a pVid. Per ogni cluster successivo k >= 1:
+        // Cluster 0: mantiene il vertice originale pVid
+        // Garantisce che pVid->halfEdge punti a una half-edge del cluster 0 con origin == pVid
+        HalfEdgeID validHeForOrigV = INVALID_HALFEDGE_ID;
+        for (FaceID fId : clusters[0]) {
+            for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+                const auto* he = mesh.GetHalfEdge(heId);
+                if (he && he->origin == pVid) {
+                    validHeForOrigV = heId;
+                    break;
+                }
+            }
+            if (mesh.IsValid(validHeForOrigV)) break;
+        }
+        if (mesh.IsValid(validHeForOrigV)) {
+            mesh.GetVertexMutable(pVid)->halfEdge = validHeForOrigV;
+        }
+
+        // Per ciascun cluster aggiuntivo c >= 1:
+        // Alloca un nuovo VertexID e riassocia esclusivamente le Half-Edge del cluster c
         for (size_t c = 1; c < clusters.size(); ++c) {
             VertexID newVid = mesh.AddVertex(pos);
-            for (FaceID fId : clusters[c]) {
-                std::vector<VertexID> verts = mesh.GetFaceVertices(fId);
-                std::vector<CornerAttributes> corners = mesh.GetFaceCorners(fId);
-                const auto* fObj = mesh.GetFace(fId);
-                if (!fObj) continue;
-                uint32_t sId = fObj->surfaceId;
-                uint32_t mId = fObj->materialId;
+            if (!mesh.IsValid(newVid)) {
+                // Rollback atomico in caso di errore nell'allocatore
+                mesh = backup;
+                result.success = false;
+                result.modified = false;
+                result.pinchedVerticesSplit = 0;
+                result.newTopologyRev = result.oldTopologyRev;
+                result.newGeometryRev = result.oldGeometryRev;
+                result.reportAfter = result.reportBefore;
+                result.message = "Allocazione nuovo VertexID fallita durante la separazione. Rollback eseguito.";
+                return result;
+            }
+            mesh.GetVertexMutable(newVid)->normal = normal;
 
-                for (size_t vi = 0; vi < verts.size(); ++vi) {
-                    if (verts[vi] == pVid) {
-                        verts[vi] = newVid;
+            HalfEdgeID validHeForNewV = INVALID_HALFEDGE_ID;
+            for (FaceID fId : clusters[c]) {
+                for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+                    auto* he = mesh.GetHalfEdgeMutable(heId);
+                    if (he && he->origin == pVid) {
+                        he->origin = newVid;
+                        validHeForNewV = heId;
                     }
                 }
-
-                mesh.DeleteFace(fId, true, false);
-                mesh.AddFace(verts, sId, mId, &corners);
+            }
+            if (mesh.IsValid(validHeForNewV)) {
+                mesh.GetVertexMutable(newVid)->halfEdge = validHeForNewV;
             }
             result.pinchedVerticesSplit++;
         }
     }
 
-    result.modified = (result.pinchedVerticesSplit > 0);
-    result.success = true;
-    result.newTopologyRev = mesh.GetTopologyRevision();
-    result.newGeometryRev = mesh.GetGeometryRevision();
-    result.reportAfter = mesh.ValidateTopology();
-    result.message = "Separati " + std::to_string(result.pinchedVerticesSplit) + " ventagli non-manifold.";
+    if (result.pinchedVerticesSplit > 0) {
+        mesh.RebuildDirectedEdgeLookup();
+        mesh.ComputeVertexNormals();
+        mesh.IncrementTopologyRevision();
+
+        result.reportAfter = mesh.ValidateTopology();
+        if (!result.reportAfter.errors.empty()) {
+            mesh = backup;
+            result.success = false;
+            result.modified = false;
+            result.pinchedVerticesSplit = 0;
+            result.newTopologyRev = result.oldTopologyRev;
+            result.newGeometryRev = result.oldGeometryRev;
+            result.reportAfter = result.reportBefore;
+            result.message = "Topologia DCEL non valida dopo separazione pinched. Rollback atomico eseguito.";
+            return result;
+        }
+
+        result.modified = true;
+        result.success = true;
+        result.newTopologyRev = mesh.GetTopologyRevision();
+        result.newGeometryRev = mesh.GetGeometryRevision();
+        result.message = "Separati con successo " + std::to_string(result.pinchedVerticesSplit) + " ventagli non-manifold.";
+    } else {
+        result.modified = false;
+        result.success = true;
+        result.newTopologyRev = result.oldTopologyRev;
+        result.newGeometryRev = result.oldGeometryRev;
+        result.reportAfter = result.reportBefore;
+        result.message = "Nessun ventaglio separato (struttura gia manifold).";
+    }
+
     return result;
 }
 
@@ -939,9 +1027,15 @@ std::vector<MeshRepairService::RepairTestResult> MeshRepairService::RunRepairCon
         VertexID v2 = mesh.AddVertex(glm::vec3(0.0f, 1.0f, 0.0f));
         mesh.AddFace({v0, v1, v2});
 
-        // Inietta faccia con vertice duplicato tentando di costruire ciclo non valido
         auto diagClean = DetectDegeneracies(mesh);
-        bool cleanReport = !diagClean.HasIssues();
+        // Distinguiamo le degenerazioni geometriche dal boundary loop legittimo della mesh aperta (1 triangolo)
+        bool hasGeometricDegeneracies = !diagClean.zeroAreaFaces.empty() ||
+                                        !diagClean.duplicateVertexFaces.empty() ||
+                                        !diagClean.zeroLengthEdges.empty() ||
+                                        !diagClean.isolatedVertices.empty() ||
+                                        !diagClean.isolatedEdges.empty() ||
+                                        !diagClean.pinchedNonManifoldVertices.empty();
+        bool cleanReport = !hasGeometricDegeneracies && (diagClean.boundaryHoleLoops.size() == 1);
 
         // Aggiungi un vertice degenere isolato
         VertexID vIso = mesh.AddVertex(glm::vec3(3.0f, 3.0f, 3.0f));

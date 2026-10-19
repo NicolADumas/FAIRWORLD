@@ -309,6 +309,7 @@ TopologyOperationResult MeshTopologyService::Subdivide(EditableMesh& mesh, const
 
         // 3. Costruisci la nuova topologia suddivisa
         EditableMesh subMesh;
+        subMesh.SetGenerationLedger(mesh.GetGenerationLedger());
         std::unordered_map<VertexID, VertexID> origToNew;
         std::unordered_map<EdgeID, VertexID> edgeToNew;
         std::unordered_map<FaceID, VertexID> faceToNew;
@@ -393,6 +394,10 @@ TopologyOperationResult MeshTopologyService::Subdivide(EditableMesh& mesh, const
 
         subMesh.ComputeAllFaceNormals();
         subMesh.ComputeVertexNormals();
+        uint64_t curTopo = mesh.GetTopologyRevision();
+        uint64_t curGeo = mesh.GetGeometryRevision();
+        subMesh.SetTopologyRevision(curTopo);
+        subMesh.SetGeometryRevision(curGeo);
         mesh = std::move(subMesh);
         mesh.IncrementTopologyRevision();
     }
@@ -895,14 +900,15 @@ std::vector<MeshTopologyService::TopologyTestResult> MeshTopologyService::RunTop
         results.push_back(t);
     }
 
-    // TOP-9: Generational ID Safety on Face Deletion / Split
+    // TOP-9: Generational ID Safety on Face Deletion / Split & Branch-Safe Ledger
     {
         TopologyTestResult t;
         t.testId = "TOP-9";
-        t.testName = "TOP-9 — Generational ID Safety on Topological Mutations";
-        t.inputDesc = "Subdivide replaces faces; old FaceIDs must be reported invalid";
-        t.expectedDesc = "mesh.IsValid(oldFaceId) returns false; prevents stale references";
+        t.testName = "TOP-9 — Generational ID Safety on Topological Mutations & Branching";
+        t.inputDesc = "Subdivide replaces faces; old IDs invalid; branching & overflow ledger safe";
+        t.expectedDesc = "mesh.IsValid(oldFaceId) returns false; branch-safe IDs; ledger overflow saturation";
 
+        // 1. Invalidazione base
         auto mesh = EditableMesh::CreateQuad(1.0f, 1.0f);
         FaceID oldFid = mesh.GetActiveFaceIDs()[0];
 
@@ -911,10 +917,44 @@ std::vector<MeshTopologyService::TopologyTestResult> MeshTopologyService::RunTop
         Subdivide(mesh, sp);
 
         bool oldInvalid = !mesh.IsValid(oldFid);
+        FaceID sub1Fid = mesh.GetActiveFaceIDs()[0];
 
-        t.passed = oldInvalid;
-        t.observedDesc = "OldFaceInvalidated=" + std::to_string(oldInvalid);
-        t.details = t.passed ? "PASS" : "FAIL: Vecchi FaceID rimasti validi dopo la suddivisione";
+        // 2. Subdivide ripetuta: la seconda iterazione deve invalidare i FaceID della prima
+        Subdivide(mesh, sp);
+        bool repeatedSubValid = !mesh.IsValid(sub1Fid) && (mesh.GetFaceCount() == 16);
+
+        // 3. Branching Safety: Mesh A -> Subdivide -> Mesh B -> Undo -> Mesh A -> Subdivide -> Mesh C
+        auto meshA = EditableMesh::CreateQuad(1.0f, 1.0f);
+        EditableMesh snapshotA = meshA; // Snapshot per Undo
+
+        EditableMesh meshB = meshA;
+        Subdivide(meshB, sp);
+        FaceID fidB = meshB.GetActiveFaceIDs()[0];
+
+        // Simulazione Undo: ripristino di meshA dallo snapshot
+        meshA = snapshotA;
+        bool undoRestoredHistorical = (meshA.GetActiveFaceIDs()[0].generation == 1);
+
+        // Simulazione Branching: nuova suddivisione su Mesh A per creare Mesh C
+        EditableMesh meshC = meshA;
+        Subdivide(meshC, sp);
+        FaceID fidC = meshC.GetActiveFaceIDs()[0];
+
+        // Mesh C non deve MAI assumere lo stesso ID di Mesh B (fidB != fidC)
+        bool branchSafe = undoRestoredHistorical && (fidB != fidC) && (fidC.generation > fidB.generation);
+
+        // 4. Overflow Protection: verifica che la condizione limite 0xFFFFFFFF saturi senza wrappare a 0 o 1
+        MeshGenerationLedger testLedger;
+        testLedger.RegisterFaceGeneration(0, 0xFFFFFFFF);
+        uint32_t satGen = testLedger.AllocateFaceGeneration(0, 0);
+        bool overflowSafe = (satGen == 0xFFFFFFFF);
+
+        t.passed = oldInvalid && repeatedSubValid && branchSafe && overflowSafe;
+        t.observedDesc = "OldInvalid=" + std::to_string(oldInvalid) + 
+                         ", RepeatedSub=" + std::to_string(repeatedSubValid) + 
+                         ", BranchSafe=" + std::to_string(branchSafe) + 
+                         ", OverflowSafe=" + std::to_string(overflowSafe);
+        t.details = t.passed ? "PASS" : "FAIL: Contratti di sicurezza generazionale violati";
         results.push_back(t);
     }
 

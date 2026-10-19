@@ -2900,11 +2900,11 @@ void BlockMakerState::RunSelectionValidationTests(bool isManualTrigger) {
     }
 
     std::cout << "\n====================================================================================\n";
-    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST MESH SELECTION (BM-S3 / SEL-1 .. SEL-10):\n";
+    std::cout << "[BlockMakerState] ESECUZIONE SUITE TEST MESH SELECTION (BM-S1 & BM-S3 / SEL-1 .. SEL-20):\n";
     std::cout << "====================================================================================\n";
 
     m_selectionTestResults.clear();
-    m_selectionTestResults.reserve(10);
+    m_selectionTestResults.reserve(25);
 
     auto rawResults = fw::MeshSelectionService::RunSelectionContractTests();
     for (const auto& r : rawResults) {
@@ -5434,6 +5434,35 @@ void BlockMakerState::DrawUI() {
                         m_selectionService.InvertSelection(m_activeEditableMesh);
                     }
 
+                    // BM-S1: Edge Loop & Edge Ring Buttons (Attivi solo in Edge Selection Mode con Edge valido)
+                    if (curMode == 1) {
+                        ImGui::SameLine();
+                        bool canSelectLoopOrRing = (m_activeEditableMesh.GetVertexCount() > 0) &&
+                                                   m_selectionService.GetActiveEdge().IsValid() &&
+                                                   m_activeEditableMesh.IsValid(m_selectionService.GetActiveEdge());
+
+                        if (!canSelectLoopOrRing) ImGui::BeginDisabled();
+
+                        if (ImGui::SmallButton("Edge Loop##SelLoop")) {
+                            fw::SelectionOp loopOp = ImGui::GetIO().KeyShift ? fw::SelectionOp::Add : fw::SelectionOp::Replace;
+                            m_selectionService.SelectEdgeLoop(m_activeEditableMesh, m_selectionService.GetActiveEdge(), loopOp);
+                        }
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                            ImGui::SetTooltip("Seleziona l'anello continuo (Loop) di spigoli collegati all'edge attivo.\nTieni premuto Shift per selezione additiva (oppure doppio-click sull'edge nel viewport).");
+                        }
+
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Edge Ring##SelRing")) {
+                            fw::SelectionOp ringOp = ImGui::GetIO().KeyShift ? fw::SelectionOp::Add : fw::SelectionOp::Replace;
+                            m_selectionService.SelectEdgeRing(m_activeEditableMesh, m_selectionService.GetActiveEdge(), ringOp);
+                        }
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                            ImGui::SetTooltip("Seleziona la serie di spigoli paralleli (Ring) che attraversano facce quad.\nTieni premuto Shift per selezione additiva.");
+                        }
+
+                        if (!canSelectLoopOrRing) ImGui::EndDisabled();
+                    }
+
                     // Telemetry
                     size_t count = m_selectionService.GetSelectedCount();
                     ImGui::SameLine();
@@ -7301,9 +7330,16 @@ void BlockMakerState::DrawMeshSelectionVisualFeedback() {
         else if (io.KeyShift) op = fw::SelectionOp::Add;
         else if (io.KeyCtrl) op = fw::SelectionOp::Subtract;
 
-        // Box Selection con drag del mouse o Click singolo
+        // Box Selection con drag del mouse o Click singolo / Doppio-Click Loop
         if (canSelectInViewport && !io.WantCaptureMouse) {
-            if (io.MouseClicked[0]) {
+            if (io.MouseDoubleClicked[0] && m_selectionService.GetMode() == fw::SelectionMode::Edge) {
+                fw::PickRay worldRay = fw::MeshSelectionService::ComputeWorldRayFromScreen(mousePos, ctx);
+                fw::PickHit hit = m_selectionService.Pick(worldRay, m_activeEditableMesh, ctx);
+                if (hit.hit && hit.edgeId.IsValid()) {
+                    m_selectionService.SelectEdgeLoop(m_activeEditableMesh, hit.edgeId, op);
+                }
+                m_boxSelectActive = false;
+            } else if (io.MouseClicked[0]) {
                 m_boxSelectStart = mousePos;
                 m_boxSelectActive = false;
             } else if (io.MouseDown[0]) {
