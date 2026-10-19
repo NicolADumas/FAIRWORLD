@@ -441,10 +441,43 @@ std::vector<PrimitiveUVTestResult> PrimitiveUVContractTests::RunAllTests() {
     // UVP-15: Inventario completo ShapeRegistry
     // -------------------------------------------------------------------------
     {
+        auto getShapeTypeName = [](ShapeType t) -> const char* {
+            switch (t) {
+                case ShapeType::None: return "None";
+                case ShapeType::Cube: return "Cube";
+                case ShapeType::Cuboid: return "Cuboid";
+                case ShapeType::Parallelepiped: return "Parallelepiped";
+                case ShapeType::Pyramid: return "Pyramid";
+                case ShapeType::PyramidFrustum: return "PyramidFrustum";
+                case ShapeType::Cylinder: return "Cylinder";
+                case ShapeType::HollowCylinder: return "HollowCylinder";
+                case ShapeType::Cone: return "Cone";
+                case ShapeType::ConeFrustum: return "ConeFrustum";
+                case ShapeType::Sphere: return "Sphere";
+                case ShapeType::SphericalZone: return "SphericalZone";
+                case ShapeType::SphericalSegment: return "SphericalSegment";
+                case ShapeType::SphericalSector: return "SphericalSector";
+                case ShapeType::SphereWithCylindricalBore: return "SphereWithCylindricalBore";
+                case ShapeType::SphereWithConicalCavities: return "SphereWithConicalCavities";
+                case ShapeType::SlicedCylinder: return "SlicedCylinder";
+                case ShapeType::Ungula: return "Ungula";
+                case ShapeType::Barrel: return "Barrel";
+                case ShapeType::Capsule: return "Capsule";
+                case ShapeType::ConvexHull: return "ConvexHull";
+                case ShapeType::Compound: return "Compound";
+                case ShapeType::TriangleMesh: return "TriangleMesh";
+                case ShapeType::LegacySuperSphere: return "LegacySuperSphere";
+                case ShapeType::Heightfield: return "Heightfield";
+                case ShapeType::SignedDistanceField: return "SignedDistanceField";
+                default: return "Unknown";
+            }
+        };
+
         uint32_t totalShapes = 26;
         uint32_t handledShapes = 0;
         uint32_t implementedCount = 0;
         uint32_t needsBMUV3Count = 0;
+        std::vector<std::string> unhandledDetails;
 
         for (uint8_t t = 0; t < totalShapes; ++t) {
             ShapeType st = static_cast<ShapeType>(t);
@@ -459,6 +492,11 @@ std::vector<PrimitiveUVTestResult> PrimitiveUVContractTests::RunAllTests() {
             } else if (res.status == PrimitiveMappingStatus::NEEDS_BM_UV3 || res.status == PrimitiveMappingStatus::UNSUPPORTED_MAPPING) {
                 needsBMUV3Count++;
                 handledShapes++;
+            } else {
+                unhandledDetails.push_back("Shape ID " + std::to_string(static_cast<uint32_t>(t)) +
+                                           " (" + getShapeTypeName(st) + "): status=" +
+                                           std::string(GetPrimitiveMappingStatusName(res.status)) +
+                                           " [msg: " + res.diagnosticMessage + "]");
             }
         }
 
@@ -468,12 +506,18 @@ std::vector<PrimitiveUVTestResult> PrimitiveUVContractTests::RunAllTests() {
                           " (Implemented: " + std::to_string(implementedCount) +
                           ", BM-UV3: " + std::to_string(needsBMUV3Count) + ")";
 
+        std::string details = passed ? "Catalogo completo coperto: ogni tipo ha esito e strategia determinati."
+                                     : "Forme con stato indefinito:";
+        if (!passed) {
+            for (const auto& d : unhandledDetails) {
+                details += "\n  - " + d;
+            }
+        }
+
         addTest("UVP-15", "ShapeRegistry Catalog Full Coverage",
                 "Tutti i 26 ShapeType di ShapeRegistry",
                 "26/26 forme classificate esplicitamente (nessun fallback indefinito)",
-                obs, passed,
-                passed ? "Catalogo completo coperto: ogni tipo ha esito e strategia determinati."
-                       : "Forme con stato indefinito.");
+                obs, passed, details);
     }
 
     return results;

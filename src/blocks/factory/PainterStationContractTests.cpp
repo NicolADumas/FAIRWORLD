@@ -72,8 +72,8 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         PainterStationTestResult r;
         r.testId = "PNT-03";
         r.testName = "Layer validi preservati";
-        r.inputDesc = "Draft con 2 paintLayer validi e pittura; esecuzione Painter station";
-        r.expectedDesc = "Layer count immutato (2), dati pixel integri e non azzerati";
+        r.inputDesc = "Draft con 3 paintLayer validi (Background + 2 layer utente) e pittura; esecuzione Painter station";
+        r.expectedDesc = "Layer count immutato (3: Background, BaseLayer, DecalLayer), ordine e pixelBuffer integri";
 
         FactoryOrchestrator orch;
         orch.OpenDraft("fairworld:pnt_draft_03", "PNT Draft 03");
@@ -81,7 +81,7 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         orch.ExecuteStation(ProductionStationID::SurfaceUV);
 
         auto* draft = orch.GetCurrentDraft();
-        // Aggiungi 2 layer con TexturePaintingService
+        // Aggiungi 2 layer con TexturePaintingService (InitializeCanvas genera "Background" all'indice 0)
         TexturePaintingService painter;
         painter.InitializeCanvas(128, 128);
         uint32_t l1 = painter.AddLayer("BaseLayer", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
@@ -89,14 +89,25 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         draft->paintLayers = painter.GetLayers();
         draft->paintRevision = 10;
 
+        // Verifica pre-condizioni: 3 layer in ordine esatto
+        bool preValid = (draft->paintLayers.size() == 3) &&
+                        (draft->paintLayers[0].name == "Background") &&
+                        (draft->paintLayers[1].name == "BaseLayer") &&
+                        (draft->paintLayers[2].name == "DecalLayer") &&
+                        draft->paintLayers[0].pixelBuffer.IsValid() &&
+                        draft->paintLayers[1].pixelBuffer.IsValid() &&
+                        draft->paintLayers[2].pixelBuffer.IsValid();
+
         bool execOk = orch.ExecuteStation(ProductionStationID::Painter);
         const auto* postDraft = orch.GetCurrentDraft();
 
-        bool layersIntact = postDraft && postDraft->paintLayers.size() == 2 &&
-                            postDraft->paintLayers[0].name == "BaseLayer" &&
-                            postDraft->paintLayers[1].name == "DecalLayer" &&
+        bool layersIntact = preValid && postDraft && postDraft->paintLayers.size() == 3 &&
+                            postDraft->paintLayers[0].name == "Background" &&
+                            postDraft->paintLayers[1].name == "BaseLayer" &&
+                            postDraft->paintLayers[2].name == "DecalLayer" &&
                             postDraft->paintLayers[0].pixelBuffer.IsValid() &&
-                            postDraft->paintLayers[1].pixelBuffer.IsValid();
+                            postDraft->paintLayers[1].pixelBuffer.IsValid() &&
+                            postDraft->paintLayers[2].pixelBuffer.IsValid();
 
         r.passed = execOk && layersIntact;
         r.observedDesc = std::string("ExecOk: ") + (execOk ? "true" : "false") +
@@ -112,8 +123,8 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         PainterStationTestResult r;
         r.testId = "PNT-04";
         r.testName = "UV assenti gestite senza corruzione";
-        r.inputDesc = "Draft con layer validi ma UVLayout assente (reset)";
-        r.expectedDesc = "Pittura preservata intatta, diagnostica emette warning senza crash o corruzione";
+        r.inputDesc = "Draft con layer validi (Background + NoUVLayer) ma UVLayout assente (reset)";
+        r.expectedDesc = "Pittura preservata intatta (2 layer), diagnostica emette warning senza crash o corruzione";
 
         FactoryOrchestrator orch;
         orch.OpenDraft("fairworld:pnt_draft_04", "PNT Draft 04");
@@ -132,8 +143,11 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         const auto* postDraft = orch.GetCurrentDraft();
 
         bool hasWarning = st && st->GetDiagnostic().HasWarnings();
-        bool layersPreserved = postDraft && postDraft->paintLayers.size() == 1 &&
-                               postDraft->paintLayers[0].pixelBuffer.IsValid();
+        bool layersPreserved = postDraft && postDraft->paintLayers.size() == 2 &&
+                               postDraft->paintLayers[0].name == "Background" &&
+                               postDraft->paintLayers[1].name == "NoUVLayer" &&
+                               postDraft->paintLayers[0].pixelBuffer.IsValid() &&
+                               postDraft->paintLayers[1].pixelBuffer.IsValid();
 
         r.passed = execOk && hasWarning && layersPreserved;
         r.observedDesc = std::string("ExecOk: ") + (execOk ? "true" : "false") +
@@ -285,8 +299,8 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         PainterStationTestResult r;
         r.testId = "PNT-09";
         r.testName = "Rilevamento alterazione contenuto pixel (Content Hash Invalidation)";
-        r.inputDesc = "Modifica pixel su un layer a parita di paintRevision e dimensioni";
-        r.expectedDesc = "Fingerprint muta, la stazione riconosce la variazione e riesegue il compositing aggiornando CompositeAlbedo";
+        r.inputDesc = "Modifica pixel su LayerA (layer superiore visibile) a parita di paintRevision e dimensioni";
+        r.expectedDesc = "Content hash del layer e del composito mutano, compositing rieseguito con pixel aggiornato e upstream pulito";
 
         FactoryOrchestrator orch;
         orch.OpenDraft("fairworld:pnt_draft_09", "PNT Draft 09");
@@ -299,24 +313,57 @@ std::vector<PainterStationTestResult> PainterStationContractTests::RunAllTests()
         painter.AddLayer("LayerA", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
         draft->paintLayers = painter.GetLayers();
 
-        // Prima esecuzione
-        orch.ExecuteStation(ProductionStationID::Painter);
+        // 1. Prima esecuzione
+        bool firstExecOk = orch.ExecuteStation(ProductionStationID::Painter);
         const auto* st1 = dynamic_cast<const PainterStationAdapter*>(orch.GetStation(ProductionStationID::Painter));
-        glm::vec4 c1 = st1 && st1->HasCompositeAlbedo() ? st1->GetCompositeAlbedo().GetPixel(0, 0) : glm::vec4(0.0f);
+        bool hasComp1 = st1 && st1->HasCompositeAlbedo();
+        glm::vec4 c1 = hasComp1 ? st1->GetCompositeAlbedo().GetPixel(0, 0) : glm::vec4(0.0f);
+        uint64_t compHash1 = hasComp1 ? st1->GetCompositeAlbedo().ComputeContentHash() : 0;
 
-        // Modifica solo un pixel del layer senza toccare paintRevision o dimensioni
-        draft->paintLayers[0].pixelBuffer.SetPixel(0, 0, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+        // 2. Identificazione esplicita di LayerA (layer superiore visibile)
+        PaintLayer* targetLayer = nullptr;
+        for (auto& l : draft->paintLayers) {
+            if (l.name == "LayerA") {
+                targetLayer = &l;
+                break;
+            }
+        }
+        bool layerFound = (targetLayer != nullptr);
+        uint64_t prePixelHash = layerFound ? targetLayer->pixelBuffer.ComputeContentHash() : 0;
 
-        // Seconda esecuzione: deve ri-eseguire il compositing e non considerarlo Zero-Work identico
-        bool execOk = orch.ExecuteStation(ProductionStationID::Painter);
+        // 3. Modifica effettiva del contenuto sorgente sul layer visibile
+        if (layerFound) {
+            targetLayer->pixelBuffer.SetPixel(0, 0, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+        }
+        uint64_t postPixelHash = layerFound ? targetLayer->pixelBuffer.ComputeContentHash() : 0;
+        bool srcContentChanged = (prePixelHash != postPixelHash);
+
+        // 4. Seconda esecuzione: deve ri-eseguire il compositing e aggiornare il composito
+        bool secondExecOk = orch.ExecuteStation(ProductionStationID::Painter);
         const auto* st2 = dynamic_cast<const PainterStationAdapter*>(orch.GetStation(ProductionStationID::Painter));
-        glm::vec4 c2 = st2 && st2->HasCompositeAlbedo() ? st2->GetCompositeAlbedo().GetPixel(0, 0) : glm::vec4(0.0f);
+        bool hasComp2 = st2 && st2->HasCompositeAlbedo();
+        glm::vec4 c2 = hasComp2 ? st2->GetCompositeAlbedo().GetPixel(0, 0) : glm::vec4(0.0f);
+        uint64_t compHash2 = hasComp2 ? st2->GetCompositeAlbedo().ComputeContentHash() : 0;
 
-        bool pixelChanged = (c1 != c2) && (c2.g > 0.9f);
-        r.passed = execOk && pixelChanged;
+        // 5. Verifiche: pixel modificato, coerenza colore (Verde al pixel 0,0), hash composito mutato
+        bool pixelChanged = (c1 != c2) && (c2.g > 0.9f) && (c2.r < 0.1f);
+        bool compHashChanged = (compHash1 != compHash2) && (compHash1 != 0) && (compHash2 != 0);
+
+        // 6. Nessuna invalidazione upstream inattesa
+        const auto& dag = orch.GetDependencyGraph();
+        bool upstreamClean = !dag.IsNodeDirty(DependencyNodeID::ShapeGeometry) &&
+                             !dag.IsNodeDirty(DependencyNodeID::SculptGeometry) &&
+                             !dag.IsNodeDirty(DependencyNodeID::TopologyUV) &&
+                             !dag.IsNodeDirty(DependencyNodeID::SurfaceLayout);
+
+        r.passed = firstExecOk && secondExecOk && layerFound && srcContentChanged &&
+                   pixelChanged && compHashChanged && upstreamClean;
         r.observedDesc = "Color1: (" + std::to_string(c1.r) + "," + std::to_string(c1.g) + ") -> Color2: (" +
-                         std::to_string(c2.r) + "," + std::to_string(c2.g) + ")";
-        r.details = r.passed ? "PASS" : "FAIL: Variazione pixel ignorata dal fingerprint";
+                         std::to_string(c2.r) + "," + std::to_string(c2.g) + ")" +
+                         ", SrcHashChanged: " + (srcContentChanged ? "true" : "false") +
+                         ", CompHashChanged: " + (compHashChanged ? "true" : "false") +
+                         ", UpstreamClean: " + (upstreamClean ? "true" : "false");
+        r.details = r.passed ? "PASS" : "FAIL: Variazione pixel ignorata dal fingerprint o compositing non aggiornato";
         results.push_back(r);
     }
 

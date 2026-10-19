@@ -1079,7 +1079,46 @@ PrimitiveMappingResult PrimitiveUVMapper::AnalyzeAndMap(EditableMesh& mesh,
                                                        ShapeType type, 
                                                        const ShapeParameters& params, 
                                                        const PrimitiveUVOptions& options) {
-    // 1. Controllo validità topologica d'ingresso
+    // 1. Classificazione anticipata per forme non poligonali, composite o astratte
+    // Queste forme non possiedono una mesh poligonale classica da mappare analiticamente in BM-UV2
+    if (type == ShapeType::None) {
+        PrimitiveMappingResult res;
+        res.status = PrimitiveMappingStatus::NEEDS_BM_UV3;
+        res.diagnosticMessage = "ShapeType::None non definisce alcuna geometria: mappatura analitica non supportata (delegata a BM-UV3).";
+        return res;
+    }
+
+    if (type == ShapeType::Heightfield) {
+        PrimitiveMappingResult res;
+        res.status = PrimitiveMappingStatus::NEEDS_BM_UV3;
+        res.diagnosticMessage = "Forma volumetrica (Heightfield): richiede meshing dedicato o triplanar mapping BM-UV3.";
+        return res;
+    }
+
+    if (type == ShapeType::SignedDistanceField) {
+        PrimitiveMappingResult res;
+        res.status = PrimitiveMappingStatus::NEEDS_BM_UV3;
+        res.diagnosticMessage = "Forma procedurale implicita (SignedDistanceField): richiede raymarching o polygonizer BM-UV3.";
+        return res;
+    }
+
+    if (type == ShapeType::Compound) {
+        PrimitiveMappingResult res;
+        res.status = PrimitiveMappingStatus::NEEDS_BM_UV3;
+        res.diagnosticMessage = "Forma composta (Compound): l'unwrapping gerarchico dei nodi foglia richiede la pipeline di composizione BM-UV3.";
+        return res;
+    }
+
+    // 2. Classificazione per forme poliedriche o mesh arbitrarie prive di elementi geometrici compilati
+    if ((type == ShapeType::ConvexHull || type == ShapeType::TriangleMesh) &&
+        (mesh.GetFaceCount() == 0 || mesh.GetVertexCount() == 0)) {
+        PrimitiveMappingResult res;
+        res.status = PrimitiveMappingStatus::NEEDS_BM_UV3;
+        res.diagnosticMessage = "Forma poliedrica/mesh arbitraria priva di elementi geometrici compilati: delegata a BM-UV3.";
+        return res;
+    }
+
+    // 3. Controllo rigoroso di validità topologica d'ingresso per primitive analitiche
     if (mesh.GetFaceCount() == 0 || mesh.GetVertexCount() == 0) {
         PrimitiveMappingResult res;
         res.status = PrimitiveMappingStatus::INVALID_TOPOLOGY;
@@ -1242,8 +1281,8 @@ PrimitiveMappingResult PrimitiveUVMapper::AnalyzeAndMap(EditableMesh& mesh,
 
         case ShapeType::Compound: {
             PrimitiveMappingResult res;
-            res.status = PrimitiveMappingStatus::PARTIAL_SUCCESS;
-            res.diagnosticMessage = "Compound delegato a unwrapping composito per singoli nodi foglia.";
+            res.status = PrimitiveMappingStatus::NEEDS_BM_UV3;
+            res.diagnosticMessage = "Forma composta (Compound): l'unwrapping gerarchico dei nodi foglia richiede la pipeline di composizione BM-UV3.";
             return res;
         }
 

@@ -12,6 +12,7 @@
 #include "blocks/MaterialRegistry.h"
 #include "blocks/ShapeRegistry.h"
 #include "Sha256.h"
+#include "blocks/texture/ImageBitmap.h"
 
 #include <filesystem>
 #include <fstream>
@@ -267,32 +268,63 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         legacyPkg.compiledPhysics.friction = 0.75f;
         legacyPkg.compiledPhysics.restitution = 0.35f;
         legacyPkg.compiledPhysics.motionType = BlockMotionType::Static;
+        legacyPkg.compiledPhysics.collisionEnabled = true;
+        legacyPkg.compiledPhysics.massMode = BlockMassMode::Manual;
 
-        // Assicuriamo i file dummy per la validazione texture
+        // Generazione fixture texture PNG conformi e decodificabili (BM-F4.1)
         std::filesystem::create_directories(std::filesystem::path(testRoot) / "textures", ec);
-        std::ofstream(std::filesystem::path(testRoot) / "textures/custom_albedo.png") << "\x89PNG\r\n\x1a\n";
-        std::ofstream(std::filesystem::path(testRoot) / "textures/custom_normal.png") << "\x89PNG\r\n\x1a\n";
+        {
+            ImageBitmap bmpAlbedo(8, 8, TexturePixelFormat::RGBA8, TextureColorSpace::sRGB, glm::vec4(0.12f, 0.45f, 0.78f, 1.0f));
+            auto pngData = bmpAlbedo.EncodeToPngMemory();
+            std::ofstream f(std::filesystem::path(testRoot) / "textures/custom_albedo.png", std::ios::binary);
+            f.write(reinterpret_cast<const char*>(pngData.data()), pngData.size());
+        }
+        {
+            ImageBitmap bmpNormal(8, 8, TexturePixelFormat::RGBA8, TextureColorSpace::Linear, glm::vec4(0.5f, 0.5f, 1.0f, 1.0f));
+            auto pngData = bmpNormal.EncodeToPngMemory();
+            std::ofstream f(std::filesystem::path(testRoot) / "textures/custom_normal.png", std::ios::binary);
+            f.write(reinterpret_cast<const char*>(pngData.data()), pngData.size());
+        }
 
         auto migResult = service.MigrateToCurrent(legacyPkg, testRoot, true);
+
+        bool isV2 = (migResult.migratedPackage.manifest.schemaVersion == 2);
 
         bool pbrMatch = (migResult.migratedPackage.baseColorFallback == legacyPkg.baseColorFallback) &&
                         (migResult.migratedPackage.roughnessFallback == legacyPkg.roughnessFallback) &&
                         (migResult.migratedPackage.metallicFallback == legacyPkg.metallicFallback) &&
-                        (migResult.migratedPackage.emissiveStrength == legacyPkg.emissiveStrength) &&
-                        (migResult.migratedPackage.albedoMapUri == legacyPkg.albedoMapUri) &&
-                        (migResult.migratedPackage.normalMapUri == legacyPkg.normalMapUri) &&
-                        (migResult.migratedPackage.textureFingerprint == legacyPkg.textureFingerprint);
+                        (migResult.migratedPackage.emissiveStrength == legacyPkg.emissiveStrength);
+
+        bool texUriMatch = (migResult.migratedPackage.albedoMapUri == legacyPkg.albedoMapUri) &&
+                           (migResult.migratedPackage.normalMapUri == legacyPkg.normalMapUri) &&
+                           (migResult.migratedPackage.textureFingerprint == legacyPkg.textureFingerprint);
 
         bool physMatch = (migResult.migratedPackage.compiledPhysics.mass == legacyPkg.compiledPhysics.mass) &&
                          (migResult.migratedPackage.compiledPhysics.density == legacyPkg.compiledPhysics.density) &&
                          (migResult.migratedPackage.compiledPhysics.friction == legacyPkg.compiledPhysics.friction) &&
                          (migResult.migratedPackage.compiledPhysics.restitution == legacyPkg.compiledPhysics.restitution) &&
-                         (migResult.migratedPackage.compiledPhysics.motionType == legacyPkg.compiledPhysics.motionType);
+                         (migResult.migratedPackage.compiledPhysics.motionType == legacyPkg.compiledPhysics.motionType) &&
+                         (migResult.migratedPackage.compiledPhysics.collisionEnabled == legacyPkg.compiledPhysics.collisionEnabled) &&
+                         (migResult.migratedPackage.compiledPhysics.massMode == legacyPkg.compiledPhysics.massMode);
 
-        r.passed = migResult.success && pbrMatch && physMatch;
-        r.observedDesc = "PBR Match: " + std::string(pbrMatch ? "true" : "false") +
+        r.passed = migResult.success && isV2 && pbrMatch && texUriMatch && physMatch;
+        r.observedDesc = "Success: " + std::string(migResult.success ? "true" : "false") +
+                         ", SchemaVersion: " + std::to_string(migResult.migratedPackage.manifest.schemaVersion) +
+                         ", PBR Match: " + std::string(pbrMatch ? "true" : "false") +
+                         ", Tex Match: " + std::string(texUriMatch ? "true" : "false") +
                          ", Physics Match: " + std::string(physMatch ? "true" : "false");
-        r.details = r.passed ? "PASS" : "FAIL: Perdita dati PBR o fisica durante la migrazione";
+
+        r.details = "migSuccess=" + std::string(migResult.success ? "true" : "false") +
+                    ", isV2=" + std::string(isV2 ? "true" : "false") +
+                    ", pbrMatch=" + std::string(pbrMatch ? "true" : "false") +
+                    ", texUriMatch=" + std::string(texUriMatch ? "true" : "false") +
+                    ", physMatch=" + std::string(physMatch ? "true" : "false") +
+                    (migResult.errorMessage.empty() ? "" : ", err=" + migResult.errorMessage);
+        if (!r.passed) {
+            r.details = "FAIL: " + r.details;
+        } else {
+            r.details = "PASS: " + r.details;
+        }
         results.push_back(r);
     }
 
@@ -306,46 +338,121 @@ std::vector<AssetSchemaMigrationTestResult> AssetSchemaMigrationTests::RunAllTes
         r.inputDesc = "Package V1 con 2 dipendenze esplicite (ExactRevision e ActiveRevision)";
         r.expectedDesc = "AssetId identico e tutte le dipendenze preservate con identiche revisionPolicy e tipi";
 
+        // FASE 6: Isolamento preventivo delle directory per garantire determinismo tra esecuzioni
+        std::filesystem::remove_all(std::filesystem::path(testRoot) / "published" / "fairworld_dep_wood", ec);
+        std::filesystem::remove_all(std::filesystem::path(testRoot) / "published" / "fairworld_dep_stone", ec);
+        std::filesystem::remove_all(std::filesystem::path(testRoot) / "published" / "fairworld_mig06_composite", ec);
+
+        BlockRegistry bReg; bReg.Initialize();
+        MaterialRegistry mReg; mReg.Initialize();
+        ShapeRegistry sReg; sReg.Initialize();
+
+        AssetPackagingService packaging;
+        packaging.SetRootAssetDirectory(testRoot);
+        packaging.SetTrustPolicy(AssetTrustPolicy::Strict);
+
+        // FASE 1: Pubblicazione dipendenza WOOD (rev 1 poi rev 2 con contenuto legittimamente differenziato)
+        auto woodPkg1 = createLegacyV1Package("fairworld:dep_wood", 1);
+        woodPkg1.manifest.schemaVersion = 2;
+        woodPkg1.baseColorFallback = glm::vec3(0.55f, 0.27f, 0.07f);
+        woodPkg1.contentDigestSha256 = woodPkg1.ComputeContentDigestSha256(testRoot);
+        auto pubWood1 = packaging.PublishPackagePersistent(woodPkg1, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+
+        auto woodPkg2 = createLegacyV1Package("fairworld:dep_wood", 2);
+        woodPkg2.manifest.schemaVersion = 2;
+        woodPkg2.baseColorFallback = glm::vec3(0.65f, 0.35f, 0.12f);
+        woodPkg2.contentDigestSha256 = woodPkg2.ComputeContentDigestSha256(testRoot);
+        auto pubWood2 = packaging.PublishPackagePersistent(woodPkg2, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+
+        // Pubblicazione dipendenza STONE (rev 1)
+        auto stonePkg1 = createLegacyV1Package("fairworld:dep_stone", 1);
+        stonePkg1.manifest.schemaVersion = 2;
+        stonePkg1.baseColorFallback = glm::vec3(0.5f, 0.5f, 0.5f);
+        stonePkg1.contentDigestSha256 = stonePkg1.ComputeContentDigestSha256(testRoot);
+        auto pubStone1 = packaging.PublishPackagePersistent(stonePkg1, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+
+        // Verifica disponibilità committed delle revisioni richieste
+        bool woodRev1Committed = packaging.IsRevisionCommitted("fairworld:dep_wood", 1, testRoot);
+        bool woodRev2Committed = packaging.IsRevisionCommitted("fairworld:dep_wood", 2, testRoot);
+        auto activeStoneRev = packaging.GetActiveRevision("fairworld:dep_stone", testRoot);
+        bool stoneRev1Committed = activeStoneRev.has_value() && (*activeStoneRev == 1) &&
+                                  packaging.IsRevisionCommitted("fairworld:dep_stone", 1, testRoot);
+
         AssetSchemaMigrationService service;
         service.SetRootAssetDirectory(testRoot);
 
+        // FASE 2: Preparazione package legacy con preservazione integrale dei campi
         auto legacyPkg = createLegacyV1Package("fairworld:mig06_composite", 1);
         RawAssetDependency dep1;
         dep1.targetId = "fairworld:dep_wood";
         dep1.requiredRevision = 2;
         dep1.revisionPolicy = DependencyRevisionPolicy::Exact;
         dep1.dependencyType = "material";
+        dep1.isOptional = false;
 
         RawAssetDependency dep2;
         dep2.targetId = "fairworld:dep_stone";
         dep2.requiredRevision = 1;
         dep2.revisionPolicy = DependencyRevisionPolicy::Active;
         dep2.dependencyType = "shape";
+        dep2.isOptional = false;
 
         legacyPkg.manifest.dependencies = { dep1, dep2 };
 
+        // FASE 3: Esecuzione migrazione V1 -> V2
         auto migResult = service.MigrateToCurrent(legacyPkg, testRoot, true);
 
+        // FASE 4: Assertion rigorose
+        bool isV2 = (migResult.migratedPackage.manifest.schemaVersion == 2);
         bool idMatch = (migResult.migratedPackage.manifest.assetId == legacyPkg.manifest.assetId);
-        bool depMatch = (migResult.migratedPackage.manifest.dependencies.size() == 2);
-        if (depMatch) {
+        bool depCountMatch = (migResult.migratedPackage.manifest.dependencies.size() == 2);
+        bool depMatch = depCountMatch;
+        if (depCountMatch) {
             const auto& d1 = migResult.migratedPackage.manifest.dependencies[0];
             const auto& d2 = migResult.migratedPackage.manifest.dependencies[1];
             if (d1.targetId != dep1.targetId || d1.requiredRevision != dep1.requiredRevision ||
-                d1.revisionPolicy != dep1.revisionPolicy || d1.dependencyType != dep1.dependencyType) {
+                d1.revisionPolicy != dep1.revisionPolicy || d1.dependencyType != dep1.dependencyType ||
+                d1.expectedDigestSha256 != dep1.expectedDigestSha256 || d1.isOptional != dep1.isOptional) {
                 depMatch = false;
             }
             if (d2.targetId != dep2.targetId || d2.requiredRevision != dep2.requiredRevision ||
-                d2.revisionPolicy != dep2.revisionPolicy || d2.dependencyType != dep2.dependencyType) {
+                d2.revisionPolicy != dep2.revisionPolicy || d2.dependencyType != dep2.dependencyType ||
+                d2.expectedDigestSha256 != dep2.expectedDigestSha256 || d2.isOptional != dep2.isOptional) {
                 depMatch = false;
             }
         }
 
-        r.passed = migResult.success && idMatch && depMatch;
-        r.observedDesc = "AssetIdMatch: " + std::string(idMatch ? "true" : "false") +
+        r.passed = pubWood1.success && pubWood2.success && pubStone1.success &&
+                   woodRev1Committed && woodRev2Committed && stoneRev1Committed &&
+                   migResult.success && isV2 && idMatch && depMatch;
+
+        r.observedDesc = "WoodRev2Committed: " + std::string(woodRev2Committed ? "true" : "false") +
+                         ", StoneRev1Committed: " + std::string(stoneRev1Committed ? "true" : "false") +
+                         ", MigSuccess: " + std::string(migResult.success ? "true" : "false") +
+                         ", AssetIdMatch: " + std::string(idMatch ? "true" : "false") +
                          ", DepCount: " + std::to_string(migResult.migratedPackage.manifest.dependencies.size()) +
                          ", DepMatch: " + std::string(depMatch ? "true" : "false");
-        r.details = r.passed ? "PASS" : "FAIL: Alterazione o perdita dipendenze durante la migrazione";
+
+        // FASE 5: Diagnostica dettagliata con scomposizione per identificare la prima operazione fallita
+        r.details = "woodRev1Published=" + std::string(pubWood1.success ? "true" : "false") +
+                    ", woodRev2Published=" + std::string(pubWood2.success ? "true" : "false") +
+                    ", stoneRev1Published=" + std::string(pubStone1.success ? "true" : "false") +
+                    ", woodRev2Committed=" + std::string(woodRev2Committed ? "true" : "false") +
+                    ", stoneRev1Committed=" + std::string(stoneRev1Committed ? "true" : "false") +
+                    ", migrationSuccess=" + std::string(migResult.success ? "true" : "false") +
+                    ", isV2=" + std::string(isV2 ? "true" : "false") +
+                    ", assetIdMatch=" + std::string(idMatch ? "true" : "false") +
+                    ", dependencyCountMatch=" + std::string(depCountMatch ? "true" : "false") +
+                    ", dependencyMatch=" + std::string(depMatch ? "true" : "false") +
+                    (pubWood1.errorMessage.empty() ? "" : ", wood1Err=" + pubWood1.errorMessage) +
+                    (pubWood2.errorMessage.empty() ? "" : ", wood2Err=" + pubWood2.errorMessage) +
+                    (pubStone1.errorMessage.empty() ? "" : ", stone1Err=" + pubStone1.errorMessage) +
+                    (migResult.errorMessage.empty() ? "" : ", migErr=" + migResult.errorMessage);
+        if (!r.passed) {
+            r.details = "FAIL: " + r.details;
+        } else {
+            r.details = "PASS: " + r.details;
+        }
         results.push_back(r);
     }
 

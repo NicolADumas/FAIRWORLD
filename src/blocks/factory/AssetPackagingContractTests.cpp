@@ -406,10 +406,28 @@ std::vector<AssetPackagingTestResult> AssetPackagingContractTests::RunAllTests()
 
         bool collisionRejected = (!txRes.success) && (txRes.errorMessage.find("Collisione ID") != std::string::npos);
 
-        r.passed = collisionRejected;
+        // 3. Prepara terzo package con stringId diverso ma targetRuntimeVoxelId forzato allo slot occupato da First Block
+        RawAssetPackage hijackPkg;
+        hijackPkg.manifest.assetId = "fairworld:different_block";
+        hijackPkg.manifest.displayName = "Different Block";
+        hijackPkg.manifest.targetRuntimeVoxelId = firstId; // Slot già occupato da fairworld:collision_block
+        hijackPkg.manifest.stage = RawAssetStage::Validated;
+        hijackPkg.validationReport.isValid = true;
+        hijackPkg.geometry.vertexCount = 4;
+        hijackPkg.geometry.vertices.resize(4);
+
+        auto hijackRes = service.PublishPackageTransactional(hijackPkg, bReg, mReg, sReg);
+        bool hijackRejected = (!hijackRes.success) && (hijackRes.errorMessage.find("Collisione ID") != std::string::npos);
+        bool firstOwnerIntact = (bReg.GetBlock(firstId).stringId == "fairworld:collision_block");
+
+        bool allCollisionsRejected = collisionRejected && hijackRejected && firstOwnerIntact;
+
+        r.passed = allCollisionsRejected;
         r.observedDesc = "CollisionRejected: " + std::string(collisionRejected ? "true" : "false") +
+                         ", HijackRejected: " + std::string(hijackRejected ? "true" : "false") +
+                         ", OwnerIntact: " + std::string(firstOwnerIntact ? "true" : "false") +
                          ", Message: '" + txRes.errorMessage + "'";
-        r.details = r.passed ? "PASS" : "FAIL: Collisione stringId non rilevata o permessa";
+        r.details = r.passed ? "PASS" : "FAIL: Collisione stringId o slot non rilevata o permessa";
         results.push_back(r);
     }
 

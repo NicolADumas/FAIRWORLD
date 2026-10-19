@@ -18,9 +18,50 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
     std::vector<CrashRecoveryHardeningTestResult> results;
     results.reserve(8);
 
-    const std::string testRoot = (std::filesystem::temp_directory_path() / "fairworld_crh_hardening_gate").string();
+    const std::filesystem::path tempBase = std::filesystem::temp_directory_path();
+    const std::filesystem::path testRootPath = tempBase / "fairworld_crh_hardening_gate";
+    const std::string testRoot = testRootPath.string();
+
     std::error_code ec;
-    std::filesystem::create_directories(testRoot, ec);
+    // FASE 1: Protezione e verifica sicurezza percorso fixture
+    bool safeToClean = !testRoot.empty() &&
+                       (testRootPath != tempBase) &&
+                       (testRootPath.filename() == "fairworld_crh_hardening_gate");
+
+    if (std::filesystem::exists(testRootPath, ec)) {
+        if (std::filesystem::is_symlink(testRootPath, ec)) {
+            safeToClean = false;
+        }
+    }
+
+    if (!safeToClean) {
+        CrashRecoveryHardeningTestResult abortRes;
+        abortRes.testId = "CRH-H00";
+        abortRes.testName = "SuiteFixtureIsolationSafetyCheck";
+        abortRes.inputDesc = testRoot;
+        abortRes.expectedDesc = "Directory fixture sicura in temp_directory_path: fairworld_crh_hardening_gate";
+        abortRes.observedDesc = "Verifica sicurezza fallita: percorso non sicuro o symlink rilevato";
+        abortRes.passed = false;
+        abortRes.details = "ABORT: Impossibile procedere con la pulizia della fixture. Percorso rifiutato: " + testRoot;
+        results.push_back(abortRes);
+        return results;
+    }
+
+    std::filesystem::remove_all(testRootPath, ec);
+    ec.clear();
+    std::filesystem::create_directories(testRootPath, ec);
+    if (ec) {
+        CrashRecoveryHardeningTestResult abortRes;
+        abortRes.testId = "CRH-H00";
+        abortRes.testName = "SuiteFixtureIsolationSafetyCheck";
+        abortRes.inputDesc = testRoot;
+        abortRes.expectedDesc = "Creazione directory fixture riuscita";
+        abortRes.observedDesc = "Errore filesystem: " + ec.message();
+        abortRes.passed = false;
+        abortRes.details = "ABORT: Errore filesystem creazione directory fixture: " + ec.message();
+        results.push_back(abortRes);
+        return results;
+    }
 
     // Helper per creare un RawAssetPackage Schema V2 valido
     auto createBasePackage = [](const std::string& assetId = "fairworld:crh_h_base_block", uint64_t rev = 1) -> RawAssetPackage {
@@ -79,6 +120,12 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.inputDesc = "Fault injection FailBetweenCommitAndActivePointer";
         r.expectedDesc = "Revisione committed presente, active pointer mancante, recovery riconcilia l'attivo";
 
+        // FASE 2: Isolamento preventivo dell'asset: garantisce assenza di active pointer precedente e revisioni residue
+        std::filesystem::path pubAssetDir = std::filesystem::path(testRoot) / "published" / "fairworld_crh_h01_block";
+        if (std::filesystem::exists(pubAssetDir, ec)) {
+            std::filesystem::remove_all(pubAssetDir, ec);
+        }
+
         BlockRegistry bReg; bReg.Initialize();
         MaterialRegistry mReg; mReg.Initialize();
         ShapeRegistry sReg; sReg.Initialize();
@@ -87,11 +134,12 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         service.SetTrustPolicy(AssetTrustPolicy::Strict);
         service.SetTransactionFaultInjection(TransactionFaultPoint::FailBetweenCommitAndActivePointer);
 
-        auto pkg = createBasePackage("fairworld:crh_h01_block", 1);
+        const uint64_t expectedRevision = 1;
+        auto pkg = createBasePackage("fairworld:crh_h01_block", expectedRevision);
         auto pubRes = service.PublishPackagePersistent(pkg, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         bool publishReportedCrash = !pubRes.success;
-        bool isCommitted = service.IsRevisionCommitted("fairworld:crh_h01_block", 1, testRoot);
+        bool isCommitted = service.IsRevisionCommitted("fairworld:crh_h01_block", expectedRevision, testRoot);
         auto activeBefore = service.GetActiveRevision("fairworld:crh_h01_block", testRoot);
 
         // Ora eseguiamo il recovery
@@ -100,12 +148,25 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         auto activeAfter = service.GetActiveRevision("fairworld:crh_h01_block", testRoot);
 
         r.passed = publishReportedCrash && isCommitted && !activeBefore.has_value() &&
-                   report.reconciledActivePointers > 0 && activeAfter.has_value() && *activeAfter == 1;
+                   report.reconciledActivePointers > 0 && activeAfter.has_value() && *activeAfter == expectedRevision;
         r.observedDesc = "Crash rilevato: " + std::string(publishReportedCrash ? "SI" : "NO") +
                          ", Committed: " + (isCommitted ? "SI" : "NO") +
                          ", Active pre-recovery: " + (activeBefore.has_value() ? std::to_string(*activeBefore) : "NULL") +
                          ", Active post-recovery: " + (activeAfter.has_value() ? std::to_string(*activeAfter) : "NULL") +
                          ", Riconciliazioni: " + std::to_string(report.reconciledActivePointers);
+
+        // FASE 3: Diagnostica dettagliata con scomposizione completa degli stati
+        r.details = "publishReportedCrash=" + std::string(publishReportedCrash ? "true" : "false") +
+                    ", isCommitted=" + (isCommitted ? "true" : "false") +
+                    ", activeBefore=" + (activeBefore.has_value() ? std::to_string(*activeBefore) : "nullopt") +
+                    ", reconciledActivePointers=" + std::to_string(report.reconciledActivePointers) +
+                    ", activeAfter=" + (activeAfter.has_value() ? std::to_string(*activeAfter) : "nullopt") +
+                    ", expectedRevision=" + std::to_string(expectedRevision);
+        if (!r.passed) {
+            r.details = "FAIL: " + r.details;
+        } else {
+            r.details = "PASS: " + r.details;
+        }
         results.push_back(r);
     }
 
@@ -142,6 +203,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
                    activePost.has_value() && *activePost == 1;
         r.observedDesc = "Active pre-recovery: " + (activePre.has_value() ? std::to_string(*activePre) : "ASSENTE") +
                          ", Riconciliato: " + (activePost.has_value() ? "rev_" + std::to_string(*activePost) : "FALLITO");
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc + ", reconciled=" + std::to_string(report.reconciledActivePointers));
         results.push_back(r);
     }
 
@@ -181,6 +243,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.observedDesc = "Falsa revisione accettata: " + std::string(activeForged.has_value() ? "SI (ERRORE)" : "NO (RIFIUTATA)") +
                          ", Puntatori non committed scartati: " + std::to_string(report.uncommittedActivePointersDiscarded) +
                          ", Revisione ripristinata: " + (activePost.has_value() ? "rev_" + std::to_string(*activePost) : "NESSUNA");
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc);
         results.push_back(r);
     }
 
@@ -216,6 +279,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.observedDesc = "AtomicReplace fallito in modo sicuro: " + std::string(!ok ? "SI" : "NO") +
                          ", Errore riportato: '" + err + "'" +
                          ", Contenuto preservato: " + content;
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc);
         results.push_back(r);
     }
 
@@ -252,6 +316,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.observedDesc = "SafeRemoveAll eseguito: " + std::string(remOk ? "SI" : "NO") +
                          ", File canarino esterno preservato: " + (canaryAlive ? "SI" : "NO (CANCELLATO!)") +
                          ", Staging rimosso: " + (!std::filesystem::exists(stagingTest, ec) ? "SI" : "NO");
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc + ", err=" + remErr);
         std::filesystem::remove_all(externalDir, ec);
         results.push_back(r);
     }
@@ -285,6 +350,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.observedDesc = "Pass 1: " + std::to_string(rep1.committedPackagesRecovered) + " rec, " + std::to_string(rep1.incompleteTransactionsDiscarded) + " scartati | " +
                          "Pass 2: " + std::to_string(rep2.committedPackagesRecovered) + " rec, " + std::to_string(rep2.incompleteTransactionsDiscarded) + " scartati | " +
                          "Pass 3: " + std::to_string(rep3.committedPackagesRecovered) + " rec, " + std::to_string(rep3.incompleteTransactionsDiscarded) + " scartati";
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc);
         results.push_back(r);
     }
 
@@ -314,6 +380,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.passed = (count1 > 0) && (count1 == count2) && (blocks1 == blocks2);
         r.observedDesc = "Pass 1: " + std::to_string(count1) + " pacchetti (" + std::to_string(blocks1) + " blocchi) | " +
                          "Pass 2: " + std::to_string(count2) + " pacchetti (" + std::to_string(blocks2) + " blocchi)";
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc);
         results.push_back(r);
     }
 
@@ -367,6 +434,7 @@ std::vector<CrashRecoveryHardeningTestResult> AssetCrashRecoveryHardeningTests::
         r.observedDesc = "Pacchetti ricostruiti: " + std::to_string(reconstructed) +
                          ", Asset valido presente: " + std::string(goodBlockRegistered ? "SI" : "NO") +
                          ", Asset corrotto escluso: " + std::string(!corruptBlockRegistered ? "SI" : "NO");
+        r.details = r.passed ? ("PASS: " + r.observedDesc) : ("FAIL: " + r.observedDesc);
         results.push_back(r);
     }
 

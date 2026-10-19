@@ -33,6 +33,7 @@ std::vector<AssetCrashRecoveryTestResult> AssetCrashRecoveryTests::RunAllTests()
 
     const std::string testRoot = (std::filesystem::temp_directory_path() / "fairworld_crh_gate").string();
     std::error_code ec;
+    std::filesystem::remove_all(testRoot, ec);
     std::filesystem::create_directories(testRoot, ec);
     std::filesystem::create_directories(testRoot + "/textures/blocks", ec);
 
@@ -387,32 +388,36 @@ std::vector<AssetCrashRecoveryTestResult> AssetCrashRecoveryTests::RunAllTests()
         r.inputDesc = "Revisione 1 pubblicata; tentativo di pubblicare revisione 2 fallisce; verifica stato attivo";
         r.expectedDesc = "Revisione 1 rimane intatta, attiva nei registri e su disco, revisione 2 non sovrascrive";
 
+        const std::string crh08Root = testRoot + "/crh08";
+        std::filesystem::remove_all(crh08Root, ec);
+        std::filesystem::create_directories(crh08Root, ec);
+
         ShapeRegistry sReg; sReg.Initialize();
         BlockRegistry bReg; bReg.Initialize();
         MaterialRegistry mReg; mReg.Initialize();
 
         AssetPackagingService service;
-        service.SetRootAssetDirectory(testRoot);
+        service.SetRootAssetDirectory(crh08Root);
 
         // 1. Pubblica rev 1
         auto pkgRev1 = createBasePackage("fairworld:crh08_versioned", 1);
         pkgRev1.compiledPhysics.mass = 10.0f;
-        pkgRev1.contentDigestSha256 = pkgRev1.ComputeContentDigestSha256(testRoot);
-        auto pub1 = service.PublishPackagePersistent(pkgRev1, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        pkgRev1.contentDigestSha256 = pkgRev1.ComputeContentDigestSha256(crh08Root);
+        auto pub1 = service.PublishPackagePersistent(pkgRev1, bReg, mReg, sReg, crh08Root, AssetTrustPolicy::Strict);
 
         // 2. Tenta di pubblicare rev 2 con guasto prima del commit
         auto pkgRev2 = createBasePackage("fairworld:crh08_versioned", 2);
         pkgRev2.compiledPhysics.mass = 999.0f;
-        pkgRev2.contentDigestSha256 = pkgRev2.ComputeContentDigestSha256(testRoot);
+        pkgRev2.contentDigestSha256 = pkgRev2.ComputeContentDigestSha256(crh08Root);
 
         service.SetTransactionFaultInjection(TransactionFaultPoint::FailBeforeCommit);
-        auto pub2 = service.PublishPackagePersistent(pkgRev2, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pub2 = service.PublishPackagePersistent(pkgRev2, bReg, mReg, sReg, crh08Root, AssetTrustPolicy::Strict);
         service.SetTransactionFaultInjection(TransactionFaultPoint::None);
 
         // 3. Esegui recovery e verifica lo stato attivo
-        service.RunCrashRecovery(&bReg, &mReg, &sReg, testRoot, AssetTrustPolicy::Strict);
+        service.RunCrashRecovery(&bReg, &mReg, &sReg, crh08Root, AssetTrustPolicy::Strict);
 
-        std::string activePath = service.GetActivePublishedPackagePath("fairworld:crh08_versioned", testRoot);
+        std::string activePath = service.GetActivePublishedPackagePath("fairworld:crh08_versioned", crh08Root);
         RawAssetPackage loadedActive;
         bool loadOk = loadedActive.LoadFromFile(activePath);
 

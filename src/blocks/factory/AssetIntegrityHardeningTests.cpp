@@ -81,6 +81,7 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
         pkg.geometry.triangleCount = 12;
         pkg.packageFingerprint = 1000003ULL * 24;
         pkg.distributionChecksum = pkg.ComputeDistributionChecksum();
+        pkg.contentDigestSha256 = pkg.ComputeContentDigestSha256();
         pkg.validationReport.isValid = true;
         return pkg;
     };
@@ -213,13 +214,16 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
 
         auto pkg = createBasePackage();
         pkg.albedoMapUri = "textures/blocks/totally_missing_sec.png";
+        pkg.contentDigestSha256 = pkg.ComputeContentDigestSha256(testRoot);
 
         auto report = packaging.ValidatePackage(pkg, testRoot);
-        bool caught = !report.isValid && !report.errors.empty();
+        bool caught = !report.isValid && !report.errors.empty() &&
+                      (report.primaryErrorCode == AssetIntegrityErrorCode::MissingDependency);
 
         r.passed = caught;
         r.observedDesc = "IsValid: " + std::string(report.isValid ? "true" : "false") +
-                         ", ErrorsCount: " + std::to_string(report.errors.size());
+                         ", ErrorsCount: " + std::to_string(report.errors.size()) +
+                         ", PrimaryErrorCode: " + std::to_string(static_cast<int>(report.primaryErrorCode));
         r.details = r.passed ? "PASS" : "FAIL: File texture inesistente non intercettato da ValidatePackage";
         results.push_back(r);
     }
@@ -250,12 +254,14 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
 
         auto pkg = createBasePackage();
         pkg.albedoMapUri = truncRel;
+        pkg.contentDigestSha256 = pkg.ComputeContentDigestSha256(testRoot);
 
         auto report = packaging.ValidatePackage(pkg, testRoot);
-        bool caught = !report.isValid;
+        bool caught = !report.isValid && (report.primaryErrorCode == AssetIntegrityErrorCode::TextureDecodeFailure);
 
         r.passed = caught;
         r.observedDesc = "IsValid: " + std::string(report.isValid ? "true" : "false") +
+                         ", PrimaryErrorCode: " + std::to_string(static_cast<int>(report.primaryErrorCode)) +
                          ", Error: " + (report.errors.empty() ? "None" : report.errors[0]);
         r.details = r.passed ? "PASS" : "FAIL: Payload PNG troncato non rilevato (controllo limitato solo ai magic byte)";
         results.push_back(r);
@@ -285,6 +291,7 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
 
         auto pkg = createBasePackage();
         pkg.albedoMapUri = validRel;
+        pkg.contentDigestSha256 = pkg.ComputeContentDigestSha256(testRoot);
 
         auto report = packaging.ValidatePackage(pkg, testRoot);
         bool valid = report.isValid;
@@ -293,7 +300,15 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
         r.passed = valid && cachePopulated;
         r.observedDesc = "IsValid: " + std::string(valid ? "true" : "false") +
                          ", CacheEntries: " + std::to_string(packaging.GetTextureValidationCacheSize());
-        r.details = r.passed ? "PASS" : "FAIL: Validazione PNG conforme fallita o cache non popolata";
+        if (!report.errors.empty()) {
+            r.observedDesc += ", Errors: " + report.errors[0];
+            if (report.errors.size() > 1) {
+                r.observedDesc += " (+ " + std::to_string(report.errors.size() - 1) + " altri)";
+            }
+        }
+        r.details = r.passed ? "PASS" : ("FAIL: Validazione PNG conforme fallita o cache non popolata (primaryErrorCode=" +
+                                         std::to_string(static_cast<int>(report.primaryErrorCode)) +
+                                         (!report.errors.empty() ? ", err=" + report.errors[0] : "") + ")");
         results.push_back(r);
     }
 
@@ -501,23 +516,47 @@ std::vector<AssetHardeningTestResult> AssetIntegrityHardeningTests::RunAllTests(
         auto pkg = createBasePackage();
         pkg.manifest.assetId = "fairworld:sec_zw_block";
         pkg.albedoMapUri = zwTexRel;
+        pkg.contentDigestSha256 = pkg.ComputeContentDigestSha256(testRoot);
+
+        uint32_t activeBlocksPre = bReg.GetActiveBlockCount();
 
         // Prima pubblicazione: commit
         auto pub1 = packaging.PublishPackageTransactional(pkg, bReg, mReg, sReg, testRoot);
         size_t cacheCount1 = packaging.GetTextureValidationCacheSize();
+        uint32_t activeBlocksAfterPub1 = bReg.GetActiveBlockCount();
 
         // Seconda pubblicazione: Zero-Work hit
         auto pub2 = packaging.PublishPackageTransactional(pkg, bReg, mReg, sReg, testRoot);
         size_t cacheCount2 = packaging.GetTextureValidationCacheSize();
+        uint32_t activeBlocksAfterPub2 = bReg.GetActiveBlockCount();
 
         bool zwOk = pub1.success && pub2.success && pub2.wasZeroWorkHit && (pub1.targetVoxelId == pub2.targetVoxelId);
         bool cacheStable = (cacheCount1 > 0) && (cacheCount1 == cacheCount2);
+        bool registryUnchangedInPub2 = (activeBlocksAfterPub1 == activeBlocksAfterPub2) && (activeBlocksAfterPub1 == activeBlocksPre + 1);
 
-        r.passed = zwOk && cacheStable;
+        r.passed = zwOk && cacheStable && registryUnchangedInPub2;
         r.observedDesc = "Pub1: " + std::string(pub1.success ? "true" : "false") +
+                         ", Pub2: " + std::string(pub2.success ? "true" : "false") +
                          ", Pub2ZeroWork: " + std::string(pub2.wasZeroWorkHit ? "true" : "false") +
-                         ", CacheStable: " + std::to_string(cacheCount1) + "==" + std::to_string(cacheCount2);
-        r.details = r.passed ? "PASS" : "FAIL: Zero-Work o cache di validazione non attivi su input identico";
+                         ", Slot: " + std::to_string(pub1.targetVoxelId) + "==" + std::to_string(pub2.targetVoxelId) +
+                         ", CacheStable: " + std::to_string(cacheCount1) + "==" + std::to_string(cacheCount2) +
+                         ", RegsDelta: pre=" + std::to_string(activeBlocksPre) +
+                         ", post1=" + std::to_string(activeBlocksAfterPub1) +
+                         ", post2=" + std::to_string(activeBlocksAfterPub2);
+
+        r.details = "pub1.success=" + std::string(pub1.success ? "true" : "false") +
+                    (!pub1.success ? " (" + pub1.errorMessage + ")" : "") +
+                    ", pub2.success=" + std::string(pub2.success ? "true" : "false") +
+                    (!pub2.success ? " (" + pub2.errorMessage + ")" : "") +
+                    ", pub2.wasZeroWorkHit=" + std::string(pub2.wasZeroWorkHit ? "true" : "false") +
+                    ", targetVoxelId=" + std::to_string(pub1.targetVoxelId) + "==" + std::to_string(pub2.targetVoxelId) +
+                    ", cacheCount=" + std::to_string(cacheCount1) + "==" + std::to_string(cacheCount2) +
+                    ", blocksCount=" + std::to_string(activeBlocksAfterPub1) + "==" + std::to_string(activeBlocksAfterPub2);
+        if (!r.passed) {
+            r.details = "FAIL: " + r.details;
+        } else {
+            r.details = "PASS: " + r.details;
+        }
         results.push_back(r);
     }
 

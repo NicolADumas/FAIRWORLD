@@ -17,6 +17,7 @@
 #include "blocks/sculpt/MeshBridgeService.h"
 #include <filesystem>
 #include <cmath>
+#include <cstring>
 
 namespace fw {
 
@@ -215,6 +216,55 @@ public:
     }
 
     bool Execute(StationContext& context) override {
+        // 1. Calcolo del fingerprint d'ingresso per invariante Zero-Work (BM-UV2.11 / BM-F3)
+        uint64_t currentFp = 14695981039346656037ULL;
+        auto hashU64 = [&](uint64_t v) {
+            currentFp ^= v;
+            currentFp *= 1099511628211ULL;
+        };
+        auto hashFloat = [&](float f) {
+            uint32_t u = 0;
+            std::memcpy(&u, &f, sizeof(float));
+            hashU64(u);
+        };
+
+        auto hashUVTransform = [&](const UVTransform& uvT) {
+            hashFloat(uvT.tiling.x);
+            hashFloat(uvT.tiling.y);
+            hashFloat(uvT.offset.x);
+            hashFloat(uvT.offset.y);
+            hashFloat(uvT.rotationDegrees);
+            hashU64((uvT.mirrorU ? 1ULL : 0ULL) | (uvT.mirrorV ? 2ULL : 0ULL));
+        };
+
+        bool isSculptedInput = context.draft.sculptMesh.has_value();
+        hashU64(isSculptedInput ? 1ULL : 0ULL);
+
+        if (isSculptedInput) {
+            hashU64(context.draft.sculptMesh->GetTopologyRevision());
+            hashU64(context.draft.sculptMesh->GetGeometryRevision());
+        } else {
+            hashU64(static_cast<uint64_t>(context.draft.shape.type));
+            hashU64(context.draft.shape.revision);
+        }
+
+        hashU64(static_cast<uint64_t>(context.draft.baseProjection));
+        hashUVTransform(context.draft.baseUVTransform);
+
+        hashU64(static_cast<uint64_t>(context.draft.surfaces.size()));
+        for (const auto& so : context.draft.surfaces) {
+            hashU64(so.surfaceId);
+            hashU64(static_cast<uint64_t>(so.projection));
+            hashUVTransform(so.uvTransform);
+        }
+
+        // BM-UV2 / BM-F3: Zero-Work - se la stazione e' gia' Completed, l'input e' invariato e il layout e' valido, non rieseguire
+        if (m_status == StationStatus::Completed && currentFp == m_lastFingerprint && m_lastFingerprint != 0 &&
+            context.draft.uvLayout.has_value() && context.draft.uvLayout->isValid) {
+            context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::SurfaceUV));
+            return true;
+        }
+
         m_diagnostic.Clear();
         m_status = StationStatus::Processing;
 
@@ -335,18 +385,29 @@ public:
         }
 
         m_lastRevision = context.draft.manifest.revision;
+        m_lastFingerprint = currentFp;
         m_status = StationStatus::Completed;
         context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::SurfaceUV));
         return true;
     }
 
-    void Invalidate() override { m_status = StationStatus::Dirty; }
-    void Reset() override { m_status = StationStatus::Uninitialized; m_diagnostic.Clear(); m_lastRevision = 0; }
+    void Invalidate() override { 
+        m_status = StationStatus::Dirty; 
+        m_lastFingerprint = 0;
+    }
+
+    void Reset() override { 
+        m_status = StationStatus::Uninitialized; 
+        m_diagnostic.Clear(); 
+        m_lastRevision = 0; 
+        m_lastFingerprint = 0;
+    }
 
 private:
     StationStatus m_status = StationStatus::Uninitialized;
     StationDiagnostic m_diagnostic;
     uint64_t m_lastRevision = 0;
+    uint64_t m_lastFingerprint = 0;
     PrimitiveUVMapper m_uvMapper;
     GeneralUVMapper m_generalUVMapper;
     UVAtlasPacker m_atlasPacker;

@@ -165,6 +165,9 @@ std::vector<TransactionAuditTestResult> TransactionIntegrityAuditTests::RunAllTe
         BlockRegistry bReg; bReg.Initialize();
         MaterialRegistry mReg; mReg.Initialize();
 
+        uint32_t s0 = static_cast<uint32_t>(sReg.GetAllShapes().size());
+        uint32_t b0 = bReg.GetActiveBlockCount();
+
         AssetPackagingService service;
         service.SetRootAssetDirectory(testRoot);
         service.SetTestFaultInjection(PublishFaultInjectionPoint::FailAfterMaterialMutation);
@@ -173,12 +176,27 @@ std::vector<TransactionAuditTestResult> TransactionIntegrityAuditTests::RunAllTe
         pkg.manifest.assetId = "fairworld:trx_mat_fail";
         auto res = service.PublishPackageTransactional(pkg, bReg, mReg, sReg);
 
+        uint32_t s1 = static_cast<uint32_t>(sReg.GetAllShapes().size());
+        uint32_t b1 = bReg.GetActiveBlockCount();
         bool rolledBack = (!res.success) && res.wasRolledBack;
         bool noBlock = !bReg.IsStringIdTaken("fairworld:trx_mat_fail");
+        bool shapePreserved = (s0 == s1);
+        bool blockPreserved = (b0 == b1);
 
-        r.passed = rolledBack && noBlock;
+        bool noOrphanMaterial = true;
+        for (uint32_t i = 1; i < 256; ++i) {
+            if (!bReg.IsBlockValid(static_cast<uint8_t>(i)) && mReg.GetMaterial(static_cast<uint8_t>(i)).target_block_id != 0) {
+                noOrphanMaterial = false;
+                break;
+            }
+        }
+
+        r.passed = rolledBack && noBlock && shapePreserved && blockPreserved && noOrphanMaterial;
         r.observedDesc = "RolledBack: " + std::string(rolledBack ? "true" : "false") +
-                         ", BlockCleaned: " + std::string(noBlock ? "true" : "false");
+                         ", BlockCleaned: " + std::string(noBlock ? "true" : "false") +
+                         ", Shapes: " + std::to_string(s0) + "->" + std::to_string(s1) +
+                         ", Blocks: " + std::to_string(b0) + "->" + std::to_string(b1) +
+                         ", MaterialSlotCleaned: " + std::string(noOrphanMaterial ? "true" : "false");
         r.details = r.passed ? "PASS" : "FAIL: Rollback incompleto dopo mutazione materiale";
         results.push_back(r);
     }
@@ -212,12 +230,33 @@ std::vector<TransactionAuditTestResult> TransactionIntegrityAuditTests::RunAllTe
         uint32_t b1 = bReg.GetActiveBlockCount();
         bool noOrphanId = !bReg.IsStringIdTaken("fairworld:trx_triple_fail");
 
-        bool allClean = (!res.success) && res.wasRolledBack && (s0 == s1) && (b0 == b1) && noOrphanId;
+        bool noOrphanMaterial = true;
+        for (uint32_t i = 1; i < 256; ++i) {
+            if (!bReg.IsBlockValid(static_cast<uint8_t>(i)) && mReg.GetMaterial(static_cast<uint8_t>(i)).target_block_id != 0) {
+                noOrphanMaterial = false;
+                break;
+            }
+        }
+
+        uint32_t danglingShapeRefs = 0;
+        for (uint32_t i = 1; i < 256; ++i) {
+            if (mReg.GetMaterial(static_cast<uint8_t>(i)).target_block_id != 0) {
+                ShapeHandle sh = mReg.GetMaterial(static_cast<uint8_t>(i)).sharedShape;
+                if (sh.IsValid() && sReg.GetShapeDef(sh) == nullptr) {
+                    danglingShapeRefs++;
+                }
+            }
+        }
+
+        bool allClean = (!res.success) && res.wasRolledBack && (s0 == s1) && (b0 == b1) && noOrphanId && noOrphanMaterial && (danglingShapeRefs == 0);
 
         r.passed = allClean;
         r.observedDesc = "RolledBack: " + std::string(res.wasRolledBack ? "true" : "false") +
                          ", Shapes: " + std::to_string(s0) + "->" + std::to_string(s1) +
-                         ", Blocks: " + std::to_string(b0) + "->" + std::to_string(b1);
+                         ", Blocks: " + std::to_string(b0) + "->" + std::to_string(b1) +
+                         ", OrphanMat: " + std::string(noOrphanMaterial ? "none" : "detected") +
+                         ", DanglingRefs: " + std::to_string(danglingShapeRefs) +
+                         ", OrphanId: " + std::string(!noOrphanId ? "detected" : "none");
         r.details = r.passed ? "PASS" : "FAIL: Stato incoerente tra i 3 registri dopo rollback";
         results.push_back(r);
     }

@@ -97,6 +97,13 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.observedDesc = "Validazione: " + std::string(val.isValid ? "PASS" : "FAIL") +
                          ", Pubblicazione: " + std::string(pub.success ? "PASS" : "FAIL") +
                          ", Nodi nel grafo: " + std::to_string(service.GetDependencyGraph().GetNodeCount());
+        r.details = "val.isValid=" + std::string(val.isValid ? "true" : "false") +
+                    ", pub.success=" + std::string(pub.success ? "true" : "false") +
+                    ", status=" + std::string(AssetIntegrityStatusToString(val.integrityStatus)) +
+                    ", nodeCount=" + std::to_string(service.GetDependencyGraph().GetNodeCount()) +
+                    (val.errors.empty() ? "" : ", valError=" + val.errors[0]) +
+                    (pub.errorMessage.empty() ? "" : ", pubError=" + pub.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -119,7 +126,7 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
 
         // 1. Pubblica il target B
         auto pkgTarget = createBasePackage("fairworld:dep02_target", 1);
-        service.PublishPackagePersistent(pkgTarget, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubTarget = service.PublishPackagePersistent(pkgTarget, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         // 2. Pubblica l'host A dipendente da B
         auto pkgHost = createBasePackage("fairworld:dep02_host", 1);
@@ -142,6 +149,16 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.observedDesc = "Validazione Host: " + std::string(val.isValid ? "PASS" : "FAIL") +
                          ", Pubblicazione: " + std::string(pub.success ? "PASS" : "FAIL") +
                          ", Dipendenza registrata: " + (hasTargetEdge ? "SI" : "NO");
+        bool isTargetCommitted = service.IsRevisionCommitted("fairworld:dep02_target", 1, testRoot);
+        r.details = "pubTarget.success=" + std::string(pubTarget.success ? "true" : "false") +
+                    ", targetCommitted=" + std::string(isTargetCommitted ? "true" : "false") +
+                    ", reqRev=1" +
+                    ", valHost.isValid=" + std::string(val.isValid ? "true" : "false") +
+                    ", pubHost.success=" + std::string(pub.success ? "true" : "false") +
+                    ", hasTargetEdge=" + std::string(hasTargetEdge ? "true" : "false") +
+                    (val.errors.empty() ? "" : ", valHostError=" + val.errors[0]) +
+                    (pub.errorMessage.empty() ? "" : ", pubHostError=" + pub.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -178,6 +195,13 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.observedDesc = "Blocco validazione: " + std::string(!val.isValid ? "SI" : "NO") +
                          ", Codice errore: " + std::string(AssetIntegrityErrorCodeToString(val.primaryErrorCode)) +
                          ", Errore: '" + (val.errors.empty() ? "" : val.errors[0]) + "'";
+        r.details = "val.isValid=" + std::string(val.isValid ? "true" : "false") +
+                    ", pub.success=" + std::string(pub.success ? "true" : "false") +
+                    ", errCode=" + std::string(AssetIntegrityErrorCodeToString(val.primaryErrorCode)) +
+                    ", reqRev=1, target=ghost_shape_never_exists" +
+                    (val.errors.empty() ? "" : ", valError=" + val.errors[0]) +
+                    (pub.errorMessage.empty() ? "" : ", pubError=" + pub.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -217,6 +241,16 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.passed = (!val.isValid) && (!pub.success);
         r.observedDesc = "Validazione fallita: " + std::string(!val.isValid ? "SI" : "NO") +
                          ", Messaggio: '" + (val.errors.empty() ? "" : val.errors[0]) + "'";
+        bool isTargetRev1Committed = service.IsRevisionCommitted("fairworld:dep04_target", 1, testRoot);
+        bool isTargetRev42Committed = service.IsRevisionCommitted("fairworld:dep04_target", 42, testRoot);
+        r.details = "val.isValid=" + std::string(val.isValid ? "true" : "false") +
+                    ", pub.success=" + std::string(pub.success ? "true" : "false") +
+                    ", reqRev=42" +
+                    ", targetRev1Committed=" + std::string(isTargetRev1Committed ? "true" : "false") +
+                    ", targetRev42Committed=" + std::string(isTargetRev42Committed ? "true" : "false") +
+                    (val.errors.empty() ? "" : ", valError=" + val.errors[0]) +
+                    (pub.errorMessage.empty() ? "" : ", pubError=" + pub.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -257,6 +291,15 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.passed = (!val.isValid) && (!pub.success) && (val.primaryErrorCode == AssetIntegrityErrorCode::DigestMismatch);
         r.observedDesc = "Rifiuto mismatch digest: " + std::string(!val.isValid ? "SI" : "NO") +
                          ", Codice errore: " + std::string(AssetIntegrityErrorCodeToString(val.primaryErrorCode));
+        bool isTargetCommitted = service.IsRevisionCommitted("fairworld:dep05_target", 1, testRoot);
+        r.details = "val.isValid=" + std::string(val.isValid ? "true" : "false") +
+                    ", pub.success=" + std::string(pub.success ? "true" : "false") +
+                    ", errCode=" + std::string(AssetIntegrityErrorCodeToString(val.primaryErrorCode)) +
+                    ", reqRev=1" +
+                    ", targetCommitted=" + std::string(isTargetCommitted ? "true" : "false") +
+                    (val.errors.empty() ? "" : ", valError=" + val.errors[0]) +
+                    (pub.errorMessage.empty() ? "" : ", pubError=" + pub.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -290,6 +333,11 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.observedDesc = "Ciclo rilevato: " + std::string(hasCycle ? "SI" : "NO") +
                          ", Numero cicli estratti: " + std::to_string(cycles.size()) +
                          ", Ordinamento topologico bloccato: " + std::string(!topoOk ? "SI" : "NO");
+        r.details = "hasCycle=" + std::string(hasCycle ? "true" : "false") +
+                    ", cycleCount=" + std::to_string(cycles.size()) +
+                    ", topoOk=" + std::string(topoOk ? "true" : "false") +
+                    ", topoErr=" + topoErr;
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -312,29 +360,39 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
 
         // 1. Pubblica il target condiviso C
         auto pkgC = createBasePackage("fairworld:dep07_shared_c", 1);
-        service.PublishPackagePersistent(pkgC, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubC = service.PublishPackagePersistent(pkgC, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         // 2. Pubblica Host A
         auto pkgA = createBasePackage("fairworld:dep07_host_a", 1);
         AssetDependency depA; depA.targetId = "fairworld:dep07_shared_c"; depA.requiredRevision = 1;
         pkgA.manifest.dependencies.push_back(depA);
         pkgA.contentDigestSha256 = pkgA.ComputeContentDigestSha256();
-        service.PublishPackagePersistent(pkgA, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubA = service.PublishPackagePersistent(pkgA, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         // 3. Pubblica Host B
         auto pkgB = createBasePackage("fairworld:dep07_host_b", 1);
         AssetDependency depB; depB.targetId = "fairworld:dep07_shared_c"; depB.requiredRevision = 1;
         pkgB.manifest.dependencies.push_back(depB);
         pkgB.contentDigestSha256 = pkgB.ComputeContentDigestSha256();
-        service.PublishPackagePersistent(pkgB, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubB = service.PublishPackagePersistent(pkgB, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         const auto& graph = service.GetDependencyGraph();
         size_t refCount = graph.GetReferenceCount("fairworld:dep07_shared_c");
         bool isRef = graph.IsReferenced("fairworld:dep07_shared_c");
+        bool isCCommitted = service.IsRevisionCommitted("fairworld:dep07_shared_c", 1, testRoot);
 
         r.passed = (refCount == 2) && isRef;
         r.observedDesc = "Reference count target condiviso: " + std::to_string(refCount) +
                          ", IsReferenced: " + (isRef ? "SI" : "NO");
+        r.details = "pubC=" + std::string(pubC.success ? "true" : "false") +
+                    ", pubA=" + std::string(pubA.success ? "true" : "false") +
+                    ", pubB=" + std::string(pubB.success ? "true" : "false") +
+                    ", targetCommitted=" + std::string(isCCommitted ? "true" : "false") +
+                    ", refCount=" + std::to_string(refCount) +
+                    ", isReferenced=" + std::string(isRef ? "true" : "false") +
+                    (pubA.errorMessage.empty() ? "" : ", pubAError=" + pubA.errorMessage) +
+                    (pubB.errorMessage.empty() ? "" : ", pubBError=" + pubB.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -356,16 +414,16 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         service.SetTrustPolicy(AssetTrustPolicy::Strict);
 
         auto pkgB = createBasePackage("fairworld:dep08_b", 1);
-        service.PublishPackagePersistent(pkgB, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubB1 = service.PublishPackagePersistent(pkgB, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         auto pkgA = createBasePackage("fairworld:dep08_a", 1);
         AssetDependency dep; dep.targetId = "fairworld:dep08_b"; dep.requiredRevision = 1;
         pkgA.manifest.dependencies.push_back(dep);
         pkgA.contentDigestSha256 = pkgA.ComputeContentDigestSha256();
-        service.PublishPackagePersistent(pkgA, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubA = service.PublishPackagePersistent(pkgA, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         auto pkgD = createBasePackage("fairworld:dep08_d_independent", 1);
-        service.PublishPackagePersistent(pkgD, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubD = service.PublishPackagePersistent(pkgD, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         // Pre-condizione: A e D hanno cache fingerprint registrata
         bool hadFingerprintA = (service.GetLastPublishedFingerprint("fairworld:dep08_a") != 0);
@@ -375,7 +433,7 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         auto pkgB2 = createBasePackage("fairworld:dep08_b", 2);
         pkgB2.baseColorFallback = glm::vec3(0.9f, 0.1f, 0.1f);
         pkgB2.contentDigestSha256 = pkgB2.ComputeContentDigestSha256();
-        service.PublishPackagePersistent(pkgB2, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
+        auto pubB2 = service.PublishPackagePersistent(pkgB2, bReg, mReg, sReg, testRoot, AssetTrustPolicy::Strict);
 
         // Post-condizione: A deve essere invalidato, D deve rimanere valido
         bool hasFingerprintA = (service.GetLastPublishedFingerprint("fairworld:dep08_a") != 0);
@@ -384,6 +442,16 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
         r.passed = hadFingerprintA && hadFingerprintD && (!hasFingerprintA) && hasFingerprintD;
         r.observedDesc = "Cache A pre: " + std::to_string(hadFingerprintA) + " -> post: " + std::to_string(hasFingerprintA) +
                          " | Cache D (indipendente) pre: " + std::to_string(hadFingerprintD) + " -> post: " + std::to_string(hasFingerprintD);
+        r.details = "pubB1=" + std::string(pubB1.success ? "true" : "false") +
+                    ", pubA=" + std::string(pubA.success ? "true" : "false") +
+                    ", pubD=" + std::string(pubD.success ? "true" : "false") +
+                    ", pubB2=" + std::string(pubB2.success ? "true" : "false") +
+                    ", hadFpA=" + std::to_string(hadFingerprintA) +
+                    ", hadFpD=" + std::to_string(hadFingerprintD) +
+                    ", hasFpA=" + std::to_string(hasFingerprintA) +
+                    ", hasFpD=" + std::to_string(hasFingerprintD) +
+                    (pubA.errorMessage.empty() ? "" : ", pubAError=" + pubA.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 
@@ -409,21 +477,21 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
 
         // Pubblica C
         auto pkgC = createBasePackage("fairworld:dep09_c", 1);
-        service.PublishPackagePersistent(pkgC, bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
+        auto pubC = service.PublishPackagePersistent(pkgC, bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
 
         // Pubblica B (dipende da C)
         auto pkgB = createBasePackage("fairworld:dep09_b", 1);
         AssetDependency depBC; depBC.targetId = "fairworld:dep09_c"; depBC.requiredRevision = 1;
         pkgB.manifest.dependencies.push_back(depBC);
         pkgB.contentDigestSha256 = pkgB.ComputeContentDigestSha256();
-        service.PublishPackagePersistent(pkgB, bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
+        auto pubB = service.PublishPackagePersistent(pkgB, bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
 
         // Pubblica A (dipende da B)
         auto pkgA = createBasePackage("fairworld:dep09_a", 1);
         AssetDependency depAB; depAB.targetId = "fairworld:dep09_b"; depAB.requiredRevision = 1;
         pkgA.manifest.dependencies.push_back(depAB);
         pkgA.contentDigestSha256 = pkgA.ComputeContentDigestSha256();
-        service.PublishPackagePersistent(pkgA, bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
+        auto pubA = service.PublishPackagePersistent(pkgA, bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
 
         // Ora eseguiamo la ricostruzione autoritativa dai file committed su disco
         size_t reconstructed = service.ReconstructRegistriesFromCommitted(bReg, mReg, sReg, testSubRoot, AssetTrustPolicy::Strict);
@@ -437,6 +505,16 @@ std::vector<AssetDependencyTestResult> AssetDependencyContractTests::RunAllTests
                          ", Blocco A: " + (blockA ? "SI" : "NO") +
                          ", Blocco B: " + (blockB ? "SI" : "NO") +
                          ", Blocco C: " + (blockC ? "SI" : "NO");
+        r.details = "pubC=" + std::string(pubC.success ? "true" : "false") +
+                    ", pubB=" + std::string(pubB.success ? "true" : "false") +
+                    ", pubA=" + std::string(pubA.success ? "true" : "false") +
+                    ", reconstructed=" + std::to_string(reconstructed) +
+                    ", blockA=" + (blockA ? "true" : "false") +
+                    ", blockB=" + (blockB ? "true" : "false") +
+                    ", blockC=" + (blockC ? "true" : "false") +
+                    (pubB.errorMessage.empty() ? "" : ", pubBError=" + pubB.errorMessage) +
+                    (pubA.errorMessage.empty() ? "" : ", pubAError=" + pubA.errorMessage);
+        if (!r.passed) r.details = "FAIL: " + r.details;
         results.push_back(r);
     }
 

@@ -87,7 +87,8 @@ bool AssetPackagingService::ValidateTextureFile(const std::string& fullPath, con
 RawAssetValidation AssetPackagingService::ValidatePackage(
     const RawAssetPackage& package,
     const std::string& rootDir,
-    std::optional<AssetTrustPolicy> policy
+    std::optional<AssetTrustPolicy> policy,
+    const std::string& dependencyRootDir
 ) const {
     RawAssetValidation report;
     report.isValid = true;
@@ -95,6 +96,7 @@ RawAssetValidation AssetPackagingService::ValidatePackage(
     report.primaryErrorCode = AssetIntegrityErrorCode::None;
 
     const std::string effectiveRoot = rootDir.empty() ? m_rootAssetDirectory : rootDir;
+    const std::string effectiveDepRoot = dependencyRootDir.empty() ? effectiveRoot : dependencyRootDir;
     const AssetTrustPolicy effectivePolicy = policy.value_or(m_defaultTrustPolicy);
 
     // 1. Validazione Metadati e Identità
@@ -190,7 +192,7 @@ RawAssetValidation AssetPackagingService::ValidatePackage(
     }
 
     // 8. Validazione Dipendenze Dichiarate & Integrita' Referenziale (BM-F4.4)
-    auto depReport = AssetDependencyGraph::ValidatePackageDependencies(package, effectiveRoot, *this, effectivePolicy);
+    auto depReport = AssetDependencyGraph::ValidatePackageDependencies(package, effectiveDepRoot, *this, effectivePolicy);
     if (!depReport.isValid) {
         for (const auto& depErr : depReport.errors) {
             report.AddError(depErr, depReport.primaryErrorCode);
@@ -238,7 +240,7 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
         return result;
     }
 
-    // FASE 2: VERIFICA COLLISIONI STRING ID
+    // FASE 2: VERIFICA COLLISIONI STRING ID E SLOT OWNERSHIP (BM-F4)
     uint8_t existingId = bReg.GetBlockIdByString(package.manifest.assetId);
     uint8_t targetVoxelId = package.manifest.targetRuntimeVoxelId;
 
@@ -251,6 +253,21 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
         result.errorCode = AssetIntegrityErrorCode::None;
         result.wasRolledBack = false;
         return result;
+    }
+
+    // Invariante di identità e ownership: uno slot runtime già assegnato non può essere sovrascritto da un asset diverso
+    if (targetVoxelId != 0 && bReg.IsBlockValid(targetVoxelId)) {
+        const std::string& occupantId = bReg.GetBlock(targetVoxelId).stringId;
+        if (!occupantId.empty() && occupantId != package.manifest.assetId) {
+            result.success = false;
+            result.errorMessage = "Collisione ID: lo slot runtime ID " + std::to_string(targetVoxelId) +
+                                  " e' gia' assegnato all'asset '" + occupantId +
+                                  "', impossibile assegnarlo a '" + package.manifest.assetId + "'";
+            result.integrityStatus = AssetIntegrityStatus::Rejected;
+            result.errorCode = AssetIntegrityErrorCode::None;
+            result.wasRolledBack = false;
+            return result;
+        }
     }
 
     // FASE 3: VERIFICA ZERO-WORK SICURA (BM-F4.2 ZERO-WORK SAFETY)
@@ -325,22 +342,33 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     }
 
     // Helper lambda per rollback atomico in caso di errore (BM-F2C.1 / BM-F4)
+    // Ordine inverso delle mutazioni: 1. MaterialRegistry -> 2. BlockRegistry -> 3. ShapeRegistry
     auto performRollback = [&](const std::string& errorMsg) -> AssetPublishTransactionResult {
+        // 1. Rollback MaterialRegistry
+        if (wasNewBlockAllocated) {
+            mReg.ResetMaterial(targetVoxelId);
+        } else {
+            if (oldMaterialSnapshot.has_value()) {
+                mReg.UpdateMaterial(targetVoxelId, *oldMaterialSnapshot);
+            }
+        }
+
+        // 2. Rollback BlockRegistry
         if (wasNewBlockAllocated) {
             bReg.DeleteBlock(targetVoxelId);
         } else {
             if (oldBlockSnapshot.has_value()) {
                 bReg.UpdateBlock(targetVoxelId, *oldBlockSnapshot);
             }
-            if (oldMaterialSnapshot.has_value()) {
-                mReg.UpdateMaterial(targetVoxelId, *oldMaterialSnapshot);
-            }
         }
+
+        // 3. Rollback ShapeRegistry (soltanto se registrata in questa transazione e non piu' referenziata)
         if (wasShapeRegistered && assignedShape.IsValid()) {
             if (mReg.CountShapeUsers(assignedShape.id) == 0) {
                 sReg.UnregisterShape(assignedShape);
             }
         }
+
         AssetPublishTransactionResult failRes;
         failRes.success = false;
         failRes.errorMessage = errorMsg;
@@ -364,6 +392,13 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     }
 
     // 5.2 Sincronizzazione Proprietà Fisiche e Trasformazione in BlockRegistry
+    if (!wasNewBlockAllocated && bReg.IsBlockValid(targetVoxelId)) {
+        const std::string& currentOwner = bReg.GetBlock(targetVoxelId).stringId;
+        if (!currentOwner.empty() && currentOwner != package.manifest.assetId) {
+            return performRollback("Violazione invariante di ownership: lo slot " + std::to_string(targetVoxelId) +
+                                   " appartiene a '" + currentOwner + "' anziche' a '" + package.manifest.assetId + "'");
+        }
+    }
     SimBlockDef& bDef = bReg.GetBlockMutable(targetVoxelId);
     bDef.stringId = package.manifest.assetId;
     bDef.displayName = package.manifest.displayName;
@@ -886,7 +921,7 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackagePersistent(
         return result;
     }
 
-    auto stagedVal = ValidatePackage(stagedPkg, stagingDir.string(), effectivePolicy);
+    auto stagedVal = ValidatePackage(stagedPkg, stagingDir.string(), effectivePolicy, effectiveRoot);
     if (!stagedVal.isValid) {
         journal.state = AssetTransactionState::Aborted;
         journal.SaveToFile((stagingDir / "tx_journal.json").string());
@@ -1090,62 +1125,72 @@ CrashRecoveryReport AssetPackagingService::RunCrashRecovery(
     // 2. Censimento e recupero dei package committed in published/
     std::filesystem::path pubRoot = std::filesystem::path(effectiveRoot) / "published";
     if (std::filesystem::exists(pubRoot, ec)) {
-        for (const auto& assetDir : std::filesystem::directory_iterator(pubRoot, ec)) {
-            if (assetDir.is_directory(ec)) {
-                std::string assetId = assetDir.path().filename().string();
-                if (!IsValidAssetId(assetId)) continue;
-
-                std::filesystem::path activePkgFile = assetDir.path() / "active.rawpkg";
-                auto activeRev = GetActiveRevision(assetId, effectiveRoot);
-                auto highestCommitted = GetHighestCommittedRevision(assetId, effectiveRoot);
-
-                // Caso A: active.rawpkg esiste ma non punta a una revisione committed valida (CRH-H03)
-                if (std::filesystem::exists(activePkgFile, ec) && !activeRev.has_value()) {
-                    report.uncommittedActivePointersDiscarded++;
-                    report.messages.push_back("Puntatore active non committed o corrotto per asset: " + assetId);
-                    if (highestCommitted.has_value()) {
-                        std::string recMsg;
-                        if (ReconcileActivePointer(assetId, effectiveRoot, &recMsg)) {
-                            report.reconciledActivePointers++;
-                            report.messages.push_back(recMsg);
-                        }
-                    } else {
-                        std::filesystem::remove(activePkgFile, ec);
-                        std::filesystem::remove(assetDir.path() / "active_journal.json", ec);
-                    }
+        std::vector<std::filesystem::path> assetDirs;
+        for (const auto& entry : std::filesystem::directory_iterator(pubRoot, ec)) {
+            if (entry.is_directory(ec)) {
+                std::string assetId = entry.path().filename().string();
+                if (IsValidAssetId(assetId)) {
+                    assetDirs.push_back(entry.path());
                 }
-                // Caso B: active.rawpkg mancante ma revisione committed presente (CRH-H02)
-                else if (!std::filesystem::exists(activePkgFile, ec) && highestCommitted.has_value()) {
+            }
+        }
+        std::sort(assetDirs.begin(), assetDirs.end());
+
+        for (const auto& assetDirPath : assetDirs) {
+            std::string assetId = assetDirPath.filename().string();
+
+            std::filesystem::path activePkgFile = assetDirPath / "active.rawpkg";
+            auto activeRev = GetActiveRevision(assetId, effectiveRoot);
+            auto highestCommitted = GetHighestCommittedRevision(assetId, effectiveRoot);
+
+            // Caso A: active.rawpkg esiste ma non punta a una revisione committed valida (CRH-H03)
+            if (std::filesystem::exists(activePkgFile, ec) && !activeRev.has_value()) {
+                report.uncommittedActivePointersDiscarded++;
+                report.messages.push_back("Puntatore active non committed o corrotto per asset: " + assetId);
+                if (highestCommitted.has_value()) {
                     std::string recMsg;
                     if (ReconcileActivePointer(assetId, effectiveRoot, &recMsg)) {
                         report.reconciledActivePointers++;
                         report.messages.push_back(recMsg);
                     }
+                } else {
+                    std::filesystem::remove(activePkgFile, ec);
+                    std::filesystem::remove(assetDirPath / "active_journal.json", ec);
                 }
+            }
+            // Caso B: active.rawpkg mancante ma revisione committed presente (CRH-H02)
+            else if (!std::filesystem::exists(activePkgFile, ec) && highestCommitted.has_value()) {
+                std::string recMsg;
+                if (ReconcileActivePointer(assetId, effectiveRoot, &recMsg)) {
+                    report.reconciledActivePointers++;
+                    report.messages.push_back(recMsg);
+                }
+            }
 
-                // Verifica finale dell'asset attivo recuperato o riconciliato
-                activeRev = GetActiveRevision(assetId, effectiveRoot);
-                if (activeRev.has_value() && std::filesystem::exists(activePkgFile, ec)) {
-                    RawAssetPackage pkg;
-                    if (pkg.LoadFromFile(activePkgFile.string())) {
-                        auto val = ValidatePackage(pkg, effectiveRoot, effectivePolicy);
-                        if (val.isValid) {
-                            report.committedPackagesRecovered++;
-                            report.recoveredAssetIds.push_back(pkg.manifest.assetId);
+            // Verifica finale dell'asset attivo recuperato o riconciliato
+            activeRev = GetActiveRevision(assetId, effectiveRoot);
+            if (activeRev.has_value() && std::filesystem::exists(activePkgFile, ec)) {
+                RawAssetPackage pkg;
+                if (pkg.LoadFromFile(activePkgFile.string())) {
+                    auto val = ValidatePackage(pkg, effectiveRoot, effectivePolicy);
+                    if (val.isValid) {
+                        report.committedPackagesRecovered++;
+                        report.recoveredAssetIds.push_back(pkg.manifest.assetId);
 
-                            if (bReg && mReg && sReg) {
-                                auto pub = PublishPackageTransactional(pkg, *bReg, *mReg, *sReg, effectiveRoot, effectivePolicy);
-                                if (pub.success) {
-                                    pkg.SaveToFile(activePkgFile.string());
-                                }
+                        if (bReg && mReg && sReg) {
+                            auto pub = PublishPackageTransactional(pkg, *bReg, *mReg, *sReg, effectiveRoot, effectivePolicy);
+                            if (pub.success) {
+                                pkg.SaveToFile(activePkgFile.string());
+                            } else {
+                                report.messages.push_back("Recovery runtime non riuscito per '" + pkg.manifest.assetId + "': " + pub.errorMessage);
                             }
-                        } else {
-                            report.corruptedPackagesFound++;
-                            report.messages.push_back("Package committed corrotto: " + pkg.manifest.assetId);
                         }
                     } else {
                         report.corruptedPackagesFound++;
+                        report.messages.push_back("Package committed corrotto: " + pkg.manifest.assetId);
                     }
+                } else {
+                    report.corruptedPackagesFound++;
                 }
             }
         }
@@ -1217,7 +1262,12 @@ size_t AssetPackagingService::ReconstructRegistriesFromCommitted(
         std::sort(candidatePackages.begin(), candidatePackages.end(), [&](const RawAssetPackage& a, const RawAssetPackage& b) {
             size_t idxA = orderMap.count(a.manifest.assetId) ? orderMap[a.manifest.assetId] : size_t(-1);
             size_t idxB = orderMap.count(b.manifest.assetId) ? orderMap[b.manifest.assetId] : size_t(-1);
-            return idxA < idxB;
+            if (idxA != idxB) return idxA < idxB;
+            return a.manifest.assetId < b.manifest.assetId;
+        });
+    } else {
+        std::sort(candidatePackages.begin(), candidatePackages.end(), [](const RawAssetPackage& a, const RawAssetPackage& b) {
+            return a.manifest.assetId < b.manifest.assetId;
         });
     }
 

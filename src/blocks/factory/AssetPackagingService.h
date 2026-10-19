@@ -139,7 +139,8 @@ public:
     RawAssetValidation ValidatePackage(
         const RawAssetPackage& package,
         const std::string& rootDir = "",
-        std::optional<AssetTrustPolicy> policy = std::nullopt
+        std::optional<AssetTrustPolicy> policy = std::nullopt,
+        const std::string& dependencyRootDir = ""
     ) const;
 
     // Pubblicazione transazionale con garanzia di atomicità in-memory (commit o rollback totale)

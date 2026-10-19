@@ -60,7 +60,7 @@ std::vector<SculptedBridgeTestResult> SculptedMeshRuntimeBridgeTests::RunAllTest
                        (pkgOpt->geometrySource == GeometrySource::Primitive) &&
                        (pkgOpt->shape.type == ShapeType::Cube) &&
                        pkgOpt->sculptTopologyJson.empty() &&
-                       (pkgOpt->geometry.vertices.size() == 24);
+                       (pkgOpt->geometry.vertices.size() == 36);
 
         bool pubOk = false;
         bool shapeOk = false;
@@ -76,6 +76,7 @@ std::vector<SculptedBridgeTestResult> SculptedMeshRuntimeBridgeTests::RunAllTest
 
         r.passed = buildOk && pubOk && shapeOk;
         r.observedDesc = "BuildOk: " + std::string(buildOk ? "true" : "false") +
+                         ", Vertices: " + (pkgOpt ? std::to_string(pkgOpt->geometry.vertices.size()) : "0") + "/36" +
                          ", Source: " + (pkgOpt ? (pkgOpt->geometrySource == GeometrySource::Primitive ? "Primitive" : "Sculpted") : "None") +
                          ", Published: " + std::string(pubOk ? "true" : "false") +
                          ", SharedShapeType: " + (shapeOk ? "Cube" : "Non-Cube");
@@ -425,10 +426,14 @@ std::vector<SculptedBridgeTestResult> SculptedMeshRuntimeBridgeTests::RunAllTest
         // Prima compilazione
         auto pkg1 = orch.BuildPackage(&sReg, &mReg, &bReg);
         uint64_t count1 = orch.GetGeometryCompileCallCount();
+        uint64_t gRev1 = draft->sculptMesh ? draft->sculptMesh->GetGeometryRevision() : 0;
+        uint64_t aRev1 = draft->sculptMesh ? draft->sculptMesh->GetAttributeRevision() : 0;
 
         // Seconda compilazione (input identico)
         auto pkg2 = orch.BuildPackage(&sReg, &mReg, &bReg);
         uint64_t count2 = orch.GetGeometryCompileCallCount();
+        uint64_t gRev2 = draft->sculptMesh ? draft->sculptMesh->GetGeometryRevision() : 0;
+        uint64_t aRev2 = draft->sculptMesh ? draft->sculptMesh->GetAttributeRevision() : 0;
 
         bool zeroWorkHit = (count1 == 1) && (count2 == 1) && pkg1.has_value() && pkg2.has_value();
 
@@ -440,13 +445,14 @@ std::vector<SculptedBridgeTestResult> SculptedMeshRuntimeBridgeTests::RunAllTest
 
         auto pkg3 = orch.BuildPackage(&sReg, &mReg, &bReg);
         uint64_t count3 = orch.GetGeometryCompileCallCount();
+        uint64_t gRev3 = draft->sculptMesh ? draft->sculptMesh->GetGeometryRevision() : 0;
 
         bool invalidationHit = (count3 == 2) && pkg3.has_value();
 
         r.passed = zeroWorkHit && invalidationHit;
-        r.observedDesc = "Count1=" + std::to_string(count1) +
-                         ", Count2_Unchanged=" + std::to_string(count2) +
-                         ", Count3_Modified=" + std::to_string(count3);
+        r.observedDesc = "Count1=" + std::to_string(count1) + " [gRev=" + std::to_string(gRev1) + ", aRev=" + std::to_string(aRev1) + "]" +
+                         ", Count2_Unchanged=" + std::to_string(count2) + " [gRev=" + std::to_string(gRev2) + ", aRev=" + std::to_string(aRev2) + "]" +
+                         ", Count3_Modified=" + std::to_string(count3) + " [gRev=" + std::to_string(gRev3) + "]";
         r.details = r.passed ? "PASS" : "FAIL: Zero-Work cache non operante per la geometria scolpita";
         results.push_back(r);
     }

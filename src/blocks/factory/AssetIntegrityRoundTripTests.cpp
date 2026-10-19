@@ -177,6 +177,7 @@ std::vector<AssetIntegrityTestResult> AssetIntegrityRoundTripTests::RunAllTests(
 
         FactoryOrchestrator orch;
         orch.GetTextureBakingService().SetBaseDirectory(testRoot);
+        orch.GetAssetPackagingService().SetRootAssetDirectory(testRoot);
         orch.OpenDraft("fairworld:int_baked_albedo", "Albedo Asset");
 
         auto* draft = orch.GetCurrentDraft();
@@ -198,8 +199,9 @@ std::vector<AssetIntegrityTestResult> AssetIntegrityRoundTripTests::RunAllTests(
         draft->paintLayers.push_back(layer);
         draft->completedStationsMask = 0x1F;
 
+        bool painterOk = orch.ExecuteStation(ProductionStationID::Painter, &sReg, &mReg, &bReg);
         auto bakeRes = orch.BakeCurrentDraftAlbedo(false);
-        bool bakeOk = bakeRes.success && (bakeRes.errorCode == BakingErrorCode::None);
+        bool bakeOk = painterOk && bakeRes.success && (bakeRes.errorCode == BakingErrorCode::None);
 
         auto pkgOpt = orch.BuildPackage(&sReg, &mReg, &bReg);
         bool buildOk = pkgOpt.has_value() && !pkgOpt->albedoMapUri.empty();
@@ -218,12 +220,26 @@ std::vector<AssetIntegrityTestResult> AssetIntegrityRoundTripTests::RunAllTests(
             matOk = (mDef.albedoPath == pkgOpt->albedoMapUri);
         }
 
-        r.passed = bakeOk && buildOk && valOk && pubOk && matOk;
-        r.observedDesc = "BakeOk: " + std::string(bakeOk ? "true" : "false") +
+        r.passed = painterOk && bakeOk && buildOk && valOk && pubOk && matOk;
+        r.observedDesc = "PainterOk: " + std::string(painterOk ? "true" : "false") +
+                         ", BakeOk: " + std::string(bakeOk ? "true" : "false") +
                          ", RelativeUri: " + (pkgOpt ? pkgOpt->albedoMapUri : "None") +
                          ", ValidatePackage: " + std::string(valOk ? "true" : "false") +
                          ", Published: " + std::string(pubOk ? "true" : "false");
-        r.details = r.passed ? "PASS" : "FAIL: Integrità artefatto Albedo baked non garantita";
+        if (r.passed) {
+            r.details = "PASS";
+        } else if (!painterOk) {
+            r.details = "FAIL: Inizializzazione ed esecuzione Painter Station fallita";
+        } else if (!bakeOk) {
+            r.details = "FAIL: Integrità artefatto Albedo baked non garantita";
+        } else if (!buildOk) {
+            r.details = "FAIL: Creazione package con artefatto Albedo fallita";
+        } else if (!valOk) {
+            std::string errDetail = valReport.errors.empty() ? "" : (" (" + valReport.errors.front() + ")");
+            r.details = "FAIL: Validazione package fallita" + errDetail;
+        } else {
+            r.details = "FAIL: Pubblicazione o binding materiale Albedo fallito";
+        }
         results.push_back(r);
     }
 
