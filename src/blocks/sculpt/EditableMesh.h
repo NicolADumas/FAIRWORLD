@@ -150,11 +150,14 @@ private:
             ledgerVec.resize(slotIndex + 1, 0);
         }
         uint32_t baseGen = std::max(currentSlotGen, ledgerVec[slotIndex]);
-        uint32_t nextGen = (baseGen == 0) ? 1 : (baseGen + 1);
-        if (nextGen == 0 || nextGen <= baseGen) {
-            // Saturazione esplicita uint32_t: impedisce il wraparound a 0 o 1, evitando il riciclo di vecchi handle
-            nextGen = 0xFFFFFFFF;
+        if (baseGen == 0xFFFFFFFF) {
+            // BM-S1.T15.F2: Slot esaurito. La generazione massima UINT32_MAX è già stata emessa per questo slot.
+            // Non modifichiamo il valore high-water del Ledger (rimane 0xFFFFFFFF).
+            // Non emettiamo nuovamente 0xFFFFFFFF per lo stesso slot.
+            // Restituiamo 0 come sentinel di esaurimento (0 non è mai una generazione valida).
+            return 0;
         }
+        uint32_t nextGen = (baseGen == 0) ? 1 : (baseGen + 1);
         ledgerVec[slotIndex] = nextGen;
         return nextGen;
     }

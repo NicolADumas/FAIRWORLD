@@ -3851,7 +3851,143 @@ void BlockMakerState::ApplyModelingOperation(fw::ModelingOperationType opType) {
     }
 }
 
+uint64_t BlockMakerState::EstimateSubdivisionFaceCount(const fw::EditableMesh& mesh, int iterations) {
+    if (mesh.GetVertexCount() == 0 || mesh.GetFaceCount() == 0 || iterations < 1) {
+        return 0;
+    }
+
+    uint64_t initialSplitFaces = 0;
+    const auto activeFaceIds = mesh.GetActiveFaceIDs();
+    for (fw::FaceID fid : activeFaceIds) {
+        size_t vCount = mesh.GetFaceVertexCount(fid);
+        if (UINT64_MAX - initialSplitFaces < vCount) {
+            return UINT64_MAX;
+        }
+        initialSplitFaces += vCount;
+    }
+
+    uint64_t estimatedResultingFaces = initialSplitFaces;
+    for (int it = 1; it < iterations; ++it) {
+        if (estimatedResultingFaces > UINT64_MAX / 4ULL) {
+            return UINT64_MAX;
+        }
+        estimatedResultingFaces *= 4ULL;
+    }
+
+    return estimatedResultingFaces;
+}
+
+void BlockMakerState::ApplySubdivideOperation() {
+    // 1. Validazione preventiva esistenza e consistenza mesh attiva
+    if (m_activeEditableMesh.GetVertexCount() == 0 || m_activeEditableMesh.GetFaceCount() == 0) {
+        m_modelingFeedbackMsg = "Operazione annullata: nessuna mesh attiva valida da suddividere.";
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 3.5f;
+        return;
+    }
+
+    // 2. Validazione coerenza blocco selezionato e registry
+    if (!m_context || !m_context->blockRegistry || !m_context->blockRegistry->IsBlockValid(m_selectedBlockId)) {
+        m_modelingFeedbackMsg = "Operazione annullata: blocco selezionato non valido o registri assenti.";
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 3.5f;
+        return;
+    }
+
+    if (m_factoryOrchestrator.IsDraftOpen()) {
+        const auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft && draft->manifest.targetRuntimeVoxelId != 0 && draft->manifest.targetRuntimeVoxelId != m_selectedBlockId) {
+            m_modelingFeedbackMsg = "Operazione annullata: disallineamento tra blocco attivo (ID " +
+                                    std::to_string(m_selectedBlockId) + ") e draft aperto (Voxel ID " +
+                                    std::to_string(draft->manifest.targetRuntimeVoxelId) + " - " +
+                                    draft->manifest.assetId + ").";
+            m_modelingFeedbackIsError = true;
+            m_modelingFeedbackTimer = 4.0f;
+            return;
+        }
+    }
+
+    // 3. Limitazione rigorosa delle iterazioni all'intervallo [1, 3]
+    if (m_subdivideIterations < 1 || m_subdivideIterations > 3) {
+        m_modelingFeedbackMsg = "Operazione annullata: iterazioni di suddivisione fuori intervallo consentito [1, 3] (valore: " +
+                                std::to_string(m_subdivideIterations) + ").";
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 3.5f;
+        return;
+    }
+
+    // 4. Stima complessità con funzione pura condivisa contro budget massimo (MAX_SUBDIVISION_FACE_BUDGET)
+    uint64_t estimatedResultingFaces = EstimateSubdivisionFaceCount(m_activeEditableMesh, m_subdivideIterations);
+
+    if (estimatedResultingFaces > MAX_SUBDIVISION_FACE_BUDGET) {
+        m_modelingFeedbackMsg = "Operazione rifiutata: complessità stimata (" +
+                                std::to_string(estimatedResultingFaces) + " facce) supera il budget massimo di " +
+                                std::to_string(MAX_SUBDIVISION_FACE_BUDGET) + " facce.";
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 4.5f;
+        return;
+    }
+
+    // 5. Transazione Undo/Redo con MeshHistoryService
+    // Snapshot locale per ripristino atomico in caso di eccezione/fallimento
+    fw::EditableMesh backupMesh = m_activeEditableMesh;
+    uint64_t preTopoRev = m_activeEditableMesh.GetTopologyRevision();
+    size_t preFaceCount = m_activeEditableMesh.GetFaceCount();
+
+    std::string opName = m_subdivideSmooth ? "Catmull-Clark Subdivide" : "Midpoint Subdivide";
+    m_meshHistoryService.BeginTransaction(
+        m_selectedBlockId,
+        opName,
+        fw::HistoryCommandType::TopologyMutation,
+        &m_activeEditableMesh
+    );
+
+    fw::SubdivideParams params;
+    params.iterations = static_cast<uint32_t>(m_subdivideIterations);
+    params.smooth = m_subdivideSmooth;
+
+    fw::TopologyOperationResult res = fw::MeshTopologyService::Subdivide(m_activeEditableMesh, params);
+
+    // 6. Verifica atomica del risultato e delle revisioni
+    bool mutationValid = res.success && res.topologyChanged &&
+                         (m_activeEditableMesh.GetTopologyRevision() > preTopoRev) &&
+                         (m_activeEditableMesh.GetFaceCount() > preFaceCount);
+
+    if (mutationValid) {
+        // Commit transazione riuscita
+        m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+
+        // 7. Invalidazione e potatura handle della selezione
+        m_selectionService.PruneInvalidated(m_activeEditableMesh);
+
+        // 8. Sincronizzazione draft Factory (se aperto)
+        if (m_factoryOrchestrator.IsDraftOpen()) {
+            m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+        }
+
+        // 9. Aggiornamento preview GPU tramite il percorso canonico Dirty -> MeshBridge -> GPU Preview
+        UpdatePreviewMesh();
+
+        m_modelingFeedbackMsg = opName + " completata con successo (" +
+                                std::to_string(preFaceCount) + " -> " +
+                                std::to_string(m_activeEditableMesh.GetFaceCount()) + " facce)!";
+        m_modelingFeedbackIsError = false;
+        m_modelingFeedbackTimer = 3.5f;
+    } else {
+        // Rollback atomico: annullamento transazione e ripristino mesh pre-operazione
+        m_meshHistoryService.CancelTransaction();
+        // Preserva il Ledger attivo senza riavvolgimento delle generazioni
+        m_activeEditableMesh = backupMesh;
+
+        std::string err = res.errorMessage.empty() ? "Nessuna variazione topologica applicata." : res.errorMessage;
+        m_modelingFeedbackMsg = "Errore durante " + opName + ": " + err;
+        m_modelingFeedbackIsError = true;
+        m_modelingFeedbackTimer = 4.5f;
+    }
+}
+
 bool BlockMakerState::Init() {
+    std::cout << "[BM-R1][INIT] Ingresso in BlockMakerState::Init()...\n";
     std::cout << "[BlockMakerState] Inizializzazione...\n";
 
     if (!m_context->jobSystem) {
@@ -3931,40 +4067,22 @@ bool BlockMakerState::Init() {
         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
     }
     UpdatePreviewMesh();
-    RunMathValidationTests(false);
-    RunAssetManagementValidationTests(false);
-    RunGeometryValidationTests(false);
-    RunUVValidationTests(false);
-    RunFactoryCoreValidationTests(false);
-    RunSculptValidationTests(false);
-    RunSelectionValidationTests(false);
-    RunModelingValidationTests(false);
-    RunSculptBrushValidationTests(false);
-    RunTopologyValidationTests(false);
-    RunRepairValidationTests(false);
-    RunHistoryValidationTests(false);
-    RunBridgeValidationTests(false);
-    RunTextureValidationTests(false);
-    RunPaintValidationTests(false);
-    RunSurfacePaintValidationTests(false);
-    RunPainterStationValidationTests(false);
-    RunTextureBakingValidationTests(false);
-    RunAssetPackagingValidationTests(false);
-    RunTransactionAuditValidationTests(false);
-    RunSculptedMeshBridgeValidationTests(false);
-    RunAssetIntegrityValidationTests(false);
-    RunAssetIntegrityHardeningValidationTests(false);
-    RunAssetDigestTrustValidationTests(false);
-    RunAssetCrashRecoveryValidationTests(false);
-    RunCrashRecoveryHardeningValidationTests(false);
-    RunAssetDependencyValidationTests(false);
-    RunAssetSchemaMigrationValidationTests(false);
-    RunPrimitiveUVValidationTests(false);
+
+    // [BM-R1.2] Disaccoppiamento delle 28 suite diagnostiche dall'avvio sincrono di BlockMakerState::Init().
+    // Le suite diagnostiche non producono dati di stato runtime necessari all'editor, ma servivano a validare i contratti.
+    // L'esecuzione automatica di BM-F4 Asset Crash Recovery causava ricorsione I/O su filesystem (CRH-10) bloccando il thread UI per 14+ minuti.
+    // Tutte le suite rimangono integralmente compilate e accessibili on-demand dai rispettivi pulsanti diagnostici in DrawUI() o dai test runner.
+    std::cout << "[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.\n";
+
+
+    bool draftLoaded = false;
     if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
-        m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+        draftLoaded = m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+        std::cout << "[BM-R1][INIT] LoadDraftFromRegistry(BlockID=" << (int)m_selectedBlockId << ") esito: " << (draftLoaded ? "SUCCESS" : "FAIL") << "\n";
     }
     m_zeroWorkTelemetry.Reset(); // Azzeramento post-init per telemetria Zero-Work a regime
 
+    std::cout << "[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;\n";
     return true;
 }
 
@@ -4241,6 +4359,12 @@ void BlockMakerState::HandlePhysicsSimulation(float dt) {
 }
 
 void BlockMakerState::Render() {
+    static bool s_loggedFirstRender = false;
+    if (!s_loggedFirstRender) {
+        s_loggedFirstRender = true;
+        std::cout << "[BM-R1][IMGUI] Prima chiamata a BlockMakerState::Render() eseguita.\n";
+    }
+
     ImGuizmo::BeginFrame();
     DrawUI();
     DrawGizmo();
@@ -4275,10 +4399,18 @@ void BlockMakerState::UpdatePreviewMesh() {
                                  (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.has_value()));
 
     bool needsRecompile = false;
+    const char* recompileReason = nullptr;
+
+    if (m_lastCompiledBlockId != m_selectedBlockId) {
+        needsRecompile = true;
+        recompileReason = "BlockIDChanged";
+    }
+
     if (isSculptAuthoritative && m_activeEditableMesh.GetFaceCount() > 0) {
         if (fw::MeshBridgeService::NeedsPreviewRecompile(m_activeEditableMesh, (uint32_t)m_selectedBlockId, m_bridgePreviewCache) ||
             m_cachedGeometryMesh.vertices.empty()) {
             needsRecompile = true;
+            if (!recompileReason) recompileReason = "SculptMeshModified";
         }
     } else {
         if (m_lastGeometryShapeID != mat.sharedShape.id || 
@@ -4287,10 +4419,15 @@ void BlockMakerState::UpdatePreviewMesh() {
             m_cachedGeometryMesh.vertices.empty()) 
         {
             needsRecompile = true;
+            if (!recompileReason) recompileReason = "ShapeOrMaterialModified";
         }
     }
 
     if (needsRecompile) {
+        m_lastCompiledBlockId = m_selectedBlockId;
+        std::cout << "[BM-UI2.1][PREVIEW] invalidated reason=" << (recompileReason ? recompileReason : "Unknown")
+                  << " BlockID=" << (int)m_selectedBlockId << "\n";
+
         fw::GeometryCompileOptions options;
         if (m_context) options.shapeRegistry = m_context->shapeRegistry;
         options.surfaceOverrides = &mat.surfaces;
@@ -4348,7 +4485,7 @@ void BlockMakerState::UpdatePreviewMesh() {
     
     // Inietta i fallback PBR nei vertici che non hanno override esplicito
     for (auto& v : previewMesh.vertices) {
-        if (v.materialID == 0) {
+        if (v.materialID == 0 || v.materialID != (uint32_t)m_selectedBlockId) {
             v.materialID = (uint32_t)m_selectedBlockId;
         }
         if (v.color.x == 1.0f && v.color.y == 1.0f && v.color.z == 1.0f) {
@@ -4367,39 +4504,30 @@ void BlockMakerState::UpdatePreviewMesh() {
 
     m_zeroWorkTelemetry.gpuUploadCalls++;
     m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f, 0.0f, 0.0f), std::move(previewMesh), nullptr, m_previewBlockEntity);
+    if (needsRecompile) {
+        std::cout << "[BM-UI2.1][PREVIEW] update queued BlockID=" << (int)m_selectedBlockId << "\n";
+    }
 }
 
-void BlockMakerState::DrawUI() {
-    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(800.0f, 600.0f), ImGuiCond_FirstUseEver);
-    
-    if (ImGui::Begin("Block Maker (Data-Driven)")) {
-        if (ImGui::Button("< TORNA ALL'HUB")) {
-            if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-                m_context->forgeWorld = m_context->gameWorld;
-            }
-            m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
-            m_context->isBlockMakerMode = false;
-            m_context->engine->SetGameMode(GameMode::Hub);
-            m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
-            ImGui::End();
-            return;
-        }
-        
-        ImGui::Separator();
+void BlockMakerState::ReturnToHub() {
+    if (!m_context) return;
+    if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
+        m_context->forgeWorld = m_context->gameWorld;
+    }
+    m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
+    m_context->isBlockMakerMode = false;
+    m_context->engine->SetGameMode(GameMode::Hub);
+    m_context->stateManager->ChangeState(std::make_unique<HubState>(m_context));
+}
 
-        if (!m_context->blockRegistry) {
-            ImGui::TextColored(ImVec4(1,0,0,1), "ERROR: BlockRegistry not found!");
-            ImGui::End();
-            return;
-        }
-        
-        // --- LAYOUT A DUE COLONNE ---
-        ImGui::Columns(2, "BlockMakerColumns");
-        ImGui::SetColumnWidth(0, 250.0f); // Larghezza colonna sinistra
+void BlockMakerState::DrawAssetBrowserContents() {
+    if (!m_context || !m_context->blockRegistry) {
+        ImGui::TextColored(ImVec4(1,0,0,1), "ERROR: BlockRegistry not found!");
+        return;
+    }
 
-        // COLONNA SINISTRA: Lista Blocchi & Asset Management (BM-A4.1, BM-A4.2, BM-A4.4, BM-A4.5)
-        ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "Block Assets (%u attivi)", m_context->blockRegistry->GetActiveBlockCount());
+    // COLONNA SINISTRA: Lista Blocchi & Asset Management (BM-A4.1, BM-A4.2, BM-A4.4, BM-A4.5)
+    ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "Block Assets (%u attivi)", m_context->blockRegistry->GetActiveBlockCount());
         ImGui::Separator();
 
         // Barra degli strumenti di gestione asset (BM-A4.1, BM-A4.2, BM-A4.4)
@@ -4511,7 +4639,10 @@ void BlockMakerState::DrawUI() {
             
             if (ImGui::Selectable(label.c_str(), m_selectedBlockId == i)) {
                 if (m_selectedBlockId != i) {
+                    uint8_t prevId = m_selectedBlockId;
                     m_selectedBlockId = i;
+                    std::cout << "[BM-UI2.1][SELECT] requested BlockID=" << (int)i 
+                              << " (previous=" << (int)prevId << " current=" << (int)m_selectedBlockId << ")\n";
                     m_simPosY = 0.0f;
                     m_simVelY = 0.0f;
                     strncpy(m_inputStringId, blockDef.stringId.c_str(), sizeof(m_inputStringId) - 1);
@@ -4521,8 +4652,20 @@ void BlockMakerState::DrawUI() {
                     if (m_context && m_context->cacheManager) {
                         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                     }
+                    bool draftLoaded = false;
                     if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
-                        m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+                        draftLoaded = m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+                        std::cout << "[BM-UI2.1][DRAFT] loaded BlockID=" << (int)m_selectedBlockId 
+                                  << " result=" << (draftLoaded ? "SUCCESS" : "FAIL") << "\n";
+                    }
+                    if (m_factoryOrchestrator.IsDraftOpen()) {
+                        const auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                        if (draft && draft->sculptMesh.has_value()) {
+                            m_activeEditableMesh = draft->sculptMesh.value();
+                        } else if (draft) {
+                            m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(draft->shape);
+                        }
+                        m_selectionService.PruneInvalidated(m_activeEditableMesh);
                     }
                     UpdatePreviewMesh();
                 }
@@ -4531,19 +4674,2170 @@ void BlockMakerState::DrawUI() {
             if (!isValid) ImGui::PopStyleColor();
         }
         ImGui::EndChild();
+}
 
-        ImGui::NextColumn();
+// =============================================================================
+// BM-UI2.2-A: EXTRACTED MODULAR GENERAL SETTINGS & FACTORY UI FUNCTIONS
+// =============================================================================
 
-        // COLONNA DESTRA: Proprietà del Blocco Selezionato (con scroll dedicato)
-        ImGui::BeginChild("BlockPropertiesScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+void BlockMakerState::DrawDiagnosticsControls(const fw::SimBlockDef& def, const fw::PBRMaterialDef& mat) {
+    bool isCurrentDirty = IsBlockTransformDirty(m_selectedBlockId);
+    uint32_t totalDirtyCount = CountUnsavedTransformBlocks();
 
-        ImGui::Text("Editing Block ID: %d", m_selectedBlockId);
+    if (ImGui::CollapsingHeader("Telemetria Asset & Freeze Gate (BM-A3)", ImGuiTreeNodeFlags_None)) {
+        ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "TELEMETRIA TRASFORMAZIONE ASSET (BM-A2.1)");
+        ImGui::Text("Blocco: ID %u (%s) | String: %s", m_selectedBlockId, def.displayName.c_str(), def.stringId.c_str());
+        if (mat.sharedShape.IsValid()) {
+            const fw::ShapeDefinition* shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+            const char* shapeTypeName = shapeDef ? GetShapeTypeName(shapeDef->type) : "Unknown";
+            ImGui::Text("ShapeHandle: ID %u (Rev %u) | Tipo: %s", mat.sharedShape.id, mat.sharedShape.revision, shapeTypeName);
+        } else {
+            ImGui::Text("Shape: Legacy (Tipo %d)", mat.shapeType);
+        }
+        ImGui::Text("Pos: (%.3f, %.3f, %.3f) | Rot: (%.1f, %.1f, %.1f) deg", 
+            def.localPosition.x, def.localPosition.y, def.localPosition.z,
+            def.localRotation.x, def.localRotation.y, def.localRotation.z);
+        ImGui::Text("Scale: (%.4f, %.4f, %.4f) | Pivot: (%.3f, %.3f, %.3f)", 
+            def.localScale.x, def.localScale.y, def.localScale.z,
+            def.pivotOffset.x, def.pivotOffset.y, def.pivotOffset.z);
+
+        if (isCurrentDirty) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Stato Blocco: MODIFICHE NON SALVATE (In attesa di persistenza)");
+        } else {
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Stato Blocco: SINCRONIZZATO (Allineato alla baseline)");
+        }
+
+        if (totalDirtyCount > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Registro: %u blocco/i con modifiche pendenti (*)", totalDirtyCount);
+        } else {
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Registro: Tutte le trasformazioni sincronizzate a disco");
+        }
+
         ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "TELEMETRIA ZERO-WORK (BM-A3 FREEZE GATE):");
+        ImGui::Text("GeoCompile: %u | MeshGen: %u | GpuUpload: %u",
+            m_zeroWorkTelemetry.geoCompilerCalls,
+            m_zeroWorkTelemetry.meshGenCalls,
+            m_zeroWorkTelemetry.gpuUploadCalls);
+        ImGui::Text("ShapeRev: %u | EcsWrites: %u | JsonSaves: %u",
+            m_zeroWorkTelemetry.shapeRevIncrements,
+            m_zeroWorkTelemetry.ecsTransformWrites,
+            m_zeroWorkTelemetry.jsonSaveCalls);
+        
+        if (ImGui::Button("Azzera Telemetria##ZeroWork", ImVec2(150, 22))) {
+            m_zeroWorkTelemetry.Reset();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Matematici (Gate 2)", ImVec2(220, 22))) {
+            RunMathValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui BM-A3 Freeze Gate", ImVec2(200, 22))) {
+            RunAllFreezeGateTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Geometria (BM-B)", ImVec2(220, 22))) {
+            RunGeometryValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Factory Core (BM-FC)", ImVec2(220, 22))) {
+            RunFactoryCoreValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Sculpt (BM-S)", ImVec2(220, 22))) {
+            RunSculptValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Selezione (BM-S3)", ImVec2(220, 22))) {
+            RunSelectionValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Modeling (BM-S4)", ImVec2(220, 22))) {
+            RunModelingValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Sculpt Brush (BM-S5)", ImVec2(230, 22))) {
+            RunSculptBrushValidationTests(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Esegui Test Topology (BM-S6)", ImVec2(220, 22))) {
+            RunTopologyValidationTests(true);
+        }
+        if (m_mathTestsExecuted) {
+            size_t passCount = 0;
+            for (const auto& t : m_mathTestResults) {
+                if (t.passed) passCount++;
+            }
+            ImGui::SameLine();
+            if (passCount == m_mathTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "GATE 2: %zu/%zu PASS (100%%)", passCount, m_mathTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "GATE 2: %zu/%zu PASS (%zu FAIL)", passCount, m_mathTestResults.size(), m_mathTestResults.size() - passCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 17 Test Matematici (Gate 2)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& t : m_mathTestResults) {
+                    if (t.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] M%d: %s", t.id, t.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] M%d: %s (Err: %.2e, Tol: %.2e)", t.id, t.testName.c_str(), t.errorValue, t.tolerance);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Test M%d: %s [%s]", t.id, t.testName.c_str(), t.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("File/Func: %s", t.fileAndFunc.c_str());
+                        ImGui::Text("Input: %s", t.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", t.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", t.observedDesc.c_str());
+                        ImGui::Text("Errore Calcolato: %.6e", t.errorValue);
+                        ImGui::Text("Tolleranza Max:   %.6e", t.tolerance);
+                        ImGui::EndTooltip();
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_gateTestsExecuted) {
+            size_t gatePass = 0;
+            for (const auto& g : m_gateTestResults) {
+                if (g.passed) gatePass++;
+            }
+            if (gatePass == m_gateTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "FREEZE GATE MG-03..MG-05: %zu/%zu PASS (100%% FROZEN)", gatePass, m_gateTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "FREEZE GATE MG-03..MG-05: %zu/%zu PASS (%zu FALLITI)", gatePass, m_gateTestResults.size(), m_gateTestResults.size() - gatePass);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio Test Freeze Gate (MG-03, MG-04, MG-05)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& g : m_gateTestResults) {
+                    if (g.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", g.gateId.c_str(), g.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", g.gateId.c_str(), g.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", g.gateId.c_str(), g.testName.c_str(), g.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("File/Func: %s", g.fileAndFunc.c_str());
+                        ImGui::Text("Input: %s", g.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", g.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", g.observedDesc.c_str());
+                        ImGui::Text("Errore Calcolato: %.6e", g.errorValue);
+                        ImGui::Text("Tolleranza Max:   %.6e", g.tolerance);
+                        ImGui::EndTooltip();
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_assetTestsExecuted) {
+            size_t amPass = 0;
+            for (const auto& a : m_assetTestResults) {
+                if (a.passed) amPass++;
+            }
+            if (amPass == m_assetTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "ASSET MANAGEMENT BM-A4: %zu/%zu PASS (100%% AUDITED)", amPass, m_assetTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ASSET MANAGEMENT BM-A4: %zu/%zu PASS (%zu FALLITI)", amPass, m_assetTestResults.size(), m_assetTestResults.size() - amPass);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio Test Asset Management (AM-1 .. AM-7)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& a : m_assetTestResults) {
+                    if (a.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", a.testId.c_str(), a.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", a.testId.c_str(), a.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", a.testId.c_str(), a.testName.c_str(), a.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", a.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", a.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", a.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", a.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Asset Management (BM-A4)")) {
+                    RunAssetManagementValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_geometryTestsExecuted) {
+            size_t geomPassCount = 0;
+            for (const auto& g : m_geometryTestResults) {
+                if (g.passed) geomPassCount++;
+            }
+            if (geomPassCount == m_geometryTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-B GEOMETRY: %zu/%zu PASS (100%%)", geomPassCount, m_geometryTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-B GEOMETRY: %zu/%zu PASS (%zu FAIL)", geomPassCount, m_geometryTestResults.size(), m_geometryTestResults.size() - geomPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 7 Test Geometria (BM-B: GM-1 .. GM-7)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& g : m_geometryTestResults) {
+                    if (g.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", g.testId.c_str(), g.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", g.testId.c_str(), g.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", g.testId.c_str(), g.testName.c_str(), g.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", g.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", g.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", g.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", g.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Geometria (BM-B)")) {
+                    RunGeometryValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_uvTestsExecuted) {
+            size_t uvPassCount = 0;
+            for (const auto& u : m_uvTestResults) {
+                if (u.passed) uvPassCount++;
+            }
+            if (uvPassCount == m_uvTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-C UV & SURFACES: %zu/%zu PASS (100%%)", uvPassCount, m_uvTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-C UV & SURFACES: %zu/%zu PASS (%zu FAIL)", uvPassCount, m_uvTestResults.size(), m_uvTestResults.size() - uvPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 7 Test UV & Superfici (BM-C: UV-1 .. UV-7)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& u : m_uvTestResults) {
+                    if (u.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", u.testId.c_str(), u.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", u.testId.c_str(), u.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", u.testId.c_str(), u.testName.c_str(), u.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", u.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", u.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", u.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", u.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test UV & Superfici (BM-C)")) {
+                    RunUVValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_factoryTestsExecuted) {
+            size_t factoryPassCount = 0;
+            for (const auto& f : m_factoryTestResults) {
+                if (f.passed) factoryPassCount++;
+            }
+            if (factoryPassCount == m_factoryTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-FC FACTORY CORE: %zu/%zu PASS (100%%)", factoryPassCount, m_factoryTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-FC FACTORY CORE: %zu/%zu PASS (%zu FAIL)", factoryPassCount, m_factoryTestResults.size(), m_factoryTestResults.size() - factoryPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test Factory Core (BM-FC: FC-1 .. FC-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& f : m_factoryTestResults) {
+                    if (f.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", f.testId.c_str(), f.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", f.testId.c_str(), f.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", f.testId.c_str(), f.testName.c_str(), f.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", f.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", f.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", f.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", f.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Factory Core (BM-FC)")) {
+                    RunFactoryCoreValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_sculptTestsExecuted) {
+            size_t sculptPassCount = 0;
+            for (const auto& s : m_sculptTestResults) {
+                if (s.passed) sculptPassCount++;
+            }
+            if (sculptPassCount == m_sculptTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S SCULPT & MODELLING: %zu/%zu PASS (100%%)", sculptPassCount, m_sculptTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S SCULPT & MODELLING: %zu/%zu PASS (%zu FAIL)", sculptPassCount, m_sculptTestResults.size(), m_sculptTestResults.size() - sculptPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test EditableMesh (BM-S2: SM-1 .. SM-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_sculptTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Sculpt (BM-S)")) {
+                    RunSculptValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_selectionTestsExecuted) {
+            size_t selPassCount = 0;
+            for (const auto& s : m_selectionTestResults) {
+                if (s.passed) selPassCount++;
+            }
+            if (selPassCount == m_selectionTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S3 MESH SELECTION SYSTEM: %zu/%zu PASS (100%%)", selPassCount, m_selectionTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S3 MESH SELECTION SYSTEM: %zu/%zu PASS (%zu FAIL)", selPassCount, m_selectionTestResults.size(), m_selectionTestResults.size() - selPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test Mesh Selection (BM-S3: SEL-1 .. SEL-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_selectionTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Selezione (BM-S3)")) {
+                    RunSelectionValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_modelingTestsExecuted) {
+            size_t modPassCount = 0;
+            for (const auto& s : m_modelingTestResults) {
+                if (s.passed) modPassCount++;
+            }
+            if (modPassCount == m_modelingTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S4 MODEL OPERATIONS: %zu/%zu PASS (100%%)", modPassCount, m_modelingTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S4 MODEL OPERATIONS: %zu/%zu PASS (%zu FAIL)", modPassCount, m_modelingTestResults.size(), m_modelingTestResults.size() - modPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test Model Operations (BM-S4: MOD-1 .. MOD-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_modelingTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Modeling (BM-S4)")) {
+                    RunModelingValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_sculptBrushTestsExecuted) {
+            size_t sclPassCount = 0;
+            for (const auto& s : m_sculptBrushTestResults) {
+                if (s.passed) sclPassCount++;
+            }
+            if (sclPassCount == m_sculptBrushTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S5 SCULPT BRUSH ENGINE: %zu/%zu PASS (100%%)", sclPassCount, m_sculptBrushTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S5 SCULPT BRUSH ENGINE: %zu/%zu PASS (%zu FAIL)", sclPassCount, m_sculptBrushTestResults.size(), m_sculptBrushTestResults.size() - sclPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test Sculpt Brush Engine (BM-S5: SCL-1 .. SCL-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_sculptBrushTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Sculpt Brush (BM-S5)")) {
+                    RunSculptBrushValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_topologyTestsExecuted) {
+            size_t topPassCount = 0;
+            for (const auto& s : m_topologyTestResults) {
+                if (s.passed) topPassCount++;
+            }
+            if (topPassCount == m_topologyTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S6 TOPOLOGY OPERATIONS: %zu/%zu PASS (100%%)", topPassCount, m_topologyTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S6 TOPOLOGY OPERATIONS: %zu/%zu PASS (%zu FAIL)", topPassCount, m_topologyTestResults.size(), m_topologyTestResults.size() - topPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test Topology Operations & Symmetry (BM-S6: TOP-1 .. TOP-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_topologyTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Topology (BM-S6)")) {
+                    RunTopologyValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_repairTestsExecuted) {
+            size_t repPassCount = 0;
+            for (const auto& s : m_repairTestResults) {
+                if (s.passed) repPassCount++;
+            }
+            if (repPassCount == m_repairTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S7 REMESHING & REPAIR: %zu/%zu PASS (100%%)", repPassCount, m_repairTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S7 REMESHING & REPAIR: %zu/%zu PASS (%zu FAIL)", repPassCount, m_repairTestResults.size(), m_repairTestResults.size() - repPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 10 Test Remeshing & Manifold Repair (BM-S7: REP-1 .. REP-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_repairTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test Repair (BM-S7)")) {
+                    RunRepairValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        if (m_historyTestsExecuted) {
+            size_t hisPassCount = 0;
+            for (const auto& s : m_historyTestResults) {
+                if (s.passed) hisPassCount++;
+            }
+            if (hisPassCount == m_historyTestResults.size()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S8 HISTORY & UNDO/REDO: %zu/%zu PASS (100%%)", hisPassCount, m_historyTestResults.size());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S8 HISTORY & UNDO/REDO: %zu/%zu PASS (%zu FAIL)", hisPassCount, m_historyTestResults.size(), m_historyTestResults.size() - hisPassCount);
+            }
+
+            if (ImGui::TreeNodeEx("Dettaglio 12 Test History Engine (BM-S8: HIS-1 .. HIS-12)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (const auto& s : m_historyTestResults) {
+                    if (s.passed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
+                        ImGui::Separator();
+                        ImGui::Text("Input: %s", s.inputDesc.c_str());
+                        ImGui::Text("Expected: %s", s.expectedDesc.c_str());
+                        ImGui::Text("Observed: %s", s.observedDesc.c_str());
+                        ImGui::Text("Dettagli: %s", s.details.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+                if (ImGui::Button("Riesegui Test History (BM-S8)")) {
+                    RunHistoryValidationTests(true);
+                }
+                ImGui::TreePop();
+            }
+        }
+    } // Fine CollapsingHeader Telemetria Transform
+}
+
+void BlockMakerState::DrawGeneralTransformUI(fw::SimBlockDef& def) {
+    // Viewport Transform Gizmo Controls (BM-A3.1, BM-A3.2, BM-A3.3 & BM-A3.4.1)
+    ImGui::Checkbox("Viewport Gizmo", &m_gizmoEnabled);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Attiva/disattiva il gizmo 3D nel viewport (Move, Rotate o Scale).");
+    }
+    ImGui::SameLine();
+    if (m_gizmoEnabled) {
+        if (ImGui::RadioButton("Move (W)##GizmoMove", m_gizmoOperation == 0)) {
+            m_gizmoOperation = 0;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Gizmo di traslazione 3D (Assi XYZ). Scorciatoia: tasto W.");
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate (E)##GizmoRot", m_gizmoOperation == 1)) {
+            m_gizmoOperation = 1;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Gizmo di rotazione 3D (Pitch, Yaw, Roll). Scorciatoia: tasto E.");
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale (R)##GizmoScale", m_gizmoOperation == 2)) {
+            m_gizmoOperation = 2;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Gizmo di scala 3D (Fattori XYZ / Uniforme). Scorciatoia: tasto R.");
+        }
+        ImGui::SameLine();
+        if (m_isGizmoInteracting) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[IN TRASCINAMENTO]");
+        } else {
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[ATTIVO]");
+        }
+
+        // BM-A3.4.1: Selettore Coordinate Space (Local vs World)
+        ImGui::Text("Coordinate Space:");
+        ImGui::SameLine();
+
+        bool canChangeSpace = !m_isGizmoInteracting && (m_scaleDragLatchedAxis < 0);
+        if (!canChangeSpace) {
+            ImGui::BeginDisabled();
+        }
+
+        if (ImGui::RadioButton("Local##GizmoSpaceLocal", m_gizmoMode == 0)) {
+            m_gizmoMode = 0;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Coordinate Locali:\nGli assi del gizmo sono allineati con l'orientamento intrinseco del blocco.");
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("World##GizmoSpaceWorld", m_gizmoMode == 1)) {
+            m_gizmoMode = 1;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Coordinate World:\nGli assi del gizmo sono allineati con il sistema di riferimento globale del mondo.");
+        }
+
+        if (!canChangeSpace) {
+            ImGui::EndDisabled();
+        }
+
+        if (m_gizmoOperation == 2) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(Scale: assi Locali)");
+        }
+
+        // BM-A3.4.2: Sezione Configurazione Snapping (Editor UI Only)
+        ImGui::Spacing();
+        bool canChangeSnap = !m_isGizmoInteracting && (m_scaleDragLatchedAxis < 0);
+        if (!canChangeSnap) {
+            ImGui::BeginDisabled();
+        }
+
+        ImGui::Checkbox("Enable Snapping##GizmoSnapEnable", &m_snapEnabled);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Attiva/disattiva lo snapping incrementale per Move, Rotate e Scale.");
+        }
+
+        if (m_snapEnabled) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[SNAPPING ATTIVO]");
+
+            // Move snap
+            ImGui::Text("  Move Step:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::DragFloat("##SnapMove", &m_snapMove, 0.05f, 0.01f, 10.0f, "%.2f u")) {
+                if (m_snapMove < 0.01f) m_snapMove = 0.01f;
+                if (!std::isfinite(m_snapMove)) m_snapMove = 0.5f;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Incremento snapping traslazione (unita blocco/mondo).\nDefault: 0.50");
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.1##SM01")) m_snapMove = 0.1f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.25##SM025")) m_snapMove = 0.25f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.5##SM05")) m_snapMove = 0.5f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("1.0##SM10")) m_snapMove = 1.0f;
+
+            // Rotate snap
+            ImGui::Text("  Rot Step: ");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::DragFloat("##SnapRotate", &m_snapRotate, 1.0f, 0.5f, 180.0f, "%.1f deg")) {
+                if (m_snapRotate < 0.5f) m_snapRotate = 0.5f;
+                if (!std::isfinite(m_snapRotate)) m_snapRotate = 15.0f;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Incremento snapping rotazione (in gradi).\nDefault: 15.0 deg");
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("5 deg##SR5")) m_snapRotate = 5.0f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("15 deg##SR15")) m_snapRotate = 15.0f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("45 deg##SR45")) m_snapRotate = 45.0f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("90 deg##SR90")) m_snapRotate = 90.0f;
+
+            // Scale snap
+            ImGui::Text("  Scale Step:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::DragFloat("##SnapScale", &m_snapScale, 0.01f, 0.01f, 5.0f, "%.2f")) {
+                if (m_snapScale < 0.01f) m_snapScale = 0.01f;
+                if (!std::isfinite(m_snapScale)) m_snapScale = 0.1f;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Incremento snapping scala (adimensionale, relativo alla scala iniziale).\nDefault: 0.10");
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.05##SS005")) m_snapScale = 0.05f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.1##SS01")) m_snapScale = 0.1f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.25##SS025")) m_snapScale = 0.25f;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("0.5##SS05")) m_snapScale = 0.5f;
+        }
+
+        if (!canChangeSnap) {
+            ImGui::EndDisabled();
+        }
+    } else {
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[DISATTIVATO]");
+    }
+
+    ImGui::Spacing();
+
+    // 2. POSITION
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "POSITION (Local Translation)");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Position##PosReset")) {
+        def.localPosition = glm::vec3(0.0f);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Reset Local Position to (0, 0, 0)");
+    }
+    ImGui::DragFloat3("##LocalPos", &def.localPosition.x, 0.01f, 0.0f, 0.0f, "%.3f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Local Position (X, Y, Z):\nTranslates the entire authored block asset in asset space.\nIndependent of shape-local pivot.");
+    }
+
+    ImGui::Spacing();
+
+    // 3. ROTATION
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "ROTATION (Euler Degrees)");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Rotation##RotReset")) {
+        def.localRotation = glm::vec3(0.0f);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Reset Local Rotation to (0, 0, 0) deg");
+    }
+    if (ImGui::DragFloat3("##LocalRot", &def.localRotation.x, 0.5f, 0.0f, 0.0f, "%.1f deg")) {
+        for (int c = 0; c < 3; ++c) {
+            def.localRotation[c] = std::fmod(def.localRotation[c], 360.0f);
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Local Rotation (Pitch X, Yaw Y, Roll Z in degrees):\nRotates geometry around the shape pivot point.");
+    }
+
+    ImGui::Spacing();
+
+    // 4. SCALE
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "SCALE (Non-Uniform Factors)");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Scale##ScaleReset")) {
+        def.localScale = glm::vec3(1.0f);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Reset Local Scale to (1, 1, 1)");
+    }
+    if (ImGui::DragFloat3("##LocalScale", &def.localScale.x, 0.01f, 0.0f, 0.0f, "%.4f")) {
+        for (int c = 0; c < 3; ++c) {
+            if (std::abs(def.localScale[c]) < 1e-4f) {
+                def.localScale[c] = (def.localScale[c] < 0.0f) ? -1e-4f : 1e-4f;
+            }
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Local Scale (X, Y, Z):\nScales geometry along each axis relative to the pivot.\nEnforces |scale| >= 0.0001 to prevent degenerate matrices.");
+    }
+
+    ImGui::Spacing();
+
+    // 5. PIVOT
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "PIVOT (Shape-Local Origin Offset)");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Pivot##PivotReset")) {
+        def.pivotOffset = glm::vec3(0.0f);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Reset Pivot Offset to (0, 0, 0)");
+    }
+    ImGui::DragFloat3("##PivotOffset", &def.pivotOffset.x, 0.01f, 0.0f, 0.0f, "%.3f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Pivot Offset (X, Y, Z):\nDefines the center of rotation and scale in shape-local coordinates.\nMoving the pivot changes how the block rotates without translating its position in the world.\nIndependent of Position.");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // 6. Reset All Transforms & Revert to Baseline
+    if (ImGui::Button("Reset All Transforms (Identity)", ImVec2(-1, 26))) {
+        def.localPosition = glm::vec3(0.0f);
+        def.localRotation = glm::vec3(0.0f);
+        def.localScale = glm::vec3(1.0f);
+        def.pivotOffset = glm::vec3(0.0f);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Imposta Position=(0,0,0), Rotation=(0,0,0) deg, Scale=(1,1,1), Pivot=(0,0,0).\nNota: se il blocco sul disco aveva valori diversi da identita, risultera NON SALVATO.");
+    }
+
+    if (ImGui::Button("Ripristina Baseline Salvata (Revert)", ImVec2(-1, 26))) {
+        const auto& saved = m_savedTransforms[m_selectedBlockId];
+        def.localPosition = saved.localPosition;
+        def.localRotation = saved.localRotation;
+        def.localScale = saved.localScale;
+        def.pivotOffset = saved.pivotOffset;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Ripristina tutti i valori di trasformazione all'ultimo stato salvato su disco per questo blocco.");
+    }
+
+    ImGui::Spacing();
+
+    // 7. Explicit Save Button for Registry Block Definitions
+    if (ImGui::Button("SALVA DEFINIZIONI REGISTRO BLOCCHI (JSON)", ImVec2(-1, 35))) {
+        m_zeroWorkTelemetry.jsonSaveCalls++;
+        m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
+        fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+        m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
+        bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+        m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
+        m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+        bool s2 = true;
+        if (std::filesystem::exists("../assets/definitions")) {
+            s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
+            m_context->shapeRegistry->SaveToJson("../assets/definitions/shapes.json");
+            m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
+        }
+        if (s1 && s2) {
+            SynchronizeAllSavedTransformBaselines();
+            SynchronizeAllSavedPhysicsBaselines();
+            m_saveMessageTimer = 3.0f;
+            std::cout << "[BlockMaker] Definizioni registro blocchi salvate su disco e baselines sincronizzate.\n";
+        } else {
+            std::cerr << "[BlockMaker] ERRORE: Salvataggio definizioni registro non riuscito! Baselines preservate non sincronizzate.\n";
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Salva l'intero registro dei blocchi (blocks.json, shapes.json, materials.json) su disco.\nSincronizza le baselines di tutti i blocchi modificati.");
+    }
+}
+
+void BlockMakerState::DrawFactorySculptControls() {
+    // --- BM-S3 Mesh Selection System & Sculpt Toolbar ---
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "MESH SELECTION & SCULPT (BM-S3)");
+    ImGui::Checkbox("Enable Mesh Selection Overlay##MeshSelEnable", &m_meshSelectionEnabled);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Attiva l'overlay di selezione interattiva per vertici, edge e facce di EditableMesh.");
+    }
+
+    if (m_meshSelectionEnabled) {
+        ImGui::SameLine();
+        int curMode = static_cast<int>(m_selectionService.GetMode());
+        ImGui::Text("Mode:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Vertex##SelV", curMode == 0)) {
+            m_selectionService.SetMode(fw::SelectionMode::Vertex);
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Edge##SelE", curMode == 1)) {
+            m_selectionService.SetMode(fw::SelectionMode::Edge);
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Face##SelF", curMode == 2)) {
+            m_selectionService.SetMode(fw::SelectionMode::Face);
+        }
+
+        // Selection manipulation buttons
+        if (ImGui::SmallButton("Clear##SelClear")) {
+            m_selectionService.ClearCurrentMode();
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Select All##SelAll")) {
+            m_selectionService.SelectAll(m_activeEditableMesh);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Invert##SelInv")) {
+            m_selectionService.InvertSelection(m_activeEditableMesh);
+        }
+
+        // BM-S1: Edge Loop & Edge Ring Buttons (Attivi solo in Edge Selection Mode con Edge valido)
+        if (curMode == 1) {
+            ImGui::SameLine();
+            bool canSelectLoopOrRing = (m_activeEditableMesh.GetVertexCount() > 0) &&
+                                       m_selectionService.GetActiveEdge().IsValid() &&
+                                       m_activeEditableMesh.IsValid(m_selectionService.GetActiveEdge());
+
+            if (!canSelectLoopOrRing) ImGui::BeginDisabled();
+
+            if (ImGui::SmallButton("Edge Loop##SelLoop")) {
+                fw::SelectionOp loopOp = ImGui::GetIO().KeyShift ? fw::SelectionOp::Add : fw::SelectionOp::Replace;
+                m_selectionService.SelectEdgeLoop(m_activeEditableMesh, m_selectionService.GetActiveEdge(), loopOp);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Seleziona l'anello continuo (Loop) di spigoli collegati all'edge attivo.\nTieni premuto Shift per selezione additiva (oppure doppio-click sull'edge nel viewport).");
+            }
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Edge Ring##SelRing")) {
+                fw::SelectionOp ringOp = ImGui::GetIO().KeyShift ? fw::SelectionOp::Add : fw::SelectionOp::Replace;
+                m_selectionService.SelectEdgeRing(m_activeEditableMesh, m_selectionService.GetActiveEdge(), ringOp);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Seleziona la serie di spigoli paralleli (Ring) che attraversano facce quad.\nTieni premuto Shift per selezione additiva.");
+            }
+
+            if (!canSelectLoopOrRing) ImGui::EndDisabled();
+        }
+
+        // Telemetry
+        size_t count = m_selectionService.GetSelectedCount();
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "Selected: %zu", count);
+        if (curMode == 0 && m_selectionService.GetActiveVertex().IsValid()) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active V: %u)", m_selectionService.GetActiveVertex().index);
+        } else if (curMode == 1 && m_selectionService.GetActiveEdge().IsValid()) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active E: %u)", m_selectionService.GetActiveEdge().index);
+        } else if (curMode == 2 && m_selectionService.GetActiveFace().IsValid()) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active F: %u)", m_selectionService.GetActiveFace().index);
+        }
+
+        // --- BM-S8: Undo / Redo Toolbar ---
+        ImGui::Spacing();
+        bool canUndo = m_meshHistoryService.CanUndo();
+        bool canRedo = m_meshHistoryService.CanRedo();
+        std::string undoLabel = "Undo (Ctrl+Z)";
+        if (canUndo) undoLabel += ": " + m_meshHistoryService.GetUndoCommandName();
+        std::string redoLabel = "Redo (Ctrl+Y)";
+        if (canRedo) redoLabel += ": " + m_meshHistoryService.GetRedoCommandName();
+
+        if (!canUndo) ImGui::BeginDisabled();
+        if (ImGui::Button("Undo##BtnUndo", ImVec2(100, 24))) {
+            ExecuteMeshUndo();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", undoLabel.c_str());
+        }
+        if (!canUndo) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (!canRedo) ImGui::BeginDisabled();
+        if (ImGui::Button("Redo##BtnRedo", ImVec2(100, 24))) {
+            ExecuteMeshRedo();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", redoLabel.c_str());
+        }
+        if (!canRedo) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("(History: %zu)", m_meshHistoryService.GetUndoCount());
+
+        // --- BM-S4: Modeling Operations Tools UI ---
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.8f, 1.0f), "OPERAZIONI DI MODELLAZIONE (BM-S4):");
+        
+        if (ImGui::RadioButton("Move##ToolMove", m_modelingTool == 1)) m_modelingTool = 1;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate##ToolRot", m_modelingTool == 2)) m_modelingTool = 2;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale##ToolScale", m_modelingTool == 3)) m_modelingTool = 3;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Extrude##ToolExt", m_modelingTool == 4)) m_modelingTool = 4;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Inset##ToolInset", m_modelingTool == 5)) m_modelingTool = 5;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Bevel##ToolBevel", m_modelingTool == 6)) m_modelingTool = 6;
+
+        // Parametri contestuali
+        if (m_modelingTool == 1) {
+            ImGui::Text("Delta (X, Y, Z):");
+            ImGui::DragFloat3("##MoveDelta", &m_modelMoveDelta.x, 0.01f, -5.0f, 5.0f, "%.2f");
+            if (ImGui::Button("Applica Move (Commit)", ImVec2(180, 24))) {
+                ApplyModelingOperation(fw::ModelingOperationType::Move);
+            }
+        } else if (m_modelingTool == 2) {
+            ImGui::Text("Angolo (Gradi):");
+            ImGui::DragFloat("##RotAngle", &m_modelRotateAngle, 1.0f, -360.0f, 360.0f, "%.1f deg");
+            ImGui::Text("Asse:");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("X##AxisX", m_modelRotateAxis == 0)) m_modelRotateAxis = 0;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Y##AxisY", m_modelRotateAxis == 1)) m_modelRotateAxis = 1;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Z##AxisZ", m_modelRotateAxis == 2)) m_modelRotateAxis = 2;
+            if (ImGui::Button("Applica Rotate (Commit)", ImVec2(180, 24))) {
+                ApplyModelingOperation(fw::ModelingOperationType::Rotate);
+            }
+        } else if (m_modelingTool == 3) {
+            ImGui::Text("Fattore Scala (X, Y, Z):");
+            ImGui::DragFloat3("##ScaleVec", &m_modelScaleVec.x, 0.01f, 0.01f, 10.0f, "%.2f");
+            if (ImGui::Button("Applica Scale (Commit)", ImVec2(180, 24))) {
+                ApplyModelingOperation(fw::ModelingOperationType::Scale);
+            }
+        } else if (m_modelingTool == 4) {
+            ImGui::Text("Offset Estrusione:");
+            ImGui::DragFloat("##ExtOffset", &m_modelExtrudeOffset, 0.01f, -5.0f, 5.0f, "%.2f u");
+            ImGui::Checkbox("Region Extrude (Unione facce adiacenti)", &m_modelExtrudeRegion);
+            if (ImGui::Button("Applica Extrude (Commit)", ImVec2(180, 24))) {
+                ApplyModelingOperation(fw::ModelingOperationType::ExtrudeFace);
+            }
+        } else if (m_modelingTool == 5) {
+            ImGui::Text("Offset Inset:");
+            ImGui::DragFloat("##InsetAmount", &m_modelInsetAmount, 0.01f, 0.01f, 0.95f, "%.2f");
+            ImGui::Text("Depth Offset:");
+            ImGui::DragFloat("##InsetDepth", &m_modelInsetDepth, 0.01f, -2.0f, 2.0f, "%.2f");
+            if (ImGui::Button("Applica Inset (Commit)", ImVec2(180, 24))) {
+                ApplyModelingOperation(fw::ModelingOperationType::InsetFace);
+            }
+        } else if (m_modelingTool == 6) {
+            ImGui::Text("Larghezza Bevel:");
+            ImGui::DragFloat("##BevelWidth", &m_modelBevelWidth, 0.005f, 0.001f, 0.5f, "%.3f");
+            if (ImGui::Button("Applica Bevel (Commit)", ImVec2(180, 24))) {
+                ApplyModelingOperation(fw::ModelingOperationType::BevelEdge);
+            }
+        }
+
+        // Feedback temporizzato
+        if (!m_modelingFeedbackMsg.empty() && 
+            m_modelingFeedbackMsg.find("Subdivide") == std::string::npos && 
+            m_modelingFeedbackMsg.find("suddivisione") == std::string::npos) {
+            ImVec4 col = m_modelingFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.2f, 1.0f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "%s", m_modelingFeedbackMsg.c_str());
+        }
+
+        // --- BM-S5: Sculpt Brush Engine UI ---
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "SCULPT BRUSH ENGINE (BM-S5)");
+        ImGui::Checkbox("Attiva Sculpt Brush Mode##SculptBrushMode", &m_sculptModeActive);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Attiva la modalità scultura interattiva via cursore 3D (drag del mouse sulla superficie).");
+        }
+
+        if (m_sculptModeActive) {
+            auto& bSettings = m_sculptService.GetSettingsMutable();
+            int curBrush = static_cast<int>(bSettings.brushType);
+            ImGui::Text("Brush:");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Grab##BGrab", curBrush == 0)) bSettings.brushType = fw::SculptBrushType::Grab;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Smooth##BSmooth", curBrush == 1)) bSettings.brushType = fw::SculptBrushType::Smooth;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Inflate##BInflate", curBrush == 2)) bSettings.brushType = fw::SculptBrushType::Inflate;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Flatten##BFlatten", curBrush == 3)) bSettings.brushType = fw::SculptBrushType::Flatten;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Clay##BClay", curBrush == 4)) bSettings.brushType = fw::SculptBrushType::Clay;
+
+            ImGui::DragFloat("Raggio##BRadius", &bSettings.radius, 0.01f, 0.02f, 3.0f, "%.2f u");
+            ImGui::DragFloat("Intensità##BStrength", &bSettings.strength, 0.01f, 0.01f, 2.0f, "%.2f");
+            ImGui::DragFloat("Spaziatura##BSpacing", &bSettings.spacing, 0.01f, 0.02f, 1.0f, "%.2f");
+
+            int curFalloff = static_cast<int>(bSettings.falloff);
+            const char* falloffNames[] = { "Smooth (Hermite)", "Linear", "Sphere", "Sharp", "Constant" };
+            if (ImGui::Combo("Falloff##BFalloff", &curFalloff, falloffNames, 5)) {
+                bSettings.falloff = static_cast<fw::BrushFalloffType>(curFalloff);
+            }
+
+            int curSym = static_cast<int>(bSettings.symmetry);
+            const char* symNames[] = { "Nessuna (None)", "Specchia Asse X", "Specchia Asse Y", "Specchia Asse Z" };
+            if (ImGui::Combo("Simmetria##BSym", &curSym, symNames, 4)) {
+                bSettings.symmetry = static_cast<fw::SymmetryPlane>(curSym);
+            }
+
+            if (bSettings.brushType == fw::SculptBrushType::Clay) {
+                ImGui::DragFloat("Clay Ceiling##BClayCeil", &bSettings.clayCeiling, 0.01f, 0.02f, 1.0f, "%.2f");
+            }
+        }
+
+        // --- BM-S6: Topology Operations — Subdivision ---
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "TOPOLOGY OPERATIONS — SUBDIVISION (BM-S6)");
+
+        // 1. Modalità Midpoint / Catmull-Clark
+        ImGui::Text("Modalità:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Midpoint##SubdivMidpoint", !m_subdivideSmooth)) {
+            m_subdivideSmooth = false;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Suddivisione lineare Midpoint: divide le facce senza alterare la curvatura superficiale.");
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Catmull-Clark##SubdivCatmull", m_subdivideSmooth)) {
+            m_subdivideSmooth = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Suddivisione Catmull-Clark: divide le facce applicando smoothing laplaciano (superficie arrotondata).");
+        }
+
+        // 2. Slider Iterazioni (1..3)
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderInt("Iterazioni##SubdivIter", &m_subdivideIterations, 1, 3);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Numero di iterazioni di suddivisione (intervallo di sicurezza 1-3).");
+        }
+
+        // 3. Statistiche e Stima Complessità Preventiva
+        size_t currentFaces = m_activeEditableMesh.GetFaceCount();
+        uint64_t estimatedFaces = EstimateSubdivisionFaceCount(m_activeEditableMesh, m_subdivideIterations);
+        bool withinBudget = (estimatedFaces <= MAX_SUBDIVISION_FACE_BUDGET);
+
+        ImGui::Text("Facce Attuali: %zu", currentFaces);
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        if (withinBudget) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "Stima Risultante: %llu facce", static_cast<unsigned long long>(estimatedFaces));
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Stima Risultante: %llu facce (Budget superato!)", static_cast<unsigned long long>(estimatedFaces));
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("| Budget: %llu", static_cast<unsigned long long>(MAX_SUBDIVISION_FACE_BUDGET));
+
+        // 4. Pulsante di Esecuzione con Validazione
+        bool hasValidMesh = (m_activeEditableMesh.GetVertexCount() > 0 && currentFaces > 0);
+        bool hasValidBlock = (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(m_selectedBlockId));
+        bool validIterations = (m_subdivideIterations >= 1 && m_subdivideIterations <= 3);
+        bool canSubdivide = hasValidMesh && hasValidBlock && validIterations && withinBudget;
+
+        if (!canSubdivide) ImGui::BeginDisabled();
+        if (ImGui::Button("Applica Suddivisione##BtnSubdivide", ImVec2(200, 24))) {
+            ApplySubdivideOperation();
+        }
+        if (!canSubdivide) {
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (!hasValidMesh) ImGui::SetTooltip("Nessuna mesh attiva valida con facce da suddividere.");
+                else if (!hasValidBlock) ImGui::SetTooltip("Nessun blocco attivo valido selezionato.");
+                else if (!validIterations) ImGui::SetTooltip("Iterazioni fuori range consentito [1, 3].");
+                else if (!withinBudget) ImGui::SetTooltip("La stima supera il budget massimo di 65.536 facce.");
+            }
+            ImGui::EndDisabled();
+        } else if (ImGui::IsItemHovered()) {
+            std::string modeName = m_subdivideSmooth ? "Catmull-Clark" : "Midpoint";
+            ImGui::SetTooltip("Esegue %s (%d iterazione/i) su %zu facce e aggiorna la preview GPU.", modeName.c_str(), m_subdivideIterations, currentFaces);
+        }
+
+        // 5. Feedback temporizzato per la suddivisione
+        if (!m_modelingFeedbackMsg.empty() && 
+            (m_modelingFeedbackMsg.find("Subdivide") != std::string::npos || 
+             m_modelingFeedbackMsg.find("suddivisione") != std::string::npos)) {
+            ImVec4 col = m_modelingFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.2f, 1.0f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "%s", m_modelingFeedbackMsg.c_str());
+        }
+
+        // --- BM-S7: Remeshing & Manifold Repair Actions ---
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.7f, 1.0f), "MANIFOLD REPAIR & REMESH (BM-S7)");
+        if (ImGui::Button("Rimuovi Degenerazioni##BtnRemDeg", ImVec2(180, 24))) {
+            auto r = fw::MeshRepairService::RemoveDegenerateFaces(m_activeEditableMesh);
+            if (r.modified) {
+                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                m_cachedGeometryMesh = compMesh;
+                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Tappa Fori (Cap Holes)##BtnCapHoles", ImVec2(180, 24))) {
+            auto r = fw::MeshRepairService::CapHoles(m_activeEditableMesh);
+            if (r.modified) {
+                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                m_cachedGeometryMesh = compMesh;
+                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+            }
+        }
+        if (ImGui::Button("Limited Dissolve (Complanari)##BtnDissolve", ImVec2(180, 24))) {
+            auto r = fw::MeshRepairService::LimitedDissolve(m_activeEditableMesh);
+            if (r.modified) {
+                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                m_cachedGeometryMesh = compMesh;
+                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Remesh Uniforme##BtnRemesh", ImVec2(180, 24))) {
+            fw::RemeshOptions opt;
+            opt.targetEdgeLength = 0.25f;
+            opt.iterations = 2;
+            auto r = fw::MeshRepairService::UniformRemesh(m_activeEditableMesh, opt);
+            if (r.modified) {
+                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
+                m_cachedGeometryMesh = compMesh;
+                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+            }
+        }
+    }
+
+    // --- BM-S9: GeometryCompiler Bridge & Factory Integration ---
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.5f, 0.9f, 1.0f, 1.0f), "GEOMETRYCOMPILER BRIDGE & FACTORY (BM-S9)");
+
+    if (m_factoryOrchestrator.IsDraftOpen()) {
+        if (ImGui::Button("Sincronizza Mesh in Factory Draft##SyncBridgeDraft", ImVec2(260, 26))) {
+            fw::MeshBridgeService::SynchronizeEditableMeshToDraft(m_activeEditableMesh, *m_factoryOrchestrator.GetCurrentDraft(), &m_factoryOrchestrator);
+            m_modelingFeedbackMsg = "Mesh sincronizzata nel RawAssetDraft della Factory!";
+            m_modelingFeedbackIsError = false;
+            m_modelingFeedbackTimer = 3.0f;
+        }
+    }
+
+    if (ImGui::TreeNodeEx("Audit Suite BM-S9 (BRG-1 .. BRG-10)##BridgeTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+        if (ImGui::Button("Esegui Audit Bridge BM-S9 (Re-Run)##RerunBridgeTests", ImVec2(260, 24))) {
+            RunBridgeValidationTests(true);
+        }
+        ImGui::Spacing();
+        for (const auto& r : m_bridgeTestResults) {
+            ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+            ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+            if (!r.details.empty()) {
+                ImGui::TextDisabled("  Details: %s", r.details.c_str());
+            }
+        }
+        ImGui::TreePop();
+    }
+    ImGui::Separator();
+}
+
+void BlockMakerState::DrawGeneralIdentityUI(fw::SimBlockDef& def) {
+    ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "IDENTITA ASSET — ID Immutabile #%u", (unsigned int)m_selectedBlockId);
+    if (m_context->blockRegistry->IsReservedBlock(m_selectedBlockId)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Stato: BLOCCO DI SISTEMA RISERVATO (Protetto da eliminazione/rinomina)");
+    } else {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Stato: Asset Utente Modificabile");
+    }
+    ImGui::Separator();
+
+    ImGui::InputText("String ID", m_inputStringId, sizeof(m_inputStringId));
+    
+    // Validazione in tempo reale dello String ID (BM-A4.1, BM-A4.3)
+    std::string currentInputStr = m_inputStringId;
+    std::string valErr;
+    bool isValidId = m_context->blockRegistry->ValidateStringId(currentInputStr, &valErr);
+    bool isTaken = (isValidId && m_context->blockRegistry->IsStringIdTaken(currentInputStr, m_selectedBlockId));
+    
+    if (isValidId && !isTaken) {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "OK: Formato valido e identificatore disponibile");
+    } else if (isTaken) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: Identificatore gia assegnato a un altro blocco!");
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: %s", valErr.c_str());
+    }
+
+    ImGui::InputText("Display Name", m_inputDisplayName, sizeof(m_inputDisplayName));
+
+    bool isRenamed = (currentInputStr != def.stringId || std::string(m_inputDisplayName) != def.displayName);
+    bool canApplyRename = isRenamed && isValidId && !isTaken && !m_context->blockRegistry->IsReservedBlock(m_selectedBlockId);
+    
+    if (isRenamed) {
+        if (!canApplyRename) ImGui::BeginDisabled();
+        if (ImGui::Button("Applica Rinomina (BM-A4.3)", ImVec2(200, 24))) {
+            ExecuteRenameBlock(m_selectedBlockId, m_inputStringId, m_inputDisplayName);
+        }
+        if (!canApplyRename) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button("Ripristina Nomi", ImVec2(120, 24))) {
+            strncpy(m_inputStringId, def.stringId.c_str(), sizeof(m_inputStringId) - 1);
+            m_inputStringId[sizeof(m_inputStringId) - 1] = '\0';
+            strncpy(m_inputDisplayName, def.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
+            m_inputDisplayName[sizeof(m_inputDisplayName) - 1] = '\0';
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Proprieta Voxel & Rendering");
+    ImGui::Checkbox("Is Solid", &def.isSolid);
+    ImGui::Checkbox("Is Transparent", &def.isTransparent);
+    ImGui::SliderFloat("Light Emission", &def.lightEmissionLevel, 0.0f, 15.0f);
+}
+
+void BlockMakerState::DrawGeneralGraphicsUI(fw::PBRMaterialDef& mat, bool& isDirty) {
+    // Fallback Colors
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Fallback / Solid Colors");
+    float color[3] = { mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z };
+    if (ImGui::ColorEdit3("Base Color", color)) {
+        mat.baseColorFallback = {color[0], color[1], color[2]};
+        isDirty = true;
+    }
+    
+    if (ImGui::SliderFloat("Metallic", &mat.metallicFallback, 0.0f, 1.0f)) isDirty = true;
+    if (ImGui::SliderFloat("Roughness", &mat.roughnessFallback, 0.0f, 1.0f)) isDirty = true;
+    if (ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 10.0f)) isDirty = true;
+    if (ImGui::SliderFloat("Alpha (Trasparenza)", &mat.alphaFallback, 0.0f, 1.0f)) isDirty = true;
+    
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Comportamenti GPU (Behaviors)");
+    
+    bool isSeasonal = (mat.behaviors & fw::BLOCK_BEHAVIOR_SEASONAL) != 0;
+    if (ImGui::Checkbox("Seasonal (Cambia colore in Inverno/Autunno)", &isSeasonal)) {
+        if (isSeasonal) mat.behaviors |= fw::BLOCK_BEHAVIOR_SEASONAL;
+        else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_SEASONAL;
+        isDirty = true;
+    }
+    
+    bool isAnimated = (mat.behaviors & fw::BLOCK_BEHAVIOR_ANIMATED) != 0;
+    if (ImGui::Checkbox("Animated (Texture scorre / Vertex displace)", &isAnimated)) {
+        if (isAnimated) mat.behaviors |= fw::BLOCK_BEHAVIOR_ANIMATED;
+        else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_ANIMATED;
+        isDirty = true;
+    }
+
+    bool isWindAffected = (mat.behaviors & fw::BLOCK_BEHAVIOR_WIND_AFFECTED) != 0;
+    if (ImGui::Checkbox("Wind Affected (Fogliame/Erba si muove col vento)", &isWindAffected)) {
+        if (isWindAffected) mat.behaviors |= fw::BLOCK_BEHAVIOR_WIND_AFFECTED;
+        else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_WIND_AFFECTED;
+        isDirty = true;
+    }
+
+    bool isEmissiveBehavior = (mat.behaviors & fw::BLOCK_BEHAVIOR_EMISSIVE) != 0;
+    if (ImGui::Checkbox("Emissive (La texture emette luce propria in scena)", &isEmissiveBehavior)) {
+        if (isEmissiveBehavior) mat.behaviors |= fw::BLOCK_BEHAVIOR_EMISSIVE;
+        else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_EMISSIVE;
+        isDirty = true;
+    }
+}
+
+void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& isDirty) {
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco");
+    
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco");
+
+    struct TypeInfo { fw::ShapeType type; const char* name; bool supported; };
+    static const TypeInfo supportedTypes[] = {
+        { fw::ShapeType::Cube, "Cube", true },
+        { fw::ShapeType::Cuboid, "Cuboid", true },
+        { fw::ShapeType::Parallelepiped, "Parallelepiped", true },
+        { fw::ShapeType::Pyramid, "Pyramid", true },
+        { fw::ShapeType::PyramidFrustum, "Pyramid Frustum", true },
+        { fw::ShapeType::Cylinder, "Cylinder", true },
+        { fw::ShapeType::HollowCylinder, "Hollow Cylinder", true },
+        { fw::ShapeType::Cone, "Cone", true },
+        { fw::ShapeType::ConeFrustum, "Cone Frustum", true },
+        { fw::ShapeType::Sphere, "Sphere", true },
+        { fw::ShapeType::Capsule, "Capsule", true },
+        { fw::ShapeType::LegacySuperSphere, "Legacy SuperSphere", true },
+        { fw::ShapeType::SphericalZone, "Spherical Zone", true },
+        { fw::ShapeType::SphericalSegment, "Spherical Segment", true },
+        { fw::ShapeType::SphericalSector, "Spherical Sector", true },
+        { fw::ShapeType::SphereWithCylindricalBore, "Sphere w/ Bore", true },
+        { fw::ShapeType::SphereWithConicalCavities, "Sphere w/ Cavities", true },
+        { fw::ShapeType::SlicedCylinder, "Sliced Cylinder", true },
+        { fw::ShapeType::Ungula, "Ungula", true },
+        { fw::ShapeType::Barrel, "Barrel", true },
+        { fw::ShapeType::Compound, "Compound", false },
+        { fw::ShapeType::ConvexHull, "Convex Hull", false },
+        { fw::ShapeType::Heightfield, "Heightfield", false },
+        { fw::ShapeType::SignedDistanceField, "Signed Distance Field", false },
+        { fw::ShapeType::TriangleMesh, "Triangle Mesh", false }
+    };
+    
+    fw::ShapeType currentType = fw::ShapeType::None;
+    if (mat.sharedShape.IsValid()) {
+        const fw::ShapeDefinition* currentDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+        if (currentDef) {
+            currentType = currentDef->type;
+        }
+    } else if (mat.shapeType == 1) {
+        currentType = fw::ShapeType::LegacySuperSphere;
+    } else {
+        currentType = fw::ShapeType::Cube;
+    }
+
+    int currentIndex = -1;
+    for (int i = 0; i < std::size(supportedTypes); ++i) {
+        if (supportedTypes[i].type == currentType) {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    if (ImGui::BeginCombo("Tipo Geometria", currentIndex >= 0 ? supportedTypes[currentIndex].name : "Sconosciuto")) {
+        for (int i = 0; i < std::size(supportedTypes); ++i) {
+            bool is_selected = (currentIndex == i);
+            bool supported = supportedTypes[i].supported;
+            
+            if (!supported) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+            }
+            
+            std::string label = supportedTypes[i].name;
+            if (!supported) label += " (NON IMPLEMENTATO)";
+            
+            if (ImGui::Selectable(label.c_str(), is_selected) && supported && currentIndex != i) {
+                fw::ShapeDefinition newDef;
+                newDef.type = supportedTypes[i].type;
+                switch (newDef.type) {
+                    case fw::ShapeType::Cube: newDef.parameters = std::monostate{}; break;
+                    case fw::ShapeType::Cuboid: newDef.parameters = fw::ShapeParamsCuboid{{1,1,1}}; break;
+                    case fw::ShapeType::Parallelepiped: newDef.parameters = fw::ShapeParamsParallelepiped{{1,0,0},{0,1,0},{0,0,1}}; break;
+                    case fw::ShapeType::Pyramid: newDef.parameters = fw::ShapeParamsPyramid{1,1,1,{0,0}}; break;
+                    case fw::ShapeType::PyramidFrustum: newDef.parameters = fw::ShapeParamsPyramidFrustum{1,1,0.5f,0.5f,1,{0,0}}; break;
+                    case fw::ShapeType::Cylinder: newDef.parameters = fw::ShapeParamsCylinder{0.5f, 1.0f}; break;
+                    case fw::ShapeType::HollowCylinder: newDef.parameters = fw::ShapeParamsHollowCylinder{0.5f, 0.25f, 1.0f}; break;
+                    case fw::ShapeType::Cone: newDef.parameters = fw::ShapeParamsCone{0.5f, 1.0f}; break;
+                    case fw::ShapeType::ConeFrustum: newDef.parameters = fw::ShapeParamsConeFrustum{0.5f, 0.25f, 1.0f}; break;
+                    case fw::ShapeType::Sphere: newDef.parameters = fw::ShapeParamsSphere{0.5f}; break;
+                    case fw::ShapeType::Capsule: newDef.parameters = fw::ShapeParamsCapsule{0.5f, 0.5f}; break;
+                    case fw::ShapeType::LegacySuperSphere: newDef.parameters = fw::ShapeParamsLegacySuperSphere{2.0f}; break;
+                    case fw::ShapeType::SphericalZone: newDef.parameters = fw::ShapeParamsSphericalZone{1.0f, -0.5f, 0.5f}; break;
+                    case fw::ShapeType::SphericalSegment: newDef.parameters = fw::ShapeParamsSphericalSegment{1.0f, 0.0f}; break;
+                    case fw::ShapeType::SphericalSector: newDef.parameters = fw::ShapeParamsSphericalSector{1.0f, 3.14159f, 1.57079f}; break;
+                    case fw::ShapeType::SphereWithCylindricalBore: newDef.parameters = fw::ShapeParamsSphereWithCylindricalBore{1.0f, 0.5f, 2.0f}; break;
+                    case fw::ShapeType::SphereWithConicalCavities: newDef.parameters = fw::ShapeParamsSphereWithConicalCavities{1.0f, 0.5f, 0.5f}; break;
+                    case fw::ShapeType::SlicedCylinder: newDef.parameters = fw::ShapeParamsSlicedCylinder{0.5f, 1.0f, {0.0f, 1.0f, 1.0f}}; break;
+                    case fw::ShapeType::Ungula: newDef.parameters = fw::ShapeParamsUngula{0.5f, 1.0f, 0.78539f}; break;
+                    case fw::ShapeType::Barrel: newDef.parameters = fw::ShapeParamsBarrel{1.0f, 0.8f, 2.0f}; break;
+                    default: break;
+                }
+                newDef.supportsVisualCompilation = true;
+                mat.sharedShape = m_context->shapeRegistry->RegisterShape(newDef);
+                mat.shapeType = (newDef.type == fw::ShapeType::LegacySuperSphere) ? 1 : 0;
+                isDirty = true;
+            }
+            
+            if (!supported) {
+                ImGui::PopStyleColor();
+            }
+            if (is_selected) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    
+    if (mat.sharedShape.IsValid()) {
+        const fw::ShapeDefinition* currentDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
+        if (currentDef) {
+            if (m_editorShapeID != mat.sharedShape.id) {
+                m_editorShapeID = mat.sharedShape.id;
+                m_editorParams = currentDef->parameters;
+                m_isolateSharedShape = true;
+                m_sharedEditConfirmed = false;
+            }
+            
+            uint32_t users = m_context->materialRegistry->CountShapeUsers(mat.sharedShape.id);
+            if (users > 1) {
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Shape #%u \xe2\x80\x94 Shared by %u materials", mat.sharedShape.id, users);
+                ImGui::TextDisabled("Editing mode: %s", m_isolateSharedShape ? "Isolated (Copy-on-Write)" : "Global (Affects all)");
+                
+                if (ImGui::RadioButton("Edit Selected Block", m_isolateSharedShape)) {
+                    m_isolateSharedShape = true;
+                    m_sharedEditConfirmed = false;
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Edit Shared Shape", !m_isolateSharedShape)) {
+                    m_isolateSharedShape = false;
+                }
+                
+                if (!m_isolateSharedShape && !m_sharedEditConfirmed) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "WARNING: This will affect all %u blocks.", users);
+                    if (ImGui::Button("Confirm Shared Edit")) {
+                        m_sharedEditConfirmed = true;
+                    }
+                }
+                ImGui::Separator();
+            } else {
+                m_isolateSharedShape = true;
+                m_sharedEditConfirmed = false;
+            }
+
+            bool paramsChanged = false;
+            
+            if (auto* p = std::get_if<fw::ShapeParamsLegacySuperSphere>(&m_editorParams)) {
+                if (ImGui::SliderFloat("Esponente SuperSfera (n)", &p->n, 0.2f, 10.0f)) paramsChanged = true;
+                ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsCuboid>(&m_editorParams)) {
+                if (ImGui::DragFloat3("Dimensioni (X,Y,Z)", &p->size.x, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsParallelepiped>(&m_editorParams)) {
+                if (ImGui::DragFloat3("Base X Vector", &p->basisX.x, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat3("Base Y Vector", &p->basisY.x, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat3("Base Z Vector", &p->basisZ.x, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsPyramid>(&m_editorParams)) {
+                if (ImGui::DragFloat("Base Width", &p->baseWidth, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Base Depth", &p->baseDepth, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Height", &p->height, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat2("Apex Offset", &p->apexOffset.x, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsPyramidFrustum>(&m_editorParams)) {
+                if (ImGui::DragFloat("Bottom Width", &p->bottomWidth, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Bottom Depth", &p->bottomDepth, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Top Width", &p->topWidth, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Top Depth", &p->topDepth, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Height", &p->height, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat2("Apex Offset", &p->apexOffset.x, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsCylinder>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsCone>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Base", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsConeFrustum>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Base", &p->bottomRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Raggio Superiore", &p->topRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsHollowCylinder>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Esterno", &p->outerRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Raggio Interno", &p->innerRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsCapsule>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Mezza Altezza Cilindro", &p->halfHeight, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSphere>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSphericalZone>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Sfera", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Taglio Inferiore (Y)", &p->bottomY, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Taglio Superiore (Y)", &p->topY, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSphericalSegment>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Sfera", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Taglio Base (Y)", &p->baseY, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSphericalSector>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::SliderAngle("Range Polare (Theta)", &p->thetaRange, 0.0f, 360.0f)) paramsChanged = true;
+                if (ImGui::SliderAngle("Range Azimutale (Phi)", &p->phiRange, 0.0f, 180.0f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSphereWithCylindricalBore>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Sfera", &p->sphereRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Raggio Foro (Cilindro)", &p->cylinderRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza Cilindro (Riservato)", &p->cylinderHeight, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSphereWithConicalCavities>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Sfera", &p->sphereRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Raggio Cavita' (Cono)", &p->coneRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Profondita' Cavita' (Cono)", &p->coneHeight, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsSlicedCylinder>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat3("Normale di Taglio", &p->cutNormal.x, 0.05f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsUngula>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+                if (ImGui::SliderAngle("Angolo di Taglio", &p->cutAngle, 0.0f, 89.9f)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsBarrel>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio Centrale", &p->midRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Raggio Estremo", &p->endRadius, 0.05f)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
+            }
+            
+            if (paramsChanged) {
+                auto valid = m_context->shapeRegistry->ValidateParameters(currentDef->type, m_editorParams, mat.sharedShape.id);
+                if (valid.isValid) {
+                    m_lastValidationError = "";
+                    bool canEdit = true;
+                    
+                    if (users > 1) {
+                        if (m_isolateSharedShape) {
+                            fw::ShapeDefinition clone = *currentDef;
+                            clone.id = 0; 
+                            
+                            fw::ShapeHandle newHandle = m_context->shapeRegistry->RegisterShape(clone);
+                            if (newHandle.IsValid()) {
+                                mat.sharedShape = newHandle;
+                                m_editorShapeID = newHandle.id;
+                            } else {
+                                canEdit = false;
+                            }
+                        } else {
+                            if (!m_sharedEditConfirmed) {
+                                canEdit = false;
+                            }
+                        }
+                    }
+                    
+                    if (canEdit) {
+                        if (m_context->shapeRegistry->UpdateShape(mat.sharedShape, m_editorParams)) {
+                            mat.sharedShape.revision++;
+                            isDirty = true;
+                        }
+                    }
+                } else {
+                    m_lastValidationError = valid.errorMessage;
+                }
+            }
+            
+            if (!m_lastValidationError.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Parametri non validi:");
+                ImGui::TextWrapped("%s", m_lastValidationError.c_str());
+            }
+        }
+    } else {
+        if (mat.shapeType == 1) {
+            ImGui::TextDisabled("Modalita' Legacy. Converti selezionando un tipo dal menu.");
+            if (ImGui::SliderFloat("Esponente SuperSfera (n) [Legacy]", &mat.superSphereN, 0.2f, 10.0f)) {
+                isDirty = true;
+            }
+            ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
+        } else {
+            ImGui::TextDisabled("Standard Voxel Cube [Legacy]");
+        }
+    }
+    
+    if (!m_lastCompileError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Errore di Compilazione Geometria:");
+        ImGui::TextWrapped("%s", m_lastCompileError.c_str());
+    }
+}
+
+void BlockMakerState::DrawFactoryTextureControls(fw::PBRMaterialDef& mat, bool& isDirty) {
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PBR Texture Maps");
+
+    if (ImGui::Button("Apri Cartella Texture OS", ImVec2(-1, 30))) {
+        std::filesystem::create_directories("assets/textures");
+        ShellExecuteA(NULL, "open", "assets\\textures", NULL, NULL, SW_SHOWDEFAULT);
+    }
+    ImGui::Spacing();
+    
+    auto drawTextureField = [&](const char* label, std::string& pathRef, const std::string& typeSuffix, RenderManager::PBRTextureType pbrType) {
+        char buf[256];
+        strncpy(buf, pathRef.c_str(), sizeof(buf));
+        
+        ImGui::PushID(label);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
+        if (ImGui::InputText("##path", buf, sizeof(buf))) {
+            pathRef = buf;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Sfoglia...", ImVec2(80, 0))) {
+            std::string picked = BrowseForImage();
+            if (!picked.empty()) {
+                m_isCopying = true;
+                m_copyProgress = 0.0f;
+                
+                // Copia il file e salva automaticamente
+                pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
+                m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                if (std::filesystem::exists("../assets/definitions")) {
+                    m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
+                }
+                
+                // Sincronizza la cache GPU del materiale tramite il CacheManager!
+                if (m_context && m_context->cacheManager) {
+                    m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
+                }
+                
+                m_copyProgress = 1.0f;
+                m_saveMessageTimer = 3.0f;
+            }
+        }
+        ImGui::PopID();
+        ImGui::Text("%s", label);
+    };
+
+    drawTextureField("Albedo Map", mat.albedoPath, "albedo", RenderManager::PBRTextureType::ALBEDO);
+    drawTextureField("Normal Map", mat.normalPath, "normal", RenderManager::PBRTextureType::NORMAL);
+    drawTextureField("ORM Map (Occlusion, Roughness, Metallic)", mat.ormPath, "orm", RenderManager::PBRTextureType::ORM);
+    
+    // Barra di progresso simulata / Feedback visivo
+    if (m_isCopying) {
+        ImGui::Spacing();
+        ImGui::ProgressBar(m_copyProgress, ImVec2(-1, 0), "Copia Texture in corso...");
+        if (m_copyProgress >= 1.0f) {
+            m_isCopying = false;
+        }
+    }
+    
+    if (m_saveMessageTimer > 0.0f) {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Texture caricata e Materiale salvato automaticamente!");
+    }
+
+    // BM-TX2: Texture Engine & PBR Importer Audit Suite (TX-1 .. TX-10)
+    if (ImGui::TreeNodeEx("Audit Suite BM-TX2 (TX-1 .. TX-10)##TextureTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+        if (ImGui::Button("Esegui Audit Texture BM-TX2 (Re-Run)##RerunTextureTests", ImVec2(280, 24))) {
+            RunTextureValidationTests(true);
+        }
+        ImGui::Spacing();
+        for (const auto& r : m_textureTestResults) {
+            ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+            ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+            if (!r.details.empty()) {
+                ImGui::TextDisabled("  Details: %s", r.details.c_str());
+            }
+        }
+        ImGui::TreePop();
+    }
+
+    // BM-TX3: Paint & Layer Engine Audit Suite (PT-1 .. PT-10)
+    if (ImGui::TreeNodeEx("Audit Suite BM-TX3 (PT-1 .. PT-10)##PaintTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+        if (ImGui::Button("Esegui Audit Paint BM-TX3 (Re-Run)##RerunPaintTests", ImVec2(280, 24))) {
+            RunPaintValidationTests(true);
+        }
+        ImGui::Spacing();
+        for (const auto& r : m_paintTestResults) {
+            ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+            ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+            if (!r.details.empty()) {
+                ImGui::TextDisabled("  Details: %s", r.details.c_str());
+            }
+        }
+        ImGui::TreePop();
+    }
+
+    // BM-TX4: 3D Surface Brush & Painting Suite (BP-1 .. BP-15)
+    if (ImGui::TreeNodeEx("Audit Suite BM-TX4 (BP-1 .. BP-15)##SurfacePaintTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+        if (ImGui::Button("Esegui Audit Surface Paint BM-TX4 (Re-Run)##RerunSurfacePaintTests", ImVec2(280, 24))) {
+            RunSurfacePaintValidationTests(true);
+        }
+        ImGui::Spacing();
+        for (const auto& r : m_surfacePaintTestResults) {
+            ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+            ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+            if (!r.details.empty()) {
+                ImGui::TextDisabled("  Details: %s", r.details.c_str());
+            }
+        }
+        ImGui::TreePop();
+    }
+
+    // BM-UV2: Universal UV Contract & Primitive Mapping Suite (UVP-1 .. UVP-15)
+    if (ImGui::TreeNodeEx("Audit Suite BM-UV2 (UVP-1 .. UVP-15)##PrimitiveUVTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+        if (ImGui::Button("Esegui Audit UV BM-UV2 (Re-Run)##RerunPrimitiveUVTests", ImVec2(280, 24))) {
+            RunPrimitiveUVValidationTests(true);
+        }
+        ImGui::Spacing();
+        for (const auto& r : m_primitiveUVTestResults) {
+            ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
+            ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
+            if (!r.details.empty()) {
+                ImGui::TextDisabled("  Details: %s", r.details.c_str());
+            }
+        }
+        ImGui::TreePop();
+    }
+}
+
+void BlockMakerState::DrawFactorySurfaceUVControls(fw::PBRMaterialDef& mat, bool& isDirty) {
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Mappatura UV & Superfici Semantiche (BM-C)");
+
+    // 1. Modalita Proiezione UV Base
+    const char* projModes[] = { "Default (Planar)", "Planar", "Box", "Cylindrical", "Spherical", "Triplanar" };
+    int currentProjIdx = static_cast<int>(mat.baseProjection);
+    if (ImGui::Combo("Proiezione Base##BaseProj", &currentProjIdx, projModes, IM_ARRAYSIZE(projModes))) {
+        mat.baseProjection = static_cast<fw::UVProjectionMode>(currentProjIdx);
+        mat.revision++;
+        isDirty = true;
+    }
+
+    // 2. UV Transform Base (BM-C4)
+    if (ImGui::TreeNodeEx("Trasformazione UV Base (Tiling, Offset, Rotazione)##BaseUVTree", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float tiling[2] = { mat.baseUVTransform.tiling.x, mat.baseUVTransform.tiling.y };
+        if (ImGui::DragFloat2("Tiling (U, V)##BaseTiling", tiling, 0.05f, 0.01f, 100.0f, "%.2f")) {
+            mat.baseUVTransform.tiling = { tiling[0], tiling[1] };
+            mat.revision++;
+            isDirty = true;
+        }
+
+        float offset[2] = { mat.baseUVTransform.offset.x, mat.baseUVTransform.offset.y };
+        if (ImGui::DragFloat2("Offset (U, V)##BaseOffset", offset, 0.01f, -10.0f, 10.0f, "%.2f")) {
+            mat.baseUVTransform.offset = { offset[0], offset[1] };
+            mat.revision++;
+            isDirty = true;
+        }
+
+        if (ImGui::SliderFloat("Rotazione (Gradi)##BaseRot", &mat.baseUVTransform.rotationDegrees, -180.0f, 180.0f, "%.1f deg")) {
+            mat.revision++;
+            isDirty = true;
+        }
+
+        if (ImGui::Checkbox("Specchia U (Mirror U)##BaseMirU", &mat.baseUVTransform.mirrorU)) {
+            mat.revision++;
+            isDirty = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Specchia V (Mirror V)##BaseMirV", &mat.baseUVTransform.mirrorV)) {
+            mat.revision++;
+            isDirty = true;
+        }
+
+        if (!mat.baseUVTransform.IsIdentity()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reset UV##ResetBaseUV")) {
+                mat.baseUVTransform = fw::UVTransform{};
+                mat.revision++;
+                isDirty = true;
+            }
+        }
+        ImGui::TreePop();
+    }
+
+    // 3. Superfici Semantiche (BM-C2 & BM-C5)
+    const fw::ShapeDefinition* currentShapeDef = m_context->shapeRegistry ? m_context->shapeRegistry->GetShapeDef(mat.sharedShape) : nullptr;
+    fw::ShapeType sType = currentShapeDef ? currentShapeDef->type : fw::ShapeType::Cube;
+    uint32_t surfaceCount = fw::GetSemanticSurfaceCount(sType);
+
+    if (ImGui::TreeNodeEx("Materiali & Override per Superficie Semantica (BM-C5)##SurfOverridesTree", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Superfici disponibili per la forma corrente: %u", surfaceCount);
+
+        if (m_selectedSurfaceIndex >= (int)surfaceCount) m_selectedSurfaceIndex = 0;
+
+        // Lista delle superfici semantiche
+        std::vector<std::string> surfaceNames;
+        surfaceNames.reserve(surfaceCount);
+        for (uint32_t sIdx = 0; sIdx < surfaceCount; ++sIdx) {
+            surfaceNames.push_back(std::to_string(sIdx) + ": " + fw::GetSemanticSurfaceName(sType, sIdx));
+        }
+
+        std::vector<const char*> surfaceNamesCStr;
+        for (const auto& sName : surfaceNames) surfaceNamesCStr.push_back(sName.c_str());
+
+        ImGui::Combo("Superficie Attiva##SelSurf", &m_selectedSurfaceIndex, surfaceNamesCStr.data(), (int)surfaceNamesCStr.size());
+
+        // Gestione override per la superficie selezionata
+        uint32_t curSurfId = (uint32_t)m_selectedSurfaceIndex;
+        const fw::SurfaceOverride* existingOverride = mat.FindSurfaceOverride(curSurfId);
+        bool hasOverride = (existingOverride != nullptr);
+
+        if (ImGui::Checkbox("Attiva Personalizzazione Superficie##ToggleSurfOverride", &hasOverride)) {
+            if (hasOverride) {
+                mat.GetOrCreateSurfaceOverride(curSurfId);
+            } else {
+                // Rimuovi override
+                auto it = std::remove_if(mat.surfaces.begin(), mat.surfaces.end(), [curSurfId](const fw::SurfaceOverride& s) {
+                    return s.surfaceId == curSurfId;
+                });
+                mat.surfaces.erase(it, mat.surfaces.end());
+                mat.revision++;
+            }
+            isDirty = true;
+        }
+
+        if (hasOverride) {
+            fw::SurfaceOverride& surf = mat.GetOrCreateSurfaceOverride(curSurfId);
+
+            // Override Material ID
+            if (ImGui::Checkbox("Material ID Dedicato (Layer GPU)##SurfUseMat", &surf.useExplicitMaterial)) {
+                mat.revision++;
+                isDirty = true;
+            }
+            if (surf.useExplicitMaterial) {
+                int matIdVal = (int)surf.materialId;
+                if (ImGui::SliderInt("Target Material ID##SurfMatId", &matIdVal, 0, 255)) {
+                    surf.materialId = (uint32_t)matIdVal;
+                    mat.revision++;
+                    isDirty = true;
+                }
+            }
+
+            // Override PBR
+            if (ImGui::Checkbox("Override PBR Superficie##SurfPbrToggle", &surf.overridePbr)) {
+                mat.revision++;
+                isDirty = true;
+            }
+            if (surf.overridePbr) {
+                float sCol[3] = { surf.baseColorFallback.x, surf.baseColorFallback.y, surf.baseColorFallback.z };
+                if (ImGui::ColorEdit3("Colore Superficie##SurfCol", sCol)) {
+                    surf.baseColorFallback = { sCol[0], sCol[1], sCol[2] };
+                    mat.revision++;
+                    isDirty = true;
+                }
+                if (ImGui::SliderFloat("Roughness Superficie##SurfRough", &surf.roughness, 0.0f, 1.0f)) {
+                    mat.revision++;
+                    isDirty = true;
+                }
+                if (ImGui::SliderFloat("Metallic Superficie##SurfMetal", &surf.metallic, 0.0f, 1.0f)) {
+                    mat.revision++;
+                    isDirty = true;
+                }
+                if (ImGui::SliderFloat("Emissive Superficie##SurfEmiss", &surf.emissive, 0.0f, 10.0f)) {
+                    mat.revision++;
+                    isDirty = true;
+                }
+            }
+
+            // Override Proiezione UV Superficie
+            int sProjIdx = static_cast<int>(surf.projection);
+            if (ImGui::Combo("Proiezione Dedicata##SurfProj", &sProjIdx, projModes, IM_ARRAYSIZE(projModes))) {
+                surf.projection = static_cast<fw::UVProjectionMode>(sProjIdx);
+                mat.revision++;
+                isDirty = true;
+            }
+
+            // Override Trasformazione UV Superficie
+            float sTiling[2] = { surf.uvTransform.tiling.x, surf.uvTransform.tiling.y };
+            if (ImGui::DragFloat2("Tiling Superficie##SurfTiling", sTiling, 0.05f, 0.01f, 100.0f, "%.2f")) {
+                surf.uvTransform.tiling = { sTiling[0], sTiling[1] };
+                mat.revision++;
+                isDirty = true;
+            }
+            float sOffset[2] = { surf.uvTransform.offset.x, surf.uvTransform.offset.y };
+            if (ImGui::DragFloat2("Offset Superficie##SurfOffset", sOffset, 0.01f, -10.0f, 10.0f, "%.2f")) {
+                surf.uvTransform.offset = { sOffset[0], sOffset[1] };
+                mat.revision++;
+                isDirty = true;
+            }
+            if (ImGui::SliderFloat("Rotazione Superficie##SurfRot", &surf.uvTransform.rotationDegrees, -180.0f, 180.0f, "%.1f deg")) {
+                mat.revision++;
+                isDirty = true;
+            }
+            if (ImGui::Checkbox("Specchia U##SurfMirU", &surf.uvTransform.mirrorU)) {
+                mat.revision++;
+                isDirty = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Specchia V##SurfMirV", &surf.uvTransform.mirrorV)) {
+                mat.revision++;
+                isDirty = true;
+            }
+
+            // BM-TX2: Override Texture Superficie Dedicate
+            if (ImGui::Checkbox("Texture Dedicate Superficie (BM-TX2)##SurfTexToggle", &surf.textures.useExplicitTextures)) {
+                mat.revision++;
+                isDirty = true;
+            }
+            if (surf.textures.useExplicitTextures) {
+                auto drawSurfTexField = [&](const char* label, std::string& pathRef, const std::string& suffix) {
+                    char buf[256];
+                    strncpy(buf, pathRef.c_str(), sizeof(buf));
+                    ImGui::PushID(label);
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
+                    if (ImGui::InputText("##surfpath", buf, sizeof(buf))) {
+                        pathRef = buf;
+                        surf.textures.useExplicitTextures = true;
+                        mat.revision++;
+                        isDirty = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Sfoglia...##btn", ImVec2(75, 0))) {
+                        std::string picked = BrowseForImage();
+                        if (!picked.empty()) {
+                            pathRef = CopyTextureToAssets(picked, m_selectedBlockId, suffix + "_s" + std::to_string(curSurfId));
+                            surf.textures.useExplicitTextures = true;
+                            mat.revision++;
+                            isDirty = true;
+                        }
+                    }
+                    ImGui::PopID();
+                    ImGui::Text("  %s", label);
+                };
+                drawSurfTexField("Albedo Superficie", surf.textures.albedoMapPath, "albedo");
+                drawSurfTexField("Normal Superficie", surf.textures.normalMapPath, "normal");
+                drawSurfTexField("ORM Superficie", surf.textures.ormMapPath, "orm");
+                drawSurfTexField("Emissive Superficie", surf.textures.emissiveMapPath, "emissive");
+            }
+        }
+        ImGui::TreePop();
+    }
+}
+
+void BlockMakerState::DrawGeneralPhysicsUI(fw::SimBlockDef& def) {
+    // 1. Diagnostics, Dirty Status & Revert Baseline
+    bool isPhysicsDirty = IsBlockPhysicsDirty(m_selectedBlockId);
+    uint32_t totalDirtyPhysics = CountUnsavedPhysicsBlocks();
+
+    ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "CONTRATTO FISICO ASSET — ID %u: %s", m_selectedBlockId, def.displayName.c_str());
+    if (isPhysicsDirty) {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Stato Fisica: MODIFICHE NON SALVATE (*)");
+        ImGui::SameLine();
+        if (ImGui::Button("Ripristina Baseline Fisica (Revert)##RevPhys")) {
+            RevertBlockPhysicsToSaved(m_selectedBlockId);
+        }
+    } else {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Stato Fisica: SINCRONIZZATO (Baseline salvata)");
+    }
+    if (totalDirtyPhysics > 0) {
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Blocchi con fisica modificata nel registro: %u (*)", totalDirtyPhysics);
+    }
+
+    ImGui::Separator();
+
+    // 2. Motion Type
+    ImGui::Text("Tipo di Moto (Motion Type):");
+    int motionTypeIdx = static_cast<int>(def.physics.motionType);
+    if (ImGui::RadioButton("Static##MotionStatic", motionTypeIdx == 0)) {
+        def.physics.motionType = fw::BlockMotionType::Static;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Static: Blocco fisso nel mondo (massa infinita per la cinematica del mondo, ideale per blocchi voxel standard).");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Dynamic##MotionDynamic", motionTypeIdx == 1)) {
+        def.physics.motionType = fw::BlockMotionType::Dynamic;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Dynamic: Soggetto a forze esterne, gravita, accelerazione e urti fisici.");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Kinematic##MotionKinematic", motionTypeIdx == 2)) {
+        def.physics.motionType = fw::BlockMotionType::Kinematic;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Kinematic: Mosso esclusivamente da script/animazioni, non risente di forze esterne.");
+
+    // 3. Collision Enabled
+    if (ImGui::Checkbox("Collisioni Abilitate (Collision Enabled)", &def.physics.collisionEnabled)) {
+        def.SyncLegacyPhysicsFields();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Determina se il blocco genera collisioni fisiche solide (isSolid).");
+
+    ImGui::Separator();
+
+    // 4. Mass Rule: Manual vs Density-Derived
+    ImGui::Text("Regola di Definizione Massa:");
+    int massModeIdx = static_cast<int>(def.physics.massMode);
+    if (ImGui::RadioButton("Massa Manuale##MassManual", massModeIdx == 0)) {
+        def.physics.massMode = fw::BlockMassMode::Manual;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Massa specificata direttamente dall'autore in kg, costante indipendentemente dal volume.");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Massa da Densita e Volume##MassDensity", massModeIdx == 1)) {
+        def.physics.massMode = fw::BlockMassMode::DensityDerived;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Massa calcolata = Densita (kg/m^3) * Volume calcolato dalla scala dell'asset.");
+
+    float volume = std::abs(def.localScale.x * def.localScale.y * def.localScale.z);
+    if (volume < 1e-4f) volume = 1e-4f;
+    float derivedMass = def.physics.CalculateDerivedMass(def.localScale);
+    float effectiveMass = def.physics.GetEffectiveMass(def.localScale);
+
+    if (def.physics.massMode == fw::BlockMassMode::Manual) {
+        if (ImGui::SliderFloat("Massa (kg)##MassManualVal", &def.physics.mass, 0.01f, 5000.0f, "%.2f kg")) {
+            def.SyncLegacyPhysicsFields();
+        }
+        ImGui::SliderFloat("Densita di Riferimento (kg/m^3)", &def.physics.density, 1.0f, 25000.0f, "%.1f");
+        ImGui::Text("Volume Asset (Scala): %.4f m^3 | Massa Effettiva: %.2f kg", volume, effectiveMass);
+    } else {
+        if (ImGui::SliderFloat("Densita Materiale (kg/m^3)##DensityVal", &def.physics.density, 1.0f, 25000.0f, "%.1f")) {
+            def.SyncLegacyPhysicsFields();
+        }
+        ImGui::Text("Volume Asset (Scala): %.4f m^3", volume);
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "Massa Derivata (Autorevole): %.3f kg", derivedMass);
+        def.physics.mass = derivedMass;
+        def.SyncLegacyPhysicsFields();
+    }
+
+    // 5. Friction & Restitution
+    if (ImGui::SliderFloat("Attrito (Friction) [0.0 - 1.0]", &def.physics.friction, 0.0f, 1.0f, "%.3f")) {
+        def.SyncLegacyPhysicsFields();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Coefficiente di attrito radente superficiale (0 = privo di attrito, 1 = massimo grip).");
+
+    if (ImGui::SliderFloat("Restituzione / Rimbalzo [0.0 - 1.0]", &def.physics.restitution, 0.0f, 1.0f, "%.3f")) {
+        def.SyncLegacyPhysicsFields();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Coefficiente di restituzione elastica (0 = perfettamente anelastico, 1 = rimbalzo conservativo).");
+
+    // 6. Thermodynamics
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Termodinamica (Thermodynamics)");
+    ImGui::SliderFloat("Resistenza Termica", &def.thermal_resistance, 0.1f, 100.0f, "%.1f");
+    ImGui::SliderFloat("Capacita' Termica", &def.thermal_capacity, 0.1f, 100.0f, "%.1f");
+
+    // 7. Preview Drop & Rotation
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.8f, 0.4f, 1.0f, 1.0f), "Simulazione Preview Caduta");
+    
+    if (ImGui::Button("Drop Block!")) {
+        m_simulatePhysics = true;
+        m_simPosY = 5.0f; // Sgancia il blocco da 5 metri
+        m_simVelY = 0.0f;
+    }
+    
+    if (m_simulatePhysics) {
+        ImGui::SameLine();
+        if (ImGui::Button("Reset Drop")) {
+            m_simulatePhysics = false;
+            m_simPosY = 0.0f;
+            m_simVelY = 0.0f;
+        }
+    }
+    
+    ImGui::Separator();
+    
+    ImGui::Text("Opzioni Preview");
+    ImGui::Checkbox("Simulate Physics (Bouncing)", &m_simulatePhysics);
+    ImGui::Checkbox("Auto-Rotate Block", &m_autoRotateBlock);
+    if (!m_autoRotateBlock) {
+        ImGui::SliderFloat3("Manual Rotation (Euler)", &m_blockEulerAngles.x, 0.0f, 360.0f);
+    }
+    
+    // 8. Telemetria Componenti ECS Physics Runtime
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "COMPONENTI ECS FISICA RUNTIME (Preview Entity):");
+    auto* ecsMass = m_previewWorld ? m_previewWorld->GetRegistry().try_get<MassPropertiesComponent>(m_previewBlockEntity) : nullptr;
+    auto* ecsRb = m_previewWorld ? m_previewWorld->GetRegistry().try_get<RigidBody>(m_previewBlockEntity) : nullptr;
+    if (ecsMass && ecsRb) {
+        ImGui::Text("MassPropertiesComponent: Massa = %.2f kg | CoM = (%.2f, %.2f, %.2f)",
+            ecsMass->mass, ecsMass->centerOfMass.x, ecsMass->centerOfMass.y, ecsMass->centerOfMass.z);
+        ImGui::Text("Inertia Tensor: Ixx=%.3f, Iyy=%.3f, Izz=%.3f",
+            ecsMass->inertiaTensor[0][0], ecsMass->inertiaTensor[1][1], ecsMass->inertiaTensor[2][2]);
+        ImGui::Text("RigidBody: Massa = %.2f kg | Restituzione = %.3f | Attrito = %.3f | Drag = %.3f",
+            ecsRb->mass, ecsRb->restitution, ecsRb->friction, ecsRb->drag);
+    } else {
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "Componenti ECS: In sincronizzazione...");
+    }
+
+    // 9. Zero-Work Physics Save Button
+    if (ImGui::Button("SALVA DEFINIZIONI FISICHE (JSON)", ImVec2(-1, 40))) {
+        m_zeroWorkTelemetry.jsonSaveCalls++;
+        def.SyncLegacyPhysicsFields();
+        m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
+        bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+        bool s2 = true;
+        if (std::filesystem::exists("../assets/definitions")) {
+            s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
+        }
+        if (s1 && s2) {
+            SynchronizeAllSavedPhysicsBaselines();
+            m_saveMessageTimer = 3.0f;
+            std::cout << "[BlockMaker] Proprieta fisiche del blocco ID " << (int)m_selectedBlockId << " salvate su disco e baseline sincronizzata.\n";
+        } else {
+            std::cerr << "[BlockMaker] ERRORE: Salvataggio definizioni fisiche su disco non riuscito!\n";
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Salva le proprieta fisiche dei blocchi su disco (blocks.json).\nNessun ricaricamento di mesh GPU o rigenerazione geometrica (Zero-Work).");
+    }
+}
+
+// -----------------------------------------------------------------------------
+// DrawInspectorContents — Master Dispatcher
+// -----------------------------------------------------------------------------
+void BlockMakerState::DrawInspectorContents() {
+    if (!m_context || !m_context->blockRegistry || !m_context->materialRegistry || !m_context->shapeRegistry) return;
+
+    ImGui::Text("Editing Block ID: %d", m_selectedBlockId);
+    ImGui::Separator();
+        // =========================================================================
+        // BM-FC7 — PRODUCTION STATIONS TOP BAR & ORCHESTRATOR (Responsive Flow Layout)
+        // =========================================================================
 
         // =========================================================================
-        // BM-FC7 — PRODUCTION STATIONS TOP BAR & ORCHESTRATOR
+        // BM-UI2.2: UNIFIED FACTORY NAVIGATION (General Settings vs Factory Stations)
         // =========================================================================
-        ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "FABBRICA ASSET GREZZI — PIPELINE A STAZIONI (BM-FC)");
+        bool isGenActive = (m_inspectorContext == InspectorContext::GeneralSettings);
+        if (isGenActive) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.25f, 0.30f, 0.85f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.9f, 1.0f));
+        }
+        if (ImGui::Button("GENERAL SETTINGS", ImVec2(-1, 26))) {
+            m_inspectorContext = InspectorContext::GeneralSettings;
+        }
+        ImGui::PopStyleColor(2);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Impostazioni Generali: Identita, Object Transform e Diagnostica.");
+        }
+
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "FACTORY STATIONS (PIPELINE A 9 STAZIONI)");
 
         static const char* s_stationLabels[9] = {
             "1. Shape", "2. Sculpt", "3. SurfaceUV", "4. Texture",
@@ -4563,15 +6857,18 @@ void BlockMakerState::DrawUI() {
 
         fw::ProductionStationID activeStation = m_factoryOrchestrator.GetActiveStation();
 
-        ImGui::BeginChild("StationButtonsBar", ImVec2(0, 36), true, ImGuiWindowFlags_NoScrollbar);
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        float itemSpacingX = ImGui::GetStyle().ItemSpacing.x;
+        float currentLineWidth = 0.0f;
+
         for (int s = 0; s < 9; ++s) {
             fw::ProductionStationID sid = s_stationIDs[s];
             const auto* st = m_factoryOrchestrator.GetStation(sid);
-            bool isActive = (activeStation == sid);
+            bool isStationSelected = (!isGenActive && activeStation == sid);
             bool isImplemented = st ? st->IsImplemented() : false;
             auto status = st ? st->GetStatus() : fw::StationStatus::NotImplemented;
 
-            if (isActive) {
+            if (isStationSelected) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
             } else if (!isImplemented) {
@@ -4588,8 +6885,20 @@ void BlockMakerState::DrawUI() {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
             }
 
-            if (s > 0) ImGui::SameLine();
+            float btnWidth = ImGui::CalcTextSize(s_stationLabels[s]).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            if (s > 0) {
+                if (currentLineWidth + itemSpacingX + btnWidth < availWidth) {
+                    ImGui::SameLine();
+                    currentLineWidth += itemSpacingX + btnWidth;
+                } else {
+                    currentLineWidth = btnWidth;
+                }
+            } else {
+                currentLineWidth = btnWidth;
+            }
+
             if (ImGui::Button(s_stationLabels[s])) {
+                m_inspectorContext = InspectorContext::FactoryStation;
                 m_factoryOrchestrator.SetActiveStation(sid);
             }
             if (ImGui::IsItemHovered()) {
@@ -4605,2157 +6914,230 @@ void BlockMakerState::DrawUI() {
 
             ImGui::PopStyleColor(2);
         }
-        ImGui::EndChild();
 
-        // 2. Info Box della Stazione Attiva & Azioni Fabbrica
-        ImGui::BeginChild("ActiveStationInfoBox", ImVec2(0, 68), true);
-        const auto* curSt = m_factoryOrchestrator.GetStation(activeStation);
-        if (curSt) {
-            ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.3f, 1.0f), "Stazione Selezionata: %s", curSt->GetName());
-            ImGui::SameLine();
-            if (!curSt->IsImplemented()) {
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[NON ANCORA IMPLEMENTATA — Prevista in BM-S]");
-            } else {
-                auto stStatus = curSt->GetStatus();
-                if (stStatus == fw::StationStatus::Completed) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "[COMPLETATA]");
-                } else if (stStatus == fw::StationStatus::Dirty) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[DIRTY — Richiede riesecuzione]");
-                } else {
-                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "[OPERATIVA]");
-                }
-            }
-            ImGui::Text("Descrizione: %s", curSt->GetDescription());
-        }
-
-        if (ImGui::Button("Esegui Audit QC##FactoryQC", ImVec2(160, 22))) {
-            auto val = m_factoryOrchestrator.RunQualityControlAudit(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
-            if (val.isValid) {
-                m_factoryOpFeedback = "Quality Control: ASSET VALIDO (0 errori, " + std::to_string(val.warnings.size()) + " avvisi)";
-                m_factoryOpFeedbackIsError = false;
-            } else {
-                m_factoryOpFeedback = "Quality Control FAIL: " + (val.errors.empty() ? "Errore sconosciuto" : val.errors[0]);
-                m_factoryOpFeedbackIsError = true;
-            }
-            m_factoryOpFeedbackTimer = 5.0f;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Compila Pacchetto & Pubblica##FactoryPub", ImVec2(220, 22))) {
-            auto pkg = m_factoryOrchestrator.BuildPackage(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
-            if (pkg.has_value()) {
-                bool pubOk = m_factoryOrchestrator.PublishToRegistries(*m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
-                if (pubOk) {
-                    m_factoryOpFeedback = "Pacchetto pubblicato con successo nel registro di runtime!";
-                    m_factoryOpFeedbackIsError = false;
-                    UpdatePreviewMesh();
-                } else {
-                    m_factoryOpFeedback = "Errore durante la pubblicazione del pacchetto nei registri!";
-                    m_factoryOpFeedbackIsError = true;
-                }
-            } else {
-                m_factoryOpFeedback = "Impossibile compilare il pacchetto: Quality Control ha rilevato errori!";
-                m_factoryOpFeedbackIsError = true;
-            }
-            m_factoryOpFeedbackTimer = 5.0f;
-        }
-        if (m_factoryOpFeedbackTimer > 0.0f) {
-            ImGui::SameLine();
-            ImGui::TextColored(m_factoryOpFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.2f, 1.0f, 0.3f, 1.0f),
-                               "%s", m_factoryOpFeedback.c_str());
-        }
-        ImGui::EndChild();
+        ImGui::Spacing();
         ImGui::Separator();
-
-        // BM-UV8: Pannelli dedicati per le Stazioni Surface & UV e Painter
-        if (activeStation == fw::ProductionStationID::SurfaceUV) {
-            DrawUVEditorStationUI();
-            ImGui::Separator();
-        } else if (activeStation == fw::ProductionStationID::Painter) {
-            ImGui::Spacing();
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.6f, 1.0f), "3D SURFACE PAINTER (BM-TX4 & BM-UV8)");
-            ImGui::SliderFloat("Brush Radius##PntRad", &m_paintBrush.radiusPixels, 2.0f, 64.0f, "%.1f px");
-            ImGui::SliderFloat("Brush Strength##PntStr", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
-            ImGui::ColorEdit4("Brush Color##PntCol", &m_paintBrush.color.x);
-            ImGui::Checkbox("Erase Mode##PntErase", &m_paintBrush.eraseMode);
-            ImGui::Separator();
-        }
 
         fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
         fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
 
-        // --- TABS ---
-        if (ImGui::BeginTabBar("BlockTabs")) {
-            
-            // TAB: BLOCK TRANSFORM (BM-A2)
-            if (ImGui::BeginTabItem("Transform")) {
-                ImGui::Spacing();
-                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "BLOCK TRANSFORM — ID %u: %s", m_selectedBlockId, def.displayName.c_str());
-                ImGui::Separator();
-
-                // 1. Box Telemetria e Stato Salvataggio
-                bool isCurrentDirty = IsBlockTransformDirty(m_selectedBlockId);
-                uint32_t totalDirtyCount = CountUnsavedTransformBlocks();
-
-                ImGui::BeginChild("TransformDiagnosticsBox", ImVec2(0, 360), true);
-                ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "TELEMETRIA TRASFORMAZIONE ASSET (BM-A2.1)");
-                ImGui::Text("Blocco: ID %u (%s) | String: %s", m_selectedBlockId, def.displayName.c_str(), def.stringId.c_str());
-                if (mat.sharedShape.IsValid()) {
-                    const fw::ShapeDefinition* shapeDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
-                    const char* shapeTypeName = shapeDef ? GetShapeTypeName(shapeDef->type) : "Unknown";
-                    ImGui::Text("ShapeHandle: ID %u (Rev %u) | Tipo: %s", mat.sharedShape.id, mat.sharedShape.revision, shapeTypeName);
-                } else {
-                    ImGui::Text("Shape: Legacy (Tipo %d)", mat.shapeType);
-                }
-                ImGui::Text("Pos: (%.3f, %.3f, %.3f) | Rot: (%.1f, %.1f, %.1f) deg", 
-                    def.localPosition.x, def.localPosition.y, def.localPosition.z,
-                    def.localRotation.x, def.localRotation.y, def.localRotation.z);
-                ImGui::Text("Scale: (%.4f, %.4f, %.4f) | Pivot: (%.3f, %.3f, %.3f)", 
-                    def.localScale.x, def.localScale.y, def.localScale.z,
-                    def.pivotOffset.x, def.pivotOffset.y, def.pivotOffset.z);
-
-                if (isCurrentDirty) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Stato Blocco: MODIFICHE NON SALVATE (In attesa di persistenza)");
-                } else {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Stato Blocco: SINCRONIZZATO (Allineato alla baseline)");
-                }
-
-                if (totalDirtyCount > 0) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Registro: %u blocco/i con modifiche pendenti (*)", totalDirtyCount);
-                } else {
-                    ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Registro: Tutte le trasformazioni sincronizzate a disco");
-                }
-
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "TELEMETRIA ZERO-WORK (BM-A3 FREEZE GATE):");
-                ImGui::Text("GeoCompile: %u | MeshGen: %u | GpuUpload: %u",
-                    m_zeroWorkTelemetry.geoCompilerCalls,
-                    m_zeroWorkTelemetry.meshGenCalls,
-                    m_zeroWorkTelemetry.gpuUploadCalls);
-                ImGui::Text("ShapeRev: %u | EcsWrites: %u | JsonSaves: %u",
-                    m_zeroWorkTelemetry.shapeRevIncrements,
-                    m_zeroWorkTelemetry.ecsTransformWrites,
-                    m_zeroWorkTelemetry.jsonSaveCalls);
-                
-                if (ImGui::Button("Azzera Telemetria##ZeroWork", ImVec2(150, 22))) {
-                    m_zeroWorkTelemetry.Reset();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Matematici (Gate 2)", ImVec2(220, 22))) {
-                    RunMathValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui BM-A3 Freeze Gate", ImVec2(200, 22))) {
-                    RunAllFreezeGateTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Geometria (BM-B)", ImVec2(220, 22))) {
-                    RunGeometryValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Factory Core (BM-FC)", ImVec2(220, 22))) {
-                    RunFactoryCoreValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Sculpt (BM-S)", ImVec2(220, 22))) {
-                    RunSculptValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Selezione (BM-S3)", ImVec2(220, 22))) {
-                    RunSelectionValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Modeling (BM-S4)", ImVec2(220, 22))) {
-                    RunModelingValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Sculpt Brush (BM-S5)", ImVec2(230, 22))) {
-                    RunSculptBrushValidationTests(true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Esegui Test Topology (BM-S6)", ImVec2(220, 22))) {
-                    RunTopologyValidationTests(true);
-                }
-                if (m_mathTestsExecuted) {
-                    size_t passCount = 0;
-                    for (const auto& t : m_mathTestResults) {
-                        if (t.passed) passCount++;
-                    }
-                    ImGui::SameLine();
-                    if (passCount == m_mathTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "GATE 2: %zu/%zu PASS (100%%)", passCount, m_mathTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "GATE 2: %zu/%zu PASS (%zu FAIL)", passCount, m_mathTestResults.size(), m_mathTestResults.size() - passCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 17 Test Matematici (Gate 2)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& t : m_mathTestResults) {
-                            if (t.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] M%d: %s", t.id, t.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] M%d: %s (Err: %.2e, Tol: %.2e)", t.id, t.testName.c_str(), t.errorValue, t.tolerance);
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Test M%d: %s [%s]", t.id, t.testName.c_str(), t.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("File/Func: %s", t.fileAndFunc.c_str());
-                                ImGui::Text("Input: %s", t.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", t.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", t.observedDesc.c_str());
-                                ImGui::Text("Errore Calcolato: %.6e", t.errorValue);
-                                ImGui::Text("Tolleranza Max:   %.6e", t.tolerance);
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_gateTestsExecuted) {
-                    size_t gatePass = 0;
-                    for (const auto& g : m_gateTestResults) {
-                        if (g.passed) gatePass++;
-                    }
-                    if (gatePass == m_gateTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "FREEZE GATE MG-03..MG-05: %zu/%zu PASS (100%% FROZEN)", gatePass, m_gateTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "FREEZE GATE MG-03..MG-05: %zu/%zu PASS (%zu FALLITI)", gatePass, m_gateTestResults.size(), m_gateTestResults.size() - gatePass);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio Test Freeze Gate (MG-03, MG-04, MG-05)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& g : m_gateTestResults) {
-                            if (g.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", g.gateId.c_str(), g.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", g.gateId.c_str(), g.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", g.gateId.c_str(), g.testName.c_str(), g.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("File/Func: %s", g.fileAndFunc.c_str());
-                                ImGui::Text("Input: %s", g.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", g.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", g.observedDesc.c_str());
-                                ImGui::Text("Errore Calcolato: %.6e", g.errorValue);
-                                ImGui::Text("Tolleranza Max:   %.6e", g.tolerance);
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_assetTestsExecuted) {
-                    size_t amPass = 0;
-                    for (const auto& a : m_assetTestResults) {
-                        if (a.passed) amPass++;
-                    }
-                    if (amPass == m_assetTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "ASSET MANAGEMENT BM-A4: %zu/%zu PASS (100%% AUDITED)", amPass, m_assetTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ASSET MANAGEMENT BM-A4: %zu/%zu PASS (%zu FALLITI)", amPass, m_assetTestResults.size(), m_assetTestResults.size() - amPass);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio Test Asset Management (AM-1 .. AM-7)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& a : m_assetTestResults) {
-                            if (a.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", a.testId.c_str(), a.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", a.testId.c_str(), a.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", a.testId.c_str(), a.testName.c_str(), a.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", a.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", a.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", a.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", a.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Asset Management (BM-A4)")) {
-                            RunAssetManagementValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_geometryTestsExecuted) {
-                    size_t geomPassCount = 0;
-                    for (const auto& g : m_geometryTestResults) {
-                        if (g.passed) geomPassCount++;
-                    }
-                    if (geomPassCount == m_geometryTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-B GEOMETRY: %zu/%zu PASS (100%%)", geomPassCount, m_geometryTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-B GEOMETRY: %zu/%zu PASS (%zu FAIL)", geomPassCount, m_geometryTestResults.size(), m_geometryTestResults.size() - geomPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 7 Test Geometria (BM-B: GM-1 .. GM-7)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& g : m_geometryTestResults) {
-                            if (g.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", g.testId.c_str(), g.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", g.testId.c_str(), g.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", g.testId.c_str(), g.testName.c_str(), g.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", g.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", g.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", g.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", g.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Geometria (BM-B)")) {
-                            RunGeometryValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_uvTestsExecuted) {
-                    size_t uvPassCount = 0;
-                    for (const auto& u : m_uvTestResults) {
-                        if (u.passed) uvPassCount++;
-                    }
-                    if (uvPassCount == m_uvTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-C UV & SURFACES: %zu/%zu PASS (100%%)", uvPassCount, m_uvTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-C UV & SURFACES: %zu/%zu PASS (%zu FAIL)", uvPassCount, m_uvTestResults.size(), m_uvTestResults.size() - uvPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 7 Test UV & Superfici (BM-C: UV-1 .. UV-7)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& u : m_uvTestResults) {
-                            if (u.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", u.testId.c_str(), u.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", u.testId.c_str(), u.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", u.testId.c_str(), u.testName.c_str(), u.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", u.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", u.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", u.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", u.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test UV & Superfici (BM-C)")) {
-                            RunUVValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_factoryTestsExecuted) {
-                    size_t factoryPassCount = 0;
-                    for (const auto& f : m_factoryTestResults) {
-                        if (f.passed) factoryPassCount++;
-                    }
-                    if (factoryPassCount == m_factoryTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-FC FACTORY CORE: %zu/%zu PASS (100%%)", factoryPassCount, m_factoryTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-FC FACTORY CORE: %zu/%zu PASS (%zu FAIL)", factoryPassCount, m_factoryTestResults.size(), m_factoryTestResults.size() - factoryPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Factory Core (BM-FC: FC-1 .. FC-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& f : m_factoryTestResults) {
-                            if (f.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", f.testId.c_str(), f.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", f.testId.c_str(), f.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", f.testId.c_str(), f.testName.c_str(), f.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", f.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", f.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", f.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", f.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Factory Core (BM-FC)")) {
-                            RunFactoryCoreValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_sculptTestsExecuted) {
-                    size_t sculptPassCount = 0;
-                    for (const auto& s : m_sculptTestResults) {
-                        if (s.passed) sculptPassCount++;
-                    }
-                    if (sculptPassCount == m_sculptTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S SCULPT & MODELLING: %zu/%zu PASS (100%%)", sculptPassCount, m_sculptTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S SCULPT & MODELLING: %zu/%zu PASS (%zu FAIL)", sculptPassCount, m_sculptTestResults.size(), m_sculptTestResults.size() - sculptPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test EditableMesh (BM-S2: SM-1 .. SM-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_sculptTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Sculpt (BM-S)")) {
-                            RunSculptValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_selectionTestsExecuted) {
-                    size_t selPassCount = 0;
-                    for (const auto& s : m_selectionTestResults) {
-                        if (s.passed) selPassCount++;
-                    }
-                    if (selPassCount == m_selectionTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S3 MESH SELECTION SYSTEM: %zu/%zu PASS (100%%)", selPassCount, m_selectionTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S3 MESH SELECTION SYSTEM: %zu/%zu PASS (%zu FAIL)", selPassCount, m_selectionTestResults.size(), m_selectionTestResults.size() - selPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Mesh Selection (BM-S3: SEL-1 .. SEL-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_selectionTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Selezione (BM-S3)")) {
-                            RunSelectionValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_modelingTestsExecuted) {
-                    size_t modPassCount = 0;
-                    for (const auto& s : m_modelingTestResults) {
-                        if (s.passed) modPassCount++;
-                    }
-                    if (modPassCount == m_modelingTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S4 MODEL OPERATIONS: %zu/%zu PASS (100%%)", modPassCount, m_modelingTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S4 MODEL OPERATIONS: %zu/%zu PASS (%zu FAIL)", modPassCount, m_modelingTestResults.size(), m_modelingTestResults.size() - modPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Model Operations (BM-S4: MOD-1 .. MOD-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_modelingTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Modeling (BM-S4)")) {
-                            RunModelingValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_sculptBrushTestsExecuted) {
-                    size_t sclPassCount = 0;
-                    for (const auto& s : m_sculptBrushTestResults) {
-                        if (s.passed) sclPassCount++;
-                    }
-                    if (sclPassCount == m_sculptBrushTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S5 SCULPT BRUSH ENGINE: %zu/%zu PASS (100%%)", sclPassCount, m_sculptBrushTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S5 SCULPT BRUSH ENGINE: %zu/%zu PASS (%zu FAIL)", sclPassCount, m_sculptBrushTestResults.size(), m_sculptBrushTestResults.size() - sclPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Sculpt Brush Engine (BM-S5: SCL-1 .. SCL-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_sculptBrushTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Sculpt Brush (BM-S5)")) {
-                            RunSculptBrushValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_topologyTestsExecuted) {
-                    size_t topPassCount = 0;
-                    for (const auto& s : m_topologyTestResults) {
-                        if (s.passed) topPassCount++;
-                    }
-                    if (topPassCount == m_topologyTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S6 TOPOLOGY OPERATIONS: %zu/%zu PASS (100%%)", topPassCount, m_topologyTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S6 TOPOLOGY OPERATIONS: %zu/%zu PASS (%zu FAIL)", topPassCount, m_topologyTestResults.size(), m_topologyTestResults.size() - topPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Topology Operations & Symmetry (BM-S6: TOP-1 .. TOP-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_topologyTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Topology (BM-S6)")) {
-                            RunTopologyValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_repairTestsExecuted) {
-                    size_t repPassCount = 0;
-                    for (const auto& s : m_repairTestResults) {
-                        if (s.passed) repPassCount++;
-                    }
-                    if (repPassCount == m_repairTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S7 REMESHING & REPAIR: %zu/%zu PASS (100%%)", repPassCount, m_repairTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S7 REMESHING & REPAIR: %zu/%zu PASS (%zu FAIL)", repPassCount, m_repairTestResults.size(), m_repairTestResults.size() - repPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 10 Test Remeshing & Manifold Repair (BM-S7: REP-1 .. REP-10)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_repairTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test Repair (BM-S7)")) {
-                            RunRepairValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                if (m_historyTestsExecuted) {
-                    size_t hisPassCount = 0;
-                    for (const auto& s : m_historyTestResults) {
-                        if (s.passed) hisPassCount++;
-                    }
-                    if (hisPassCount == m_historyTestResults.size()) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "BM-S8 HISTORY & UNDO/REDO: %zu/%zu PASS (100%%)", hisPassCount, m_historyTestResults.size());
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "BM-S8 HISTORY & UNDO/REDO: %zu/%zu PASS (%zu FAIL)", hisPassCount, m_historyTestResults.size(), m_historyTestResults.size() - hisPassCount);
-                    }
-
-                    if (ImGui::TreeNodeEx("Dettaglio 12 Test History Engine (BM-S8: HIS-1 .. HIS-12)", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (const auto& s : m_historyTestResults) {
-                            if (s.passed) {
-                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  [PASS] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            } else {
-                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  [FAIL] [%s] %s", s.testId.c_str(), s.testName.c_str());
-                            }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::BeginTooltip();
-                                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "[%s] %s [%s]", s.testId.c_str(), s.testName.c_str(), s.passed ? "PASS" : "FAIL");
-                                ImGui::Separator();
-                                ImGui::Text("Input: %s", s.inputDesc.c_str());
-                                ImGui::Text("Expected: %s", s.expectedDesc.c_str());
-                                ImGui::Text("Observed: %s", s.observedDesc.c_str());
-                                ImGui::Text("Dettagli: %s", s.details.c_str());
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (ImGui::Button("Riesegui Test History (BM-S8)")) {
-                            RunHistoryValidationTests(true);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-                ImGui::EndChild();
-
-                ImGui::Spacing();
-
-                // Viewport Transform Gizmo Controls (BM-A3.1, BM-A3.2, BM-A3.3 & BM-A3.4.1)
-                ImGui::Checkbox("Viewport Gizmo", &m_gizmoEnabled);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Attiva/disattiva il gizmo 3D nel viewport (Move, Rotate o Scale).");
-                }
-                ImGui::SameLine();
-                if (m_gizmoEnabled) {
-                    if (ImGui::RadioButton("Move (W)##GizmoMove", m_gizmoOperation == 0)) {
-                        m_gizmoOperation = 0;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Gizmo di traslazione 3D (Assi XYZ). Scorciatoia: tasto W.");
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Rotate (E)##GizmoRot", m_gizmoOperation == 1)) {
-                        m_gizmoOperation = 1;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Gizmo di rotazione 3D (Pitch, Yaw, Roll). Scorciatoia: tasto E.");
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Scale (R)##GizmoScale", m_gizmoOperation == 2)) {
-                        m_gizmoOperation = 2;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Gizmo di scala 3D (Fattori XYZ / Uniforme). Scorciatoia: tasto R.");
-                    }
-                    ImGui::SameLine();
-                    if (m_isGizmoInteracting) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[IN TRASCINAMENTO]");
-                    } else {
-                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[ATTIVO]");
-                    }
-
-                    // BM-A3.4.1: Selettore Coordinate Space (Local vs World)
-                    ImGui::Text("Coordinate Space:");
-                    ImGui::SameLine();
-
-                    bool canChangeSpace = !m_isGizmoInteracting && (m_scaleDragLatchedAxis < 0);
-                    if (!canChangeSpace) {
-                        ImGui::BeginDisabled();
-                    }
-
-                    if (ImGui::RadioButton("Local##GizmoSpaceLocal", m_gizmoMode == 0)) {
-                        m_gizmoMode = 0;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Coordinate Locali:\nGli assi del gizmo sono allineati con l'orientamento intrinseco del blocco.");
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("World##GizmoSpaceWorld", m_gizmoMode == 1)) {
-                        m_gizmoMode = 1;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Coordinate World:\nGli assi del gizmo sono allineati con il sistema di riferimento globale del mondo.");
-                    }
-
-                    if (!canChangeSpace) {
-                        ImGui::EndDisabled();
-                    }
-
-                    if (m_gizmoOperation == 2) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(Scale: assi Locali)");
-                    }
-
-                    // BM-A3.4.2: Sezione Configurazione Snapping (Editor UI Only)
+        if (m_inspectorContext == InspectorContext::GeneralSettings) {
+            // =====================================================================
+            // GENERAL SETTINGS CONTEXT: Identity, Object Transform, Diagnostics
+            // =====================================================================
+            if (ImGui::BeginTabBar("GeneralSettingsTabs")) {
+                // TAB 1: IDENTITA
+                if (ImGui::BeginTabItem("Identity")) {
                     ImGui::Spacing();
-                    bool canChangeSnap = !m_isGizmoInteracting && (m_scaleDragLatchedAxis < 0);
-                    if (!canChangeSnap) {
-                        ImGui::BeginDisabled();
-                    }
-
-                    ImGui::Checkbox("Enable Snapping##GizmoSnapEnable", &m_snapEnabled);
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Attiva/disattiva lo snapping incrementale per Move, Rotate e Scale.");
-                    }
-
-                    if (m_snapEnabled) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[SNAPPING ATTIVO]");
-
-                        // Move snap
-                        ImGui::Text("  Move Step:");
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(80.0f);
-                        if (ImGui::DragFloat("##SnapMove", &m_snapMove, 0.05f, 0.01f, 10.0f, "%.2f u")) {
-                            if (m_snapMove < 0.01f) m_snapMove = 0.01f;
-                            if (!std::isfinite(m_snapMove)) m_snapMove = 0.5f;
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("Incremento snapping traslazione (unita blocco/mondo).\nDefault: 0.50");
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.1##SM01")) m_snapMove = 0.1f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.25##SM025")) m_snapMove = 0.25f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.5##SM05")) m_snapMove = 0.5f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("1.0##SM10")) m_snapMove = 1.0f;
-
-                        // Rotate snap
-                        ImGui::Text("  Rot Step: ");
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(80.0f);
-                        if (ImGui::DragFloat("##SnapRotate", &m_snapRotate, 1.0f, 0.5f, 180.0f, "%.1f deg")) {
-                            if (m_snapRotate < 0.5f) m_snapRotate = 0.5f;
-                            if (!std::isfinite(m_snapRotate)) m_snapRotate = 15.0f;
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("Incremento snapping rotazione (in gradi).\nDefault: 15.0 deg");
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("5 deg##SR5")) m_snapRotate = 5.0f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("15 deg##SR15")) m_snapRotate = 15.0f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("45 deg##SR45")) m_snapRotate = 45.0f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("90 deg##SR90")) m_snapRotate = 90.0f;
-
-                        // Scale snap
-                        ImGui::Text("  Scale Step:");
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(80.0f);
-                        if (ImGui::DragFloat("##SnapScale", &m_snapScale, 0.01f, 0.01f, 5.0f, "%.2f")) {
-                            if (m_snapScale < 0.01f) m_snapScale = 0.01f;
-                            if (!std::isfinite(m_snapScale)) m_snapScale = 0.1f;
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("Incremento snapping scala (adimensionale, relativo alla scala iniziale).\nDefault: 0.10");
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.05##SS005")) m_snapScale = 0.05f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.1##SS01")) m_snapScale = 0.1f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.25##SS025")) m_snapScale = 0.25f;
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("0.5##SS05")) m_snapScale = 0.5f;
-                    }
-
-                    if (!canChangeSnap) {
-                        ImGui::EndDisabled();
-                    }
-                } else {
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[DISATTIVATO]");
+                    DrawGeneralIdentityUI(def);
+                    ImGui::EndTabItem();
                 }
 
-                // --- BM-S3 Mesh Selection System & Sculpt Toolbar ---
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "MESH SELECTION & SCULPT (BM-S3)");
-                ImGui::Checkbox("Enable Mesh Selection Overlay##MeshSelEnable", &m_meshSelectionEnabled);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Attiva l'overlay di selezione interattiva per vertici, edge e facce di EditableMesh.");
-                }
-
-                if (m_meshSelectionEnabled) {
-                    ImGui::SameLine();
-                    int curMode = static_cast<int>(m_selectionService.GetMode());
-                    ImGui::Text("Mode:");
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Vertex##SelV", curMode == 0)) {
-                        m_selectionService.SetMode(fw::SelectionMode::Vertex);
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Edge##SelE", curMode == 1)) {
-                        m_selectionService.SetMode(fw::SelectionMode::Edge);
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Face##SelF", curMode == 2)) {
-                        m_selectionService.SetMode(fw::SelectionMode::Face);
-                    }
-
-                    // Selection manipulation buttons
-                    if (ImGui::SmallButton("Clear##SelClear")) {
-                        m_selectionService.ClearCurrentMode();
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("Select All##SelAll")) {
-                        m_selectionService.SelectAll(m_activeEditableMesh);
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("Invert##SelInv")) {
-                        m_selectionService.InvertSelection(m_activeEditableMesh);
-                    }
-
-                    // BM-S1: Edge Loop & Edge Ring Buttons (Attivi solo in Edge Selection Mode con Edge valido)
-                    if (curMode == 1) {
-                        ImGui::SameLine();
-                        bool canSelectLoopOrRing = (m_activeEditableMesh.GetVertexCount() > 0) &&
-                                                   m_selectionService.GetActiveEdge().IsValid() &&
-                                                   m_activeEditableMesh.IsValid(m_selectionService.GetActiveEdge());
-
-                        if (!canSelectLoopOrRing) ImGui::BeginDisabled();
-
-                        if (ImGui::SmallButton("Edge Loop##SelLoop")) {
-                            fw::SelectionOp loopOp = ImGui::GetIO().KeyShift ? fw::SelectionOp::Add : fw::SelectionOp::Replace;
-                            m_selectionService.SelectEdgeLoop(m_activeEditableMesh, m_selectionService.GetActiveEdge(), loopOp);
-                        }
-                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                            ImGui::SetTooltip("Seleziona l'anello continuo (Loop) di spigoli collegati all'edge attivo.\nTieni premuto Shift per selezione additiva (oppure doppio-click sull'edge nel viewport).");
-                        }
-
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("Edge Ring##SelRing")) {
-                            fw::SelectionOp ringOp = ImGui::GetIO().KeyShift ? fw::SelectionOp::Add : fw::SelectionOp::Replace;
-                            m_selectionService.SelectEdgeRing(m_activeEditableMesh, m_selectionService.GetActiveEdge(), ringOp);
-                        }
-                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                            ImGui::SetTooltip("Seleziona la serie di spigoli paralleli (Ring) che attraversano facce quad.\nTieni premuto Shift per selezione additiva.");
-                        }
-
-                        if (!canSelectLoopOrRing) ImGui::EndDisabled();
-                    }
-
-                    // Telemetry
-                    size_t count = m_selectionService.GetSelectedCount();
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "Selected: %zu", count);
-                    if (curMode == 0 && m_selectionService.GetActiveVertex().IsValid()) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active V: %u)", m_selectionService.GetActiveVertex().index);
-                    } else if (curMode == 1 && m_selectionService.GetActiveEdge().IsValid()) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active E: %u)", m_selectionService.GetActiveEdge().index);
-                    } else if (curMode == 2 && m_selectionService.GetActiveFace().IsValid()) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "(Active F: %u)", m_selectionService.GetActiveFace().index);
-                    }
-
-                    // --- BM-S8: Undo / Redo Toolbar ---
+                // TAB 2: OBJECT TRANSFORM
+                if (ImGui::BeginTabItem("Transform")) {
                     ImGui::Spacing();
-                    bool canUndo = m_meshHistoryService.CanUndo();
-                    bool canRedo = m_meshHistoryService.CanRedo();
-                    std::string undoLabel = "Undo (Ctrl+Z)";
-                    if (canUndo) undoLabel += ": " + m_meshHistoryService.GetUndoCommandName();
-                    std::string redoLabel = "Redo (Ctrl+Y)";
-                    if (canRedo) redoLabel += ": " + m_meshHistoryService.GetRedoCommandName();
-
-                    if (!canUndo) ImGui::BeginDisabled();
-                    if (ImGui::Button("Undo##BtnUndo", ImVec2(100, 24))) {
-                        ExecuteMeshUndo();
-                    }
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                        ImGui::SetTooltip("%s", undoLabel.c_str());
-                    }
-                    if (!canUndo) ImGui::EndDisabled();
-
-                    ImGui::SameLine();
-                    if (!canRedo) ImGui::BeginDisabled();
-                    if (ImGui::Button("Redo##BtnRedo", ImVec2(100, 24))) {
-                        ExecuteMeshRedo();
-                    }
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                        ImGui::SetTooltip("%s", redoLabel.c_str());
-                    }
-                    if (!canRedo) ImGui::EndDisabled();
-
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("(History: %zu)", m_meshHistoryService.GetUndoCount());
-
-                    // --- BM-S4: Modeling Operations Tools UI ---
-                    ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.8f, 1.0f), "OPERAZIONI DI MODELLAZIONE (BM-S4):");
-                    
-                    if (ImGui::RadioButton("Move##ToolMove", m_modelingTool == 1)) m_modelingTool = 1;
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Rotate##ToolRot", m_modelingTool == 2)) m_modelingTool = 2;
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Scale##ToolScale", m_modelingTool == 3)) m_modelingTool = 3;
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Extrude##ToolExt", m_modelingTool == 4)) m_modelingTool = 4;
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Inset##ToolInset", m_modelingTool == 5)) m_modelingTool = 5;
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Bevel##ToolBevel", m_modelingTool == 6)) m_modelingTool = 6;
-
-                    // Parametri contestuali
-                    if (m_modelingTool == 1) {
-                        ImGui::Text("Delta (X, Y, Z):");
-                        ImGui::DragFloat3("##MoveDelta", &m_modelMoveDelta.x, 0.01f, -5.0f, 5.0f, "%.2f");
-                        if (ImGui::Button("Applica Move (Commit)", ImVec2(180, 24))) {
-                            ApplyModelingOperation(fw::ModelingOperationType::Move);
-                        }
-                    } else if (m_modelingTool == 2) {
-                        ImGui::Text("Angolo (Gradi):");
-                        ImGui::DragFloat("##RotAngle", &m_modelRotateAngle, 1.0f, -360.0f, 360.0f, "%.1f deg");
-                        ImGui::Text("Asse:");
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("X##AxisX", m_modelRotateAxis == 0)) m_modelRotateAxis = 0;
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Y##AxisY", m_modelRotateAxis == 1)) m_modelRotateAxis = 1;
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Z##AxisZ", m_modelRotateAxis == 2)) m_modelRotateAxis = 2;
-                        if (ImGui::Button("Applica Rotate (Commit)", ImVec2(180, 24))) {
-                            ApplyModelingOperation(fw::ModelingOperationType::Rotate);
-                        }
-                    } else if (m_modelingTool == 3) {
-                        ImGui::Text("Fattore Scala (X, Y, Z):");
-                        ImGui::DragFloat3("##ScaleVec", &m_modelScaleVec.x, 0.01f, 0.01f, 10.0f, "%.2f");
-                        if (ImGui::Button("Applica Scale (Commit)", ImVec2(180, 24))) {
-                            ApplyModelingOperation(fw::ModelingOperationType::Scale);
-                        }
-                    } else if (m_modelingTool == 4) {
-                        ImGui::Text("Offset Estrusione:");
-                        ImGui::DragFloat("##ExtOffset", &m_modelExtrudeOffset, 0.01f, -5.0f, 5.0f, "%.2f u");
-                        ImGui::Checkbox("Region Extrude (Unione facce adiacenti)", &m_modelExtrudeRegion);
-                        if (ImGui::Button("Applica Extrude (Commit)", ImVec2(180, 24))) {
-                            ApplyModelingOperation(fw::ModelingOperationType::ExtrudeFace);
-                        }
-                    } else if (m_modelingTool == 5) {
-                        ImGui::Text("Offset Inset:");
-                        ImGui::DragFloat("##InsetAmount", &m_modelInsetAmount, 0.01f, 0.01f, 0.95f, "%.2f");
-                        ImGui::Text("Depth Offset:");
-                        ImGui::DragFloat("##InsetDepth", &m_modelInsetDepth, 0.01f, -2.0f, 2.0f, "%.2f");
-                        if (ImGui::Button("Applica Inset (Commit)", ImVec2(180, 24))) {
-                            ApplyModelingOperation(fw::ModelingOperationType::InsetFace);
-                        }
-                    } else if (m_modelingTool == 6) {
-                        ImGui::Text("Larghezza Bevel:");
-                        ImGui::DragFloat("##BevelWidth", &m_modelBevelWidth, 0.005f, 0.001f, 0.5f, "%.3f");
-                        if (ImGui::Button("Applica Bevel (Commit)", ImVec2(180, 24))) {
-                            ApplyModelingOperation(fw::ModelingOperationType::BevelEdge);
-                        }
-                    }
-
-                    // Feedback temporizzato
-                    if (!m_modelingFeedbackMsg.empty()) {
-                        ImVec4 col = m_modelingFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.2f, 1.0f, 0.3f, 1.0f);
-                        ImGui::TextColored(col, "%s", m_modelingFeedbackMsg.c_str());
-                    }
-
-                    // --- BM-S5: Sculpt Brush Engine UI ---
-                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "BLOCK TRANSFORM — ID %u: %s", m_selectedBlockId, def.displayName.c_str());
                     ImGui::Separator();
-                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "SCULPT BRUSH ENGINE (BM-S5)");
-                    ImGui::Checkbox("Attiva Sculpt Brush Mode##SculptBrushMode", &m_sculptModeActive);
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Attiva la modalità scultura interattiva via cursore 3D (drag del mouse sulla superficie).");
-                    }
+                    DrawGeneralTransformUI(def);
+                    ImGui::EndTabItem();
+                }
 
-                    if (m_sculptModeActive) {
-                        auto& bSettings = m_sculptService.GetSettingsMutable();
-                        int curBrush = static_cast<int>(bSettings.brushType);
-                        ImGui::Text("Brush:");
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Grab##BGrab", curBrush == 0)) bSettings.brushType = fw::SculptBrushType::Grab;
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Smooth##BSmooth", curBrush == 1)) bSettings.brushType = fw::SculptBrushType::Smooth;
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Inflate##BInflate", curBrush == 2)) bSettings.brushType = fw::SculptBrushType::Inflate;
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Flatten##BFlatten", curBrush == 3)) bSettings.brushType = fw::SculptBrushType::Flatten;
-                        ImGui::SameLine();
-                        if (ImGui::RadioButton("Clay##BClay", curBrush == 4)) bSettings.brushType = fw::SculptBrushType::Clay;
-
-                        ImGui::DragFloat("Raggio##BRadius", &bSettings.radius, 0.01f, 0.02f, 3.0f, "%.2f u");
-                        ImGui::DragFloat("Intensità##BStrength", &bSettings.strength, 0.01f, 0.01f, 2.0f, "%.2f");
-                        ImGui::DragFloat("Spaziatura##BSpacing", &bSettings.spacing, 0.01f, 0.02f, 1.0f, "%.2f");
-
-                        int curFalloff = static_cast<int>(bSettings.falloff);
-                        const char* falloffNames[] = { "Smooth (Hermite)", "Linear", "Sphere", "Sharp", "Constant" };
-                        if (ImGui::Combo("Falloff##BFalloff", &curFalloff, falloffNames, 5)) {
-                            bSettings.falloff = static_cast<fw::BrushFalloffType>(curFalloff);
-                        }
-
-                        int curSym = static_cast<int>(bSettings.symmetry);
-                        const char* symNames[] = { "Nessuna (None)", "Specchia Asse X", "Specchia Asse Y", "Specchia Asse Z" };
-                        if (ImGui::Combo("Simmetria##BSym", &curSym, symNames, 4)) {
-                            bSettings.symmetry = static_cast<fw::SymmetryPlane>(curSym);
-                        }
-
-                        if (bSettings.brushType == fw::SculptBrushType::Clay) {
-                            ImGui::DragFloat("Clay Ceiling##BClayCeil", &bSettings.clayCeiling, 0.01f, 0.02f, 1.0f, "%.2f");
-                        }
-                    }
-
-                    // --- BM-S7: Remeshing & Manifold Repair Actions ---
+                // TAB 3: DIAGNOSTICS & TELEMETRY
+                if (ImGui::BeginTabItem("Diagnostics")) {
                     ImGui::Spacing();
+                    DrawDiagnosticsControls(def, mat);
+                    ImGui::EndTabItem();
+                }
+
+                ImGui::EndTabBar();
+            }
+        } else {
+            // =====================================================================
+            // FACTORY STATIONS CONTEXT: Active Station Dispatcher
+            // =====================================================================
+            // 1. Info Box della Stazione Attiva & Azioni Fabbrica
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.14f, 0.17f, 0.8f));
+            ImGui::BeginChild("ActiveStationInfoBox", ImVec2(0, 84), true);
+            const auto* curSt = m_factoryOrchestrator.GetStation(activeStation);
+            if (curSt) {
+                ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.3f, 1.0f), "Stazione: %s", curSt->GetName());
+                ImGui::SameLine();
+                if (!curSt->IsImplemented()) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[NON ANCORA IMPLEMENTATA]");
+                } else {
+                    auto stStatus = curSt->GetStatus();
+                    if (stStatus == fw::StationStatus::Completed) {
+                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "[COMPLETATA]");
+                    } else if (stStatus == fw::StationStatus::Dirty) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[DIRTY]");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.7f, 1.0f, 0.7f, 1.0f), "[OPERATIVA]");
+                    }
+                }
+                ImGui::TextDisabled("%s", curSt->GetDescription());
+            }
+
+            float actionBtnW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            if (ImGui::Button("Audit QC##FactoryQC", ImVec2(actionBtnW, 22))) {
+                auto val = m_factoryOrchestrator.RunQualityControlAudit(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+                if (val.isValid) {
+                    m_factoryOpFeedback = "Quality Control: ASSET VALIDO (0 errori, " + std::to_string(val.warnings.size()) + " avvisi)";
+                    m_factoryOpFeedbackIsError = false;
+                } else {
+                    m_factoryOpFeedback = "Quality Control FAIL: " + (val.errors.empty() ? "Errore sconosciuto" : val.errors[0]);
+                    m_factoryOpFeedbackIsError = true;
+                }
+                m_factoryOpFeedbackTimer = 5.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Compila & Pubblica##FactoryPub", ImVec2(actionBtnW, 22))) {
+                auto pkg = m_factoryOrchestrator.BuildPackage(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+                if (pkg.has_value()) {
+                    bool pubOk = m_factoryOrchestrator.PublishToRegistries(*m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+                    if (pubOk) {
+                        m_factoryOpFeedback = "Pacchetto pubblicato con successo nel registro di runtime!";
+                        m_factoryOpFeedbackIsError = false;
+                        UpdatePreviewMesh();
+                    } else {
+                        m_factoryOpFeedback = "Errore durante la pubblicazione del pacchetto nei registri!";
+                        m_factoryOpFeedbackIsError = true;
+                    }
+                } else {
+                    m_factoryOpFeedback = "Impossibile compilare il pacchetto: Quality Control ha rilevato errori!";
+                    m_factoryOpFeedbackIsError = true;
+                }
+                m_factoryOpFeedbackTimer = 5.0f;
+            }
+            if (m_factoryOpFeedbackTimer > 0.0f) {
+                ImGui::SameLine();
+                ImGui::TextColored(m_factoryOpFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.2f, 1.0f, 0.3f, 1.0f),
+                                   "%s", m_factoryOpFeedback.c_str());
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+
+            // 2. Routing specifico per stazione (BM-UI2.2)
+            switch (activeStation) {
+                case fw::ProductionStationID::Shape: {
+                    // MICRO-GATE B1: Attivazione Funzionale Stazione Shape
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 1: SHAPE — GEOMETRIA PARAMETRICA");
+                    bool isDirty = false;
+                    DrawFactoryShapeControls(mat, isDirty);
+                    if (isDirty) {
+                        UpdatePreviewMesh();
+                        if (m_context && m_context->cacheManager) {
+                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
+                        }
+                    }
+                    break;
+                }
+                case fw::ProductionStationID::Sculpt: {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 2: SCULPT — MODELLAZIONE MESH (BM-S)");
+                    DrawFactorySculptControls();
+                    break;
+                }
+                case fw::ProductionStationID::SurfaceUV: {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 3: SURFACE & UV — MAPPATURA SUPERFICI");
+                    DrawUVEditorStationUI();
                     ImGui::Separator();
-                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.7f, 1.0f), "MANIFOLD REPAIR & REMESH (BM-S7)");
-                    if (ImGui::Button("Rimuovi Degenerazioni##BtnRemDeg", ImVec2(180, 24))) {
-                        auto r = fw::MeshRepairService::RemoveDegenerateFaces(m_activeEditableMesh);
-                        if (r.modified) {
-                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                            m_cachedGeometryMesh = compMesh;
-                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                    bool isDirty = false;
+                    DrawFactorySurfaceUVControls(mat, isDirty);
+                    if (isDirty) {
+                        UpdatePreviewMesh();
+                        if (m_context && m_context->cacheManager) {
+                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                         }
                     }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Tappa Fori (Cap Holes)##BtnCapHoles", ImVec2(180, 24))) {
-                        auto r = fw::MeshRepairService::CapHoles(m_activeEditableMesh);
-                        if (r.modified) {
-                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                            m_cachedGeometryMesh = compMesh;
-                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
-                        }
-                    }
-                    if (ImGui::Button("Limited Dissolve (Complanari)##BtnDissolve", ImVec2(180, 24))) {
-                        auto r = fw::MeshRepairService::LimitedDissolve(m_activeEditableMesh);
-                        if (r.modified) {
-                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                            m_cachedGeometryMesh = compMesh;
-                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
-                        }
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Remesh Uniforme##BtnRemesh", ImVec2(180, 24))) {
-                        fw::RemeshOptions opt;
-                        opt.targetEdgeLength = 0.25f;
-                        opt.iterations = 2;
-                        auto r = fw::MeshRepairService::UniformRemesh(m_activeEditableMesh, opt);
-                        if (r.modified) {
-                            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                            m_cachedGeometryMesh = compMesh;
-                            if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
-                        }
-                    }
+                    break;
                 }
-
-                // --- BM-S9: GeometryCompiler Bridge & Factory Integration ---
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.5f, 0.9f, 1.0f, 1.0f), "GEOMETRYCOMPILER BRIDGE & FACTORY (BM-S9)");
-
-                if (m_factoryOrchestrator.IsDraftOpen()) {
-                    if (ImGui::Button("Sincronizza Mesh in Factory Draft##SyncBridgeDraft", ImVec2(260, 26))) {
-                        fw::MeshBridgeService::SynchronizeEditableMeshToDraft(m_activeEditableMesh, *m_factoryOrchestrator.GetCurrentDraft(), &m_factoryOrchestrator);
-                        m_modelingFeedbackMsg = "Mesh sincronizzata nel RawAssetDraft della Factory!";
-                        m_modelingFeedbackIsError = false;
-                        m_modelingFeedbackTimer = 3.0f;
-                    }
-                }
-
-                if (ImGui::TreeNodeEx("Audit Suite BM-S9 (BRG-1 .. BRG-10)##BridgeTestSuiteTree", ImGuiTreeNodeFlags_None)) {
-                    if (ImGui::Button("Esegui Audit Bridge BM-S9 (Re-Run)##RerunBridgeTests", ImVec2(260, 24))) {
-                        RunBridgeValidationTests(true);
-                    }
+                case fw::ProductionStationID::Texture: {
                     ImGui::Spacing();
-                    for (const auto& r : m_bridgeTestResults) {
-                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
-                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
-                        if (!r.details.empty()) {
-                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 4: TEXTURE — PBR TEXTURE PACK");
+                    bool isDirty = false;
+                    DrawFactoryTextureControls(mat, isDirty);
+                    if (isDirty) {
+                        UpdatePreviewMesh();
+                        if (m_context && m_context->cacheManager) {
+                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                         }
                     }
-                    ImGui::TreePop();
+                    break;
                 }
-                ImGui::Separator();
-
-                ImGui::Spacing();
-
-                // 2. POSITION
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "POSITION (Local Translation)");
-                ImGui::SameLine();
-                if (ImGui::Button("Reset Position##PosReset")) {
-                    def.localPosition = glm::vec3(0.0f);
+                case fw::ProductionStationID::Painter: {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.6f, 1.0f), "STAZIONE 5: PAINTER — 3D SURFACE PAINTER (BM-TX4 & BM-UV8)");
+                    ImGui::SliderFloat("Brush Radius##PntRad", &m_paintBrush.radiusPixels, 2.0f, 64.0f, "%.1f px");
+                    ImGui::SliderFloat("Brush Strength##PntStr", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
+                    ImGui::ColorEdit4("Brush Color##PntCol", &m_paintBrush.color.x);
+                    ImGui::Checkbox("Erase Mode##PntErase", &m_paintBrush.eraseMode);
+                    break;
                 }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Reset Local Position to (0, 0, 0)");
-                }
-                ImGui::DragFloat3("##LocalPos", &def.localPosition.x, 0.01f, 0.0f, 0.0f, "%.3f");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Local Position (X, Y, Z):\nTranslates the entire authored block asset in asset space.\nIndependent of shape-local pivot.");
-                }
-
-                ImGui::Spacing();
-
-                // 3. ROTATION
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "ROTATION (Euler Degrees)");
-                ImGui::SameLine();
-                if (ImGui::Button("Reset Rotation##RotReset")) {
-                    def.localRotation = glm::vec3(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Reset Local Rotation to (0, 0, 0) deg");
-                }
-                if (ImGui::DragFloat3("##LocalRot", &def.localRotation.x, 0.5f, 0.0f, 0.0f, "%.1f deg")) {
-                    for (int c = 0; c < 3; ++c) {
-                        def.localRotation[c] = std::fmod(def.localRotation[c], 360.0f);
-                    }
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Local Rotation (Pitch X, Yaw Y, Roll Z in degrees):\nRotates geometry around the shape pivot point.");
-                }
-
-                ImGui::Spacing();
-
-                // 4. SCALE
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "SCALE (Non-Uniform Factors)");
-                ImGui::SameLine();
-                if (ImGui::Button("Reset Scale##ScaleReset")) {
-                    def.localScale = glm::vec3(1.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Reset Local Scale to (1, 1, 1)");
-                }
-                if (ImGui::DragFloat3("##LocalScale", &def.localScale.x, 0.01f, 0.0f, 0.0f, "%.4f")) {
-                    for (int c = 0; c < 3; ++c) {
-                        if (std::abs(def.localScale[c]) < 1e-4f) {
-                            def.localScale[c] = (def.localScale[c] < 0.0f) ? -1e-4f : 1e-4f;
+                case fw::ProductionStationID::Material: {
+                    // MICRO-GATE B1: Attivazione Funzionale Stazione Material (Consolidamento Controlli PBR Legacy)
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 6: MATERIAL — PROPRIETÀ PBR & COMPORTAMENTI GPU");
+                    bool isDirty = false;
+                    DrawGeneralGraphicsUI(mat, isDirty);
+                    if (isDirty) {
+                        UpdatePreviewMesh();
+                        if (m_context && m_context->cacheManager) {
+                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                         }
                     }
+                    break;
                 }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Local Scale (X, Y, Z):\nScales geometry along each axis relative to the pivot.\nEnforces |scale| >= 0.0001 to prevent degenerate matrices.");
+                case fw::ProductionStationID::RawPhysics: {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 7: RAW PHYSICS — SIMULAZIONE & COLLISIONI");
+                    DrawGeneralPhysicsUI(def);
+                    break;
                 }
-
-                ImGui::Spacing();
-
-                // 5. PIVOT
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "PIVOT (Shape-Local Origin Offset)");
-                ImGui::SameLine();
-                if (ImGui::Button("Reset Pivot##PivotReset")) {
-                    def.pivotOffset = glm::vec3(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Reset Pivot Offset to (0, 0, 0)");
-                }
-                ImGui::DragFloat3("##PivotOffset", &def.pivotOffset.x, 0.01f, 0.0f, 0.0f, "%.3f");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Pivot Offset (X, Y, Z):\nDefines the center of rotation and scale in shape-local coordinates.\nMoving the pivot changes how the block rotates without translating its position in the world.\nIndependent of Position.");
-                }
-
-                ImGui::Spacing();
-                ImGui::Separator();
-
-                // 6. Reset All Transforms & Revert to Baseline
-                if (ImGui::Button("Reset All Transforms (Identity)", ImVec2(-1, 26))) {
-                    def.localPosition = glm::vec3(0.0f);
-                    def.localRotation = glm::vec3(0.0f);
-                    def.localScale = glm::vec3(1.0f);
-                    def.pivotOffset = glm::vec3(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Imposta Position=(0,0,0), Rotation=(0,0,0) deg, Scale=(1,1,1), Pivot=(0,0,0).\nNota: se il blocco sul disco aveva valori diversi da identita, risultera NON SALVATO.");
-                }
-
-                if (ImGui::Button("Ripristina Baseline Salvata (Revert)", ImVec2(-1, 26))) {
-                    const auto& saved = m_savedTransforms[m_selectedBlockId];
-                    def.localPosition = saved.localPosition;
-                    def.localRotation = saved.localRotation;
-                    def.localScale = saved.localScale;
-                    def.pivotOffset = saved.pivotOffset;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Ripristina tutti i valori di trasformazione all'ultimo stato salvato su disco per questo blocco.");
-                }
-
-                ImGui::Spacing();
-
-                // 7. Explicit Save Button for Registry Block Definitions
-                if (ImGui::Button("SALVA DEFINIZIONI REGISTRO BLOCCHI (JSON)", ImVec2(-1, 35))) {
-                    m_zeroWorkTelemetry.jsonSaveCalls++;
-                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
-                    m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
-                    bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
-                    m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
-                    m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
-                    bool s2 = true;
-                    if (std::filesystem::exists("../assets/definitions")) {
-                        s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
-                        m_context->shapeRegistry->SaveToJson("../assets/definitions/shapes.json");
-                        m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
-                    }
-                    if (s1 && s2) {
-                        SynchronizeAllSavedTransformBaselines();
-                        SynchronizeAllSavedPhysicsBaselines();
-                        m_saveMessageTimer = 3.0f;
-                        std::cout << "[BlockMaker] Definizioni registro blocchi salvate su disco e baselines sincronizzate.\n";
-                    } else {
-                        std::cerr << "[BlockMaker] ERRORE: Salvataggio definizioni registro non riuscito! Baselines preservate non sincronizzate.\n";
-                    }
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Salva l'intero registro dei blocchi (blocks.json, shapes.json, materials.json) su disco.\nSincronizza le baselines di tutti i blocchi modificati.");
-                }
-
-                ImGui::EndTabItem();
-            }
-
-            // TAB: IDENTITA E ASSET METADATA (BM-A4.3, BM-A4.5, BM-A4.7)
-            if (ImGui::BeginTabItem("Identity")) {
-                ImGui::Spacing();
-                
-                ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "IDENTITA ASSET — ID Immutabile #%u", (unsigned int)m_selectedBlockId);
-                if (m_context->blockRegistry->IsReservedBlock(m_selectedBlockId)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Stato: BLOCCO DI SISTEMA RISERVATO (Protetto da eliminazione/rinomina)");
-                } else {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Stato: Asset Utente Modificabile");
-                }
-                ImGui::Separator();
-
-                ImGui::InputText("String ID", m_inputStringId, sizeof(m_inputStringId));
-                
-                // Validazione in tempo reale dello String ID (BM-A4.1, BM-A4.3)
-                std::string currentInputStr = m_inputStringId;
-                std::string valErr;
-                bool isValidId = m_context->blockRegistry->ValidateStringId(currentInputStr, &valErr);
-                bool isTaken = (isValidId && m_context->blockRegistry->IsStringIdTaken(currentInputStr, m_selectedBlockId));
-                
-                if (isValidId && !isTaken) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "OK: Formato valido e identificatore disponibile");
-                } else if (isTaken) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: Identificatore gia assegnato a un altro blocco!");
-                } else {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERRORE: %s", valErr.c_str());
-                }
-
-                ImGui::InputText("Display Name", m_inputDisplayName, sizeof(m_inputDisplayName));
-
-                bool isRenamed = (currentInputStr != def.stringId || std::string(m_inputDisplayName) != def.displayName);
-                bool canApplyRename = isRenamed && isValidId && !isTaken && !m_context->blockRegistry->IsReservedBlock(m_selectedBlockId);
-                
-                if (isRenamed) {
-                    if (!canApplyRename) ImGui::BeginDisabled();
-                    if (ImGui::Button("Applica Rinomina (BM-A4.3)", ImVec2(200, 24))) {
-                        ExecuteRenameBlock(m_selectedBlockId, m_inputStringId, m_inputDisplayName);
-                    }
-                    if (!canApplyRename) ImGui::EndDisabled();
-
-                    ImGui::SameLine();
-                    if (ImGui::Button("Ripristina Nomi", ImVec2(120, 24))) {
-                        strncpy(m_inputStringId, def.stringId.c_str(), sizeof(m_inputStringId) - 1);
-                        m_inputStringId[sizeof(m_inputStringId) - 1] = '\0';
-                        strncpy(m_inputDisplayName, def.displayName.c_str(), sizeof(m_inputDisplayName) - 1);
-                        m_inputDisplayName[sizeof(m_inputDisplayName) - 1] = '\0';
-                    }
-                }
-
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Proprieta Voxel & Rendering");
-                ImGui::Checkbox("Is Solid", &def.isSolid);
-                ImGui::Checkbox("Is Transparent", &def.isTransparent);
-                ImGui::SliderFloat("Light Emission", &def.lightEmissionLevel, 0.0f, 15.0f);
-                
-                ImGui::EndTabItem();
-            }
-            
-            // TAB: PBR MATERIAL (GRAFICA E TEXTURE PACK & GEOMETRIA PARAMETRICA PER-BLOCCO)
-            if (ImGui::BeginTabItem("Graphics (Texture Pack)")) {
-                ImGui::Spacing();
-                
-                bool isDirty = false;
-                
-                // Fallback Colors
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Fallback / Solid Colors");
-                float color[3] = { mat.baseColorFallback.x, mat.baseColorFallback.y, mat.baseColorFallback.z };
-                if (ImGui::ColorEdit3("Base Color", color)) {
-                    mat.baseColorFallback = {color[0], color[1], color[2]};
-                    isDirty = true;
-                }
-                
-                if (ImGui::SliderFloat("Metallic", &mat.metallicFallback, 0.0f, 1.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Roughness", &mat.roughnessFallback, 0.0f, 1.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Emissive Strength", &mat.emissiveStrength, 0.0f, 10.0f)) isDirty = true;
-                if (ImGui::SliderFloat("Alpha (Trasparenza)", &mat.alphaFallback, 0.0f, 1.0f)) isDirty = true;
-                
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Comportamenti GPU (Behaviors)");
-                
-                bool isSeasonal = (mat.behaviors & fw::BLOCK_BEHAVIOR_SEASONAL) != 0;
-                if (ImGui::Checkbox("Seasonal (Cambia colore in Inverno/Autunno)", &isSeasonal)) {
-                    if (isSeasonal) mat.behaviors |= fw::BLOCK_BEHAVIOR_SEASONAL;
-                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_SEASONAL;
-                    isDirty = true;
-                }
-                
-                bool isAnimated = (mat.behaviors & fw::BLOCK_BEHAVIOR_ANIMATED) != 0;
-                if (ImGui::Checkbox("Animated (Texture scorre / Vertex displace)", &isAnimated)) {
-                    if (isAnimated) mat.behaviors |= fw::BLOCK_BEHAVIOR_ANIMATED;
-                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_ANIMATED;
-                    isDirty = true;
-                }
-
-                bool isWindAffected = (mat.behaviors & fw::BLOCK_BEHAVIOR_WIND_AFFECTED) != 0;
-                if (ImGui::Checkbox("Wind Affected (Fogliame/Erba si muove col vento)", &isWindAffected)) {
-                    if (isWindAffected) mat.behaviors |= fw::BLOCK_BEHAVIOR_WIND_AFFECTED;
-                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_WIND_AFFECTED;
-                    isDirty = true;
-                }
-
-                bool isEmissiveBehavior = (mat.behaviors & fw::BLOCK_BEHAVIOR_EMISSIVE) != 0;
-                if (ImGui::Checkbox("Emissive (La texture emette luce propria in scena)", &isEmissiveBehavior)) {
-                    if (isEmissiveBehavior) mat.behaviors |= fw::BLOCK_BEHAVIOR_EMISSIVE;
-                    else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_EMISSIVE;
-                    isDirty = true;
-                }
-                
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco");
-                
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Geometria Parametrica del Blocco");
-
-                struct TypeInfo { fw::ShapeType type; const char* name; bool supported; };
-                static const TypeInfo supportedTypes[] = {
-                    { fw::ShapeType::Cube, "Cube", true },
-                    { fw::ShapeType::Cuboid, "Cuboid", true },
-                    { fw::ShapeType::Parallelepiped, "Parallelepiped", true },
-                    { fw::ShapeType::Pyramid, "Pyramid", true },
-                    { fw::ShapeType::PyramidFrustum, "Pyramid Frustum", true },
-                    { fw::ShapeType::Cylinder, "Cylinder", true },
-                    { fw::ShapeType::HollowCylinder, "Hollow Cylinder", true },
-                    { fw::ShapeType::Cone, "Cone", true },
-                    { fw::ShapeType::ConeFrustum, "Cone Frustum", true },
-                    { fw::ShapeType::Sphere, "Sphere", true },
-                    { fw::ShapeType::Capsule, "Capsule", true },
-                    { fw::ShapeType::LegacySuperSphere, "Legacy SuperSphere", true },
-                    { fw::ShapeType::SphericalZone, "Spherical Zone", true },
-                    { fw::ShapeType::SphericalSegment, "Spherical Segment", true },
-                    { fw::ShapeType::SphericalSector, "Spherical Sector", true },
-                    { fw::ShapeType::SphereWithCylindricalBore, "Sphere w/ Bore", true },
-                    { fw::ShapeType::SphereWithConicalCavities, "Sphere w/ Cavities", true },
-                    { fw::ShapeType::SlicedCylinder, "Sliced Cylinder", true },
-                    { fw::ShapeType::Ungula, "Ungula", true },
-                    { fw::ShapeType::Barrel, "Barrel", true },
-                    { fw::ShapeType::Compound, "Compound", false },
-                    { fw::ShapeType::ConvexHull, "Convex Hull", false },
-                    { fw::ShapeType::Heightfield, "Heightfield", false },
-                    { fw::ShapeType::SignedDistanceField, "Signed Distance Field", false },
-                    { fw::ShapeType::TriangleMesh, "Triangle Mesh", false }
-                };
-                
-                fw::ShapeType currentType = fw::ShapeType::None;
-                if (mat.sharedShape.IsValid()) {
-                    const fw::ShapeDefinition* currentDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
-                    if (currentDef) {
-                        currentType = currentDef->type;
-                    }
-                } else if (mat.shapeType == 1) {
-                    currentType = fw::ShapeType::LegacySuperSphere;
-                } else {
-                    currentType = fw::ShapeType::Cube;
-                }
-
-                int currentIndex = -1;
-                for (int i = 0; i < std::size(supportedTypes); ++i) {
-                    if (supportedTypes[i].type == currentType) {
-                        currentIndex = i;
-                        break;
-                    }
-                }
-
-                if (ImGui::BeginCombo("Tipo Geometria", currentIndex >= 0 ? supportedTypes[currentIndex].name : "Sconosciuto")) {
-                    for (int i = 0; i < std::size(supportedTypes); ++i) {
-                        bool is_selected = (currentIndex == i);
-                        bool supported = supportedTypes[i].supported;
-                        
-                        if (!supported) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-                        }
-                        
-                        std::string label = supportedTypes[i].name;
-                        if (!supported) label += " (NON IMPLEMENTATO)";
-                        
-                        if (ImGui::Selectable(label.c_str(), is_selected) && supported && currentIndex != i) {
-                            fw::ShapeDefinition newDef;
-                            newDef.type = supportedTypes[i].type;
-                            switch (newDef.type) {
-                                case fw::ShapeType::Cube: newDef.parameters = std::monostate{}; break;
-                                case fw::ShapeType::Cuboid: newDef.parameters = fw::ShapeParamsCuboid{{1,1,1}}; break;
-                                case fw::ShapeType::Parallelepiped: newDef.parameters = fw::ShapeParamsParallelepiped{{1,0,0},{0,1,0},{0,0,1}}; break;
-                                case fw::ShapeType::Pyramid: newDef.parameters = fw::ShapeParamsPyramid{1,1,1,{0,0}}; break;
-                                case fw::ShapeType::PyramidFrustum: newDef.parameters = fw::ShapeParamsPyramidFrustum{1,1,0.5f,0.5f,1,{0,0}}; break;
-                                case fw::ShapeType::Cylinder: newDef.parameters = fw::ShapeParamsCylinder{0.5f, 1.0f}; break;
-                                case fw::ShapeType::HollowCylinder: newDef.parameters = fw::ShapeParamsHollowCylinder{0.5f, 0.25f, 1.0f}; break;
-                                case fw::ShapeType::Cone: newDef.parameters = fw::ShapeParamsCone{0.5f, 1.0f}; break;
-                                case fw::ShapeType::ConeFrustum: newDef.parameters = fw::ShapeParamsConeFrustum{0.5f, 0.25f, 1.0f}; break;
-                                case fw::ShapeType::Sphere: newDef.parameters = fw::ShapeParamsSphere{0.5f}; break;
-                                case fw::ShapeType::Capsule: newDef.parameters = fw::ShapeParamsCapsule{0.5f, 0.5f}; break;
-                                case fw::ShapeType::LegacySuperSphere: newDef.parameters = fw::ShapeParamsLegacySuperSphere{2.0f}; break;
-                                case fw::ShapeType::SphericalZone: newDef.parameters = fw::ShapeParamsSphericalZone{1.0f, -0.5f, 0.5f}; break;
-                                case fw::ShapeType::SphericalSegment: newDef.parameters = fw::ShapeParamsSphericalSegment{1.0f, 0.0f}; break;
-                                case fw::ShapeType::SphericalSector: newDef.parameters = fw::ShapeParamsSphericalSector{1.0f, 3.14159f, 1.57079f}; break;
-                                case fw::ShapeType::SphereWithCylindricalBore: newDef.parameters = fw::ShapeParamsSphereWithCylindricalBore{1.0f, 0.5f, 2.0f}; break;
-                                case fw::ShapeType::SphereWithConicalCavities: newDef.parameters = fw::ShapeParamsSphereWithConicalCavities{1.0f, 0.5f, 0.5f}; break;
-                                case fw::ShapeType::SlicedCylinder: newDef.parameters = fw::ShapeParamsSlicedCylinder{0.5f, 1.0f, {0.0f, 1.0f, 1.0f}}; break;
-                                case fw::ShapeType::Ungula: newDef.parameters = fw::ShapeParamsUngula{0.5f, 1.0f, 0.78539f}; break;
-                                case fw::ShapeType::Barrel: newDef.parameters = fw::ShapeParamsBarrel{1.0f, 0.8f, 2.0f}; break;
-                                default: break;
-                            }
-                            newDef.supportsVisualCompilation = true;
-                            mat.sharedShape = m_context->shapeRegistry->RegisterShape(newDef);
-                            mat.shapeType = (newDef.type == fw::ShapeType::LegacySuperSphere) ? 1 : 0;
-                            isDirty = true;
-                        }
-                        
-                        if (!supported) {
-                            ImGui::PopStyleColor();
-                        }
-                        if (is_selected) ImGui::SetItemDefaultFocus();
-                    }
-                    ImGui::EndCombo();
-                }
-                
-                if (mat.sharedShape.IsValid()) {
-                    const fw::ShapeDefinition* currentDef = m_context->shapeRegistry->GetShapeDef(mat.sharedShape);
-                    if (currentDef) {
-                        if (m_editorShapeID != mat.sharedShape.id) {
-                            m_editorShapeID = mat.sharedShape.id;
-                            m_editorParams = currentDef->parameters;
-                            m_isolateSharedShape = true;
-                            m_sharedEditConfirmed = false;
-                        }
-                        
-                        uint32_t users = m_context->materialRegistry->CountShapeUsers(mat.sharedShape.id);
-                        if (users > 1) {
-                            ImGui::Separator();
-                            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Shape #%u \xe2\x80\x94 Shared by %u materials", mat.sharedShape.id, users);
-                            ImGui::TextDisabled("Editing mode: %s", m_isolateSharedShape ? "Isolated (Copy-on-Write)" : "Global (Affects all)");
-                            
-                            if (ImGui::RadioButton("Edit Selected Block", m_isolateSharedShape)) {
-                                m_isolateSharedShape = true;
-                                m_sharedEditConfirmed = false;
-                            }
-                            ImGui::SameLine();
-                            if (ImGui::RadioButton("Edit Shared Shape", !m_isolateSharedShape)) {
-                                m_isolateSharedShape = false;
-                            }
-                            
-                            if (!m_isolateSharedShape && !m_sharedEditConfirmed) {
-                                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "WARNING: This will affect all %u blocks.", users);
-                                if (ImGui::Button("Confirm Shared Edit")) {
-                                    m_sharedEditConfirmed = true;
-                                }
-                            }
-                            ImGui::Separator();
+                case fw::ProductionStationID::QualityControl: {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 8: QUALITY CONTROL — AUDIT DI CONFORMITÀ");
+                    ImGui::TextWrapped("Esegui un audit di conformita per verificare la validita geometrica, le texture e i vincoli fisici prima del packaging.");
+                    if (ImGui::Button("Avvia Audit QC Completo##QCStationBtn", ImVec2(-1, 28))) {
+                        auto val = m_factoryOrchestrator.RunQualityControlAudit(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+                        if (val.isValid) {
+                            m_factoryOpFeedback = "Quality Control: ASSET CONFORME (0 errori, " + std::to_string(val.warnings.size()) + " avvisi)";
+                            m_factoryOpFeedbackIsError = false;
                         } else {
-                            m_isolateSharedShape = true;
-                            m_sharedEditConfirmed = false;
+                            m_factoryOpFeedback = "Quality Control FAIL: " + (val.errors.empty() ? "Errore sconosciuto" : val.errors[0]);
+                            m_factoryOpFeedbackIsError = true;
                         }
-
-                        bool paramsChanged = false;
-                        
-                        if (auto* p = std::get_if<fw::ShapeParamsLegacySuperSphere>(&m_editorParams)) {
-                            if (ImGui::SliderFloat("Esponente SuperSfera (n)", &p->n, 0.2f, 10.0f)) paramsChanged = true;
-                            ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsCuboid>(&m_editorParams)) {
-                            if (ImGui::DragFloat3("Dimensioni (X,Y,Z)", &p->size.x, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsParallelepiped>(&m_editorParams)) {
-                            if (ImGui::DragFloat3("Base X Vector", &p->basisX.x, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat3("Base Y Vector", &p->basisY.x, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat3("Base Z Vector", &p->basisZ.x, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsPyramid>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Base Width", &p->baseWidth, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Base Depth", &p->baseDepth, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Height", &p->height, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat2("Apex Offset", &p->apexOffset.x, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsPyramidFrustum>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Bottom Width", &p->bottomWidth, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Bottom Depth", &p->bottomDepth, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Top Width", &p->topWidth, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Top Depth", &p->topDepth, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Height", &p->height, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat2("Apex Offset", &p->apexOffset.x, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsCylinder>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsCone>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Base", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsConeFrustum>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Base", &p->bottomRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Raggio Superiore", &p->topRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsHollowCylinder>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Esterno", &p->outerRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Raggio Interno", &p->innerRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsCapsule>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Mezza Altezza Cilindro", &p->halfHeight, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSphere>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSphericalZone>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Sfera", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Taglio Inferiore (Y)", &p->bottomY, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Taglio Superiore (Y)", &p->topY, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSphericalSegment>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Sfera", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Taglio Base (Y)", &p->baseY, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSphericalSector>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::SliderAngle("Range Polare (Theta)", &p->thetaRange, 0.0f, 360.0f)) paramsChanged = true;
-                            if (ImGui::SliderAngle("Range Azimutale (Phi)", &p->phiRange, 0.0f, 180.0f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSphereWithCylindricalBore>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Sfera", &p->sphereRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Raggio Foro (Cilindro)", &p->cylinderRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza Cilindro (Riservato)", &p->cylinderHeight, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSphereWithConicalCavities>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Sfera", &p->sphereRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Raggio Cavita' (Cono)", &p->coneRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Profondita' Cavita' (Cono)", &p->coneHeight, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsSlicedCylinder>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat3("Normale di Taglio", &p->cutNormal.x, 0.05f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsUngula>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio", &p->radius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                            if (ImGui::SliderAngle("Angolo di Taglio", &p->cutAngle, 0.0f, 89.9f)) paramsChanged = true;
-                        }
-                        else if (auto* p = std::get_if<fw::ShapeParamsBarrel>(&m_editorParams)) {
-                            if (ImGui::DragFloat("Raggio Centrale", &p->midRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Raggio Estremo", &p->endRadius, 0.05f)) paramsChanged = true;
-                            if (ImGui::DragFloat("Altezza", &p->height, 0.05f)) paramsChanged = true;
-                        }
-                        
-                        if (paramsChanged) {
-                            auto valid = m_context->shapeRegistry->ValidateParameters(currentDef->type, m_editorParams, mat.sharedShape.id);
-                            if (valid.isValid) {
-                                m_lastValidationError = "";
-                                bool canEdit = true;
-                                
-                                if (users > 1) {
-                                    if (m_isolateSharedShape) {
-                                        fw::ShapeDefinition clone = *currentDef;
-                                        clone.id = 0; 
-                                        
-                                        fw::ShapeHandle newHandle = m_context->shapeRegistry->RegisterShape(clone);
-                                        if (newHandle.IsValid()) {
-                                            mat.sharedShape = newHandle;
-                                            m_editorShapeID = newHandle.id;
-                                        } else {
-                                            canEdit = false;
-                                        }
-                                    } else {
-                                        if (!m_sharedEditConfirmed) {
-                                            canEdit = false;
-                                        }
-                                    }
-                                }
-                                
-                                if (canEdit) {
-                                    if (m_context->shapeRegistry->UpdateShape(mat.sharedShape, m_editorParams)) {
-                                        mat.sharedShape.revision++;
-                                        isDirty = true;
-                                    }
-                                }
+                        m_factoryOpFeedbackTimer = 5.0f;
+                    }
+                    break;
+                }
+                case fw::ProductionStationID::Packaging: {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 9: PACKAGING — COMPILAZIONE & PUBBLICAZIONE");
+                    ImGui::TextWrapped("Compila e pubblica il pacchetto raw asset nei registri attivi di runtime.");
+                    if (ImGui::Button("Compila & Pubblica Pacchetto##PkgStationBtn", ImVec2(-1, 28))) {
+                        auto pkg = m_factoryOrchestrator.BuildPackage(m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+                        if (pkg.has_value()) {
+                            bool pubOk = m_factoryOrchestrator.PublishToRegistries(*m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+                            if (pubOk) {
+                                m_factoryOpFeedback = "Pacchetto pubblicato con successo nei registri!";
+                                m_factoryOpFeedbackIsError = false;
+                                UpdatePreviewMesh();
                             } else {
-                                m_lastValidationError = valid.errorMessage;
+                                m_factoryOpFeedback = "Errore durante la pubblicazione nei registri!";
+                                m_factoryOpFeedbackIsError = true;
                             }
-                        }
-                        
-                        if (!m_lastValidationError.empty()) {
-                            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Parametri non validi:");
-                            ImGui::TextWrapped("%s", m_lastValidationError.c_str());
-                        }
-                    }
-                } else {
-                    if (mat.shapeType == 1) {
-                        ImGui::TextDisabled("Modalita' Legacy. Converti selezionando un tipo dal menu.");
-                        if (ImGui::SliderFloat("Esponente SuperSfera (n) [Legacy]", &mat.superSphereN, 0.2f, 10.0f)) {
-                            isDirty = true;
-                        }
-                        ImGui::TextDisabled("n=0.6: Astroide | n=1: Ottaedro | n=2: Sfera | n=4: Cubo Smussato");
-                    } else {
-                        ImGui::TextDisabled("Standard Voxel Cube [Legacy]");
-                    }
-                }
-                
-                if (!m_lastCompileError.empty()) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Errore di Compilazione Geometria:");
-                    ImGui::TextWrapped("%s", m_lastCompileError.c_str());
-                }
-
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PBR Texture Maps");
-
-                if (ImGui::Button("Apri Cartella Texture OS", ImVec2(-1, 30))) {
-                    std::filesystem::create_directories("assets/textures");
-                    ShellExecuteA(NULL, "open", "assets\\textures", NULL, NULL, SW_SHOWDEFAULT);
-                }
-                ImGui::Spacing();
-                
-                auto drawTextureField = [&](const char* label, std::string& pathRef, const std::string& typeSuffix, RenderManager::PBRTextureType pbrType) {
-                    char buf[256];
-                    strncpy(buf, pathRef.c_str(), sizeof(buf));
-                    
-                    ImGui::PushID(label);
-                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
-                    if (ImGui::InputText("##path", buf, sizeof(buf))) {
-                        pathRef = buf;
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Sfoglia...", ImVec2(80, 0))) {
-                        std::string picked = BrowseForImage();
-                        if (!picked.empty()) {
-                            m_isCopying = true;
-                            m_copyProgress = 0.0f;
-                            
-                            // Copia il file e salva automaticamente
-                            pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
-                            m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
-                            if (std::filesystem::exists("../assets/definitions")) {
-                                m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
-                            }
-                            
-                            // Sincronizza la cache GPU del materiale tramite il CacheManager!
-                            if (m_context && m_context->cacheManager) {
-                                m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
-                            }
-                            
-                            m_copyProgress = 1.0f;
-                            m_saveMessageTimer = 3.0f;
-                        }
-                    }
-                    ImGui::PopID();
-                    ImGui::Text("%s", label);
-                };
-
-                drawTextureField("Albedo Map", mat.albedoPath, "albedo", RenderManager::PBRTextureType::ALBEDO);
-                drawTextureField("Normal Map", mat.normalPath, "normal", RenderManager::PBRTextureType::NORMAL);
-                drawTextureField("ORM Map (Occlusion, Roughness, Metallic)", mat.ormPath, "orm", RenderManager::PBRTextureType::ORM);
-                
-                // Barra di progresso simulata / Feedback visivo
-                if (m_isCopying) {
-                    ImGui::Spacing();
-                    ImGui::ProgressBar(m_copyProgress, ImVec2(-1, 0), "Copia Texture in corso...");
-                    if (m_copyProgress >= 1.0f) {
-                        m_isCopying = false;
-                    }
-                }
-                
-                if (m_saveMessageTimer > 0.0f) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Texture caricata e Materiale salvato automaticamente!");
-                }
-
-                // BM-TX2: Texture Engine & PBR Importer Audit Suite (TX-1 .. TX-10)
-                if (ImGui::TreeNodeEx("Audit Suite BM-TX2 (TX-1 .. TX-10)##TextureTestSuiteTree", ImGuiTreeNodeFlags_None)) {
-                    if (ImGui::Button("Esegui Audit Texture BM-TX2 (Re-Run)##RerunTextureTests", ImVec2(280, 24))) {
-                        RunTextureValidationTests(true);
-                    }
-                    ImGui::Spacing();
-                    for (const auto& r : m_textureTestResults) {
-                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
-                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
-                        if (!r.details.empty()) {
-                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                // BM-TX3: Paint & Layer Engine Audit Suite (PT-1 .. PT-10)
-                if (ImGui::TreeNodeEx("Audit Suite BM-TX3 (PT-1 .. PT-10)##PaintTestSuiteTree", ImGuiTreeNodeFlags_None)) {
-                    if (ImGui::Button("Esegui Audit Paint BM-TX3 (Re-Run)##RerunPaintTests", ImVec2(280, 24))) {
-                        RunPaintValidationTests(true);
-                    }
-                    ImGui::Spacing();
-                    for (const auto& r : m_paintTestResults) {
-                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
-                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
-                        if (!r.details.empty()) {
-                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                // BM-TX4: 3D Surface Brush & Painting Suite (BP-1 .. BP-15)
-                if (ImGui::TreeNodeEx("Audit Suite BM-TX4 (BP-1 .. BP-15)##SurfacePaintTestSuiteTree", ImGuiTreeNodeFlags_None)) {
-                    if (ImGui::Button("Esegui Audit Surface Paint BM-TX4 (Re-Run)##RerunSurfacePaintTests", ImVec2(280, 24))) {
-                        RunSurfacePaintValidationTests(true);
-                    }
-                    ImGui::Spacing();
-                    for (const auto& r : m_surfacePaintTestResults) {
-                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
-                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
-                        if (!r.details.empty()) {
-                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                // BM-UV2: Universal UV Contract & Primitive Mapping Suite (UVP-1 .. UVP-15)
-                if (ImGui::TreeNodeEx("Audit Suite BM-UV2 (UVP-1 .. UVP-15)##PrimitiveUVTestSuiteTree", ImGuiTreeNodeFlags_None)) {
-                    if (ImGui::Button("Esegui Audit UV BM-UV2 (Re-Run)##RerunPrimitiveUVTests", ImVec2(280, 24))) {
-                        RunPrimitiveUVValidationTests(true);
-                    }
-                    ImGui::Spacing();
-                    for (const auto& r : m_primitiveUVTestResults) {
-                        ImVec4 col = r.passed ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-                        ImGui::TextColored(col, "[%s] %s", r.passed ? "PASS" : "FAIL", r.testName.c_str());
-                        ImGui::BulletText("Observed: %s", r.observedDesc.c_str());
-                        if (!r.details.empty()) {
-                            ImGui::TextDisabled("  Details: %s", r.details.c_str());
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Mappatura UV & Superfici Semantiche (BM-C)");
-
-                // 1. Modalita Proiezione UV Base
-                const char* projModes[] = { "Default (Planar)", "Planar", "Box", "Cylindrical", "Spherical", "Triplanar" };
-                int currentProjIdx = static_cast<int>(mat.baseProjection);
-                if (ImGui::Combo("Proiezione Base##BaseProj", &currentProjIdx, projModes, IM_ARRAYSIZE(projModes))) {
-                    mat.baseProjection = static_cast<fw::UVProjectionMode>(currentProjIdx);
-                    mat.revision++;
-                    isDirty = true;
-                }
-
-                // 2. UV Transform Base (BM-C4)
-                if (ImGui::TreeNodeEx("Trasformazione UV Base (Tiling, Offset, Rotazione)##BaseUVTree", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    float tiling[2] = { mat.baseUVTransform.tiling.x, mat.baseUVTransform.tiling.y };
-                    if (ImGui::DragFloat2("Tiling (U, V)##BaseTiling", tiling, 0.05f, 0.01f, 100.0f, "%.2f")) {
-                        mat.baseUVTransform.tiling = { tiling[0], tiling[1] };
-                        mat.revision++;
-                        isDirty = true;
-                    }
-
-                    float offset[2] = { mat.baseUVTransform.offset.x, mat.baseUVTransform.offset.y };
-                    if (ImGui::DragFloat2("Offset (U, V)##BaseOffset", offset, 0.01f, -10.0f, 10.0f, "%.2f")) {
-                        mat.baseUVTransform.offset = { offset[0], offset[1] };
-                        mat.revision++;
-                        isDirty = true;
-                    }
-
-                    if (ImGui::SliderFloat("Rotazione (Gradi)##BaseRot", &mat.baseUVTransform.rotationDegrees, -180.0f, 180.0f, "%.1f deg")) {
-                        mat.revision++;
-                        isDirty = true;
-                    }
-
-                    if (ImGui::Checkbox("Specchia U (Mirror U)##BaseMirU", &mat.baseUVTransform.mirrorU)) {
-                        mat.revision++;
-                        isDirty = true;
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Checkbox("Specchia V (Mirror V)##BaseMirV", &mat.baseUVTransform.mirrorV)) {
-                        mat.revision++;
-                        isDirty = true;
-                    }
-
-                    if (!mat.baseUVTransform.IsIdentity()) {
-                        ImGui::SameLine();
-                        if (ImGui::Button("Reset UV##ResetBaseUV")) {
-                            mat.baseUVTransform = fw::UVTransform{};
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                // 3. Superfici Semantiche (BM-C2 & BM-C5)
-                const fw::ShapeDefinition* currentShapeDef = m_context->shapeRegistry ? m_context->shapeRegistry->GetShapeDef(mat.sharedShape) : nullptr;
-                fw::ShapeType sType = currentShapeDef ? currentShapeDef->type : fw::ShapeType::Cube;
-                uint32_t surfaceCount = fw::GetSemanticSurfaceCount(sType);
-
-                if (ImGui::TreeNodeEx("Materiali & Override per Superficie Semantica (BM-C5)##SurfOverridesTree", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    ImGui::Text("Superfici disponibili per la forma corrente: %u", surfaceCount);
-
-                    if (m_selectedSurfaceIndex >= (int)surfaceCount) m_selectedSurfaceIndex = 0;
-
-                    // Lista delle superfici semantiche
-                    std::vector<std::string> surfaceNames;
-                    surfaceNames.reserve(surfaceCount);
-                    for (uint32_t sIdx = 0; sIdx < surfaceCount; ++sIdx) {
-                        surfaceNames.push_back(std::to_string(sIdx) + ": " + fw::GetSemanticSurfaceName(sType, sIdx));
-                    }
-
-                    std::vector<const char*> surfaceNamesCStr;
-                    for (const auto& sName : surfaceNames) surfaceNamesCStr.push_back(sName.c_str());
-
-                    ImGui::Combo("Superficie Attiva##SelSurf", &m_selectedSurfaceIndex, surfaceNamesCStr.data(), (int)surfaceNamesCStr.size());
-
-                    // Gestione override per la superficie selezionata
-                    uint32_t curSurfId = (uint32_t)m_selectedSurfaceIndex;
-                    const fw::SurfaceOverride* existingOverride = mat.FindSurfaceOverride(curSurfId);
-                    bool hasOverride = (existingOverride != nullptr);
-
-                    if (ImGui::Checkbox("Attiva Personalizzazione Superficie##ToggleSurfOverride", &hasOverride)) {
-                        if (hasOverride) {
-                            mat.GetOrCreateSurfaceOverride(curSurfId);
                         } else {
-                            // Rimuovi override
-                            auto it = std::remove_if(mat.surfaces.begin(), mat.surfaces.end(), [curSurfId](const fw::SurfaceOverride& s) {
-                                return s.surfaceId == curSurfId;
-                            });
-                            mat.surfaces.erase(it, mat.surfaces.end());
-                            mat.revision++;
+                            m_factoryOpFeedback = "Impossibile compilare: QC ha riscontrato errori!";
+                            m_factoryOpFeedbackIsError = true;
                         }
-                        isDirty = true;
+                        m_factoryOpFeedbackTimer = 5.0f;
                     }
-
-                    if (hasOverride) {
-                        fw::SurfaceOverride& surf = mat.GetOrCreateSurfaceOverride(curSurfId);
-
-                        // Override Material ID
-                        if (ImGui::Checkbox("Material ID Dedicato (Layer GPU)##SurfUseMat", &surf.useExplicitMaterial)) {
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        if (surf.useExplicitMaterial) {
-                            int matIdVal = (int)surf.materialId;
-                            if (ImGui::SliderInt("Target Material ID##SurfMatId", &matIdVal, 0, 255)) {
-                                surf.materialId = (uint32_t)matIdVal;
-                                mat.revision++;
-                                isDirty = true;
-                            }
-                        }
-
-                        // Override PBR
-                        if (ImGui::Checkbox("Override PBR Superficie##SurfPbrToggle", &surf.overridePbr)) {
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        if (surf.overridePbr) {
-                            float sCol[3] = { surf.baseColorFallback.x, surf.baseColorFallback.y, surf.baseColorFallback.z };
-                            if (ImGui::ColorEdit3("Colore Superficie##SurfCol", sCol)) {
-                                surf.baseColorFallback = { sCol[0], sCol[1], sCol[2] };
-                                mat.revision++;
-                                isDirty = true;
-                            }
-                            if (ImGui::SliderFloat("Roughness Superficie##SurfRough", &surf.roughness, 0.0f, 1.0f)) {
-                                mat.revision++;
-                                isDirty = true;
-                            }
-                            if (ImGui::SliderFloat("Metallic Superficie##SurfMetal", &surf.metallic, 0.0f, 1.0f)) {
-                                mat.revision++;
-                                isDirty = true;
-                            }
-                            if (ImGui::SliderFloat("Emissive Superficie##SurfEmiss", &surf.emissive, 0.0f, 10.0f)) {
-                                mat.revision++;
-                                isDirty = true;
-                            }
-                        }
-
-                        // Override Proiezione UV Superficie
-                        int sProjIdx = static_cast<int>(surf.projection);
-                        if (ImGui::Combo("Proiezione Dedicata##SurfProj", &sProjIdx, projModes, IM_ARRAYSIZE(projModes))) {
-                            surf.projection = static_cast<fw::UVProjectionMode>(sProjIdx);
-                            mat.revision++;
-                            isDirty = true;
-                        }
-
-                        // Override Trasformazione UV Superficie
-                        float sTiling[2] = { surf.uvTransform.tiling.x, surf.uvTransform.tiling.y };
-                        if (ImGui::DragFloat2("Tiling Superficie##SurfTiling", sTiling, 0.05f, 0.01f, 100.0f, "%.2f")) {
-                            surf.uvTransform.tiling = { sTiling[0], sTiling[1] };
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        float sOffset[2] = { surf.uvTransform.offset.x, surf.uvTransform.offset.y };
-                        if (ImGui::DragFloat2("Offset Superficie##SurfOffset", sOffset, 0.01f, -10.0f, 10.0f, "%.2f")) {
-                            surf.uvTransform.offset = { sOffset[0], sOffset[1] };
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        if (ImGui::SliderFloat("Rotazione Superficie##SurfRot", &surf.uvTransform.rotationDegrees, -180.0f, 180.0f, "%.1f deg")) {
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        if (ImGui::Checkbox("Specchia U##SurfMirU", &surf.uvTransform.mirrorU)) {
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Checkbox("Specchia V##SurfMirV", &surf.uvTransform.mirrorV)) {
-                            mat.revision++;
-                            isDirty = true;
-                        }
-
-                        // BM-TX2: Override Texture Superficie Dedicate
-                        if (ImGui::Checkbox("Texture Dedicate Superficie (BM-TX2)##SurfTexToggle", &surf.textures.useExplicitTextures)) {
-                            mat.revision++;
-                            isDirty = true;
-                        }
-                        if (surf.textures.useExplicitTextures) {
-                            auto drawSurfTexField = [&](const char* label, std::string& pathRef, const std::string& suffix) {
-                                char buf[256];
-                                strncpy(buf, pathRef.c_str(), sizeof(buf));
-                                ImGui::PushID(label);
-                                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
-                                if (ImGui::InputText("##surfpath", buf, sizeof(buf))) {
-                                    pathRef = buf;
-                                    surf.textures.useExplicitTextures = true;
-                                    mat.revision++;
-                                    isDirty = true;
-                                }
-                                ImGui::SameLine();
-                                if (ImGui::Button("Sfoglia...##btn", ImVec2(75, 0))) {
-                                    std::string picked = BrowseForImage();
-                                    if (!picked.empty()) {
-                                        pathRef = CopyTextureToAssets(picked, m_selectedBlockId, suffix + "_s" + std::to_string(curSurfId));
-                                        surf.textures.useExplicitTextures = true;
-                                        mat.revision++;
-                                        isDirty = true;
-                                    }
-                                }
-                                ImGui::PopID();
-                                ImGui::Text("  %s", label);
-                            };
-                            drawSurfTexField("Albedo Superficie", surf.textures.albedoMapPath, "albedo");
-                            drawSurfTexField("Normal Superficie", surf.textures.normalMapPath, "normal");
-                            drawSurfTexField("ORM Superficie", surf.textures.ormMapPath, "orm");
-                            drawSurfTexField("Emissive Superficie", surf.textures.emissiveMapPath, "emissive");
-                        }
-                    }
-                    ImGui::TreePop();
+                    break;
                 }
-                
-                if (isDirty) {
-                    UpdatePreviewMesh();
-                    if (m_context && m_context->cacheManager) {
-                        m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
-                    }
-                }
-                
-                ImGui::EndTabItem();
             }
-
-            // TAB: PHYSICS & SIMULATION
-            if (ImGui::BeginTabItem("Physics")) {
-                ImGui::Spacing();
-                
-                // 1. Diagnostics, Dirty Status & Revert Baseline
-                bool isPhysicsDirty = IsBlockPhysicsDirty(m_selectedBlockId);
-                uint32_t totalDirtyPhysics = CountUnsavedPhysicsBlocks();
-
-                ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "CONTRATTO FISICO ASSET — ID %u: %s", m_selectedBlockId, def.displayName.c_str());
-                if (isPhysicsDirty) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Stato Fisica: MODIFICHE NON SALVATE (*)");
-                    ImGui::SameLine();
-                    if (ImGui::Button("Ripristina Baseline Fisica (Revert)##RevPhys")) {
-                        RevertBlockPhysicsToSaved(m_selectedBlockId);
-                    }
-                } else {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Stato Fisica: SINCRONIZZATO (Baseline salvata)");
-                }
-                if (totalDirtyPhysics > 0) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Blocchi con fisica modificata nel registro: %u (*)", totalDirtyPhysics);
-                }
-
-                ImGui::Separator();
-
-                // 2. Motion Type
-                ImGui::Text("Tipo di Moto (Motion Type):");
-                int motionTypeIdx = static_cast<int>(def.physics.motionType);
-                if (ImGui::RadioButton("Static##MotionStatic", motionTypeIdx == 0)) {
-                    def.physics.motionType = fw::BlockMotionType::Static;
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Static: Blocco fisso nel mondo (massa infinita per la cinematica del mondo, ideale per blocchi voxel standard).");
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Dynamic##MotionDynamic", motionTypeIdx == 1)) {
-                    def.physics.motionType = fw::BlockMotionType::Dynamic;
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Dynamic: Soggetto a forze esterne, gravita, accelerazione e urti fisici.");
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Kinematic##MotionKinematic", motionTypeIdx == 2)) {
-                    def.physics.motionType = fw::BlockMotionType::Kinematic;
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Kinematic: Mosso esclusivamente da script/animazioni, non risente di forze esterne.");
-
-                // 3. Collision Enabled
-                if (ImGui::Checkbox("Collisioni Abilitate (Collision Enabled)", &def.physics.collisionEnabled)) {
-                    def.SyncLegacyPhysicsFields();
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Determina se il blocco genera collisioni fisiche solide (isSolid).");
-
-                ImGui::Separator();
-
-                // 4. Mass Rule: Manual vs Density-Derived
-                ImGui::Text("Regola di Definizione Massa:");
-                int massModeIdx = static_cast<int>(def.physics.massMode);
-                if (ImGui::RadioButton("Massa Manuale##MassManual", massModeIdx == 0)) {
-                    def.physics.massMode = fw::BlockMassMode::Manual;
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Massa specificata direttamente dall'autore in kg, costante indipendentemente dal volume.");
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Massa da Densita e Volume##MassDensity", massModeIdx == 1)) {
-                    def.physics.massMode = fw::BlockMassMode::DensityDerived;
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Massa calcolata = Densita (kg/m^3) * Volume calcolato dalla scala dell'asset.");
-
-                float volume = std::abs(def.localScale.x * def.localScale.y * def.localScale.z);
-                if (volume < 1e-4f) volume = 1e-4f;
-                float derivedMass = def.physics.CalculateDerivedMass(def.localScale);
-                float effectiveMass = def.physics.GetEffectiveMass(def.localScale);
-
-                if (def.physics.massMode == fw::BlockMassMode::Manual) {
-                    if (ImGui::SliderFloat("Massa (kg)##MassManualVal", &def.physics.mass, 0.01f, 5000.0f, "%.2f kg")) {
-                        def.SyncLegacyPhysicsFields();
-                    }
-                    ImGui::SliderFloat("Densita di Riferimento (kg/m^3)", &def.physics.density, 1.0f, 25000.0f, "%.1f");
-                    ImGui::Text("Volume Asset (Scala): %.4f m^3 | Massa Effettiva: %.2f kg", volume, effectiveMass);
-                } else {
-                    if (ImGui::SliderFloat("Densita Materiale (kg/m^3)##DensityVal", &def.physics.density, 1.0f, 25000.0f, "%.1f")) {
-                        def.SyncLegacyPhysicsFields();
-                    }
-                    ImGui::Text("Volume Asset (Scala): %.4f m^3", volume);
-                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "Massa Derivata (Autorevole): %.3f kg", derivedMass);
-                    def.physics.mass = derivedMass;
-                    def.SyncLegacyPhysicsFields();
-                }
-
-                // 5. Friction & Restitution
-                if (ImGui::SliderFloat("Attrito (Friction) [0.0 - 1.0]", &def.physics.friction, 0.0f, 1.0f, "%.3f")) {
-                    def.SyncLegacyPhysicsFields();
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Coefficiente di attrito radente superficiale (0 = privo di attrito, 1 = massimo grip).");
-
-                if (ImGui::SliderFloat("Restituzione / Rimbalzo [0.0 - 1.0]", &def.physics.restitution, 0.0f, 1.0f, "%.3f")) {
-                    def.SyncLegacyPhysicsFields();
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Coefficiente di restituzione elastica (0 = perfettamente anelastico, 1 = rimbalzo conservativo).");
-
-                // 6. Thermodynamics
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Termodinamica (Thermodynamics)");
-                ImGui::SliderFloat("Resistenza Termica", &def.thermal_resistance, 0.1f, 100.0f, "%.1f");
-                ImGui::SliderFloat("Capacita' Termica", &def.thermal_capacity, 0.1f, 100.0f, "%.1f");
-
-                // 7. Preview Drop & Rotation
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.8f, 0.4f, 1.0f, 1.0f), "Simulazione Preview Caduta");
-                
-                if (ImGui::Button("Drop Block!")) {
-                    m_simulatePhysics = true;
-                    m_simPosY = 5.0f; // Sgancia il blocco da 5 metri
-                    m_simVelY = 0.0f;
-                }
-                
-                if (m_simulatePhysics) {
-                    ImGui::SameLine();
-                    if (ImGui::Button("Reset Drop")) {
-                        m_simulatePhysics = false;
-                        m_simPosY = 0.0f;
-                        m_simVelY = 0.0f;
-                    }
-                }
-                
-                ImGui::Separator();
-                
-                ImGui::Text("Opzioni Preview");
-                ImGui::Checkbox("Simulate Physics (Bouncing)", &m_simulatePhysics);
-                ImGui::Checkbox("Auto-Rotate Block", &m_autoRotateBlock);
-                if (!m_autoRotateBlock) {
-                    ImGui::SliderFloat3("Manual Rotation (Euler)", &m_blockEulerAngles.x, 0.0f, 360.0f);
-                }
-                
-                // 8. Telemetria Componenti ECS Physics Runtime
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "COMPONENTI ECS FISICA RUNTIME (Preview Entity):");
-                auto* ecsMass = m_previewWorld ? m_previewWorld->GetRegistry().try_get<MassPropertiesComponent>(m_previewBlockEntity) : nullptr;
-                auto* ecsRb = m_previewWorld ? m_previewWorld->GetRegistry().try_get<RigidBody>(m_previewBlockEntity) : nullptr;
-                if (ecsMass && ecsRb) {
-                    ImGui::Text("MassPropertiesComponent: Massa = %.2f kg | CoM = (%.2f, %.2f, %.2f)",
-                        ecsMass->mass, ecsMass->centerOfMass.x, ecsMass->centerOfMass.y, ecsMass->centerOfMass.z);
-                    ImGui::Text("Inertia Tensor: Ixx=%.3f, Iyy=%.3f, Izz=%.3f",
-                        ecsMass->inertiaTensor[0][0], ecsMass->inertiaTensor[1][1], ecsMass->inertiaTensor[2][2]);
-                    ImGui::Text("RigidBody: Massa = %.2f kg | Restituzione = %.3f | Attrito = %.3f | Drag = %.3f",
-                        ecsRb->mass, ecsRb->restitution, ecsRb->friction, ecsRb->drag);
-                } else {
-                    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "Componenti ECS: In sincronizzazione...");
-                }
-
-                // 9. Zero-Work Physics Save Button
-                if (ImGui::Button("SALVA DEFINIZIONI FISICHE (JSON)", ImVec2(-1, 40))) {
-                    m_zeroWorkTelemetry.jsonSaveCalls++;
-                    def.SyncLegacyPhysicsFields();
-                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
-                    bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
-                    bool s2 = true;
-                    if (std::filesystem::exists("../assets/definitions")) {
-                        s2 = m_context->blockRegistry->SaveToJson("../assets/definitions/blocks.json");
-                    }
-                    if (s1 && s2) {
-                        SynchronizeAllSavedPhysicsBaselines();
-                        m_saveMessageTimer = 3.0f;
-                        std::cout << "[BlockMaker] Proprieta fisiche del blocco ID " << (int)m_selectedBlockId << " salvate su disco e baseline sincronizzata.\n";
-                    } else {
-                        std::cerr << "[BlockMaker] ERRORE: Salvataggio definizioni fisiche su disco non riuscito!\n";
-                    }
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Salva le proprieta fisiche dei blocchi su disco (blocks.json).\nNessun ricaricamento di mesh GPU o rigenerazione geometrica (Zero-Work).");
-                }
-                
-                ImGui::EndTabItem();
-            }
-            
-            ImGui::EndTabBar();
         }
         
         ImGui::Separator();
@@ -6816,10 +7198,494 @@ void BlockMakerState::DrawUI() {
             }
         }
 
-        ImGui::EndChild(); // Fine BlockPropertiesScrollRegion
+}
+
+void BlockMakerState::DrawWorkspaceTopMenuBar(float& outTopBarHeight) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 vpPos = vp ? vp->Pos : ImVec2(0.0f, 0.0f);
+    ImVec2 vpSize = vp ? vp->Size : ImGui::GetIO().DisplaySize;
+
+    ImGui::SetNextWindowPos(vpPos);
+    ImGui::SetNextWindowSize(ImVec2(vpSize.x, 0.0f));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | 
+                            ImGuiWindowFlags_MenuBar | 
+                            ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoResize | 
+                            ImGuiWindowFlags_NoMove | 
+                            ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoNav | 
+                            ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.09f, 0.11f, 1.0f));
+
+    bool showWindow = ImGui::Begin("##WorkspaceTopMenuBar", nullptr, flags);
+    outTopBarHeight = ImGui::GetWindowHeight();
+
+    if (showWindow && ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("< Torna all'Hub", "ESC")) {
+                ReturnToHub();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Salva Registro Blocchi (JSON)")) {
+                if (m_context && m_context->blockRegistry) {
+                    m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+                }
+            }
+            if (ImGui::MenuItem("Salva Definizioni & Asset (JSON/GPU)")) {
+                if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
+                    fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+                    fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+                    m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
+                    m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
+                    m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
+                    m_context->shapeRegistry->SaveToJson("assets/definitions/shapes.json");
+                    m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
+                    UpdatePreviewMesh();
+                }
+            }
+            ImGui::Separator();
+            bool useWorkspace = m_useWorkspaceLayout;
+            if (ImGui::MenuItem("Modalita Workspace Dock-Free", nullptr, &useWorkspace)) {
+                m_useWorkspaceLayout = useWorkspace;
+            }
+            if (ImGui::MenuItem("Passa a Finestra Singola Legacy")) {
+                m_useWorkspaceLayout = false;
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Visualizza")) {
+            ImGui::MenuItem("Mostra Viewport Gizmo", nullptr, &m_gizmoEnabled);
+            ImGui::MenuItem("Mostra Mesh Selection Overlay", nullptr, &m_meshSelectionEnabled);
+            ImGui::MenuItem("Attiva Sculpt Brush Mode", nullptr, &m_sculptModeActive);
+            ImGui::Separator();
+            bool footerExpanded = !m_footerCollapsed;
+            if (ImGui::MenuItem("Footer Telemetria & Log", nullptr, &footerExpanded)) {
+                m_footerCollapsed = !footerExpanded;
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Diagnostica (BM-R1)")) {
+            if (ImGui::MenuItem("Esegui Test Matematici (Gate 2)")) {
+                RunMathValidationTests(true);
+            }
+            if (ImGui::MenuItem("Esegui BM-A3 Freeze Gate")) {
+                RunAllFreezeGateTests(true);
+            }
+            if (ImGui::MenuItem("Esegui Test Geometria (BM-B)")) {
+                RunGeometryValidationTests(true);
+            }
+            if (ImGui::MenuItem("Esegui Test Factory Core (BM-FC)")) {
+                RunFactoryCoreValidationTests(true);
+            }
+            if (ImGui::MenuItem("Esegui Test Sculpt (BM-S)")) {
+                RunSculptValidationTests(true);
+            }
+            if (ImGui::MenuItem("Esegui Audit UV (BM-UV2)")) {
+                RunPrimitiveUVValidationTests(true);
+            }
+            ImGui::EndMenu();
+        }
+
+        // Informazioni stato sul lato destro del menu bar
+        std::string currentBlockInfo = "Blocco: [" + std::to_string(m_selectedBlockId) + "] " + 
+            (m_context && m_context->blockRegistry ? m_context->blockRegistry->GetBlock(m_selectedBlockId).displayName : "");
+        float infoWidth = ImGui::CalcTextSize(currentBlockInfo.c_str()).x;
+        float switchBtnWidth = 145.0f;
+        float hubBtnWidth = 90.0f;
+        float rightPadding = infoWidth + switchBtnWidth + hubBtnWidth + 40.0f;
+
+        if (ImGui::GetWindowWidth() > rightPadding + 220.0f) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - rightPadding);
+            ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "%s", currentBlockInfo.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("[ Finestra Legacy ]")) {
+                m_useWorkspaceLayout = false;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("< HUB")) {
+                ReturnToHub();
+            }
+        }
+
+        ImGui::EndMenuBar();
     }
-    ImGui::Columns(1);
+
+    outTopBarHeight = ImGui::GetWindowHeight();
     ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::DrawWorkspaceToolbar(float topY, float& outToolbarHeight) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 vpPos = vp ? vp->Pos : ImVec2(0.0f, 0.0f);
+    ImVec2 vpSize = vp ? vp->Size : ImGui::GetIO().DisplaySize;
+
+    outToolbarHeight = 36.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(vpPos.x, topY));
+    ImGui::SetNextWindowSize(ImVec2(vpSize.x, outToolbarHeight));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | 
+                            ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoResize | 
+                            ImGuiWindowFlags_NoMove | 
+                            ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 6.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.12f, 0.13f, 0.16f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.22f, 0.28f, 0.8f));
+
+    if (ImGui::Begin("##WorkspaceToolbar", nullptr, flags)) {
+        // 1. Gizmo Quick Mode
+        ImGui::Checkbox("Gizmo", &m_gizmoEnabled);
+        if (m_gizmoEnabled) {
+            ImGui::SameLine();
+            if (ImGui::RadioButton("W##ToolW", m_gizmoOperation == 0)) m_gizmoOperation = 0;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Traslazione (W)");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("E##ToolE", m_gizmoOperation == 1)) m_gizmoOperation = 1;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rotazione (E)");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("R##ToolR", m_gizmoOperation == 2)) m_gizmoOperation = 2;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scala (R)");
+            ImGui::SameLine();
+            if (ImGui::SmallButton(m_gizmoMode == 0 ? "Local" : "World")) {
+                m_gizmoMode = (m_gizmoMode == 0) ? 1 : 0;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Commuta Coordinate Space (Local / World)");
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+
+        // 2. Mesh Selection Quick Mode
+        ImGui::Checkbox("Select##ToolSelect", &m_meshSelectionEnabled);
+        if (m_meshSelectionEnabled) {
+            ImGui::SameLine();
+            int curSelMode = static_cast<int>(m_selectionService.GetMode());
+            if (ImGui::RadioButton("V##SelV", curSelMode == 0)) m_selectionService.SetMode(fw::SelectionMode::Vertex);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Selezione Vertici (V)");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("E##SelE", curSelMode == 1)) m_selectionService.SetMode(fw::SelectionMode::Edge);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Selezione Spigoli (E)");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("F##SelF", curSelMode == 2)) m_selectionService.SetMode(fw::SelectionMode::Face);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Selezione Facce (F)");
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+
+        // 3. Sculpt Quick Toggle
+        ImGui::Checkbox("Sculpt##ToolSculpt", &m_sculptModeActive);
+        if (m_sculptModeActive) {
+            ImGui::SameLine();
+            auto& bSettings = m_sculptService.GetSettingsMutable();
+            int curBrush = static_cast<int>(bSettings.brushType);
+            const char* brushNames[] = { "Grab", "Smooth", "Inflate", "Flatten", "Clay" };
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::Combo("##ToolBrushCombo", &curBrush, brushNames, 5)) {
+                bSettings.brushType = static_cast<fw::SculptBrushType>(curBrush);
+            }
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+
+        // 4. Stazione Factory Attiva
+        fw::ProductionStationID activeSid = m_factoryOrchestrator.GetActiveStation();
+        const auto* curSt = m_factoryOrchestrator.GetStation(activeSid);
+        ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "Stazione: %s", curSt ? curSt->GetName() : "-");
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::DrawWorkspaceLeftPanel(float topY, float bottomY, float panelWidth) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 vpPos = vp ? vp->Pos : ImVec2(0.0f, 0.0f);
+
+    float panelHeight = bottomY - topY;
+
+    ImGui::SetNextWindowPos(ImVec2(vpPos.x, topY));
+    ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoResize | 
+                            ImGuiWindowFlags_NoMove | 
+                            ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoScrollbar | 
+                            ImGuiWindowFlags_NoScrollWithMouse | 
+                            ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.13f, 0.96f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.22f, 0.28f, 0.8f));
+
+    if (ImGui::Begin("##WorkspaceLeftPanel", nullptr, flags)) {
+        DrawAssetBrowserContents();
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::DrawWorkspaceRightInspector(float topY, float bottomY, float panelWidth) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 vpPos = vp ? vp->Pos : ImVec2(0.0f, 0.0f);
+    ImVec2 vpSize = vp ? vp->Size : ImGui::GetIO().DisplaySize;
+
+    float panelHeight = bottomY - topY;
+    float posX = vpPos.x + vpSize.x - panelWidth;
+
+    ImGui::SetNextWindowPos(ImVec2(posX, topY));
+    ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoResize | 
+                            ImGuiWindowFlags_NoMove | 
+                            ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoSavedSettings | 
+                            ImGuiWindowFlags_AlwaysVerticalScrollbar;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.13f, 0.96f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.22f, 0.28f, 0.8f));
+
+    if (ImGui::Begin("##WorkspaceRightInspector", nullptr, flags)) {
+        DrawInspectorContents();
+
+        // Rilevamento metriche scrolling per-frame per Gate E
+        m_inspectorScrollY = ImGui::GetScrollY();
+        m_inspectorScrollMaxY = ImGui::GetScrollMaxY();
+        m_inspectorVisibleH = ImGui::GetWindowHeight();
+        m_inspectorContentH = m_inspectorVisibleH + m_inspectorScrollMaxY;
+        m_inspectorHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::DrawWorkspaceFooter(float& outFooterHeight) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 vpPos = vp ? vp->Pos : ImVec2(0.0f, 0.0f);
+    ImVec2 vpSize = vp ? vp->Size : ImGui::GetIO().DisplaySize;
+
+    float dpi = ImGui::GetIO().FontGlobalScale;
+    if (dpi <= 0.0f) dpi = 1.0f;
+
+    outFooterHeight = m_footerCollapsed ? (24.0f * dpi) : (88.0f * dpi);
+    float posY = vpPos.y + vpSize.y - outFooterHeight;
+
+    ImGui::SetNextWindowPos(ImVec2(vpPos.x, posY));
+    ImGui::SetNextWindowSize(ImVec2(vpSize.x, outFooterHeight));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | 
+                            ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoResize | 
+                            ImGuiWindowFlags_NoMove | 
+                            ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.09f, 0.10f, 0.12f, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.22f, 0.28f, 0.8f));
+
+    if (ImGui::Begin("##WorkspaceFooter", nullptr, flags)) {
+        if (ImGui::SmallButton(m_footerCollapsed ? "[^] Espandi Console" : "[v] Riduci Console")) {
+            m_footerCollapsed = !m_footerCollapsed;
+        }
+        ImGui::SameLine();
+
+        // Messaggio di feedback attivo prioritario
+        if (m_assetOpFeedbackTimer > 0.0f) {
+            ImGui::TextColored(m_assetOpFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.3f, 1.0f, 0.4f, 1.0f),
+                               "[Asset]: %s", m_assetOpFeedback.c_str());
+            ImGui::SameLine();
+        } else if (m_factoryOpFeedbackTimer > 0.0f) {
+            ImGui::TextColored(m_factoryOpFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.3f, 1.0f, 0.4f, 1.0f),
+                               "[Factory]: %s", m_factoryOpFeedback.c_str());
+            ImGui::SameLine();
+        } else if (!m_modelingFeedbackMsg.empty()) {
+            ImGui::TextColored(m_modelingFeedbackIsError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.3f, 1.0f, 0.4f, 1.0f),
+                               "[Model]: %s", m_modelingFeedbackMsg.c_str());
+            ImGui::SameLine();
+        } else {
+            ImGui::TextDisabled("Pronto. Modifiche tracciate in tempo reale.");
+            ImGui::SameLine();
+        }
+
+        // Telemetria History e Zero-Work sul lato destro
+        std::string historyStr = "Undo: " + std::to_string(m_meshHistoryService.GetUndoCount()) + 
+                                " | Redo: " + std::to_string(m_meshHistoryService.GetRedoCount());
+        std::string zeroWorkStr = "ZeroWork [Geo:" + std::to_string(m_zeroWorkTelemetry.geoCompilerCalls) + 
+                                  " Mesh:" + std::to_string(m_zeroWorkTelemetry.meshGenCalls) + 
+                                  " GPU:" + std::to_string(m_zeroWorkTelemetry.gpuUploadCalls) + "]";
+        std::string rightStr = historyStr + "  |  " + zeroWorkStr;
+
+        float textWidth = ImGui::CalcTextSize(rightStr.c_str()).x;
+        if (ImGui::GetWindowWidth() > textWidth + 350.0f) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - textWidth - 16.0f);
+            ImGui::TextColored(ImVec4(0.4f, 0.7f, 0.9f, 1.0f), "%s", rightStr.c_str());
+        }
+
+        if (!m_footerCollapsed) {
+            ImGui::Separator();
+            ImGui::Text("History Comandi: %s", m_meshHistoryService.CanUndo() ? m_meshHistoryService.GetUndoCommandName().c_str() : "(nessuno)");
+            ImGui::SameLine();
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+            ImGui::Text("Shape Revisions: %u | ECS Transforms: %u | JSON Saves: %u",
+                m_zeroWorkTelemetry.shapeRevIncrements,
+                m_zeroWorkTelemetry.ecsTransformWrites,
+                m_zeroWorkTelemetry.jsonSaveCalls);
+            ImGui::SameLine();
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.4f, 1.0f), "Inspector Scroll: %.0f/%.0f (Vis: %.0f, Cont: %.0f) [%s]",
+                m_inspectorScrollY, m_inspectorScrollMaxY, m_inspectorVisibleH, m_inspectorContentH,
+                m_inspectorHovered ? "Hovered" : "Inactive");
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::DrawWorkspaceShell() {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 vpPos = vp ? vp->Pos : ImVec2(0.0f, 0.0f);
+    ImVec2 vpSize = vp ? vp->Size : ImGui::GetIO().DisplaySize;
+
+    // Protezione per risoluzioni minime di sicurezza
+    if (vpSize.x < 320.0f) vpSize.x = 320.0f;
+    if (vpSize.y < 240.0f) vpSize.y = 240.0f;
+
+    float dpi = ImGui::GetIO().FontGlobalScale;
+    if (dpi <= 0.0f) dpi = 1.0f;
+
+    // 1. Calcolo altezze orizzontali
+    float topBarHeight = 0.0f;
+    DrawWorkspaceTopMenuBar(topBarHeight);
+
+    float toolbarHeight = 0.0f;
+    DrawWorkspaceToolbar(vpPos.y + topBarHeight, toolbarHeight);
+
+    float headerTotalHeight = topBarHeight + toolbarHeight;
+
+    // 2. Calcolo altezza footer
+    float footerHeight = 0.0f;
+    DrawWorkspaceFooter(footerHeight);
+
+    // 3. Calcolo geometrico adattivo delle larghezze dei pannelli
+    float availableHeight = vpSize.y - headerTotalHeight - footerHeight;
+    if (availableHeight < 80.0f) availableHeight = 80.0f;
+
+    float minCenterWidth = 200.0f * dpi;
+    float desiredLeft = 260.0f * dpi;
+    float desiredRight = 380.0f * dpi;
+
+    float leftWidth = desiredLeft;
+    float rightWidth = desiredRight;
+
+    if (leftWidth + rightWidth + minCenterWidth > vpSize.x) {
+        float sideBudget = (std::max)(vpSize.x - minCenterWidth, 200.0f * dpi);
+        leftWidth = sideBudget * (desiredLeft / (desiredLeft + desiredRight));
+        rightWidth = sideBudget * (desiredRight / (desiredLeft + desiredRight));
+        leftWidth = (std::max)(leftWidth, 110.0f * dpi);
+        rightWidth = (std::max)(rightWidth, 160.0f * dpi);
+    }
+
+    m_leftPanelWidth = leftWidth;
+    m_rightPanelWidth = rightWidth;
+
+    float panelsTopY = vpPos.y + headerTotalHeight;
+    float panelsBottomY = vpPos.y + vpSize.y - footerHeight;
+
+    // 4. Pannello Sinistro (Asset Browser)
+    DrawWorkspaceLeftPanel(panelsTopY, panelsBottomY, leftWidth);
+
+    // 5. Area Centrale: NESSUNA finestra ImGui creata qui!
+    // Lo spazio [vpPos.x + leftWidth, vpPos.x + vpSize.x - rightWidth] rimane COMPLETAMENTE LIBERO.
+    // La viewport Vulkan (PreviewBlock e studio) rimane visibile al 100% e io.WantCaptureMouse e' false!
+
+    // 6. Pannello Destro (Inspector con i 4 Tab)
+    DrawWorkspaceRightInspector(panelsTopY, panelsBottomY, rightWidth);
+}
+
+void BlockMakerState::DrawLegacyFloatingWindowUI() {
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(800.0f, 600.0f), ImGuiCond_FirstUseEver);
+    
+    bool windowOpen = ImGui::Begin("Block Maker (Data-Driven)");
+    if (windowOpen) {
+        if (ImGui::Button("ATTIVA WORKSPACE DOCK-FREE >>")) {
+            m_useWorkspaceLayout = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("< TORNA ALL'HUB")) {
+            ReturnToHub();
+            ImGui::End();
+            return;
+        }
+        
+        ImGui::Separator();
+
+        if (!m_context || !m_context->blockRegistry) {
+            ImGui::TextColored(ImVec4(1,0,0,1), "ERROR: BlockRegistry not found!");
+            ImGui::End();
+            return;
+        }
+        
+        // --- LAYOUT A DUE COLONNE LEGACY ---
+        ImGui::Columns(2, "BlockMakerColumns");
+        ImGui::SetColumnWidth(0, 250.0f);
+
+        DrawAssetBrowserContents();
+
+        ImGui::NextColumn();
+
+        ImGui::BeginChild("BlockPropertiesScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        DrawInspectorContents();
+        ImGui::EndChild();
+
+        ImGui::Columns(1);
+    }
+    ImGui::End();
+}
+
+void BlockMakerState::DrawUI() {
+    static bool s_loggedFirstDrawUI = false;
+    if (!s_loggedFirstDrawUI) {
+        s_loggedFirstDrawUI = true;
+        std::cout << "[BM-R1][IMGUI] Prima chiamata a BlockMakerState::DrawUI() eseguita.\n";
+    }
+
+    if (m_useWorkspaceLayout) {
+        DrawWorkspaceShell();
+    } else {
+        DrawLegacyFloatingWindowUI();
+    }
 }
 
 void BlockMakerState::DrawGizmo() {

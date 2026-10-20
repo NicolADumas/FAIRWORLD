@@ -107,16 +107,27 @@ void EditableMesh::Clear() {
 // =============================================================================
 
 VertexID EditableMesh::AddVertex(const glm::vec3& position) {
-    VertexID id;
-    if (!m_freeVertexIndices.empty()) {
-        id.index = m_freeVertexIndices.back();
+    VertexID id = INVALID_VERTEX_ID;
+
+    // 1. Cerca uno slot valido nella free-list
+    while (!m_freeVertexIndices.empty()) {
+        uint32_t candidateIndex = m_freeVertexIndices.back();
         m_freeVertexIndices.pop_back();
-        uint32_t curGen = m_vertexGenerations[id.index];
+
+        uint32_t curGen = m_vertexGenerations[candidateIndex];
         uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateVertexGeneration(id.index, curGen)
-            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
-        m_vertexGenerations[id.index] = nextGen;
+            ? m_generationLedger->AllocateVertexGeneration(candidateIndex, curGen)
+            : (curGen == 0xFFFFFFFF ? 0 : (curGen == 0 ? 1 : curGen + 1));
+
+        if (nextGen == 0) {
+            // BM-S1.T15.F2: Slot esaurito (generazione UINT32_MAX già raggiunta).
+            // Rimosso definitivamente dalla free-list: non riutilizzare questo slot.
+            continue;
+        }
+
+        id.index = candidateIndex;
         id.generation = nextGen;
+        m_vertexGenerations[id.index] = nextGen;
 
         auto& v = m_vertices[id.index];
         v.id = id;
@@ -124,38 +135,72 @@ VertexID EditableMesh::AddVertex(const glm::vec3& position) {
         v.halfEdge = INVALID_HALFEDGE_ID;
         v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
         v.isDeleted = false;
-    } else {
-        id.index = static_cast<uint32_t>(m_vertices.size());
-        uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateVertexGeneration(id.index, 0)
-            : 1;
-        id.generation = nextGen;
-        m_vertexGenerations.push_back(nextGen);
-
-        MeshVertex v;
-        v.id = id;
-        v.position = position;
-        v.halfEdge = INVALID_HALFEDGE_ID;
-        v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-        v.isDeleted = false;
-        m_vertices.push_back(v);
+        break;
     }
+
+    // 2. Se nessun slot riutilizzabile e disponibile, alloca un nuovo indice
+    if (!id.IsValid()) {
+        while (m_vertices.size() < 0xFFFFFFFFULL) {
+            uint32_t newIndex = static_cast<uint32_t>(m_vertices.size());
+            uint32_t nextGen = m_generationLedger 
+                ? m_generationLedger->AllocateVertexGeneration(newIndex, 0)
+                : 1;
+
+            if (nextGen == 0) {
+                MeshVertex retiredV;
+                retiredV.id = INVALID_VERTEX_ID;
+                retiredV.isDeleted = true;
+                m_vertices.push_back(retiredV);
+                m_vertexGenerations.push_back(0xFFFFFFFF);
+                continue;
+            }
+
+            id.index = newIndex;
+            id.generation = nextGen;
+            m_vertexGenerations.push_back(nextGen);
+
+            MeshVertex v;
+            v.id = id;
+            v.position = position;
+            v.halfEdge = INVALID_HALFEDGE_ID;
+            v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+            v.isDeleted = false;
+            m_vertices.push_back(v);
+            break;
+        }
+    }
+
+    // 3. Gestione controllata dell'eventuale esaurimento dello spazio degli indici
+    if (!id.IsValid()) {
+        return INVALID_VERTEX_ID;
+    }
+
     m_activeVertexCount++;
     IncrementGeometryRevision();
     return id;
 }
 
 HalfEdgeID EditableMesh::AllocateHalfEdge() {
-    HalfEdgeID id;
-    if (!m_freeHalfEdgeIndices.empty()) {
-        id.index = m_freeHalfEdgeIndices.back();
+    HalfEdgeID id = INVALID_HALFEDGE_ID;
+
+    // 1. Cerca uno slot valido nella free-list
+    while (!m_freeHalfEdgeIndices.empty()) {
+        uint32_t candidateIndex = m_freeHalfEdgeIndices.back();
         m_freeHalfEdgeIndices.pop_back();
-        uint32_t curGen = m_halfEdgeGenerations[id.index];
+
+        uint32_t curGen = m_halfEdgeGenerations[candidateIndex];
         uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateHalfEdgeGeneration(id.index, curGen)
-            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
-        m_halfEdgeGenerations[id.index] = nextGen;
+            ? m_generationLedger->AllocateHalfEdgeGeneration(candidateIndex, curGen)
+            : (curGen == 0xFFFFFFFF ? 0 : (curGen == 0 ? 1 : curGen + 1));
+
+        if (nextGen == 0) {
+            // BM-S1.T15.F2: Slot esaurito. Rimosso definitivamente dalla free-list.
+            continue;
+        }
+
+        id.index = candidateIndex;
         id.generation = nextGen;
+        m_halfEdgeGenerations[id.index] = nextGen;
 
         auto& he = m_halfEdges[id.index];
         he.id = id;
@@ -167,41 +212,74 @@ HalfEdgeID EditableMesh::AllocateHalfEdge() {
         he.edge = INVALID_EDGE_ID;
         he.corner = CornerAttributes{};
         he.isDeleted = false;
-    } else {
-        id.index = static_cast<uint32_t>(m_halfEdges.size());
-        uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateHalfEdgeGeneration(id.index, 0)
-            : 1;
-        id.generation = nextGen;
-        m_halfEdgeGenerations.push_back(nextGen);
-
-        MeshHalfEdge he;
-        he.id = id;
-        he.origin = INVALID_VERTEX_ID;
-        he.twin = INVALID_HALFEDGE_ID;
-        he.next = INVALID_HALFEDGE_ID;
-        he.prev = INVALID_HALFEDGE_ID;
-        he.face = INVALID_FACE_ID;
-        he.edge = INVALID_EDGE_ID;
-        he.corner = CornerAttributes{};
-        he.isDeleted = false;
-        m_halfEdges.push_back(he);
+        break;
     }
+
+    // 2. Se nessun slot riutilizzabile e disponibile, alloca un nuovo indice
+    if (!id.IsValid()) {
+        while (m_halfEdges.size() < 0xFFFFFFFFULL) {
+            uint32_t newIndex = static_cast<uint32_t>(m_halfEdges.size());
+            uint32_t nextGen = m_generationLedger 
+                ? m_generationLedger->AllocateHalfEdgeGeneration(newIndex, 0)
+                : 1;
+
+            if (nextGen == 0) {
+                MeshHalfEdge retiredHe;
+                retiredHe.id = INVALID_HALFEDGE_ID;
+                retiredHe.isDeleted = true;
+                m_halfEdges.push_back(retiredHe);
+                m_halfEdgeGenerations.push_back(0xFFFFFFFF);
+                continue;
+            }
+
+            id.index = newIndex;
+            id.generation = nextGen;
+            m_halfEdgeGenerations.push_back(nextGen);
+
+            MeshHalfEdge he;
+            he.id = id;
+            he.origin = INVALID_VERTEX_ID;
+            he.twin = INVALID_HALFEDGE_ID;
+            he.next = INVALID_HALFEDGE_ID;
+            he.prev = INVALID_HALFEDGE_ID;
+            he.face = INVALID_FACE_ID;
+            he.edge = INVALID_EDGE_ID;
+            he.corner = CornerAttributes{};
+            he.isDeleted = false;
+            m_halfEdges.push_back(he);
+            break;
+        }
+    }
+
+    if (!id.IsValid()) {
+        return INVALID_HALFEDGE_ID;
+    }
+
     m_activeHalfEdgeCount++;
     return id;
 }
 
 EdgeID EditableMesh::AllocateEdge() {
-    EdgeID id;
-    if (!m_freeEdgeIndices.empty()) {
-        id.index = m_freeEdgeIndices.back();
+    EdgeID id = INVALID_EDGE_ID;
+
+    // 1. Cerca uno slot valido nella free-list
+    while (!m_freeEdgeIndices.empty()) {
+        uint32_t candidateIndex = m_freeEdgeIndices.back();
         m_freeEdgeIndices.pop_back();
-        uint32_t curGen = m_edgeGenerations[id.index];
+
+        uint32_t curGen = m_edgeGenerations[candidateIndex];
         uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateEdgeGeneration(id.index, curGen)
-            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
-        m_edgeGenerations[id.index] = nextGen;
+            ? m_generationLedger->AllocateEdgeGeneration(candidateIndex, curGen)
+            : (curGen == 0xFFFFFFFF ? 0 : (curGen == 0 ? 1 : curGen + 1));
+
+        if (nextGen == 0) {
+            // BM-S1.T15.F2: Slot esaurito. Rimosso definitivamente dalla free-list.
+            continue;
+        }
+
+        id.index = candidateIndex;
         id.generation = nextGen;
+        m_edgeGenerations[id.index] = nextGen;
 
         auto& e = m_edges[id.index];
         e.id = id;
@@ -210,38 +288,71 @@ EdgeID EditableMesh::AllocateEdge() {
         e.isSharp = false;
         e.seamWeight = 0.0f;
         e.isDeleted = false;
-    } else {
-        id.index = static_cast<uint32_t>(m_edges.size());
-        uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateEdgeGeneration(id.index, 0)
-            : 1;
-        id.generation = nextGen;
-        m_edgeGenerations.push_back(nextGen);
-
-        MeshEdge e;
-        e.id = id;
-        e.halfEdge = INVALID_HALFEDGE_ID;
-        e.twin = INVALID_HALFEDGE_ID;
-        e.isSharp = false;
-        e.seamWeight = 0.0f;
-        e.isDeleted = false;
-        m_edges.push_back(e);
+        break;
     }
+
+    // 2. Se nessun slot riutilizzabile e disponibile, alloca un nuovo indice
+    if (!id.IsValid()) {
+        while (m_edges.size() < 0xFFFFFFFFULL) {
+            uint32_t newIndex = static_cast<uint32_t>(m_edges.size());
+            uint32_t nextGen = m_generationLedger 
+                ? m_generationLedger->AllocateEdgeGeneration(newIndex, 0)
+                : 1;
+
+            if (nextGen == 0) {
+                MeshEdge retiredE;
+                retiredE.id = INVALID_EDGE_ID;
+                retiredE.isDeleted = true;
+                m_edges.push_back(retiredE);
+                m_edgeGenerations.push_back(0xFFFFFFFF);
+                continue;
+            }
+
+            id.index = newIndex;
+            id.generation = nextGen;
+            m_edgeGenerations.push_back(nextGen);
+
+            MeshEdge e;
+            e.id = id;
+            e.halfEdge = INVALID_HALFEDGE_ID;
+            e.twin = INVALID_HALFEDGE_ID;
+            e.isSharp = false;
+            e.seamWeight = 0.0f;
+            e.isDeleted = false;
+            m_edges.push_back(e);
+            break;
+        }
+    }
+
+    if (!id.IsValid()) {
+        return INVALID_EDGE_ID;
+    }
+
     m_activeEdgeCount++;
     return id;
 }
 
 FaceID EditableMesh::AllocateFace() {
-    FaceID id;
-    if (!m_freeFaceIndices.empty()) {
-        id.index = m_freeFaceIndices.back();
+    FaceID id = INVALID_FACE_ID;
+
+    // 1. Cerca uno slot valido nella free-list
+    while (!m_freeFaceIndices.empty()) {
+        uint32_t candidateIndex = m_freeFaceIndices.back();
         m_freeFaceIndices.pop_back();
-        uint32_t curGen = m_faceGenerations[id.index];
+
+        uint32_t curGen = m_faceGenerations[candidateIndex];
         uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateFaceGeneration(id.index, curGen)
-            : (curGen == 0 ? 1 : (curGen + 1 == 0 ? 0xFFFFFFFF : curGen + 1));
-        m_faceGenerations[id.index] = nextGen;
+            ? m_generationLedger->AllocateFaceGeneration(candidateIndex, curGen)
+            : (curGen == 0xFFFFFFFF ? 0 : (curGen == 0 ? 1 : curGen + 1));
+
+        if (nextGen == 0) {
+            // BM-S1.T15.F2: Slot esaurito. Rimosso definitivamente dalla free-list.
+            continue;
+        }
+
+        id.index = candidateIndex;
         id.generation = nextGen;
+        m_faceGenerations[id.index] = nextGen;
 
         auto& f = m_faces[id.index];
         f.id = id;
@@ -251,24 +362,47 @@ FaceID EditableMesh::AllocateFace() {
         f.faceNormal = glm::vec3(0.0f, 1.0f, 0.0f);
         f.area = 0.0f;
         f.isDeleted = false;
-    } else {
-        id.index = static_cast<uint32_t>(m_faces.size());
-        uint32_t nextGen = m_generationLedger 
-            ? m_generationLedger->AllocateFaceGeneration(id.index, 0)
-            : 1;
-        id.generation = nextGen;
-        m_faceGenerations.push_back(nextGen);
-
-        MeshFace f;
-        f.id = id;
-        f.halfEdge = INVALID_HALFEDGE_ID;
-        f.surfaceId = 0;
-        f.materialId = 0;
-        f.faceNormal = glm::vec3(0.0f, 1.0f, 0.0f);
-        f.area = 0.0f;
-        f.isDeleted = false;
-        m_faces.push_back(f);
+        break;
     }
+
+    // 2. Se nessun slot riutilizzabile e disponibile, alloca un nuovo indice
+    if (!id.IsValid()) {
+        while (m_faces.size() < 0xFFFFFFFFULL) {
+            uint32_t newIndex = static_cast<uint32_t>(m_faces.size());
+            uint32_t nextGen = m_generationLedger 
+                ? m_generationLedger->AllocateFaceGeneration(newIndex, 0)
+                : 1;
+
+            if (nextGen == 0) {
+                MeshFace retiredF;
+                retiredF.id = INVALID_FACE_ID;
+                retiredF.isDeleted = true;
+                m_faces.push_back(retiredF);
+                m_faceGenerations.push_back(0xFFFFFFFF);
+                continue;
+            }
+
+            id.index = newIndex;
+            id.generation = nextGen;
+            m_faceGenerations.push_back(nextGen);
+
+            MeshFace f;
+            f.id = id;
+            f.halfEdge = INVALID_HALFEDGE_ID;
+            f.surfaceId = 0;
+            f.materialId = 0;
+            f.faceNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+            f.area = 0.0f;
+            f.isDeleted = false;
+            m_faces.push_back(f);
+            break;
+        }
+    }
+
+    if (!id.IsValid()) {
+        return INVALID_FACE_ID;
+    }
+
     m_activeFaceCount++;
     return id;
 }
@@ -413,11 +547,28 @@ FaceID EditableMesh::AddFace(const std::vector<VertexID>& vertexIds,
 
     // 3. Alloca la faccia e gli half-edge necessari
     FaceID faceId = AllocateFace();
+    if (!faceId.IsValid()) return INVALID_FACE_ID;
+
     std::vector<HalfEdgeID> faceHalfEdges;
     faceHalfEdges.reserve(k);
 
     for (size_t i = 0; i < k; ++i) {
         HalfEdgeID heId = AllocateHalfEdge();
+        if (!heId.IsValid()) {
+            for (HalfEdgeID allocatedHe : faceHalfEdges) {
+                if (auto* he = GetHalfEdgeMutable(allocatedHe)) {
+                    he->isDeleted = true;
+                    m_freeHalfEdgeIndices.push_back(allocatedHe.index);
+                    m_activeHalfEdgeCount--;
+                }
+            }
+            if (auto* f = GetFaceMutable(faceId)) {
+                f->isDeleted = true;
+                m_freeFaceIndices.push_back(faceId.index);
+                m_activeFaceCount--;
+            }
+            return INVALID_FACE_ID;
+        }
         faceHalfEdges.push_back(heId);
 
         auto* he = GetHalfEdgeMutable(heId);
@@ -470,6 +621,14 @@ FaceID EditableMesh::AddFace(const std::vector<VertexID>& vertexIds,
         } else {
             // Crea un nuovo spigolo logico non orientato
             EdgeID edgeId = AllocateEdge();
+            if (!edgeId.IsValid()) {
+                for (size_t j = 0; j < i; ++j) {
+                    DirectedEdgeKey dirKeyRollback{ vertexIds[j].index, vertexIds[(j + 1) % k].index };
+                    m_directedEdgeLookup.erase(dirKeyRollback);
+                }
+                DeleteFace(faceId, true, false);
+                return INVALID_FACE_ID;
+            }
             auto* edgeObj = GetEdgeMutable(edgeId);
             edgeObj->halfEdge = currId;
             edgeObj->twin = INVALID_HALFEDGE_ID;

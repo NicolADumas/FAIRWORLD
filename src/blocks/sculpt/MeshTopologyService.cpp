@@ -943,18 +943,109 @@ std::vector<MeshTopologyService::TopologyTestResult> MeshTopologyService::RunTop
         // Mesh C non deve MAI assumere lo stesso ID di Mesh B (fidB != fidC)
         bool branchSafe = undoRestoredHistorical && (fidB != fidC) && (fidC.generation > fidB.generation);
 
-        // 4. Overflow Protection: verifica che la condizione limite 0xFFFFFFFF saturi senza wrappare a 0 o 1
+        // 4. Overflow Protection: verifica che la condizione limite 0xFFFFFFFF non saturi riemettendo UINT32_MAX,
+        // ma segnali esaurimento (0) senza alterare il valore high-water e senza wrappare a 1
         MeshGenerationLedger testLedger;
         testLedger.RegisterFaceGeneration(0, 0xFFFFFFFF);
         uint32_t satGen = testLedger.AllocateFaceGeneration(0, 0);
-        bool overflowSafe = (satGen == 0xFFFFFFFF);
+        bool overflowSafe = (satGen == 0) && (testLedger.GetMaxFaceGeneration(0) == 0xFFFFFFFF);
 
-        t.passed = oldInvalid && repeatedSubValid && branchSafe && overflowSafe;
+        // 5. Anti-ABA Slot Retirement & Exhaustion across DCEL elements (Vertex, Face, Edge, HalfEdge)
+        // 5a. Vertex: saturazione generazione slot 0, cancellazione, riallocazione con slot retirement
+        EditableMesh vMesh;
+        vMesh.GetGenerationLedger()->RegisterVertexGeneration(0, 0xFFFFFFFE);
+        VertexID vOld = vMesh.AddVertex(glm::vec3(0.0f));
+        bool vOldSat = (vOld.IsValid() && vOld.index == 0 && vOld.generation == 0xFFFFFFFF);
+        bool vOldDeleted = vMesh.DeleteVertex(vOld);
+        VertexID vNew = vMesh.AddVertex(glm::vec3(1.0f));
+        bool vVertexAbaSafe = vOldSat && vOldDeleted && vNew.IsValid() && 
+                              (vNew != vOld) && (vNew.index != vOld.index) &&
+                              !vMesh.IsValid(vOld) && vMesh.IsValid(vNew);
+
+        // 5b. Face: saturazione generazione slot 0, cancellazione, riallocazione con slot retirement
+        EditableMesh fMesh;
+        fMesh.GetGenerationLedger()->RegisterFaceGeneration(0, 0xFFFFFFFE);
+        VertexID fv0 = fMesh.AddVertex(glm::vec3(0.0f, 0.0f, 0.0f));
+        VertexID fv1 = fMesh.AddVertex(glm::vec3(1.0f, 0.0f, 0.0f));
+        VertexID fv2 = fMesh.AddVertex(glm::vec3(0.0f, 1.0f, 0.0f));
+        FaceID fOld = fMesh.AddFace({ fv0, fv1, fv2 });
+        bool fOldSat = (fOld.IsValid() && fOld.index == 0 && fOld.generation == 0xFFFFFFFF);
+        bool fOldDeleted = fMesh.DeleteFace(fOld, false, false);
+        VertexID fv3 = fMesh.AddVertex(glm::vec3(2.0f, 0.0f, 0.0f));
+        VertexID fv4 = fMesh.AddVertex(glm::vec3(3.0f, 0.0f, 0.0f));
+        VertexID fv5 = fMesh.AddVertex(glm::vec3(2.0f, 1.0f, 0.0f));
+        FaceID fNew = fMesh.AddFace({ fv3, fv4, fv5 });
+        bool fFaceAbaSafe = fOldSat && fOldDeleted && fNew.IsValid() && 
+                            (fNew != fOld) && (fNew.index != fOld.index) &&
+                            !fMesh.IsValid(fOld) && fMesh.IsValid(fNew);
+
+        // 5c. Edge: saturazione generazione slot 0, cancellazione, riallocazione con slot retirement
+        EditableMesh eMesh;
+        eMesh.GetGenerationLedger()->RegisterEdgeGeneration(0, 0xFFFFFFFE);
+        VertexID ev0 = eMesh.AddVertex(glm::vec3(0.0f, 0.0f, 0.0f));
+        VertexID ev1 = eMesh.AddVertex(glm::vec3(1.0f, 0.0f, 0.0f));
+        VertexID ev2 = eMesh.AddVertex(glm::vec3(0.0f, 1.0f, 0.0f));
+        FaceID ef0 = eMesh.AddFace({ ev0, ev1, ev2 });
+        EdgeID eOld = INVALID_EDGE_ID;
+        for (EdgeID eid : eMesh.GetActiveEdgeIDs()) {
+            if (eid.index == 0) {
+                eOld = eid;
+                break;
+            }
+        }
+        bool eOldSat = (eOld.IsValid() && eOld.index == 0 && eOld.generation == 0xFFFFFFFF);
+        bool eOldDeleted = eMesh.DeleteFace(ef0, true, false);
+        VertexID ev3 = eMesh.AddVertex(glm::vec3(2.0f, 0.0f, 0.0f));
+        VertexID ev4 = eMesh.AddVertex(glm::vec3(3.0f, 0.0f, 0.0f));
+        VertexID ev5 = eMesh.AddVertex(glm::vec3(2.0f, 1.0f, 0.0f));
+        FaceID ef1 = eMesh.AddFace({ ev3, ev4, ev5 });
+        bool eNewValid = false;
+        bool eNoCollision = true;
+        for (EdgeID eid : eMesh.GetActiveEdgeIDs()) {
+            if (eid == eOld || eid.index == eOld.index) eNoCollision = false;
+            if (eid.IsValid()) eNewValid = true;
+        }
+        bool eEdgeAbaSafe = eOldSat && eOldDeleted && eNewValid && eNoCollision && !eMesh.IsValid(eOld);
+
+        // 5d. HalfEdge: saturazione generazione slot 0, cancellazione, riallocazione con slot retirement
+        EditableMesh heMesh;
+        heMesh.GetGenerationLedger()->RegisterHalfEdgeGeneration(0, 0xFFFFFFFE);
+        VertexID hev0 = heMesh.AddVertex(glm::vec3(0.0f, 0.0f, 0.0f));
+        VertexID hev1 = heMesh.AddVertex(glm::vec3(1.0f, 0.0f, 0.0f));
+        VertexID hev2 = heMesh.AddVertex(glm::vec3(0.0f, 1.0f, 0.0f));
+        FaceID hef0 = heMesh.AddFace({ hev0, hev1, hev2 });
+        HalfEdgeID heOld = INVALID_HALFEDGE_ID;
+        for (HalfEdgeID heid : heMesh.GetActiveHalfEdgeIDs()) {
+            if (heid.index == 0) {
+                heOld = heid;
+                break;
+            }
+        }
+        bool heOldSat = (heOld.IsValid() && heOld.index == 0 && heOld.generation == 0xFFFFFFFF);
+        bool heOldDeleted = heMesh.DeleteFace(hef0, true, false);
+        VertexID hev3 = heMesh.AddVertex(glm::vec3(2.0f, 0.0f, 0.0f));
+        VertexID hev4 = heMesh.AddVertex(glm::vec3(3.0f, 0.0f, 0.0f));
+        VertexID hev5 = heMesh.AddVertex(glm::vec3(2.0f, 1.0f, 0.0f));
+        FaceID hef1 = heMesh.AddFace({ hev3, hev4, hev5 });
+        bool heNewValid = false;
+        bool heNoCollision = true;
+        for (HalfEdgeID heid : heMesh.GetActiveHalfEdgeIDs()) {
+            if (heid == heOld || heid.index == heOld.index) heNoCollision = false;
+            if (heid.IsValid()) heNewValid = true;
+        }
+        bool heHalfEdgeAbaSafe = heOldSat && heOldDeleted && heNewValid && heNoCollision && !heMesh.IsValid(heOld);
+
+        t.passed = oldInvalid && repeatedSubValid && branchSafe && overflowSafe &&
+                   vVertexAbaSafe && fFaceAbaSafe && eEdgeAbaSafe && heHalfEdgeAbaSafe;
         t.observedDesc = "OldInvalid=" + std::to_string(oldInvalid) + 
                          ", RepeatedSub=" + std::to_string(repeatedSubValid) + 
                          ", BranchSafe=" + std::to_string(branchSafe) + 
-                         ", OverflowSafe=" + std::to_string(overflowSafe);
-        t.details = t.passed ? "PASS" : "FAIL: Contratti di sicurezza generazionale violati";
+                         ", OverflowSafe=" + std::to_string(overflowSafe) +
+                         ", V_ABA=" + std::to_string(vVertexAbaSafe) +
+                         ", HE_ABA=" + std::to_string(heHalfEdgeAbaSafe) +
+                         ", E_ABA=" + std::to_string(eEdgeAbaSafe) +
+                         ", F_ABA=" + std::to_string(fFaceAbaSafe);
+        t.details = t.passed ? "PASS" : "FAIL: Contratti di sicurezza generazionale o Anti-ABA violati";
         results.push_back(t);
     }
 

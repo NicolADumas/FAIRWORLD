@@ -20,8 +20,29 @@ void BlockMakerRenderer::Cleanup(VkDevice device) {
 }
 
 void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::mat4 viewMatrix, glm::mat4 projMatrix) {
-    if (!context || !context->forgeWorld) return;
-    if (m_pipeline == VK_NULL_HANDLE) return;
+    static int s_drawLogCount = 0;
+    bool shouldLog = (s_drawLogCount < 3);
+
+    if (!context || !context->forgeWorld) {
+        if (shouldLog) {
+            std::cout << "[BM-R1][3D] BlockMakerRenderer::Draw() uscito prematuramente: context o context->forgeWorld nullo!\n";
+            s_drawLogCount++;
+        }
+        return;
+    }
+    if (m_pipeline == VK_NULL_HANDLE) {
+        if (shouldLog) {
+            std::cout << "[BM-R1][3D] BlockMakerRenderer::Draw() uscito prematuramente: m_pipeline Vulkan e' VK_NULL_HANDLE!\n";
+            s_drawLogCount++;
+        }
+        return;
+    }
+
+    if (shouldLog) {
+        int gameModeVal = context->engine ? static_cast<int>(context->engine->GetGameMode()) : -1;
+        std::cout << "[BM-R1][3D] BlockMakerRenderer::Draw() avviato. GameMode=" << gameModeVal
+                  << " (5=BlockMaker), Extent=(" << m_extent.width << "x" << m_extent.height << ")\n";
+    }
 
     // --- 1. Imposta Viewport e Scissor (OBBLIGATORIO per pipeline con stati dinamici) ---
     VkViewport viewport{};
@@ -56,11 +77,27 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
     auto& registry = context->forgeWorld->GetRegistry();
     auto view = registry.view<fw::MeshComponent, fw::TransformComponent>();
 
+    uint32_t totalEntitiesInView = 0;
+    uint32_t drawnEntitiesCount = 0;
+
     for (auto entity : view) {
+        totalEntitiesInView++;
         const auto& mesh = view.get<fw::MeshComponent>(entity);
         const auto& trans = view.get<fw::TransformComponent>(entity);
 
-        if (!visibilityPolicy.IsVisible(registry, entity, mesh, trans)) continue;
+        bool isVisible = visibilityPolicy.IsVisible(registry, entity, mesh, trans);
+        std::string metaName = registry.any_of<fw::MetadataComponent>(entity) ? registry.get<fw::MetadataComponent>(entity).name : "Unnamed";
+
+        if (shouldLog) {
+            std::cout << "[BM-R1][3D] Entita ECS [" << metaName << "] EntityID=" << (uint32_t)entity
+                      << " | Vertici=" << mesh.vertices.size()
+                      << " | Triangoli=" << (mesh.vertices.size() / 3)
+                      << " | MeshType=" << (int)mesh.type
+                      << " | VramHandle=" << mesh.vramAlloc
+                      << " | IsVisible=" << (isVisible ? "SI" : "NO") << "\n";
+        }
+
+        if (!isVisible) continue;
 
         // Renderizza solo blocchi di tipo Chunk o Editor
         if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Editor) {
@@ -79,14 +116,28 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 0, sizeof(ForgePushConstantData), &pcData);
 
-            auto allocInfo = context->vramAllocator->GetAllocation(mesh.vramAlloc);
-            if (allocInfo.valid && allocInfo.compartmentIdx < context->engine->GetRenderManager()->GetVramCompartments().size()) {
+            auto allocInfo = context->vramAllocator ? context->vramAllocator->GetAllocation(mesh.vramAlloc) : fw::VramAllocationInfo{};
+            bool vramValid = allocInfo.valid && context->engine && context->engine->GetRenderManager() &&
+                             (allocInfo.compartmentIdx < context->engine->GetRenderManager()->GetVramCompartments().size());
+
+            if (vramValid) {
                 VkBuffer buf = context->engine->GetRenderManager()->GetVramCompartments()[allocInfo.compartmentIdx];
                 VkDeviceSize offsets[] = { allocInfo.offset };
                 vkCmdBindVertexBuffers(cmd, 0, 1, &buf, offsets);
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, 0, 0);
+                drawnEntitiesCount++;
+            } else if (shouldLog) {
+                std::cout << "[BM-R1][3D] ERRORE VRAM per entita [" << metaName << "]: allocInfo.valid="
+                          << (allocInfo.valid ? "true" : "false")
+                          << " | CompartmentIdx=" << allocInfo.compartmentIdx << "\n";
             }
         }
+    }
+
+    if (shouldLog) {
+        std::cout << "[BM-R1][3D] BlockMakerRenderer::Draw() completato: Entita nel view=" << totalEntitiesInView
+                  << ", Entita disegnate con vkCmdDraw=" << drawnEntitiesCount << "\n";
+        s_drawLogCount++;
     }
 }
 

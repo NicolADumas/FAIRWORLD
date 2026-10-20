@@ -11,6 +11,7 @@
 #include "MeshGenerators.h"
 #include "ShapeRegistry.h"
 #include "BlockRegistry.h"
+#include "MaterialRegistry.h"
 #include "blocks/factory/FactoryOrchestrator.h"
 #include "blocks/sculpt/EditableMesh.h"
 #include "blocks/sculpt/MeshSelectionService.h"
@@ -60,6 +61,43 @@ private:
     void DrawUI();
     void DrawGizmo();
 
+    // --- BM-UI2: Workspace Shell Dock-Free State & Methods ---
+    bool m_useWorkspaceLayout = true; // Modalità Layout Workspace Dock-Free (true) / Finestra Legacy (false)
+    bool m_footerCollapsed = false;   // Stato del footer inferiore richiudibile
+    float m_leftPanelWidth = 260.0f;  // Larghezza adattiva del pannello sinistro
+    float m_rightPanelWidth = 380.0f; // Larghezza adattiva del pannello destro
+
+    // --- BM-UI2.2: Unified Factory Inspector Context ---
+    enum class InspectorContext {
+        GeneralSettings = 0,
+        FactoryStation = 1
+    };
+    InspectorContext m_inspectorContext = InspectorContext::GeneralSettings;
+
+    void DrawWorkspaceShell();
+    void DrawWorkspaceTopMenuBar(float& outTopBarHeight);
+    void DrawWorkspaceToolbar(float topY, float& outToolbarHeight);
+    void DrawWorkspaceLeftPanel(float topY, float bottomY, float panelWidth);
+    void DrawWorkspaceRightInspector(float topY, float bottomY, float panelWidth);
+    void DrawWorkspaceFooter(float& outFooterHeight);
+
+    void DrawAssetBrowserContents();
+    void DrawInspectorContents();
+    void DrawLegacyFloatingWindowUI();
+    void ReturnToHub();
+
+    // --- BM-UI2.2-A: Modular UI Extraction for General Settings & Factory Tools ---
+    void DrawGeneralTransformUI(fw::SimBlockDef& def);
+    void DrawGeneralIdentityUI(fw::SimBlockDef& def);
+    void DrawGeneralGraphicsUI(fw::PBRMaterialDef& mat, bool& isDirty);
+    void DrawGeneralPhysicsUI(fw::SimBlockDef& def);
+
+    void DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& isDirty);
+    void DrawFactorySculptControls();
+    void DrawFactorySurfaceUVControls(fw::PBRMaterialDef& mat, bool& isDirty);
+    void DrawFactoryTextureControls(fw::PBRMaterialDef& mat, bool& isDirty);
+    void DrawDiagnosticsControls(const fw::SimBlockDef& def, const fw::PBRMaterialDef& mat);
+
     SharedContext* m_context;
     std::vector<std::unique_ptr<System>> m_systems;
 
@@ -82,9 +120,17 @@ private:
     fw::MeshComponent m_cachedGeometryMesh;
     fw::ShapeRevision m_lastGeometryRevision = 0;
     fw::ShapeID m_lastGeometryShapeID = 0;
+    uint8_t m_lastCompiledBlockId = 0; // Tracciamento reattivo dell'ultimo blocco compilato per anteprima
     int m_lastGeometryLegacyType = -1;
     float m_lastGeometryLegacyN = -1.0f;
     bool m_lastGeometryWasParametric = false;
+
+    // Diagnostica scrolling Inspector (BM-UI2.1)
+    float m_inspectorScrollY = 0.0f;
+    float m_inspectorScrollMaxY = 0.0f;
+    float m_inspectorContentH = 0.0f;
+    float m_inspectorVisibleH = 0.0f;
+    bool m_inspectorHovered = false;
     
     fw::ShapeParameters m_editorParams;
     fw::ShapeID m_editorShapeID = 0;
@@ -417,6 +463,13 @@ private:
     std::vector<TopologyTestResult> m_topologyTestResults;
     bool m_topologyTestsExecuted = false;
     void RunTopologyValidationTests(bool isManualTrigger = false);
+
+    // --- BM-S6 Subdivision State & API (BM-S2.2 / BM-S2.3) ---
+    int m_subdivideIterations = 1;
+    bool m_subdivideSmooth = false;
+    static constexpr uint64_t MAX_SUBDIVISION_FACE_BUDGET = 65536ULL;
+    static uint64_t EstimateSubdivisionFaceCount(const fw::EditableMesh& mesh, int iterations);
+    void ApplySubdivideOperation();
 
     // --- BM-S7 Remeshing & Manifold Repair Validation Suite (REP-1 .. REP-10) ---
     struct RepairTestResult {
