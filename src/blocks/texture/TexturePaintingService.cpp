@@ -259,11 +259,24 @@ bool TexturePaintingService::ApplyDab(glm::vec2 pixelCoords, const PaintBrush& b
     PaintLayer* l = GetLayer(m_activeTransaction.layerId);
     if (!l) return false;
 
-    ApplyDabInternal(*l, pixelCoords, brush, m_activeTransaction.isMaskStroke);
+    ApplyDabInternal(*l, pixelCoords, brush, m_activeTransaction.isMaskStroke, nullptr);
+    return true;
+}
+
+bool TexturePaintingService::ApplyDabClipped(glm::vec2 pixelCoords, const PaintBrush& brush, const PixelClipCallback& clipCb) {
+    if (!m_activeTransaction.isActive) return false;
+    PaintLayer* l = GetLayer(m_activeTransaction.layerId);
+    if (!l) return false;
+
+    ApplyDabInternal(*l, pixelCoords, brush, m_activeTransaction.isMaskStroke, clipCb);
     return true;
 }
 
 bool TexturePaintingService::UpdateStroke(glm::vec2 prevCoords, glm::vec2 curCoords, const PaintBrush& brush) {
+    return UpdateStrokeClipped(prevCoords, curCoords, brush, nullptr);
+}
+
+bool TexturePaintingService::UpdateStrokeClipped(glm::vec2 prevCoords, glm::vec2 curCoords, const PaintBrush& brush, const PixelClipCallback& clipCb) {
     if (!m_activeTransaction.isActive) return false;
     PaintLayer* l = GetLayer(m_activeTransaction.layerId);
     if (!l) return false;
@@ -273,7 +286,7 @@ bool TexturePaintingService::UpdateStroke(glm::vec2 prevCoords, glm::vec2 curCoo
     float step = std::max(1.0f, brush.radiusPixels * std::clamp(brush.spacing, 0.02f, 1.0f));
 
     if (dist < 1e-4f) {
-        ApplyDabInternal(*l, curCoords, brush, m_activeTransaction.isMaskStroke);
+        ApplyDabInternal(*l, curCoords, brush, m_activeTransaction.isMaskStroke, clipCb);
         return true;
     }
 
@@ -281,13 +294,13 @@ bool TexturePaintingService::UpdateStroke(glm::vec2 prevCoords, glm::vec2 curCoo
     for (int i = 0; i <= steps; ++i) {
         float t = static_cast<float>(i) / static_cast<float>(steps);
         glm::vec2 pt = prevCoords + delta * t;
-        ApplyDabInternal(*l, pt, brush, m_activeTransaction.isMaskStroke);
+        ApplyDabInternal(*l, pt, brush, m_activeTransaction.isMaskStroke, clipCb);
     }
 
     return true;
 }
 
-void TexturePaintingService::ApplyDabInternal(PaintLayer& layer, glm::vec2 center, const PaintBrush& brush, bool isMask) {
+void TexturePaintingService::ApplyDabInternal(PaintLayer& layer, glm::vec2 center, const PaintBrush& brush, bool isMask, const PixelClipCallback& clipCb) {
     float r = brush.radiusPixels;
     if (r <= 0.0f) return;
 
@@ -305,6 +318,8 @@ void TexturePaintingService::ApplyDabInternal(PaintLayer& layer, glm::vec2 cente
             float dist = std::sqrt(dx * dx + dy * dy);
 
             if (dist <= r) {
+                if (clipCb && !clipCb(x, y)) continue;
+
                 float falloffFactor = brush.EvaluateFalloff(dist / r);
                 float factor = falloffFactor * brush.opacity * brush.strength;
 

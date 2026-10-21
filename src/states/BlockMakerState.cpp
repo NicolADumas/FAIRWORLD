@@ -323,6 +323,169 @@ void BlockMakerState::RevertBlockPhysicsToSaved(uint8_t id) {
     def.SyncLegacyPhysicsFields();
 }
 
+// =============================================================================
+// BM-UI2.3-B1 FACTORY EDIT SESSION LIFECYCLE & DATA OWNERSHIP
+// =============================================================================
+
+void BlockMakerState::UpdateSessionContext() {
+    m_sessionContext.activeBlockId = m_selectedBlockId;
+    m_sessionContext.activeDraft = m_factoryOrchestrator.GetCurrentDraft();
+    m_sessionContext.activeMesh = &m_activeEditableMesh;
+    m_sessionContext.activeSurfaceId = static_cast<uint32_t>(m_selectedSurfaceIndex >= 0 ? m_selectedSurfaceIndex : 0);
+    m_sessionContext.uvDocument = m_uvEditorDocument.get();
+    m_sessionContext.paintingService = &m_paintingService;
+    m_sessionContext.isSessionValid = (m_sessionContext.activeDraft != nullptr);
+    if (m_sessionContext.isSessionValid && m_sessionContext.activeDraft->uvLayout.has_value()) {
+        m_sessionContext.activeUVLayout = &m_sessionContext.activeDraft->uvLayout.value();
+    } else {
+        m_sessionContext.activeUVLayout = nullptr;
+    }
+}
+
+void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
+    if (!m_context || !m_context->blockRegistry || !m_context->materialRegistry || !m_context->shapeRegistry) return;
+
+    bool loaded = m_factoryOrchestrator.LoadDraftFromRegistry(blockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
+    if (loaded && m_factoryOrchestrator.IsDraftOpen()) {
+        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            // BM-UI2.3-B1: Safe mesh initialization guaranteeing non-dangling lifetime
+            if (draft->sculptMesh.has_value() && draft->sculptMesh->GetFaceCount() > 0) {
+                m_activeEditableMesh = draft->sculptMesh.value();
+            } else {
+                m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(draft->shape);
+                draft->sculptMesh = m_activeEditableMesh;
+            }
+            m_selectionService.PruneInvalidated(m_activeEditableMesh);
+
+            // Connect painting service with draft paint layers
+            if (!draft->paintLayers.empty()) {
+                m_paintingService.GetLayers() = draft->paintLayers;
+                m_paintingService.SetCanvasDimensions(draft->paintLayers[0].pixelBuffer.GetWidth(), draft->paintLayers[0].pixelBuffer.GetHeight());
+            } else if (draft->textures.has_value() && draft->textures->albedo.IsValid()) {
+                m_paintingService.InitializeCanvas(draft->textures->albedo.GetWidth(), draft->textures->albedo.GetHeight());
+                if (m_paintingService.GetLayerCount() > 0) {
+                    m_paintingService.GetLayers()[0].pixelBuffer = draft->textures->albedo;
+                }
+            } else {
+                glm::vec4 baseCol(draft->baseColorFallback, 1.0f);
+                m_paintingService.InitializeCanvas(512, 512, baseCol);
+            }
+
+            // Safe UV document setup
+            if (draft->uvLayout.has_value() && draft->uvLayout->isValid) {
+                m_uvEditorDocument = std::make_unique<fw::UVEditorDocument>(m_activeEditableMesh, draft->uvLayout.value());
+            } else {
+                m_uvEditorDocument.reset();
+            }
+
+            // Connect painting adapter to painting service and UVLayout
+            m_surfacePaintingAdapter.SetPaintingService(&m_paintingService);
+            if (draft->uvLayout.has_value()) {
+                m_surfacePaintingAdapter.SetUVLayout(&draft->uvLayout.value());
+            }
+        }
+    }
+    UpdateSessionContext();
+}
+
+void BlockMakerState::SynchronizeDraftToPreview() {
+    if (!m_context || !m_factoryOrchestrator.IsDraftOpen()) return;
+    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+    if (!draft) return;
+
+    if (m_context->materialRegistry) {
+        auto& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+        mat.baseColorFallback = draft->baseColorFallback;
+        mat.roughnessFallback = draft->roughnessFallback;
+        mat.metallicFallback = draft->metallicFallback;
+        mat.emissiveStrength = draft->emissiveStrength;
+        mat.alphaFallback = draft->alphaFallback;
+        mat.behaviors = draft->behaviors;
+        mat.albedoPath = draft->albedoPath;
+        mat.normalPath = draft->normalPath;
+        mat.ormPath = draft->ormPath;
+        mat.baseUVTransform = draft->baseUVTransform;
+        mat.baseProjection = draft->baseProjection;
+        mat.surfaces = draft->surfaces;
+        mat.revision = static_cast<uint32_t>(draft->manifest.revision);
+
+        if (m_context->shapeRegistry && draft->shape.type != fw::ShapeType::None) {
+            if (draft->geometrySource != fw::GeometrySource::SculptedMesh) {
+                mat.sharedShape = m_context->shapeRegistry->RegisterShape(draft->shape);
+                mat.shapeType = (draft->shape.type == fw::ShapeType::LegacySuperSphere) ? 1 : 0;
+            }
+        }
+    }
+
+    UpdatePreviewMesh();
+    if (m_context->cacheManager) {
+        m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
+    }
+    UpdateSessionContext();
+}
+
+void BlockMakerState::CommitDraftToRegistry() {
+    if (!m_context || !m_factoryOrchestrator.IsDraftOpen()) return;
+    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+    if (!draft) return;
+
+    // 1. Commit Shape to ShapeRegistry & update mat.sharedShape
+    if (m_context->shapeRegistry && draft->shape.type != fw::ShapeType::None) {
+        if (draft->geometrySource == fw::GeometrySource::SculptedMesh && draft->sculptMesh.has_value() && draft->sculptMesh->GetFaceCount() > 0) {
+            fw::GeometryCompileOptions options;
+            fw::BridgePreviewCache dummyCache;
+            auto comp = fw::MeshBridgeService::CompileForPreview(*draft->sculptMesh, options, dummyCache);
+            draft->shape = fw::MeshBridgeService::CreateShapeDefinitionFromMesh(*draft->sculptMesh, comp);
+        }
+        auto& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+        mat.sharedShape = m_context->shapeRegistry->RegisterShape(draft->shape);
+        mat.shapeType = (draft->shape.type == fw::ShapeType::LegacySuperSphere) ? 1 : 0;
+    }
+
+    // 2. Commit Material & Surfaces to MaterialRegistry
+    if (m_context->materialRegistry) {
+        auto& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+        mat.baseColorFallback = draft->baseColorFallback;
+        mat.roughnessFallback = draft->roughnessFallback;
+        mat.metallicFallback = draft->metallicFallback;
+        mat.emissiveStrength = draft->emissiveStrength;
+        mat.alphaFallback = draft->alphaFallback;
+        mat.behaviors = draft->behaviors;
+        mat.albedoPath = draft->albedoPath;
+        mat.normalPath = draft->normalPath;
+        mat.ormPath = draft->ormPath;
+        mat.baseUVTransform = draft->baseUVTransform;
+        mat.baseProjection = draft->baseProjection;
+        mat.surfaces = draft->surfaces;
+        mat.revision = static_cast<uint32_t>(draft->manifest.revision);
+    }
+
+    // 3. Commit Transforms & Physics to BlockRegistry
+    if (m_context->blockRegistry) {
+        auto& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+        def.localPosition = draft->localPosition;
+        def.localRotation = draft->localRotation;
+        def.localScale = draft->localScale;
+        def.pivotOffset = draft->pivotOffset;
+        def.physics = draft->physics;
+        def.thermal_resistance = draft->thermalResistance;
+        def.thermal_capacity = draft->thermalCapacity;
+        def.lightEmissionLevel = draft->lightEmission;
+    }
+
+    SynchronizeAllSavedTransformBaselines();
+    SynchronizeAllSavedPhysicsBaselines();
+    draft->isDirty = false;
+    UpdateSessionContext();
+}
+
+void BlockMakerState::RevertCurrentDraftToSaved() {
+    LoadFactoryDraft(m_selectedBlockId);
+    RevertBlockPhysicsToSaved(m_selectedBlockId);
+    SynchronizeDraftToPreview();
+}
+
 void BlockMakerState::SetAssetFeedback(const std::string& msg, bool isError) {
     m_assetOpFeedback = msg;
     m_assetOpFeedbackIsError = isError;
@@ -371,9 +534,7 @@ void BlockMakerState::ExecuteCreateBlock(const std::string& stringId, const std:
     if (m_context->cacheManager) {
         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
     }
-    if (m_context->shapeRegistry) {
-        m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
-    }
+    LoadFactoryDraft(m_selectedBlockId);
     UpdatePreviewMesh();
     SetAssetFeedback("Creato blocco ID " + std::to_string(assignedId) + " (" + newDef.stringId + ") con successo!", false);
 }
@@ -419,9 +580,7 @@ void BlockMakerState::ExecuteDuplicateBlock(uint8_t sourceId) {
     if (m_context->cacheManager) {
         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
     }
-    if (m_context->shapeRegistry) {
-        m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
-    }
+    LoadFactoryDraft(m_selectedBlockId);
     UpdatePreviewMesh();
     SetAssetFeedback("Duplicato blocco ID " + std::to_string(sourceId) + " in ID " + std::to_string(newId) + " (" + dupDef.stringId + ")!", false);
 }
@@ -458,9 +617,7 @@ void BlockMakerState::ExecuteDeleteBlock(uint8_t blockId) {
     if (m_context->cacheManager) {
         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
     }
-    if (m_context->shapeRegistry) {
-        m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
-    }
+    LoadFactoryDraft(m_selectedBlockId);
     UpdatePreviewMesh();
     SetAssetFeedback("Blocco ID " + std::to_string(blockId) + " eliminato con successo.", false);
 }
@@ -3716,16 +3873,26 @@ void BlockMakerState::ExecuteMeshUndo() {
     if (res.success) {
         if (m_factoryOrchestrator.IsDraftOpen()) {
             m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+            auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+            if (draft) {
+                draft->geometrySource = static_cast<fw::GeometrySource>(res.restoredGeometrySource);
+            }
+            UpdateSessionContext();
         }
-        auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-        m_cachedGeometryMesh = compMesh;
-        if (m_previewWorld) {
-            m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+        if (res.geometryChanged || res.topologyChanged) {
+            m_selectionService.PruneInvalidated(m_activeEditableMesh);
+            m_bridgePreviewCache.isGpuBufferDirty = true;
+            UpdatePreviewMesh();
         }
-        m_selectionService.PruneInvalidated(m_activeEditableMesh);
         m_modelingFeedbackMsg = res.message;
         m_modelingFeedbackIsError = false;
         m_modelingFeedbackTimer = 2.5f;
+        uint64_t tris = ComputeRenderedTriangleCount(m_activeEditableMesh);
+        std::cout << "[BM-SCULPT][UNDO] Restored BlockID=" << (int)m_selectedBlockId
+                  << " Vertices=" << m_activeEditableMesh.GetVertexCount()
+                  << " Faces=" << m_activeEditableMesh.GetFaceCount()
+                  << " Triangles=" << tris
+                  << " GeoSource=" << (int)res.restoredGeometrySource << "\n";
     } else {
         m_modelingFeedbackMsg = res.message;
         m_modelingFeedbackIsError = true;
@@ -3738,16 +3905,26 @@ void BlockMakerState::ExecuteMeshRedo() {
     if (res.success) {
         if (m_factoryOrchestrator.IsDraftOpen()) {
             m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+            auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+            if (draft) {
+                draft->geometrySource = static_cast<fw::GeometrySource>(res.restoredGeometrySource);
+            }
+            UpdateSessionContext();
         }
-        auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-        m_cachedGeometryMesh = compMesh;
-        if (m_previewWorld) {
-            m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+        if (res.geometryChanged || res.topologyChanged) {
+            m_selectionService.PruneInvalidated(m_activeEditableMesh);
+            m_bridgePreviewCache.isGpuBufferDirty = true;
+            UpdatePreviewMesh();
         }
-        m_selectionService.PruneInvalidated(m_activeEditableMesh);
         m_modelingFeedbackMsg = res.message;
         m_modelingFeedbackIsError = false;
         m_modelingFeedbackTimer = 2.5f;
+        uint64_t tris = ComputeRenderedTriangleCount(m_activeEditableMesh);
+        std::cout << "[BM-SCULPT][REDO] Reapplied BlockID=" << (int)m_selectedBlockId
+                  << " Vertices=" << m_activeEditableMesh.GetVertexCount()
+                  << " Faces=" << m_activeEditableMesh.GetFaceCount()
+                  << " Triangles=" << tris
+                  << " GeoSource=" << (int)res.restoredGeometrySource << "\n";
     } else {
         m_modelingFeedbackMsg = res.message;
         m_modelingFeedbackIsError = true;
@@ -3757,7 +3934,18 @@ void BlockMakerState::ExecuteMeshRedo() {
 
 void BlockMakerState::ApplyModelingOperation(fw::ModelingOperationType opType) {
     if (m_activeEditableMesh.GetVertexCount() == 0) {
-        m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+        if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.has_value() &&
+            m_factoryOrchestrator.GetCurrentDraft()->sculptMesh->GetVertexCount() > 0) {
+            m_activeEditableMesh = m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.value();
+        } else if (m_factoryOrchestrator.IsDraftOpen()) {
+            m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(m_factoryOrchestrator.GetCurrentDraft()->shape);
+            if (m_factoryOrchestrator.GetCurrentDraft()) {
+                m_factoryOrchestrator.GetCurrentDraft()->sculptMesh = m_activeEditableMesh;
+            }
+        } else {
+            m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+        }
+        std::cout << "[BM-SCULPT][CONVERT] Initialized active mesh Vertices=" << m_activeEditableMesh.GetVertexCount() << "\n";
     }
 
     fw::HistoryCommandType cmdType = (opType == fw::ModelingOperationType::Move ||
@@ -3773,7 +3961,12 @@ void BlockMakerState::ApplyModelingOperation(fw::ModelingOperationType opType) {
     else if (opType == fw::ModelingOperationType::InsetFace) opName = "Inset Face";
     else if (opType == fw::ModelingOperationType::BevelEdge) opName = "Bevel Edge";
 
-    m_meshHistoryService.BeginTransaction(m_selectedBlockId, opName, cmdType, &m_activeEditableMesh);
+    uint8_t curGeoSource = 1;
+    if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()) {
+        curGeoSource = static_cast<uint8_t>(m_factoryOrchestrator.GetCurrentDraft()->geometrySource);
+    }
+
+    m_meshHistoryService.BeginTransaction(m_selectedBlockId, opName, cmdType, &m_activeEditableMesh, curGeoSource);
 
     fw::ModelingOperationResult res;
     switch (opType) {
@@ -3837,11 +4030,11 @@ void BlockMakerState::ApplyModelingOperation(fw::ModelingOperationType opType) {
             if (m_factoryOrchestrator.IsDraftOpen()) {
                 m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
             }
-            auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-            m_cachedGeometryMesh = compMesh;
-            if (m_context && m_previewWorld) {
-                m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
-            }
+            std::cout << "[BM-SCULPT][EDIT] Op=" << opName << " BlockID=" << (int)m_selectedBlockId
+                      << " Vertices=" << m_activeEditableMesh.GetVertexCount()
+                      << " Faces=" << m_activeEditableMesh.GetFaceCount() << "\n";
+            m_bridgePreviewCache.isGpuBufferDirty = true;
+            UpdatePreviewMesh();
         }
     } else {
         m_meshHistoryService.CancelTransaction();
@@ -3875,6 +4068,47 @@ uint64_t BlockMakerState::EstimateSubdivisionFaceCount(const fw::EditableMesh& m
     }
 
     return estimatedResultingFaces;
+}
+
+uint64_t BlockMakerState::EstimateSubdivisionTriangleCount(const fw::EditableMesh& mesh, int iterations) {
+    if (mesh.GetVertexCount() == 0 || mesh.GetFaceCount() == 0 || iterations < 1) {
+        return 0;
+    }
+
+    uint64_t initialSplitQuads = 0;
+    const auto activeFaceIds = mesh.GetActiveFaceIDs();
+    for (fw::FaceID fid : activeFaceIds) {
+        size_t vCount = mesh.GetFaceVertexCount(fid);
+        if (UINT64_MAX - initialSplitQuads < vCount) {
+            return UINT64_MAX;
+        }
+        initialSplitQuads += vCount;
+    }
+
+    // Ogni quad genera 2 triangoli renderizzati
+    if (initialSplitQuads > UINT64_MAX / 2ULL) return UINT64_MAX;
+    uint64_t estimatedResultingTris = initialSplitQuads * 2ULL;
+    for (int it = 1; it < iterations; ++it) {
+        if (estimatedResultingTris > UINT64_MAX / 4ULL) {
+            return UINT64_MAX;
+        }
+        estimatedResultingTris *= 4ULL;
+    }
+
+    return estimatedResultingTris;
+}
+
+uint64_t BlockMakerState::ComputeRenderedTriangleCount(const fw::EditableMesh& mesh) {
+    if (mesh.GetVertexCount() == 0 || mesh.GetFaceCount() == 0) return 0;
+    uint64_t totalTris = 0;
+    const auto activeFaceIds = mesh.GetActiveFaceIDs();
+    for (fw::FaceID fid : activeFaceIds) {
+        size_t vCount = mesh.GetFaceVertexCount(fid);
+        if (vCount >= 3) {
+            totalTris += (vCount - 2);
+        }
+    }
+    return totalTris;
 }
 
 void BlockMakerState::ApplySubdivideOperation() {
@@ -3916,15 +4150,24 @@ void BlockMakerState::ApplySubdivideOperation() {
         return;
     }
 
-    // 4. Stima complessità con funzione pura condivisa contro budget massimo (MAX_SUBDIVISION_FACE_BUDGET)
+    // 4. Stima complessità con funzione pura condivisa contro budget massimo e VRAM slab bucket
     uint64_t estimatedResultingFaces = EstimateSubdivisionFaceCount(m_activeEditableMesh, m_subdivideIterations);
+    uint64_t estimatedResultingTris = EstimateSubdivisionTriangleCount(m_activeEditableMesh, m_subdivideIterations);
+    uint64_t estimatedGpuBytes = estimatedResultingTris * 3ULL * sizeof(fw::Vertex);
 
-    if (estimatedResultingFaces > MAX_SUBDIVISION_FACE_BUDGET) {
-        m_modelingFeedbackMsg = "Operazione rifiutata: complessità stimata (" +
-                                std::to_string(estimatedResultingFaces) + " facce) supera il budget massimo di " +
-                                std::to_string(MAX_SUBDIVISION_FACE_BUDGET) + " facce.";
+    if (estimatedResultingFaces > MAX_SUBDIVISION_FACE_BUDGET ||
+        estimatedResultingTris > GPU_VRAM_MAX_TRIANGLES ||
+        estimatedGpuBytes > GPU_VRAM_BUCKET_MAX_BYTES) {
+        m_modelingFeedbackMsg = "Operazione rifiutata: complessita stimata (" +
+                                std::to_string(estimatedResultingFaces) + " facce, " +
+                                std::to_string(estimatedResultingTris) + " triangoli, " +
+                                std::to_string(estimatedGpuBytes / (1024 * 1024)) + " MB) supera il budget VRAM GPU (" +
+                                std::to_string(GPU_VRAM_BUCKET_MAX_BYTES / (1024 * 1024)) + " MB / " +
+                                std::to_string(GPU_VRAM_MAX_TRIANGLES) + " triangoli).";
         m_modelingFeedbackIsError = true;
         m_modelingFeedbackTimer = 4.5f;
+        std::cout << "[BM-SCULPT][SAFETY] Blocked subdivision exceeding GPU VRAM budget: "
+                  << estimatedResultingTris << " tris, " << estimatedGpuBytes << " bytes\n";
         return;
     }
 
@@ -3933,13 +4176,20 @@ void BlockMakerState::ApplySubdivideOperation() {
     fw::EditableMesh backupMesh = m_activeEditableMesh;
     uint64_t preTopoRev = m_activeEditableMesh.GetTopologyRevision();
     size_t preFaceCount = m_activeEditableMesh.GetFaceCount();
+    uint64_t preTriCount = ComputeRenderedTriangleCount(m_activeEditableMesh);
+
+    uint8_t curGeoSource = 1;
+    if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()) {
+        curGeoSource = static_cast<uint8_t>(m_factoryOrchestrator.GetCurrentDraft()->geometrySource);
+    }
 
     std::string opName = m_subdivideSmooth ? "Catmull-Clark Subdivide" : "Midpoint Subdivide";
     m_meshHistoryService.BeginTransaction(
         m_selectedBlockId,
         opName,
         fw::HistoryCommandType::TopologyMutation,
-        &m_activeEditableMesh
+        &m_activeEditableMesh,
+        curGeoSource
     );
 
     fw::SubdivideParams params;
@@ -3966,11 +4216,19 @@ void BlockMakerState::ApplySubdivideOperation() {
         }
 
         // 9. Aggiornamento preview GPU tramite il percorso canonico Dirty -> MeshBridge -> GPU Preview
+        m_bridgePreviewCache.isGpuBufferDirty = true;
         UpdatePreviewMesh();
+
+        uint64_t postTriCount = ComputeRenderedTriangleCount(m_activeEditableMesh);
+        std::cout << "[BM-SCULPT][SUBDIVIDE] Success BlockID=" << (int)m_selectedBlockId
+                  << " Faces: " << preFaceCount << " -> " << m_activeEditableMesh.GetFaceCount()
+                  << " Triangles: " << preTriCount << " -> " << postTriCount << "\n";
 
         m_modelingFeedbackMsg = opName + " completata con successo (" +
                                 std::to_string(preFaceCount) + " -> " +
-                                std::to_string(m_activeEditableMesh.GetFaceCount()) + " facce)!";
+                                std::to_string(m_activeEditableMesh.GetFaceCount()) + " facce, " +
+                                std::to_string(preTriCount) + " -> " +
+                                std::to_string(postTriCount) + " triangoli)!";
         m_modelingFeedbackIsError = false;
         m_modelingFeedbackTimer = 3.5f;
     } else {
@@ -4075,10 +4333,10 @@ bool BlockMakerState::Init() {
     std::cout << "[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.\n";
 
 
-    bool draftLoaded = false;
     if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
-        draftLoaded = m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
-        std::cout << "[BM-R1][INIT] LoadDraftFromRegistry(BlockID=" << (int)m_selectedBlockId << ") esito: " << (draftLoaded ? "SUCCESS" : "FAIL") << "\n";
+        LoadFactoryDraft(m_selectedBlockId);
+        std::cout << "[BM-UI2.3-B1][INIT] LoadFactoryDraft(BlockID=" << (int)m_selectedBlockId << ") esito: " 
+                  << (m_factoryOrchestrator.IsDraftOpen() ? "SUCCESS" : "FAIL") << "\n";
     }
     m_zeroWorkTelemetry.Reset(); // Azzeramento post-init per telemetria Zero-Work a regime
 
@@ -4396,7 +4654,7 @@ void BlockMakerState::UpdatePreviewMesh() {
     }
 
     bool isSculptAuthoritative = (m_sculptModeActive || m_modelingTool != 0 || m_meshSelectionEnabled || 
-                                 (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.has_value()));
+                                 (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->geometrySource == fw::GeometrySource::SculptedMesh));
 
     bool needsRecompile = false;
     const char* recompileReason = nullptr;
@@ -4407,13 +4665,15 @@ void BlockMakerState::UpdatePreviewMesh() {
     }
 
     if (isSculptAuthoritative && m_activeEditableMesh.GetFaceCount() > 0) {
-        if (fw::MeshBridgeService::NeedsPreviewRecompile(m_activeEditableMesh, (uint32_t)m_selectedBlockId, m_bridgePreviewCache) ||
+        if (m_lastGeometryWasParametric ||
+            fw::MeshBridgeService::NeedsPreviewRecompile(m_activeEditableMesh, (uint32_t)m_selectedBlockId, m_bridgePreviewCache) ||
             m_cachedGeometryMesh.vertices.empty()) {
             needsRecompile = true;
             if (!recompileReason) recompileReason = "SculptMeshModified";
         }
     } else {
-        if (m_lastGeometryShapeID != mat.sharedShape.id || 
+        if (!m_lastGeometryWasParametric ||
+            m_lastGeometryShapeID != mat.sharedShape.id || 
             m_lastGeometryRevision != mat.sharedShape.revision || 
             m_lastMaterialRevision != mat.revision ||
             m_cachedGeometryMesh.vertices.empty()) 
@@ -4443,7 +4703,11 @@ void BlockMakerState::UpdatePreviewMesh() {
                 m_lastGeometryRevision = m_activeEditableMesh.GetGeometryRevision();
                 m_lastMaterialRevision = mat.revision;
                 m_lastGeometryWasParametric = false;
+                std::cout << "[BM-SCULPT][COMPILE] Success BlockID=" << (int)m_selectedBlockId
+                          << " Vertices=" << result.mesh.vertices.size()
+                          << " Triangles=" << (result.mesh.vertices.size() / 3) << "\n";
             } else {
+                std::cout << "[BM-SCULPT][COMPILE] ERROR: " << result.errorMessage << "\n";
                 m_lastCompileError = "Compile Error: " + result.errorMessage;
                 return;
             }
@@ -4478,6 +4742,14 @@ void BlockMakerState::UpdatePreviewMesh() {
         }
     }
 
+    auto& m_registry = m_previewWorld->GetRegistry();
+    bool entityExists = (m_previewBlockEntity != entt::null && m_registry.valid(m_previewBlockEntity));
+
+    if (!needsRecompile && entityExists) {
+        // Zero-Work: la preview GPU e' gia' aggiornata, nessuna ri-compilazione ne upload
+        return;
+    }
+
     // Copy cached geometry
     previewMesh = m_cachedGeometryMesh;
     previewMesh.type = fw::MeshType::Chunk;
@@ -4493,8 +4765,7 @@ void BlockMakerState::UpdatePreviewMesh() {
         }
     }
 
-    auto& m_registry = m_previewWorld->GetRegistry();
-    if (m_previewBlockEntity == entt::null || !m_registry.valid(m_previewBlockEntity)) {
+    if (!entityExists) {
         m_previewBlockEntity = m_registry.create();
         fw::TransformComponent trans;
         trans.location = fw::Vec3{0.0f, 0.0f, 0.0f};
@@ -4506,6 +4777,9 @@ void BlockMakerState::UpdatePreviewMesh() {
     m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f, 0.0f, 0.0f), std::move(previewMesh), nullptr, m_previewBlockEntity);
     if (needsRecompile) {
         std::cout << "[BM-UI2.1][PREVIEW] update queued BlockID=" << (int)m_selectedBlockId << "\n";
+        if (isSculptAuthoritative) {
+            std::cout << "[BM-SCULPT][UPLOAD] Queued for GPU: BlockID=" << (int)m_selectedBlockId << "\n";
+        }
     }
 }
 
@@ -4652,21 +4926,7 @@ void BlockMakerState::DrawAssetBrowserContents() {
                     if (m_context && m_context->cacheManager) {
                         m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
                     }
-                    bool draftLoaded = false;
-                    if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
-                        draftLoaded = m_factoryOrchestrator.LoadDraftFromRegistry(m_selectedBlockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
-                        std::cout << "[BM-UI2.1][DRAFT] loaded BlockID=" << (int)m_selectedBlockId 
-                                  << " result=" << (draftLoaded ? "SUCCESS" : "FAIL") << "\n";
-                    }
-                    if (m_factoryOrchestrator.IsDraftOpen()) {
-                        const auto* draft = m_factoryOrchestrator.GetCurrentDraft();
-                        if (draft && draft->sculptMesh.has_value()) {
-                            m_activeEditableMesh = draft->sculptMesh.value();
-                        } else if (draft) {
-                            m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(draft->shape);
-                        }
-                        m_selectionService.PruneInvalidated(m_activeEditableMesh);
-                    }
+                    LoadFactoryDraft(m_selectedBlockId);
                     UpdatePreviewMesh();
                 }
             }
@@ -5477,6 +5737,16 @@ void BlockMakerState::DrawGeneralTransformUI(fw::SimBlockDef& def) {
         def.localRotation = saved.localRotation;
         def.localScale = saved.localScale;
         def.pivotOffset = saved.pivotOffset;
+        if (m_factoryOrchestrator.IsDraftOpen()) {
+            auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+            if (draft) {
+                draft->localPosition = saved.localPosition;
+                draft->localRotation = saved.localRotation;
+                draft->localScale = saved.localScale;
+                draft->pivotOffset = saved.pivotOffset;
+                draft->MarkDirty();
+            }
+        }
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Ripristina tutti i valori di trasformazione all'ultimo stato salvato su disco per questo blocco.");
@@ -5487,6 +5757,7 @@ void BlockMakerState::DrawGeneralTransformUI(fw::SimBlockDef& def) {
     // 7. Explicit Save Button for Registry Block Definitions
     if (ImGui::Button("SALVA DEFINIZIONI REGISTRO BLOCCHI (JSON)", ImVec2(-1, 35))) {
         m_zeroWorkTelemetry.jsonSaveCalls++;
+        CommitDraftToRegistry();
         m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
         fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
         m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
@@ -5775,22 +6046,60 @@ void BlockMakerState::DrawFactorySculptControls() {
             ImGui::SetTooltip("Numero di iterazioni di suddivisione (intervallo di sicurezza 1-3).");
         }
 
-        // 3. Statistiche e Stima Complessità Preventiva
+        // 3. Statistiche e Stima Complessità Preventiva (GATE C)
+        size_t currentVerts = m_activeEditableMesh.GetVertexCount();
         size_t currentFaces = m_activeEditableMesh.GetFaceCount();
-        uint64_t estimatedFaces = EstimateSubdivisionFaceCount(m_activeEditableMesh, m_subdivideIterations);
-        bool withinBudget = (estimatedFaces <= MAX_SUBDIVISION_FACE_BUDGET);
+        uint64_t currentRenderedTris = ComputeRenderedTriangleCount(m_activeEditableMesh);
+        uint64_t currentGpuBytes = currentRenderedTris * 3ULL * sizeof(fw::Vertex);
 
-        ImGui::Text("Facce Attuali: %zu", currentFaces);
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-        if (withinBudget) {
-            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "Stima Risultante: %llu facce", static_cast<unsigned long long>(estimatedFaces));
+        const char* complexityStr = "Basso";
+        ImVec4 complexityCol(0.2f, 1.0f, 0.4f, 1.0f); // Verde
+        if (currentRenderedTris > 15000) {
+            complexityStr = "Critico";
+            complexityCol = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Rosso
+        } else if (currentRenderedTris > 5000) {
+            complexityStr = "Alto";
+            complexityCol = ImVec4(1.0f, 0.6f, 0.2f, 1.0f); // Arancione
+        } else if (currentRenderedTris > 1000) {
+            complexityStr = "Medio";
+            complexityCol = ImVec4(0.9f, 0.9f, 0.3f, 1.0f); // Giallo
+        }
+
+        ImGui::Text("Mesh Attuale: %zu vertici, %zu facce, %llu triangoli GPU",
+                    currentVerts, currentFaces, static_cast<unsigned long long>(currentRenderedTris));
+        
+        float memKb = static_cast<float>(currentGpuBytes) / 1024.0f;
+        float memMb = memKb / 1024.0f;
+        if (memMb >= 1.0f) {
+            ImGui::Text("Memoria GPU: %.2f MB / %.1f MB", memMb, static_cast<float>(GPU_VRAM_BUCKET_MAX_BYTES) / (1024.0f * 1024.0f));
         } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Stima Risultante: %llu facce (Budget superato!)", static_cast<unsigned long long>(estimatedFaces));
+            ImGui::Text("Memoria GPU: %.1f KB / %.1f MB", memKb, static_cast<float>(GPU_VRAM_BUCKET_MAX_BYTES) / (1024.0f * 1024.0f));
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("| Budget: %llu", static_cast<unsigned long long>(MAX_SUBDIVISION_FACE_BUDGET));
+        ImGui::TextDisabled("| Livello:");
+        ImGui::SameLine();
+        ImGui::TextColored(complexityCol, "%s", complexityStr);
+
+        uint64_t estimatedFaces = EstimateSubdivisionFaceCount(m_activeEditableMesh, m_subdivideIterations);
+        uint64_t estimatedTris = EstimateSubdivisionTriangleCount(m_activeEditableMesh, m_subdivideIterations);
+        uint64_t estimatedBytes = estimatedTris * 3ULL * sizeof(fw::Vertex);
+        bool withinBudget = (estimatedFaces <= MAX_SUBDIVISION_FACE_BUDGET) &&
+                            (estimatedTris <= GPU_VRAM_MAX_TRIANGLES) &&
+                            (estimatedBytes <= GPU_VRAM_BUCKET_MAX_BYTES);
+
+        if (withinBudget) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "Stima Post-Suddivisione: %llu facce, %llu tris (%.1f KB)",
+                               static_cast<unsigned long long>(estimatedFaces),
+                               static_cast<unsigned long long>(estimatedTris),
+                               static_cast<float>(estimatedBytes) / 1024.0f);
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Stima Post-Suddivisione: %llu facce, %llu tris (Budget VRAM Superato!)",
+                               static_cast<unsigned long long>(estimatedFaces),
+                               static_cast<unsigned long long>(estimatedTris));
+        }
+        ImGui::TextDisabled("Budget Max VRAM: %llu triangoli / %.1f MB",
+                            static_cast<unsigned long long>(GPU_VRAM_MAX_TRIANGLES),
+                            static_cast<float>(GPU_VRAM_BUCKET_MAX_BYTES) / (1024.0f * 1024.0f));
 
         // 4. Pulsante di Esecuzione con Validazione
         bool hasValidMesh = (m_activeEditableMesh.GetVertexCount() > 0 && currentFaces > 0);
@@ -5807,7 +6116,7 @@ void BlockMakerState::DrawFactorySculptControls() {
                 if (!hasValidMesh) ImGui::SetTooltip("Nessuna mesh attiva valida con facce da suddividere.");
                 else if (!hasValidBlock) ImGui::SetTooltip("Nessun blocco attivo valido selezionato.");
                 else if (!validIterations) ImGui::SetTooltip("Iterazioni fuori range consentito [1, 3].");
-                else if (!withinBudget) ImGui::SetTooltip("La stima supera il budget massimo di 65.536 facce.");
+                else if (!withinBudget) ImGui::SetTooltip("La stima supera il budget massimo consentito da VRAM Slab Bucket (4 MB / 21.845 tris).");
             }
             ImGui::EndDisabled();
         } else if (ImGui::IsItemHovered()) {
@@ -5827,41 +6136,75 @@ void BlockMakerState::DrawFactorySculptControls() {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.7f, 1.0f), "MANIFOLD REPAIR & REMESH (BM-S7)");
+
+        uint8_t curGeoSource = 1;
+        if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()) {
+            curGeoSource = static_cast<uint8_t>(m_factoryOrchestrator.GetCurrentDraft()->geometrySource);
+        }
+
         if (ImGui::Button("Rimuovi Degenerazioni##BtnRemDeg", ImVec2(180, 24))) {
+            m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Rimuovi Degenerazioni", fw::HistoryCommandType::TopologyMutation, &m_activeEditableMesh, curGeoSource);
             auto r = fw::MeshRepairService::RemoveDegenerateFaces(m_activeEditableMesh);
             if (r.modified) {
-                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                m_cachedGeometryMesh = compMesh;
-                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+                }
+                m_bridgePreviewCache.isGpuBufferDirty = true;
+                UpdatePreviewMesh();
+                std::cout << "[BM-SCULPT][REPAIR] RemoveDegenerateFaces committed: " << m_activeEditableMesh.GetFaceCount() << " faces\n";
+            } else {
+                m_meshHistoryService.CancelTransaction();
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("Tappa Fori (Cap Holes)##BtnCapHoles", ImVec2(180, 24))) {
+            m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Cap Holes", fw::HistoryCommandType::TopologyMutation, &m_activeEditableMesh, curGeoSource);
             auto r = fw::MeshRepairService::CapHoles(m_activeEditableMesh);
             if (r.modified) {
-                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                m_cachedGeometryMesh = compMesh;
-                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+                }
+                m_bridgePreviewCache.isGpuBufferDirty = true;
+                UpdatePreviewMesh();
+                std::cout << "[BM-SCULPT][REPAIR] CapHoles committed: " << m_activeEditableMesh.GetFaceCount() << " faces\n";
+            } else {
+                m_meshHistoryService.CancelTransaction();
             }
         }
         if (ImGui::Button("Limited Dissolve (Complanari)##BtnDissolve", ImVec2(180, 24))) {
+            m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Limited Dissolve", fw::HistoryCommandType::TopologyMutation, &m_activeEditableMesh, curGeoSource);
             auto r = fw::MeshRepairService::LimitedDissolve(m_activeEditableMesh);
             if (r.modified) {
-                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                m_cachedGeometryMesh = compMesh;
-                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+                }
+                m_bridgePreviewCache.isGpuBufferDirty = true;
+                UpdatePreviewMesh();
+                std::cout << "[BM-SCULPT][REPAIR] LimitedDissolve committed: " << m_activeEditableMesh.GetFaceCount() << " faces\n";
+            } else {
+                m_meshHistoryService.CancelTransaction();
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("Remesh Uniforme##BtnRemesh", ImVec2(180, 24))) {
+            m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Uniform Remesh", fw::HistoryCommandType::TopologyMutation, &m_activeEditableMesh, curGeoSource);
             fw::RemeshOptions opt;
             opt.targetEdgeLength = 0.25f;
             opt.iterations = 2;
             auto r = fw::MeshRepairService::UniformRemesh(m_activeEditableMesh, opt);
             if (r.modified) {
-                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                m_cachedGeometryMesh = compMesh;
-                if (m_previewWorld) m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                m_meshHistoryService.CommitTransaction(m_activeEditableMesh);
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
+                }
+                m_bridgePreviewCache.isGpuBufferDirty = true;
+                UpdatePreviewMesh();
+                std::cout << "[BM-SCULPT][REPAIR] UniformRemesh committed: " << m_activeEditableMesh.GetFaceCount() << " faces\n";
+            } else {
+                m_meshHistoryService.CancelTransaction();
             }
         }
     }
@@ -5995,6 +6338,20 @@ void BlockMakerState::DrawGeneralGraphicsUI(fw::PBRMaterialDef& mat, bool& isDir
         else mat.behaviors &= ~fw::BLOCK_BEHAVIOR_EMISSIVE;
         isDirty = true;
     }
+
+    if (isDirty && m_factoryOrchestrator.IsDraftOpen()) {
+        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            draft->baseColorFallback = mat.baseColorFallback;
+            draft->metallicFallback = mat.metallicFallback;
+            draft->roughnessFallback = mat.roughnessFallback;
+            draft->emissiveStrength = mat.emissiveStrength;
+            draft->alphaFallback = mat.alphaFallback;
+            draft->behaviors = mat.behaviors;
+            draft->manifest.revision++;
+            draft->MarkDirty();
+        }
+    }
 }
 
 void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& isDirty) {
@@ -6092,8 +6449,24 @@ void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& is
                     default: break;
                 }
                 newDef.supportsVisualCompilation = true;
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                    if (draft) {
+                        draft->shape = newDef;
+                        draft->geometrySource = fw::GeometrySource::Primitive;
+                        draft->sculptMesh = fw::MeshBridgeService::CreateMeshFromShape(draft->shape);
+                        m_activeEditableMesh = draft->sculptMesh.value();
+                        m_selectionService.Clear();
+                        m_meshHistoryService.ClearHistoryForAsset(m_selectedBlockId);
+                        draft->MarkDirty();
+                    }
+                }
                 mat.sharedShape = m_context->shapeRegistry->RegisterShape(newDef);
                 mat.shapeType = (newDef.type == fw::ShapeType::LegacySuperSphere) ? 1 : 0;
+                m_editorShapeID = mat.sharedShape.id;
+                m_editorParams = newDef.parameters;
+                m_isolateSharedShape = true;
+                m_sharedEditConfirmed = false;
                 isDirty = true;
             }
             
@@ -6263,6 +6636,21 @@ void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& is
                     if (canEdit) {
                         if (m_context->shapeRegistry->UpdateShape(mat.sharedShape, m_editorParams)) {
                             mat.sharedShape.revision++;
+                            if (m_factoryOrchestrator.IsDraftOpen()) {
+                                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                                if (draft) {
+                                    draft->shape.parameters = m_editorParams;
+                                    draft->shape.revision++;
+                                    draft->MarkDirty();
+                                    if (draft->geometrySource == fw::GeometrySource::Primitive) {
+                                        m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(draft->shape);
+                                        m_activeEditableMesh.IncrementGeometryRevision();
+                                        draft->sculptMesh = m_activeEditableMesh;
+                                        m_selectionService.PruneInvalidated(m_activeEditableMesh);
+                                        m_bridgePreviewCache.isGpuBufferDirty = true;
+                                    }
+                                }
+                            }
                             isDirty = true;
                         }
                     }
@@ -6312,6 +6700,7 @@ void BlockMakerState::DrawFactoryTextureControls(fw::PBRMaterialDef& mat, bool& 
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 100.0f);
         if (ImGui::InputText("##path", buf, sizeof(buf))) {
             pathRef = buf;
+            isDirty = true;
         }
         ImGui::SameLine();
         if (ImGui::Button("Sfoglia...", ImVec2(80, 0))) {
@@ -6322,6 +6711,7 @@ void BlockMakerState::DrawFactoryTextureControls(fw::PBRMaterialDef& mat, bool& 
                 
                 // Copia il file e salva automaticamente
                 pathRef = CopyTextureToAssets(picked, m_selectedBlockId, typeSuffix);
+                isDirty = true;
                 m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                 if (std::filesystem::exists("../assets/definitions")) {
                     m_context->materialRegistry->SaveToJson("../assets/definitions/materials.json");
@@ -6343,6 +6733,17 @@ void BlockMakerState::DrawFactoryTextureControls(fw::PBRMaterialDef& mat, bool& 
     drawTextureField("Albedo Map", mat.albedoPath, "albedo", RenderManager::PBRTextureType::ALBEDO);
     drawTextureField("Normal Map", mat.normalPath, "normal", RenderManager::PBRTextureType::NORMAL);
     drawTextureField("ORM Map (Occlusion, Roughness, Metallic)", mat.ormPath, "orm", RenderManager::PBRTextureType::ORM);
+
+    if (isDirty && m_factoryOrchestrator.IsDraftOpen()) {
+        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            draft->albedoPath = mat.albedoPath;
+            draft->normalPath = mat.normalPath;
+            draft->ormPath = mat.ormPath;
+            draft->manifest.revision++;
+            draft->MarkDirty();
+        }
+    }
     
     // Barra di progresso simulata / Feedback visivo
     if (m_isCopying) {
@@ -6638,6 +7039,17 @@ void BlockMakerState::DrawFactorySurfaceUVControls(fw::PBRMaterialDef& mat, bool
         }
         ImGui::TreePop();
     }
+
+    if (isDirty && m_factoryOrchestrator.IsDraftOpen()) {
+        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            draft->baseProjection = mat.baseProjection;
+            draft->baseUVTransform = mat.baseUVTransform;
+            draft->surfaces = mat.surfaces;
+            draft->manifest.revision++;
+            draft->MarkDirty();
+        }
+    }
 }
 
 void BlockMakerState::DrawGeneralPhysicsUI(fw::SimBlockDef& def) {
@@ -6651,6 +7063,16 @@ void BlockMakerState::DrawGeneralPhysicsUI(fw::SimBlockDef& def) {
         ImGui::SameLine();
         if (ImGui::Button("Ripristina Baseline Fisica (Revert)##RevPhys")) {
             RevertBlockPhysicsToSaved(m_selectedBlockId);
+            if (m_factoryOrchestrator.IsDraftOpen()) {
+                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                if (draft) {
+                    draft->physics = def.physics;
+                    draft->thermalResistance = def.thermal_resistance;
+                    draft->thermalCapacity = def.thermal_capacity;
+                    draft->lightEmission = def.lightEmissionLevel;
+                    draft->MarkDirty();
+                }
+            }
         }
     } else {
         ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Stato Fisica: SINCRONIZZATO (Baseline salvata)");
@@ -6900,6 +7322,10 @@ void BlockMakerState::DrawInspectorContents() {
             if (ImGui::Button(s_stationLabels[s])) {
                 m_inspectorContext = InspectorContext::FactoryStation;
                 m_factoryOrchestrator.SetActiveStation(sid);
+                if (sid == fw::ProductionStationID::Sculpt) {
+                    std::cout << "[BM-SCULPT][ENTER] Station Sculpt selected. BlockID=" << (int)m_selectedBlockId
+                              << " ActiveFaces=" << m_activeEditableMesh.GetFaceCount() << "\n";
+                }
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
@@ -7026,10 +7452,7 @@ void BlockMakerState::DrawInspectorContents() {
                     bool isDirty = false;
                     DrawFactoryShapeControls(mat, isDirty);
                     if (isDirty) {
-                        UpdatePreviewMesh();
-                        if (m_context && m_context->cacheManager) {
-                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
-                        }
+                        SynchronizeDraftToPreview();
                     }
                     break;
                 }
@@ -7047,10 +7470,7 @@ void BlockMakerState::DrawInspectorContents() {
                     bool isDirty = false;
                     DrawFactorySurfaceUVControls(mat, isDirty);
                     if (isDirty) {
-                        UpdatePreviewMesh();
-                        if (m_context && m_context->cacheManager) {
-                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
-                        }
+                        SynchronizeDraftToPreview();
                     }
                     break;
                 }
@@ -7060,20 +7480,15 @@ void BlockMakerState::DrawInspectorContents() {
                     bool isDirty = false;
                     DrawFactoryTextureControls(mat, isDirty);
                     if (isDirty) {
-                        UpdatePreviewMesh();
-                        if (m_context && m_context->cacheManager) {
-                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
-                        }
+                        SynchronizeDraftToPreview();
                     }
                     break;
                 }
                 case fw::ProductionStationID::Painter: {
                     ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.6f, 1.0f), "STAZIONE 5: PAINTER — 3D SURFACE PAINTER (BM-TX4 & BM-UV8)");
-                    ImGui::SliderFloat("Brush Radius##PntRad", &m_paintBrush.radiusPixels, 2.0f, 64.0f, "%.1f px");
-                    ImGui::SliderFloat("Brush Strength##PntStr", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
-                    ImGui::ColorEdit4("Brush Color##PntCol", &m_paintBrush.color.x);
-                    ImGui::Checkbox("Erase Mode##PntErase", &m_paintBrush.eraseMode);
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.6f, 1.0f), "STAZIONE 5: PAINTER — SURFACE STUDIO (BM-TX4 & BM-UV-PAINTER)");
+                    m_uvCanvasPaintMode = true;
+                    DrawUVEditorStationUI();
                     break;
                 }
                 case fw::ProductionStationID::Material: {
@@ -7083,10 +7498,7 @@ void BlockMakerState::DrawInspectorContents() {
                     bool isDirty = false;
                     DrawGeneralGraphicsUI(mat, isDirty);
                     if (isDirty) {
-                        UpdatePreviewMesh();
-                        if (m_context && m_context->cacheManager) {
-                            m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
-                        }
+                        SynchronizeDraftToPreview();
                     }
                     break;
                 }
@@ -7143,6 +7555,7 @@ void BlockMakerState::DrawInspectorContents() {
         ImGui::Separator();
         
         if (ImGui::Button("SALVA DEFINIZIONE & ASSET BLOCCO (JSON/GPU)", ImVec2(-1, 35))) {
+            CommitDraftToRegistry();
             m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
             m_context->materialRegistry->UpdateMaterial(m_selectedBlockId, mat);
             bool s1 = m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
@@ -7231,12 +7644,14 @@ void BlockMakerState::DrawWorkspaceTopMenuBar(float& outTopBarHeight) {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Salva Registro Blocchi (JSON)")) {
+                CommitDraftToRegistry();
                 if (m_context && m_context->blockRegistry) {
                     m_context->blockRegistry->SaveToJson("assets/definitions/blocks.json");
                 }
             }
             if (ImGui::MenuItem("Salva Definizioni & Asset (JSON/GPU)")) {
                 if (m_context && m_context->blockRegistry && m_context->materialRegistry && m_context->shapeRegistry) {
+                    CommitDraftToRegistry();
                     fw::SimBlockDef& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
                     fw::PBRMaterialDef& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
                     m_context->blockRegistry->UpdateBlock(m_selectedBlockId, def);
@@ -7246,6 +7661,9 @@ void BlockMakerState::DrawWorkspaceTopMenuBar(float& outTopBarHeight) {
                     m_context->materialRegistry->SaveToJson("assets/definitions/materials.json");
                     UpdatePreviewMesh();
                 }
+            }
+            if (ImGui::MenuItem("Ripristina Modifiche Correnti (Revert Draft)")) {
+                RevertCurrentDraftToSaved();
             }
             ImGui::Separator();
             bool useWorkspace = m_useWorkspaceLayout;
@@ -8131,7 +8549,17 @@ void BlockMakerState::DrawMeshSelectionVisualFeedback() {
     }
 
     if (m_activeEditableMesh.GetVertexCount() == 0) {
-        m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+        if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.has_value() &&
+            m_factoryOrchestrator.GetCurrentDraft()->sculptMesh->GetVertexCount() > 0) {
+            m_activeEditableMesh = m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.value();
+        } else if (m_factoryOrchestrator.IsDraftOpen()) {
+            m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(m_factoryOrchestrator.GetCurrentDraft()->shape);
+            if (m_factoryOrchestrator.GetCurrentDraft()) {
+                m_factoryOrchestrator.GetCurrentDraft()->sculptMesh = m_activeEditableMesh;
+            }
+        } else {
+            m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+        }
         m_selectionService.PruneInvalidated(m_activeEditableMesh);
     }
 
@@ -8331,7 +8759,17 @@ void BlockMakerState::DrawSculptBrushVisualFeedback() {
     }
 
     if (m_activeEditableMesh.GetVertexCount() == 0) {
-        m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+        if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.has_value() &&
+            m_factoryOrchestrator.GetCurrentDraft()->sculptMesh->GetVertexCount() > 0) {
+            m_activeEditableMesh = m_factoryOrchestrator.GetCurrentDraft()->sculptMesh.value();
+        } else if (m_factoryOrchestrator.IsDraftOpen()) {
+            m_activeEditableMesh = fw::MeshBridgeService::CreateMeshFromShape(m_factoryOrchestrator.GetCurrentDraft()->shape);
+            if (m_factoryOrchestrator.GetCurrentDraft()) {
+                m_factoryOrchestrator.GetCurrentDraft()->sculptMesh = m_activeEditableMesh;
+            }
+        } else {
+            m_activeEditableMesh = fw::EditableMesh::CreateCube(1.0f);
+        }
     }
 
     ImGuiIO& io = ImGui::GetIO();
@@ -8455,7 +8893,11 @@ void BlockMakerState::DrawSculptBrushVisualFeedback() {
                     m_lastSculptStrokePoint = sp;
                     bool begun = m_sculptService.BeginStroke(m_activeEditableMesh, sp);
                     if (begun) {
-                        m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Sculpt Stroke", fw::HistoryCommandType::GeometryDelta);
+                        uint8_t curGeoSource = 1;
+                        if (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()) {
+                            curGeoSource = static_cast<uint8_t>(m_factoryOrchestrator.GetCurrentDraft()->geometrySource);
+                        }
+                        m_meshHistoryService.BeginTransaction(m_selectedBlockId, "Sculpt Stroke", fw::HistoryCommandType::GeometryDelta, nullptr, curGeoSource);
                         if (m_sculptService.GetSettings().brushType != fw::SculptBrushType::Grab) {
                             m_sculptLiveGpuDirty = true;
                         }
@@ -8473,11 +8915,8 @@ void BlockMakerState::DrawSculptBrushVisualFeedback() {
         if (m_isSculptStroking) {
             // Live GPU Coalesced Update: aggiornamento in tempo reale durante il trascinamento dello stroke
             if (m_sculptLiveGpuDirty && m_sculptLiveGpuCooldown <= 0.0f) {
-                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                m_cachedGeometryMesh = compMesh;
-                if (m_previewWorld) {
-                    m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
-                }
+                m_bridgePreviewCache.isGpuBufferDirty = true;
+                UpdatePreviewMesh();
                 m_sculptLiveGpuDirty = false;
                 m_sculptLiveGpuCooldown = 0.033f; // Coalesce a max ~30 FPS durante il drag per non saturare la VRAM
             }
@@ -8498,9 +8937,10 @@ void BlockMakerState::DrawSculptBrushVisualFeedback() {
                         m_factoryOrchestrator.SetDraftSculptMesh(m_activeEditableMesh);
                     }
 
-                    auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                    m_cachedGeometryMesh = compMesh;
-                    m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                    std::cout << "[BM-SCULPT][EDIT] Stroke End BlockID=" << (int)m_selectedBlockId
+                              << " Deltas=" << deltas.size() << "\n";
+                    m_bridgePreviewCache.isGpuBufferDirty = true;
+                    UpdatePreviewMesh();
                 } else {
                     m_meshHistoryService.CancelTransaction();
                 }
@@ -8510,9 +8950,8 @@ void BlockMakerState::DrawSculptBrushVisualFeedback() {
                 m_isSculptStroking = false;
                 m_sculptService.CancelStroke(m_activeEditableMesh);
                 m_meshHistoryService.CancelTransaction();
-                auto compMesh = m_activeEditableMesh.CompileToMeshComponent("PreviewSculptMesh");
-                m_cachedGeometryMesh = compMesh;
-                m_previewWorld->EnqueueDeferredMesh("PreviewBlock", glm::vec3(0.0f), std::move(compMesh), nullptr, m_previewBlockEntity);
+                m_bridgePreviewCache.isGpuBufferDirty = true;
+                UpdatePreviewMesh();
                 m_sculptLiveGpuDirty = false;
                 m_sculptLiveGpuCooldown = 0.0f;
             }
@@ -8602,7 +9041,7 @@ void BlockMakerState::Handle3DPaintInput() {
 
 void BlockMakerState::DrawUVEditorStationUI() {
     ImGui::Spacing();
-    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "2D UV EDITOR & ATLAS STATION (BM-UV5 & BM-UV8)");
+    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "SURFACE STUDIO — 2D UV & PAINTER (BM-UV5 & BM-UV-PAINTER MG-01)");
     ImGui::Separator();
 
     if (!m_factoryOrchestrator.IsDraftOpen() || !m_factoryOrchestrator.GetCurrentDraft()->uvLayout.has_value()) {
@@ -8633,7 +9072,7 @@ void BlockMakerState::DrawUVEditorStationUI() {
         viewState.panOffset = glm::vec2(0.0f);
     }
     ImGui::SameLine();
-    ImGui::Checkbox("Checkerboard##UVCheck", &viewState.showCheckerboard);
+    ImGui::Checkbox("Scacchiera##UVCheck", &viewState.showCheckerboard);
     ImGui::SameLine();
     ImGui::Checkbox("Seams##UVSeams", &viewState.showSeams);
     ImGui::SameLine();
@@ -8647,32 +9086,96 @@ void BlockMakerState::DrawUVEditorStationUI() {
     }
     ImGui::EndChild();
 
-    // Strumenti trasformazione e selezione
-    ImGui::BeginChild("UVToolsBar", ImVec2(0, 32), false);
-    if (ImGui::Button("Trasla (+0.05 U)##UVTransU")) {
-        m_uvEditorDocument->TranslateSelectedIslands(glm::vec2(0.05f, 0.0f));
+    // Switcher Modalità UV Editing / Paint (BM-UV-PAINTER MG-01)
+    ImGui::BeginChild("UVModeSwitcherBar", ImVec2(0, 32), false);
+    ImGui::Text("Modalità Canvas:");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("UV Editing##ModeUVEdit", !m_uvCanvasPaintMode)) {
+        m_uvCanvasPaintMode = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Ruota (+90 deg)##UVRot90")) {
-        m_uvEditorDocument->RotateSelectedIslands(90.0f);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Scala (1.1x)##UVSclUp")) {
-        m_uvEditorDocument->ScaleSelectedIslands(glm::vec2(1.1f, 1.1f));
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Undo UV##UVUndo", ImVec2(70, 0))) {
-        m_uvEditorDocument->Undo();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Redo UV##UVRedo", ImVec2(70, 0))) {
-        m_uvEditorDocument->Redo();
-    }
-    if (m_uvEditorDocument->RequiresTextureMigration()) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[Migrazione Richiesta]");
+    if (ImGui::RadioButton("Paint 2D##ModeUVPaint", m_uvCanvasPaintMode)) {
+        m_uvCanvasPaintMode = true;
     }
     ImGui::EndChild();
+
+    if (!m_uvCanvasPaintMode) {
+        // Strumenti trasformazione e selezione UV
+        ImGui::BeginChild("UVToolsBar", ImVec2(0, 32), false);
+        if (ImGui::Button("Trasla (+0.05 U)##UVTransU")) {
+            m_uvEditorDocument->TranslateSelectedIslands(glm::vec2(0.05f, 0.0f));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Ruota (+90 deg)##UVRot90")) {
+            m_uvEditorDocument->RotateSelectedIslands(90.0f);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Scala (1.1x)##UVSclUp")) {
+            m_uvEditorDocument->ScaleSelectedIslands(glm::vec2(1.1f, 1.1f));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Undo UV##UVUndo", ImVec2(70, 0))) {
+            m_uvEditorDocument->Undo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Redo UV##UVRedo", ImVec2(70, 0))) {
+            m_uvEditorDocument->Redo();
+        }
+        if (m_uvEditorDocument->RequiresTextureMigration()) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[Migrazione Richiesta]");
+        }
+        ImGui::EndChild();
+    } else {
+        // Parametri pennello circolare Paint 2D (BM-UV-PAINTER MG-01)
+        ImGui::BeginChild("PaintToolsBar", ImVec2(0, 68), true);
+        ImGui::SliderFloat("Raggio##PntRad2D", &m_paintBrush.radiusPixels, 1.0f, 64.0f, "%.1f px");
+        ImGui::SameLine();
+        ImGui::SliderFloat("Forza##PntStr2D", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
+        ImGui::SameLine();
+        ImGui::SliderFloat("Durezza##PntHrd2D", &m_paintBrush.hardness, 0.0f, 1.0f, "%.2f");
+
+        ImGui::ColorEdit4("Colore##PntCol2D", &m_paintBrush.color.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar);
+        ImGui::SameLine();
+        ImGui::Checkbox("Gomma (Erase)##PntErase2D", &m_paintBrush.eraseMode);
+        ImGui::SameLine();
+        if (ImGui::Button("Undo Paint##PntUndo2D", ImVec2(80, 0))) {
+            if (m_paintingService.CanUndo()) {
+                m_paintingService.Undo();
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp)) {
+                    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdateTextureLayer(
+                            static_cast<uint32_t>(m_selectedBlockId),
+                            comp.GetPixelData(),
+                            comp.GetWidth(),
+                            comp.GetHeight(),
+                            RenderManager::PBRTextureType::ALBEDO
+                        );
+                    }
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Redo Paint##PntRedo2D", ImVec2(80, 0))) {
+            if (m_paintingService.CanRedo()) {
+                m_paintingService.Redo();
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp)) {
+                    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdateTextureLayer(
+                            static_cast<uint32_t>(m_selectedBlockId),
+                            comp.GetPixelData(),
+                            comp.GetWidth(),
+                            comp.GetHeight(),
+                            RenderManager::PBRTextureType::ALBEDO
+                        );
+                    }
+                }
+            }
+        }
+        ImGui::EndChild();
+    }
 
     // Canvas ImGui 2D con Caching a revisione (Zero-Work per-frame)
     uint64_t topoRev = m_activeEditableMesh.GetTopologyRevision();
@@ -8701,7 +9204,46 @@ void BlockMakerState::DrawUVEditorStationUI() {
     glm::vec2 origin(canvasP0.x, canvasP0.y);
     glm::vec2 size(canvasSize.x, canvasSize.y);
 
-    // Disegna isole e cuciture dalla cache
+    // 1. Texture Albedo sottostante (BM-UV-PAINTER MG-01)
+    VkDescriptorSet albedoTexDs = VK_NULL_HANDLE;
+    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+        albedoTexDs = m_context->engine->GetRenderManager()->GetOrCreateImGuiTextureDescriptor(
+            static_cast<uint32_t>(m_selectedBlockId), 
+            RenderManager::PBRTextureType::ALBEDO
+        );
+    }
+
+    drawList->PushClipRect(canvasP0, canvasP1, true);
+
+    glm::vec2 scr0 = m_uvEditorPanel.AtlasUVToScreen(glm::vec2(0.0f, 0.0f), origin, size);
+    glm::vec2 scr1 = m_uvEditorPanel.AtlasUVToScreen(glm::vec2(1.0f, 1.0f), origin, size);
+
+    if (viewState.showCheckerboard) {
+        const float checkStep = 16.0f * viewState.zoom;
+        if (checkStep >= 4.0f) {
+            for (float cy = scr0.y; cy < scr1.y; cy += checkStep) {
+                for (float cx = scr0.x; cx < scr1.x; cx += checkStep) {
+                    int ix = static_cast<int>((cx - scr0.x) / checkStep);
+                    int iy = static_cast<int>((cy - scr0.y) / checkStep);
+                    ImU32 checkCol = ((ix + iy) % 2 == 0) ? IM_COL32(50, 50, 55, 255) : IM_COL32(38, 38, 42, 255);
+                    drawList->AddRectFilled(ImVec2(cx, cy), ImVec2(std::min(cx + checkStep, scr1.x), std::min(cy + checkStep, scr1.y)), checkCol);
+                }
+            }
+        }
+    }
+
+    if (albedoTexDs != VK_NULL_HANDLE) {
+        drawList->AddImage(
+            reinterpret_cast<ImTextureID>(albedoTexDs),
+            ImVec2(scr0.x, scr0.y),
+            ImVec2(scr1.x, scr1.y),
+            ImVec2(0.0f, 0.0f),
+            ImVec2(1.0f, 1.0f),
+            IM_COL32(255, 255, 255, 255)
+        );
+    }
+
+    // 2. Disegna contorni delle isole e cuciture dalla cache
     for (const auto& outline : m_cachedUVOutlines) {
         if (outline.atlasPage != viewState.activeAtlasPage) continue;
 
@@ -8711,36 +9253,104 @@ void BlockMakerState::DrawUVEditorStationUI() {
             for (size_t i = 0; i < outline.boundaryVerticesAtlasUV.size(); ++i) {
                 glm::vec2 uvA = outline.boundaryVerticesAtlasUV[i];
                 glm::vec2 uvB = outline.boundaryVerticesAtlasUV[(i + 1) % outline.boundaryVerticesAtlasUV.size()];
-                glm::vec2 scrA = m_uvEditorPanel.AtlasUVToScreen(uvA, origin, size);
-                glm::vec2 scrB = m_uvEditorPanel.AtlasUVToScreen(uvB, origin, size);
-                drawList->AddLine(ImVec2(scrA.x, scrA.y), ImVec2(scrB.x, scrB.y), col, outline.isSelected ? 2.5f : 1.5f);
+                glm::vec2 pA = m_uvEditorPanel.AtlasUVToScreen(uvA, origin, size);
+                glm::vec2 pB = m_uvEditorPanel.AtlasUVToScreen(uvB, origin, size);
+                drawList->AddLine(ImVec2(pA.x, pA.y), ImVec2(pB.x, pB.y), col, outline.isSelected ? 2.5f : 1.5f);
             }
         }
 
         if (viewState.showSeams) {
             for (const auto& seam : outline.seamSegmentsAtlasUV) {
-                glm::vec2 scrA = m_uvEditorPanel.AtlasUVToScreen(seam.first, origin, size);
-                glm::vec2 scrB = m_uvEditorPanel.AtlasUVToScreen(seam.second, origin, size);
-                drawList->AddLine(ImVec2(scrA.x, scrA.y), ImVec2(scrB.x, scrB.y), IM_COL32(255, 60, 60, 255), 2.0f);
+                glm::vec2 pA = m_uvEditorPanel.AtlasUVToScreen(seam.first, origin, size);
+                glm::vec2 pB = m_uvEditorPanel.AtlasUVToScreen(seam.second, origin, size);
+                drawList->AddLine(ImVec2(pA.x, pA.y), ImVec2(pB.x, pB.y), IM_COL32(255, 60, 60, 255), 2.0f);
             }
         }
     }
 
+    // 3. Preview circolare del pennello sotto il puntatore mouse in modalità Paint
+    ImVec2 mousePos = ImGui::GetMousePos();
+    bool isCanvasHovered = (mousePos.x >= canvasP0.x && mousePos.x <= canvasP1.x &&
+                            mousePos.y >= canvasP0.y && mousePos.y <= canvasP1.y);
+
+    if (m_uvCanvasPaintMode && isCanvasHovered) {
+        float brushVisualRadius = m_paintBrush.radiusPixels * viewState.zoom;
+        drawList->AddCircle(mousePos, brushVisualRadius, IM_COL32(255, 255, 255, 220), 28, 1.5f);
+    }
+
+    drawList->PopClipRect();
+
     ImGui::Dummy(canvasSize);
 
-    // Selezione isola via click su canvas
-    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        ImVec2 mousePos = ImGui::GetMousePos();
-        glm::vec2 clickUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+    // Controlli Pan e Zoom con mouse su Canvas
+    if (ImGui::IsItemHovered()) {
+        if (ImGui::GetIO().MouseWheel != 0.0f) {
+            viewState.zoom = std::clamp(viewState.zoom + ImGui::GetIO().MouseWheel * 0.15f, 0.2f, 10.0f);
+        }
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+            ImVec2 mDelta = ImGui::GetIO().MouseDelta;
+            viewState.panOffset.x += mDelta.x;
+            viewState.panOffset.y += mDelta.y;
+        }
+    }
 
-        for (const auto& isl : layout.islands) {
-            if (isl.atlasPage != viewState.activeAtlasPage) continue;
-            if (clickUV.x >= isl.atlasTransform.z && clickUV.x <= (isl.atlasTransform.z + isl.atlasTransform.x) &&
-                clickUV.y >= isl.atlasTransform.w && clickUV.y <= (isl.atlasTransform.w + isl.atlasTransform.y)) 
-            {
-                m_uvEditorDocument->SelectIsland(isl.id, ImGui::GetIO().KeyShift);
-                break;
+    if (!m_uvCanvasPaintMode) {
+        // Modalità UV EDITING: Selezione isola via click su canvas
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            glm::vec2 clickUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+
+            for (const auto& isl : layout.islands) {
+                if (isl.atlasPage != viewState.activeAtlasPage) continue;
+                if (clickUV.x >= isl.atlasTransform.z && clickUV.x <= (isl.atlasTransform.z + isl.atlasTransform.x) &&
+                    clickUV.y >= isl.atlasTransform.w && clickUV.y <= (isl.atlasTransform.w + isl.atlasTransform.y)) 
+                {
+                    m_uvEditorDocument->SelectIsland(isl.id, ImGui::GetIO().KeyShift);
+                    break;
+                }
             }
+        }
+    } else {
+        // Modalità PAINT 2D (BM-UV-PAINTER MG-01): Pittura protetta da island clipping
+        glm::vec2 mouseUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService);
+        }
+
+        if (m_uvEditorDocument->IsStroking2D()) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                m_uvEditorDocument->UpdateStroke2D(mouseUV, m_paintBrush, &m_paintingService);
+            } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                m_uvEditorDocument->EndStroke2D(&m_paintingService);
+
+                // Compositing su ImageBitmap e aggiornamento VRAM GPU in-place
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp)) {
+                    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdateTextureLayer(
+                            static_cast<uint32_t>(m_selectedBlockId),
+                            comp.GetPixelData(),
+                            comp.GetWidth(),
+                            comp.GetHeight(),
+                            RenderManager::PBRTextureType::ALBEDO
+                        );
+                    }
+                }
+
+                // Sincronizzazione autoritativa con il draft
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                    if (draft) {
+                        draft->paintLayers = m_paintingService.GetLayers();
+                        draft->paintRevision = m_paintingService.GetRevision();
+                        draft->MarkDirty();
+                    }
+                }
+            }
+        }
+
+        if (m_uvEditorDocument->IsStroking2D() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            m_uvEditorDocument->CancelStroke2D(&m_paintingService);
         }
     }
 }

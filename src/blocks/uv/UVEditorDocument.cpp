@@ -301,6 +301,71 @@ bool UVEditorDocument::ToggleManualSeam(EdgeID edgeId) {
     return true;
 }
 
+static inline bool PointInTriangle2D(const glm::vec2& p, const glm::vec2& a, const glm::vec2& b, const glm::vec2& c) {
+    float d1 = (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+    float d2 = (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y);
+    float d3 = (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y);
+    bool has_neg = (d1 < -1e-5f) || (d2 < -1e-5f) || (d3 < -1e-5f);
+    bool has_pos = (d1 > 1e-5f) || (d2 > 1e-5f) || (d3 > 1e-5f);
+    return !(has_neg && has_pos);
+}
+
+bool UVEditorDocument::IsPointInIsland(const glm::vec2& atlasUV, UVIslandID islandId) const {
+    if (islandId >= m_layout.islands.size()) return false;
+    const auto& isl = m_layout.islands[islandId];
+    if (isl.atlasPage != m_activeAtlasPage) return false;
+
+    float uMin = isl.atlasTransform.z - 1e-4f;
+    float vMin = isl.atlasTransform.w - 1e-4f;
+    float uMax = isl.atlasTransform.z + isl.atlasTransform.x + 1e-4f;
+    float vMax = vMin + isl.atlasTransform.y + 1e-4f;
+    if (atlasUV.x < uMin || atlasUV.x > uMax || atlasUV.y < vMin || atlasUV.y > vMax) {
+        return false;
+    }
+
+    for (FaceID fId : isl.faces) {
+        const auto* f = m_mesh.GetFace(fId);
+        if (!f || !IsValid(f->halfEdge)) continue;
+
+        HalfEdgeID h0 = f->halfEdge;
+        const auto* he0 = m_mesh.GetHalfEdge(h0);
+        if (!he0) continue;
+        glm::vec2 uv0 = he0->corner.uv;
+
+        HalfEdgeID hPrev = he0->next;
+        while (IsValid(hPrev)) {
+            const auto* hePrev = m_mesh.GetHalfEdge(hPrev);
+            if (!hePrev) break;
+            HalfEdgeID hCurr = hePrev->next;
+            if (!IsValid(hCurr) || hCurr == h0) break;
+            const auto* heCurr = m_mesh.GetHalfEdge(hCurr);
+            if (!heCurr) break;
+
+            glm::vec2 uv1 = hePrev->corner.uv;
+            glm::vec2 uv2 = heCurr->corner.uv;
+
+            if (PointInTriangle2D(atlasUV, uv0, uv1, uv2)) {
+                return true;
+            }
+
+            hPrev = hCurr;
+        }
+    }
+    return false;
+}
+
+UVIslandID UVEditorDocument::FindIslandAtUV(const glm::vec2& atlasUV) const {
+    for (UVIslandID selId : m_selectedIslands) {
+        if (IsPointInIsland(atlasUV, selId)) return selId;
+    }
+    for (size_t i = 0; i < m_layout.islands.size(); ++i) {
+        if (IsPointInIsland(atlasUV, static_cast<UVIslandID>(i))) {
+            return static_cast<UVIslandID>(i);
+        }
+    }
+    return INVALID_UVISLAND_ID;
+}
+
 bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV, 
                                    const PaintBrush& brush, 
                                    TexturePaintingService* paintingService, 
@@ -316,16 +381,127 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
     uint32_t layerId = targetLayerId;
     if (layerId == 0 && paintingService->GetLayerCount() > 0) {
         layerId = paintingService->GetLayers()[0].layerId;
+    } else if (paintingService->GetLayerCount() == 0) {
+        layerId = paintingService->AddLayer("Paint Layer 1");
     }
+
+    UVIslandID targetIsland = FindIslandAtUV(atlasUV);
 
     // Esegue il tratto di pittura 2D delegando a TexturePaintingService (BM-UV5.5)
     if (!paintingService->BeginStroke(layerId, false)) {
         return false;
     }
-    paintingService->ApplyDab(pixelCoords, brush);
-    paintingService->EndStroke();
 
+    if (targetIsland != INVALID_UVISLAND_ID) {
+        auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
+            glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
+                                      (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
+            return this->IsPointInIsland(pUV, targetIsland);
+        };
+        paintingService->ApplyDabClipped(pixelCoords, brush, clipCb);
+    } else {
+        paintingService->ApplyDab(pixelCoords, brush);
+    }
+
+    paintingService->EndStroke();
     return true;
+}
+
+bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV, 
+                                     const PaintBrush& brush, 
+                                     TexturePaintingService* paintingService, 
+                                     uint32_t targetLayerId) {
+    if (!paintingService) return false;
+
+    UVIslandID targetIsland = INVALID_UVISLAND_ID;
+    if (!m_selectedIslands.empty()) {
+        for (UVIslandID selId : m_selectedIslands) {
+            if (IsPointInIsland(atlasUV, selId)) {
+                targetIsland = selId;
+                break;
+            }
+        }
+        if (targetIsland == INVALID_UVISLAND_ID) {
+            return false;
+        }
+    } else {
+        targetIsland = FindIslandAtUV(atlasUV);
+        if (targetIsland == INVALID_UVISLAND_ID) {
+            return false;
+        }
+    }
+
+    uint32_t targetW = m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : paintingService->GetCanvasWidth();
+    uint32_t targetH = m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : paintingService->GetCanvasHeight();
+    glm::vec2 pixelCoords = UVAtlasPacker::AtlasToPixel(atlasUV, targetW, targetH);
+
+    uint32_t layerId = targetLayerId;
+    if (layerId == 0 && paintingService->GetLayerCount() > 0) {
+        layerId = paintingService->GetLayers()[0].layerId;
+    } else if (paintingService->GetLayerCount() == 0) {
+        layerId = paintingService->AddLayer("Paint Layer 1");
+    }
+
+    if (!paintingService->BeginStroke(layerId, false)) {
+        return false;
+    }
+
+    m_isStroking2D = true;
+    m_strokeIslandId = targetIsland;
+    m_prevStrokeUV = atlasUV;
+
+    auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
+        glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
+                                  (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
+        return this->IsPointInIsland(pUV, targetIsland);
+    };
+
+    paintingService->ApplyDabClipped(pixelCoords, brush, clipCb);
+    return true;
+}
+
+bool UVEditorDocument::UpdateStroke2D(const glm::vec2& atlasUV, 
+                                      const PaintBrush& brush, 
+                                      TexturePaintingService* paintingService) {
+    if (!m_isStroking2D || !paintingService || m_strokeIslandId == INVALID_UVISLAND_ID) {
+        return false;
+    }
+
+    uint32_t targetW = m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : paintingService->GetCanvasWidth();
+    uint32_t targetH = m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : paintingService->GetCanvasHeight();
+    glm::vec2 curPixel = UVAtlasPacker::AtlasToPixel(atlasUV, targetW, targetH);
+    glm::vec2 prevPixel = UVAtlasPacker::AtlasToPixel(m_prevStrokeUV, targetW, targetH);
+
+    UVIslandID targetIsland = m_strokeIslandId;
+    auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
+        glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
+                                  (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
+        return this->IsPointInIsland(pUV, targetIsland);
+    };
+
+    paintingService->UpdateStrokeClipped(prevPixel, curPixel, brush, clipCb);
+    m_prevStrokeUV = atlasUV;
+    return true;
+}
+
+PaintDirtyRect UVEditorDocument::EndStroke2D(TexturePaintingService* paintingService) {
+    PaintDirtyRect dirty;
+    if (m_isStroking2D && paintingService) {
+        dirty = paintingService->EndStroke();
+    }
+    m_isStroking2D = false;
+    m_strokeIslandId = INVALID_UVISLAND_ID;
+    return dirty;
+}
+
+bool UVEditorDocument::CancelStroke2D(TexturePaintingService* paintingService) {
+    bool ok = false;
+    if (m_isStroking2D && paintingService) {
+        ok = paintingService->CancelStroke();
+    }
+    m_isStroking2D = false;
+    m_strokeIslandId = INVALID_UVISLAND_ID;
+    return ok;
 }
 
 } // namespace fw

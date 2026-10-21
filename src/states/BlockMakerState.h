@@ -43,6 +43,7 @@
 #include "blocks/uv/UVEditorDocument.h"
 #include "blocks/uv/UVEditorPanel.h"
 #include "blocks/uv/TextureReprojectionService.h"
+#include "blocks/factory/FactoryEditSessionContext.h"
 #include "imgui.h"
 struct SharedContext;
 
@@ -56,6 +57,12 @@ public:
     void Render() override;
 
     entt::registry* GetRegistry() override;
+
+    // --- BM-UI2.3-B1 Factory Edit Session Accessors ---
+    fw::FactoryEditSessionContext& GetEditSessionContext() { return m_sessionContext; }
+    const fw::FactoryEditSessionContext& GetEditSessionContext() const { return m_sessionContext; }
+    fw::EditableMesh& GetActiveEditableMesh() { return m_activeEditableMesh; }
+    const fw::EditableMesh& GetActiveEditableMesh() const { return m_activeEditableMesh; }
 
 private:
     void DrawUI();
@@ -464,11 +471,16 @@ private:
     bool m_topologyTestsExecuted = false;
     void RunTopologyValidationTests(bool isManualTrigger = false);
 
-    // --- BM-S6 Subdivision State & API (BM-S2.2 / BM-S2.3) ---
+    // --- BM-S6 Subdivision State & Complexity Safety API (BM-S2.2 / BM-S2.3) ---
     int m_subdivideIterations = 1;
     bool m_subdivideSmooth = false;
-    static constexpr uint64_t MAX_SUBDIVISION_FACE_BUDGET = 65536ULL;
+    static constexpr uint64_t GPU_VRAM_BUCKET_MAX_BYTES = 4194304ULL; // 4 MB (VramSlabAllocator max bucket)
+    static constexpr uint64_t GPU_VRAM_MAX_VERTICES = 65536ULL;        // 4 MB / 64 bytes
+    static constexpr uint64_t GPU_VRAM_MAX_TRIANGLES = 21845ULL;       // 65536 / 3
+    static constexpr uint64_t MAX_SUBDIVISION_FACE_BUDGET = 10922ULL;   // 21845 / 2
     static uint64_t EstimateSubdivisionFaceCount(const fw::EditableMesh& mesh, int iterations);
+    static uint64_t EstimateSubdivisionTriangleCount(const fw::EditableMesh& mesh, int iterations);
+    static uint64_t ComputeRenderedTriangleCount(const fw::EditableMesh& mesh);
     void ApplySubdivideOperation();
 
     // --- BM-S7 Remeshing & Manifold Repair Validation Suite (REP-1 .. REP-10) ---
@@ -599,6 +611,7 @@ private:
     uint64_t m_cachedUVOutlineTopologyRev = 0;
     uint64_t m_cachedUVOutlineAtlasRev = 0;
     uint64_t m_cachedUVOutlineSelectionRev = 0;
+    bool m_uvCanvasPaintMode = false;
     void DrawUVEditorStationUI();
 
     // --- BM-UV8 3D Painting Viewport Input State ---
@@ -607,6 +620,14 @@ private:
     fw::PaintChannel m_activePaintChannel = fw::PaintChannel::BaseColor;
     void Handle3DPaintInput();
     void ComputeMouseRay(const ImVec2& mousePos, glm::vec3& outOrigin, glm::vec3& outDir);
+
+    // --- BM-UI2.3-B1 Factory Edit Session Lifecycle & Data Ownership ---
+    fw::FactoryEditSessionContext m_sessionContext;
+    void LoadFactoryDraft(uint8_t blockId);
+    void SynchronizeDraftToPreview();
+    void CommitDraftToRegistry();
+    void RevertCurrentDraftToSaved();
+    void UpdateSessionContext();
 
     std::unique_ptr<fw::GameWorld> m_previewWorld;
 };

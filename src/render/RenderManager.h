@@ -4,6 +4,7 @@
 #include "vk_mem_alloc.h"
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <optional>
 #include <iostream>
 #include <fstream>
@@ -277,6 +278,8 @@ private:
     VkImageView m_ormImageView{ VK_NULL_HANDLE };
 
     VkSampler m_textureSampler{ VK_NULL_HANDLE };
+    std::unordered_map<uint64_t, VkDescriptorSet> m_imGuiTextureDescriptors;
+    std::unordered_map<uint64_t, VkImageView> m_imGuiTextureImageViews;
 
     // --- DEPTH BUFFER (risolve il problema delle facce trasparenti) ---
     VkImage m_depthImage{ VK_NULL_HANDLE };
@@ -327,6 +330,9 @@ public:
     void UpdateTextureLayer(uint32_t layerIndex, const void* pixelData, uint32_t width, uint32_t height, PBRTextureType type);
     void LoadBlockTextures(const std::string& baseDir, const std::vector<BlockDef>& blocks);
     bool LoadPBRTextureFromFile(const std::string& filePath, uint32_t layerIndex, PBRTextureType type);
+
+    VkDescriptorSet GetOrCreateImGuiTextureDescriptor(uint32_t layerIndex, PBRTextureType type = PBRTextureType::ALBEDO);
+    void CleanupImGuiTextureDescriptors();
 
     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
     struct VulkanChunkBuffer {

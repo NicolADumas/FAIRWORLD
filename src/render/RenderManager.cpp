@@ -2135,6 +2135,7 @@ void RenderManager::Shutdown() {
             m_blockPropertiesBuffer = VK_NULL_HANDLE;
         }
 
+        CleanupImGuiTextureDescriptors();
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
@@ -2470,6 +2471,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& inputData) {
         }
     };
 
+    CleanupImGuiTextureDescriptors();
     destroyTextureArray(m_albedoImage, m_albedoImageAllocation, m_albedoImageView);
     destroyTextureArray(m_normalImage, m_normalImageAllocation, m_normalImageView);
     destroyTextureArray(m_ormImage, m_ormImageAllocation, m_ormImageView);
@@ -2986,6 +2988,66 @@ bool RenderManager::LoadPBRTextureFromFile(const std::string& filePath, uint32_t
         return true;
     }
     return false;
+}
+
+void RenderManager::CleanupImGuiTextureDescriptors() {
+    if (m_core && m_core->GetDevice() != VK_NULL_HANDLE) {
+        for (auto& pair : m_imGuiTextureDescriptors) {
+            if (pair.second != VK_NULL_HANDLE) {
+                ImGui_ImplVulkan_RemoveTexture(pair.second);
+            }
+        }
+        m_imGuiTextureDescriptors.clear();
+        for (auto& pair : m_imGuiTextureImageViews) {
+            if (pair.second != VK_NULL_HANDLE) {
+                vkDestroyImageView(m_core->GetDevice(), pair.second, nullptr);
+            }
+        }
+        m_imGuiTextureImageViews.clear();
+    }
+}
+
+VkDescriptorSet RenderManager::GetOrCreateImGuiTextureDescriptor(uint32_t layerIndex, PBRTextureType type) {
+    if (!m_core || m_core->GetDevice() == VK_NULL_HANDLE || m_albedoImage == VK_NULL_HANDLE || m_textureSampler == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    if (layerIndex >= 256) return VK_NULL_HANDLE;
+
+    uint64_t key = (static_cast<uint64_t>(type) << 32) | static_cast<uint64_t>(layerIndex);
+    auto it = m_imGuiTextureDescriptors.find(key);
+    if (it != m_imGuiTextureDescriptors.end()) {
+        return it->second;
+    }
+
+    VkImage targetImage = m_albedoImage;
+    if (type == PBRTextureType::NORMAL) targetImage = m_normalImage;
+    else if (type == PBRTextureType::ORM) targetImage = m_ormImage;
+    if (targetImage == VK_NULL_HANDLE) return VK_NULL_HANDLE;
+
+    VkImageView singleView = VK_NULL_HANDLE;
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = targetImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = layerIndex;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(m_core->GetDevice(), &viewInfo, nullptr, &singleView) != VK_SUCCESS) {
+        return VK_NULL_HANDLE;
+    }
+
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(m_textureSampler, singleView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (ds != VK_NULL_HANDLE) {
+        m_imGuiTextureDescriptors[key] = ds;
+        m_imGuiTextureImageViews[key] = singleView;
+    } else {
+        vkDestroyImageView(m_core->GetDevice(), singleView, nullptr);
+    }
+    return ds;
 }
 
 void RenderManager::UpdateBlockPropertiesSSBO(const std::vector<fw::BlockPropertiesGPU>& properties) {

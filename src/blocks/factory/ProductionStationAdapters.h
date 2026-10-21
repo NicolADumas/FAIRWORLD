@@ -129,9 +129,13 @@ public:
         m_diagnostic.Clear();
         m_status = StationStatus::Processing;
 
-        // Se il draft non possiede ancora una EditableMesh, inizializzala a cubo base di default
+        // Se il draft non possiede ancora una EditableMesh, inizializzala a partire dalla forma del draft
         if (!context.draft.sculptMesh.has_value()) {
-            context.draft.sculptMesh = EditableMesh::CreateCube(1.0f);
+            if (context.draft.shape.type != ShapeType::None) {
+                context.draft.sculptMesh = MeshBridgeService::CreateMeshFromShape(context.draft.shape);
+            } else {
+                context.draft.sculptMesh = EditableMesh::CreateCube(1.0f);
+            }
         }
 
         // 1. Validazione topologica della mesh
@@ -999,7 +1003,7 @@ public:
         opts.defaultProjection = context.draft.baseProjection;
 
         GeometryCompileResult compRes;
-        if (context.draft.geometrySource == GeometrySource::SculptedMesh || context.draft.sculptMesh.has_value()) {
+        if (context.draft.geometrySource == GeometrySource::SculptedMesh) {
             if (!context.draft.sculptMesh.has_value() || context.draft.sculptMesh->IsEmpty() || context.draft.sculptMesh->GetFaceCount() == 0) {
                 m_diagnostic.errors.push_back("Geometria Sculpt non valida o assente nel draft.");
                 m_status = StationStatus::Failed;

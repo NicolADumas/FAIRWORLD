@@ -1805,9 +1805,8 @@ GeometryCompileResult GeometryCompiler::CompileEditableMesh(const EditableMesh& 
             }
         }
 
-        uint32_t baseVertexIdx = static_cast<uint32_t>(result.mesh.vertices.size());
-
-        // Genera vertici dedicati per preservare UV seams e discontinuità
+        // Genera vertici dedicati per i corner del poligono
+        std::vector<Vertex> cornerVerts(vCount);
         for (size_t i = 0; i < vCount; ++i) {
             const auto* v = mesh.GetVertex(faceVerts[i]);
             Vertex vert{};
@@ -1842,21 +1841,32 @@ GeometryCompileResult GeometryCompiler::CompileEditableMesh(const EditableMesh& 
             vert.ao = 1.0f;
             vert.light = 1.0f;
 
-            result.mesh.vertices.push_back(vert);
+            cornerVerts[i] = vert;
         }
 
-        // Aggiunge le facce triangolate al MeshComponent
+        // Unroll triangulated faces into pure vertex buffer for non-indexed Vulkan renderer (VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
         for (size_t t = 0; t + 2 < localTriIndices.size(); t += 3) {
-            Face triFace;
-            triFace.indices = {
-                static_cast<int>(baseVertexIdx + localTriIndices[t]),
-                static_cast<int>(baseVertexIdx + localTriIndices[t + 1]),
-                static_cast<int>(baseVertexIdx + localTriIndices[t + 2])
-            };
-            triFace.faceNormal = { face->faceNormal.x, face->faceNormal.y, face->faceNormal.z };
-            triFace.matIndex = static_cast<int>(resolvedMatId);
-            triFace.surfaceId = face->surfaceId;
-            result.mesh.faces.push_back(triFace);
+            uint32_t idx0 = localTriIndices[t];
+            uint32_t idx1 = localTriIndices[t + 1];
+            uint32_t idx2 = localTriIndices[t + 2];
+
+            if (idx0 < cornerVerts.size() && idx1 < cornerVerts.size() && idx2 < cornerVerts.size()) {
+                uint32_t triStart = static_cast<uint32_t>(result.mesh.vertices.size());
+                result.mesh.vertices.push_back(cornerVerts[idx0]);
+                result.mesh.vertices.push_back(cornerVerts[idx1]);
+                result.mesh.vertices.push_back(cornerVerts[idx2]);
+
+                Face triFace;
+                triFace.indices = {
+                    static_cast<int>(triStart),
+                    static_cast<int>(triStart + 1),
+                    static_cast<int>(triStart + 2)
+                };
+                triFace.faceNormal = { face->faceNormal.x, face->faceNormal.y, face->faceNormal.z };
+                triFace.matIndex = static_cast<int>(resolvedMatId);
+                triFace.surfaceId = face->surfaceId;
+                result.mesh.faces.push_back(triFace);
+            }
         }
     }
 

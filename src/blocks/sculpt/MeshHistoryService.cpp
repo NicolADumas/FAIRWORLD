@@ -26,7 +26,8 @@ void MeshHistoryService::SetConfig(const HistoryConfig& config) {
 bool MeshHistoryService::BeginTransaction(uint32_t assetId, 
                                           const std::string& name, 
                                           HistoryCommandType type, 
-                                          const EditableMesh* currentMesh) {
+                                          const EditableMesh* currentMesh,
+                                          uint8_t currentGeometrySource) {
     if (m_inTransaction) {
         // Se c'era una transazione pendente mai completata, annulla lo staging pendente
         CancelTransaction();
@@ -36,6 +37,8 @@ bool MeshHistoryService::BeginTransaction(uint32_t assetId,
     m_stagingCommand.assetId = assetId;
     m_stagingCommand.name = name;
     m_stagingCommand.type = type;
+    m_stagingCommand.beforeGeometrySource = currentGeometrySource;
+    m_stagingCommand.afterGeometrySource = 1; // SculptedMesh
     m_stagingCommand.positionDeltas.clear();
     m_stagingCommand.beforeMesh = std::nullopt;
     m_stagingCommand.afterMesh = std::nullopt;
@@ -233,6 +236,9 @@ HistoryOperationResult MeshHistoryService::Undo(EditableMesh& mesh, uint32_t cur
         res.topologyChanged = true;
     }
 
+    res.restoredGeometrySource = cmd.beforeGeometrySource;
+    res.restoredVertexCount = mesh.GetVertexCount();
+    res.restoredFaceCount = mesh.GetFaceCount();
     res.newGeometryRev = mesh.GetGeometryRevision();
     res.newTopologyRev = mesh.GetTopologyRevision();
     res.success = true;
@@ -282,6 +288,9 @@ HistoryOperationResult MeshHistoryService::Redo(EditableMesh& mesh, uint32_t cur
         res.topologyChanged = true;
     }
 
+    res.restoredGeometrySource = cmd.afterGeometrySource;
+    res.restoredVertexCount = mesh.GetVertexCount();
+    res.restoredFaceCount = mesh.GetFaceCount();
     res.newGeometryRev = mesh.GetGeometryRevision();
     res.newTopologyRev = mesh.GetTopologyRevision();
     res.success = true;

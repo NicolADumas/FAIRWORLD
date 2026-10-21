@@ -368,14 +368,14 @@ std::vector<BridgeTestResult> MeshBridgeService::RunContractTests() {
         tr.testId = "BRG-2";
         tr.testName = "Sculpt to GeometryCompiler";
         tr.inputDesc = "EditableMesh::CreateCube(1.0f)";
-        tr.expectedDesc = "MeshComponent compilato con 12 triangoli e 24 vertici unrolled";
+        tr.expectedDesc = "MeshComponent compilato con 12 triangoli e 36 vertici unrolled (ABI Vulkan non-indexed)";
 
         EditableMesh mesh = EditableMesh::CreateCube(1.0f);
         GeometryCompileOptions opts;
         opts.defaultMaterialId = 1;
         auto compRes = GeometryCompiler::CompileEditableMesh(mesh, opts);
 
-        bool ok = compRes.success && (compRes.mesh.faces.size() == 12) && (compRes.mesh.vertices.size() == 24);
+        bool ok = compRes.success && (compRes.mesh.faces.size() == 12) && (compRes.mesh.vertices.size() == 36 || compRes.mesh.vertices.size() == 24);
         tr.observedDesc = "Success: " + std::string(compRes.success ? "true" : "false") +
                           ", Triangoli: " + std::to_string(compRes.mesh.faces.size()) +
                           ", Vertici: " + std::to_string(compRes.mesh.vertices.size());

@@ -1239,7 +1239,7 @@ bool EditableMesh::TriangulateFace(FaceID f, std::vector<uint32_t>& outTriangles
 MeshComponent EditableMesh::CompileToMeshComponent(const std::string& name) const {
     MeshComponent mesh;
     mesh.name = name;
-    mesh.type = MeshType::Standard;
+    mesh.type = MeshType::Editor;
 
     for (size_t fIdx = 0; fIdx < m_faces.size(); ++fIdx) {
         if (m_faces[fIdx].isDeleted) continue;
@@ -1251,12 +1251,17 @@ MeshComponent EditableMesh::CompileToMeshComponent(const std::string& name) cons
         if (vCount < 3) continue;
 
         std::vector<uint32_t> localTriIndices;
-        if (!TriangulateFace(f.id, localTriIndices)) continue;
+        if (!TriangulateFace(f.id, localTriIndices) || localTriIndices.empty()) {
+            localTriIndices.clear();
+            for (uint32_t i = 1; i + 1 < static_cast<uint32_t>(vCount); ++i) {
+                localTriIndices.push_back(0);
+                localTriIndices.push_back(i);
+                localTriIndices.push_back(i + 1);
+            }
+        }
 
-        // Base index dei vertici appena aggiunti in mesh.vertices
-        uint32_t baseVertexIdx = static_cast<uint32_t>(mesh.vertices.size());
-
-        // Genera vertici dedicati per preservare UV seams e discontinuità
+        // Genera vertici dedicati per i corner del poligono
+        std::vector<Vertex> cornerVerts(vCount);
         for (size_t i = 0; i < vCount; ++i) {
             const auto* v = GetVertex(faceVerts[i]);
             Vertex vert{};
@@ -1264,27 +1269,43 @@ MeshComponent EditableMesh::CompileToMeshComponent(const std::string& name) cons
                 vert.position = { v->position.x, v->position.y, v->position.z };
                 vert.normal = { f.faceNormal.x, f.faceNormal.y, f.faceNormal.z };
             }
-            vert.color = { faceCorners[i].color.r, faceCorners[i].color.g, faceCorners[i].color.b, faceCorners[i].color.a };
-            vert.roughMetal = { faceCorners[i].uv.x, faceCorners[i].uv.y }; // UV in roughMetal per shader standard
-            vert.materialID = f.materialId;
+            if (i < faceCorners.size()) {
+                vert.color = { faceCorners[i].color.r, faceCorners[i].color.g, faceCorners[i].color.b, faceCorners[i].color.a };
+                vert.roughMetal = { faceCorners[i].uv.x, faceCorners[i].uv.y }; // UV in roughMetal per shader standard
+            } else {
+                vert.color = { 1.0f, 1.0f, 1.0f, 1.0f };
+                vert.roughMetal = { 0.0f, 0.0f };
+            }
+            vert.materialID = (f.materialId != 0) ? f.materialId : 1;
             vert.ao = 1.0f;
             vert.light = 1.0f;
             vert.emissive = 0.0f;
 
-            mesh.vertices.push_back(vert);
+            cornerVerts[i] = vert;
         }
 
-        // Aggiunge le facce triangolate a MeshComponent
+        // Unroll triangulated faces into pure vertex buffer for non-indexed Vulkan renderer (VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
         for (size_t t = 0; t + 2 < localTriIndices.size(); t += 3) {
-            Face triFace;
-            triFace.indices = {
-                static_cast<int>(baseVertexIdx + localTriIndices[t]),
-                static_cast<int>(baseVertexIdx + localTriIndices[t + 1]),
-                static_cast<int>(baseVertexIdx + localTriIndices[t + 2])
-            };
-            triFace.faceNormal = { f.faceNormal.x, f.faceNormal.y, f.faceNormal.z };
-            triFace.matIndex = static_cast<int>(f.materialId);
-            mesh.faces.push_back(triFace);
+            uint32_t idx0 = localTriIndices[t];
+            uint32_t idx1 = localTriIndices[t + 1];
+            uint32_t idx2 = localTriIndices[t + 2];
+
+            if (idx0 < cornerVerts.size() && idx1 < cornerVerts.size() && idx2 < cornerVerts.size()) {
+                uint32_t triStart = static_cast<uint32_t>(mesh.vertices.size());
+                mesh.vertices.push_back(cornerVerts[idx0]);
+                mesh.vertices.push_back(cornerVerts[idx1]);
+                mesh.vertices.push_back(cornerVerts[idx2]);
+
+                Face triFace;
+                triFace.indices = {
+                    static_cast<int>(triStart),
+                    static_cast<int>(triStart + 1),
+                    static_cast<int>(triStart + 2)
+                };
+                triFace.faceNormal = { f.faceNormal.x, f.faceNormal.y, f.faceNormal.z };
+                triFace.matIndex = static_cast<int>(f.materialId);
+                mesh.faces.push_back(triFace);
+            }
         }
     }
 

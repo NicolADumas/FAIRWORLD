@@ -115,11 +115,28 @@ public:
     void SetRequiresTextureMigration(bool req) { m_requiresTextureMigration = req; }
     void AcknowledgeTextureMigration() { m_requiresTextureMigration = false; }
 
-    // --- 2D Painting Integration (BM-UV5.5) ---
+    // --- 2D Painting Integration (BM-UV5.5 & BM-UV-PAINTER MG-01) ---
+    UVIslandID FindIslandAtUV(const glm::vec2& atlasUV) const;
+    bool IsPointInIsland(const glm::vec2& atlasUV, UVIslandID islandId) const;
+
     bool PaintAtUV2D(const glm::vec2& atlasUV, 
                      const PaintBrush& brush, 
                      TexturePaintingService* paintingService, 
                      uint32_t targetLayerId = 0);
+
+    bool BeginStroke2D(const glm::vec2& atlasUV, 
+                       const PaintBrush& brush, 
+                       TexturePaintingService* paintingService, 
+                       uint32_t targetLayerId = 0);
+
+    bool UpdateStroke2D(const glm::vec2& atlasUV, 
+                        const PaintBrush& brush, 
+                        TexturePaintingService* paintingService);
+
+    PaintDirtyRect EndStroke2D(TexturePaintingService* paintingService);
+    bool CancelStroke2D(TexturePaintingService* paintingService);
+    bool IsStroking2D() const { return m_isStroking2D; }
+    UVIslandID GetActiveStrokeIslandId() const { return m_strokeIslandId; }
 
 private:
     void MarkModified();
@@ -139,6 +156,10 @@ private:
     uint64_t m_selectionRevision = 1;
     uint64_t m_lastValidatedTopologyRev = 0;
     bool m_requiresTextureMigration = false;
+
+    bool m_isStroking2D = false;
+    glm::vec2 m_prevStrokeUV{0.0f};
+    UVIslandID m_strokeIslandId = INVALID_UVISLAND_ID;
 
     std::vector<UVEditSnapshot> m_undoStack;
     std::vector<UVEditSnapshot> m_redoStack;

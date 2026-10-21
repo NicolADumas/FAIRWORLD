@@ -6,10 +6,13 @@
 #include <memory>
 #include <optional>
 #include <deque>
+#include <functional>
 #include <glm/glm.hpp>
 #include "PaintLayer.h"
 
 namespace fw {
+
+using PixelClipCallback = std::function<bool(int32_t x, int32_t y)>;
 
 // =============================================================================
 // BM-TX3.5 — BRUSH DEFINITION & FALLOFF
@@ -106,8 +109,10 @@ public:
     // --- Pennellate Transazionali (BM-TX3.5 & BM-TX3.6) ---
     bool BeginStroke(uint32_t layerId, bool targetMask = false);
     bool ApplyDab(glm::vec2 pixelCoords, const PaintBrush& brush);
+    bool ApplyDabClipped(glm::vec2 pixelCoords, const PaintBrush& brush, const PixelClipCallback& clipCb);
     bool AddDab(glm::vec2 pixelCoords, const PaintBrush& brush) { return ApplyDab(pixelCoords, brush); }
     bool UpdateStroke(glm::vec2 prevCoords, glm::vec2 curCoords, const PaintBrush& brush);
+    bool UpdateStrokeClipped(glm::vec2 prevCoords, glm::vec2 curCoords, const PaintBrush& brush, const PixelClipCallback& clipCb);
     PaintDirtyRect EndStroke();
     bool CancelStroke();
     bool IsStroking() const { return m_activeTransaction.isActive; }
@@ -153,7 +158,7 @@ private:
     std::deque<PaintUndoRecord> m_undoStack;
     std::deque<PaintUndoRecord> m_redoStack;
 
-    void ApplyDabInternal(PaintLayer& layer, glm::vec2 center, const PaintBrush& brush, bool isMask);
+    void ApplyDabInternal(PaintLayer& layer, glm::vec2 center, const PaintBrush& brush, bool isMask, const PixelClipCallback& clipCb = nullptr);
     size_t FindLayerIndex(uint32_t layerId) const;
 };
 

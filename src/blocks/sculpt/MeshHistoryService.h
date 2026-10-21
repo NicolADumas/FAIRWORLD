@@ -39,6 +39,8 @@ struct HistoryCommand {
     std::string name;                  // Nome user-facing (es. "Move (4 vertici)", "Sculpt Inflate", "Extrude Face")
     HistoryCommandType type = HistoryCommandType::GeometryDelta;
     uint64_t timestamp = 0;
+    uint8_t beforeGeometrySource = 0;  // 0 = Primitive, 1 = SculptedMesh
+    uint8_t afterGeometrySource = 1;   // 0 = Primitive, 1 = SculptedMesh
 
     // 1. Dati per modifiche solo geometriche
     std::vector<VertexPositionDelta> positionDeltas;
@@ -78,6 +80,9 @@ struct HistoryOperationResult {
     std::string commandName;
     uint64_t newTopologyRev = 0;
     uint64_t newGeometryRev = 0;
+    uint8_t restoredGeometrySource = 1;
+    size_t restoredVertexCount = 0;
+    size_t restoredFaceCount = 0;
 };
 
 // Configurazione budget memoria e capienza
@@ -103,7 +108,8 @@ public:
     bool BeginTransaction(uint32_t assetId, 
                           const std::string& name, 
                           HistoryCommandType type, 
-                          const EditableMesh* currentMesh = nullptr);
+                          const EditableMesh* currentMesh = nullptr,
+                          uint8_t currentGeometrySource = 1);
 
     void RecordVertexDelta(VertexID id, const glm::vec3& oldPos, const glm::vec3& newPos);
     void RecordVertexDeltas(const std::vector<VertexPositionDelta>& deltas);
