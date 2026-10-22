@@ -253,6 +253,12 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateBoxMapping(EditableMesh& mesh,
     // 6 semantic islands disposte in griglia 3x2 non-overlapping
     // 0: Back (-Z), 1: Front (+Z), 2: Left (-X), 3: Right (+X), 4: Bottom (-Y), 5: Top (+Y)
     const char* names[6] = { "Back (-Z)", "Front (+Z)", "Left (-X)", "Right (+X)", "Bottom (-Y)", "Top (+Y)" };
+    const float margin = 0.004f; // 4px padding di protezione anti-bleed a 1024x1024
+    const float tileW = 1.0f / 3.0f;
+    const float tileH = 1.0f / 2.0f;
+    const float cellW = tileW - 2.0f * margin;
+    const float cellH = tileH - 2.0f * margin;
+
     for (uint32_t i = 0; i < 6; ++i) {
         UVIsland isl;
         isl.id = i;
@@ -261,7 +267,9 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateBoxMapping(EditableMesh& mesh,
         isl.localUVBounds = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
         float col = static_cast<float>(i % 3);
         float row = static_cast<float>(i / 3);
-        isl.atlasTransform = glm::vec4(1.0f / 3.0f, 1.0f / 2.0f, col / 3.0f, row / 2.0f);
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
+        isl.atlasTransform = glm::vec4(cellW, cellH, u0, v0);
         outLayout.islands.push_back(isl);
     }
 
@@ -299,8 +307,8 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateBoxMapping(EditableMesh& mesh,
 
         float col = static_cast<float>(islandIdx % 3);
         float row = static_cast<float>(islandIdx / 3);
-        float tileW = 1.0f / 3.0f;
-        float tileH = 1.0f / 2.0f;
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
 
         for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
             auto* he = mesh.GetHalfEdgeMutable(heId);
@@ -342,12 +350,47 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateBoxMapping(EditableMesh& mesh,
             uLoc = glm::clamp(uLoc, 0.0f, 1.0f);
             vLoc = glm::clamp(vLoc, 0.0f, 1.0f);
 
-            // Mappatura nello slot globale non-overlapping
+            // Mappatura nello slot globale non-overlapping con margine anti-bleeding
             he->corner.uv = glm::vec2(
-                (col * tileW) + (uLoc * tileW),
-                (row * tileH) + (vLoc * tileH)
+                u0 + (uLoc * cellW),
+                v0 + (vLoc * cellH)
             );
         }
+    }
+
+    // Popola boundaryHalfEdges e seamEdges per ciascuna isola
+    for (uint32_t i = 0; i < 6; ++i) {
+        auto& isl = outLayout.islands[i];
+        isl.boundaryHalfEdges.clear();
+        isl.seamEdges.clear();
+        std::unordered_set<EdgeID> seamSet;
+
+        for (FaceID fId : isl.faces) {
+            for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+                const auto* he = mesh.GetHalfEdge(heId);
+                if (!he) continue;
+
+                bool isBoundary = false;
+                if (!IsValid(he->twin)) {
+                    isBoundary = true;
+                } else {
+                    const auto* twinHe = mesh.GetHalfEdge(he->twin);
+                    if (!twinHe || !IsValid(twinHe->face)) {
+                        isBoundary = true;
+                    } else if (outLayout.faceToIslandMap[twinHe->face] != i) {
+                        isBoundary = true;
+                    }
+                }
+
+                if (isBoundary) {
+                    isl.boundaryHalfEdges.push_back(heId);
+                    if (IsValid(he->edge)) {
+                        seamSet.insert(he->edge);
+                    }
+                }
+            }
+        }
+        isl.seamEdges.assign(seamSet.begin(), seamSet.end());
     }
 
     // Marcatura cuciture: tutti gli spigoli tra facce di isole differenti sono cuciture
@@ -371,6 +414,7 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateBoxMapping(EditableMesh& mesh,
     outLayout.meshAttributeRevision = mesh.GetAttributeRevision();
 
     ValidateGeneratedUV(mesh, outLayout, res.validation);
+    outLayout.isValid = res.validation.isValid;
     res.layout = outLayout;
     res.status = res.validation.isValid ? PrimitiveMappingStatus::SUCCESS : PrimitiveMappingStatus::PARTIAL_SUCCESS;
     res.success = res.validation.isValid;

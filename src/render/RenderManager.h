@@ -281,6 +281,17 @@ private:
     std::unordered_map<uint64_t, VkDescriptorSet> m_imGuiTextureDescriptors;
     std::unordered_map<uint64_t, VkImageView> m_imGuiTextureImageViews;
 
+    // --- BM-UV-PAINTER-MG01: Painter Dedicated Preview Resources ---
+    VkImage m_painterPreviewImage{ VK_NULL_HANDLE };
+    VmaAllocation m_painterPreviewImageAllocation{ VK_NULL_HANDLE };
+    VkImageView m_painterPreviewArrayView{ VK_NULL_HANDLE };
+    VkImageView m_painterPreview2DView{ VK_NULL_HANDLE };
+    VkDescriptorSet m_painterPreviewImGuiDescriptor{ VK_NULL_HANDLE };
+    uint32_t m_painterPreviewWidth{ 0 };
+    uint32_t m_painterPreviewHeight{ 0 };
+    VkDescriptorPool m_blockMakerDescriptorPool{ VK_NULL_HANDLE };
+    std::vector<VkDescriptorSet> m_blockMakerDescriptorSets;
+
     // --- DEPTH BUFFER (risolve il problema delle facce trasparenti) ---
     VkImage m_depthImage{ VK_NULL_HANDLE };
     VmaAllocation m_depthImageAllocation{ VK_NULL_HANDLE };
@@ -333,6 +344,11 @@ public:
 
     VkDescriptorSet GetOrCreateImGuiTextureDescriptor(uint32_t layerIndex, PBRTextureType type = PBRTextureType::ALBEDO);
     void CleanupImGuiTextureDescriptors();
+
+    // --- BM-UV-PAINTER-MG01: Painter Preview GPU Texture & Material Binding ---
+    void UpdatePainterPreviewTexture(const void* pixelData, uint32_t width, uint32_t height);
+    VkDescriptorSet GetPainterPreviewImGuiDescriptor() const { return m_painterPreviewImGuiDescriptor; }
+    void CleanupPainterPreviewResources();
 
     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
     struct VulkanChunkBuffer {

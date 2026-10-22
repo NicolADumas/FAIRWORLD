@@ -41,6 +41,11 @@ public:
     bool SaveDraftToFile(const std::string& filepath) const;
     bool LoadDraftFromFile(const std::string& filepath);
 
+    // --- Persistenza Draft in sessione Factory per BlockID (BM-P04) ---
+    void FlushActiveDraft();
+    bool HasDraftForBlock(uint8_t blockId) const;
+    const RawAssetDraft* GetDraftForBlock(uint8_t blockId) const;
+
     // --- Sculpt & Modeling Mesh Integration (BM-S9) ---
     void SetDraftSculptMesh(const EditableMesh& mesh);
     const EditableMesh* GetDraftSculptMesh() const;
@@ -117,6 +122,7 @@ private:
     uint64_t ComputeStationFingerprint(ProductionStationID id) const;
 
     std::optional<RawAssetDraft> m_activeDraft;
+    std::unordered_map<uint8_t, RawAssetDraft> m_draftMap;
     ProductionStationID m_activeStation = ProductionStationID::Shape;
 
     CompiledGeometryCache m_compiledGeometryCache;

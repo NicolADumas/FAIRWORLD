@@ -111,8 +111,10 @@ vec3 calculateNormalFromMap(vec3 geomNormal, vec3 tangentNormal, vec3 pos, vec2 
 }
 
 void main() {
-    // 1. Campiona le 3 texture
-    vec3 uvLayer = vec3(inUV, float(inMaterialID));
+    // 1. Campiona le 3 texture con clamping di sicurezza sul layer count (supporto preview 1-layer BlockMaker & global PBR array)
+    int maxLayer = textureSize(albedoArray, 0).z - 1;
+    float safeLayer = clamp(float(inMaterialID), 0.0, float(max(maxLayer, 0)));
+    vec3 uvLayer = vec3(inUV, safeLayer);
     vec4 albedo = texture(albedoArray, uvLayer);
     
     if(albedo.a < 0.1) discard; 

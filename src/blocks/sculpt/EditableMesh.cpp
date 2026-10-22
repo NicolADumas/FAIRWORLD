@@ -1332,27 +1332,72 @@ EditableMesh EditableMesh::CreateCube(float size) {
     VertexID v6 = mesh.AddVertex(glm::vec3( h,  h,  h)); // 6: +X +Y +Z
     VertexID v7 = mesh.AddVertex(glm::vec3(-h,  h,  h)); // 7: -X +Y +Z
 
-    // Helper per 4 angoli UV standard
-    std::vector<CornerAttributes> uvQuad = {
-        CornerAttributes{ glm::vec2(0.0f, 0.0f) },
-        CornerAttributes{ glm::vec2(1.0f, 0.0f) },
-        CornerAttributes{ glm::vec2(1.0f, 1.0f) },
-        CornerAttributes{ glm::vec2(0.0f, 1.0f) }
+    // Helper per 4 angoli UV per faccia in griglia 3x2 non-overlapping (BM-UV-PAINTER MG03-B)
+    // 0: Back (-Z)   col=0, row=0 -> U: [0.0, 1/3], V: [0.0, 0.5]
+    // 1: Front (+Z)  col=1, row=0 -> U: [1/3, 2/3], V: [0.0, 0.5]
+    // 2: Left (-X)   col=2, row=0 -> U: [2/3, 1.0], V: [0.0, 0.5]
+    // 3: Right (+X)  col=0, row=1 -> U: [0.0, 1/3], V: [0.5, 1.0]
+    // 4: Bottom (-Y) col=1, row=1 -> U: [1/3, 2/3], V: [0.5, 1.0]
+    // 5: Top (+Y)    col=2, row=1 -> U: [2/3, 1.0], V: [0.5, 1.0]
+    auto makeFaceUVQuad = [](uint32_t faceIndex) -> std::vector<CornerAttributes> {
+        float col = static_cast<float>(faceIndex % 3);
+        float row = static_cast<float>(faceIndex / 3);
+        float tileW = 1.0f / 3.0f;
+        float tileH = 1.0f / 2.0f;
+
+        const float margin = 0.004f; // 4px padding anti-bleed
+        const float cellW = tileW - 2.0f * margin;
+        const float cellH = tileH - 2.0f * margin;
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
+
+        glm::vec2 localUV[4] = {
+            glm::vec2(0.0f, 0.0f),
+            glm::vec2(1.0f, 0.0f),
+            glm::vec2(1.0f, 1.0f),
+            glm::vec2(0.0f, 1.0f)
+        };
+        if (faceIndex == 4) { // Bottom (-Y): {v0, v1, v5, v4}
+            localUV[0] = glm::vec2(0.0f, 1.0f);
+            localUV[1] = glm::vec2(1.0f, 1.0f);
+            localUV[2] = glm::vec2(1.0f, 0.0f);
+            localUV[3] = glm::vec2(0.0f, 0.0f);
+        } else if (faceIndex == 5) { // Top (+Y): {v3, v7, v6, v2}
+            localUV[0] = glm::vec2(0.0f, 0.0f);
+            localUV[1] = glm::vec2(0.0f, 1.0f);
+            localUV[2] = glm::vec2(1.0f, 1.0f);
+            localUV[3] = glm::vec2(1.0f, 0.0f);
+        }
+
+        std::vector<CornerAttributes> corners;
+        corners.reserve(4);
+        for (int i = 0; i < 4; ++i) {
+            glm::vec2 atlasUV = glm::vec2(u0 + localUV[i].x * cellW, v0 + localUV[i].y * cellH);
+            corners.push_back(CornerAttributes{ atlasUV });
+        }
+        return corners;
     };
+
+    auto uv0 = makeFaceUVQuad(0);
+    auto uv1 = makeFaceUVQuad(1);
+    auto uv2 = makeFaceUVQuad(2);
+    auto uv3 = makeFaceUVQuad(3);
+    auto uv4 = makeFaceUVQuad(4);
+    auto uv5 = makeFaceUVQuad(5);
 
     // 6 facce quad conformi a AssetCubeFace enum di SurfaceDefinition
     // Back (-Z) surfaceId = 0
-    mesh.AddFace({ v1, v0, v3, v2 }, static_cast<uint32_t>(AssetCubeFace::Back), 0, &uvQuad);
+    mesh.AddFace({ v1, v0, v3, v2 }, static_cast<uint32_t>(AssetCubeFace::Back), 0, &uv0);
     // Front (+Z) surfaceId = 1
-    mesh.AddFace({ v4, v5, v6, v7 }, static_cast<uint32_t>(AssetCubeFace::Front), 0, &uvQuad);
+    mesh.AddFace({ v4, v5, v6, v7 }, static_cast<uint32_t>(AssetCubeFace::Front), 0, &uv1);
     // Left (-X) surfaceId = 2
-    mesh.AddFace({ v0, v4, v7, v3 }, static_cast<uint32_t>(AssetCubeFace::Left), 0, &uvQuad);
+    mesh.AddFace({ v0, v4, v7, v3 }, static_cast<uint32_t>(AssetCubeFace::Left), 0, &uv2);
     // Right (+X) surfaceId = 3
-    mesh.AddFace({ v5, v1, v2, v6 }, static_cast<uint32_t>(AssetCubeFace::Right), 0, &uvQuad);
+    mesh.AddFace({ v5, v1, v2, v6 }, static_cast<uint32_t>(AssetCubeFace::Right), 0, &uv3);
     // Bottom (-Y) surfaceId = 4
-    mesh.AddFace({ v0, v1, v5, v4 }, static_cast<uint32_t>(AssetCubeFace::Bottom), 0, &uvQuad);
+    mesh.AddFace({ v0, v1, v5, v4 }, static_cast<uint32_t>(AssetCubeFace::Bottom), 0, &uv4);
     // Top (+Y) surfaceId = 5
-    mesh.AddFace({ v3, v7, v6, v2 }, static_cast<uint32_t>(AssetCubeFace::Top), 0, &uvQuad);
+    mesh.AddFace({ v3, v7, v6, v2 }, static_cast<uint32_t>(AssetCubeFace::Top), 0, &uv5);
 
     mesh.ComputeVertexNormals();
     return mesh;

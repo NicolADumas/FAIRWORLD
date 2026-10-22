@@ -86,6 +86,18 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
             rawUv = CalculateCylindricalUV(pos, paramHeight, surfaceId);
         } else if (sc.projection == UVProjectionMode::Spherical) {
             rawUv = CalculateSphericalUV(norm);
+        } else if ((definition.type == ShapeType::Cube || definition.type == ShapeType::Cuboid) && surfaceId < 6) {
+            float col = static_cast<float>(surfaceId % 3);
+            float row = static_cast<float>(surfaceId / 3);
+            float tileW = 1.0f / 3.0f;
+            float tileH = 1.0f / 2.0f;
+            const float margin = 0.004f;
+            const float cellW = tileW - 2.0f * margin;
+            const float cellH = tileH - 2.0f * margin;
+            float u0 = col * tileW + margin;
+            float v0 = row * tileH + margin;
+            glm::vec2 locUV = CalculatePlanarUV(pos, norm);
+            rawUv = glm::vec2(u0 + locUV.x * cellW, v0 + locUV.y * cellH);
         } else {
             rawUv = CalculatePlanarUV(pos, norm);
         }
@@ -183,7 +195,17 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
                 } else if (sc.projection == UVProjectionMode::Spherical) {
                     rawUv = CalculateSphericalUV(cFace.faceNormal);
                 } else {
-                    rawUv = CalculatePlanarUV(pos, cFace.faceNormal);
+                    float col = static_cast<float>(f % 3);
+                    float row = static_cast<float>(f / 3);
+                    float tileW = 1.0f / 3.0f;
+                    float tileH = 1.0f / 2.0f;
+                    const float margin = 0.004f;
+                    const float cellW = tileW - 2.0f * margin;
+                    const float cellH = tileH - 2.0f * margin;
+                    float u0 = col * tileW + margin;
+                    float v0 = row * tileH + margin;
+                    glm::vec2 locUV = CalculatePlanarUV(pos, cFace.faceNormal);
+                    rawUv = glm::vec2(u0 + locUV.x * cellW, v0 + locUV.y * cellH);
                 }
                 glm::vec2 finalUv = sc.uvTransform.Transform(rawUv);
 

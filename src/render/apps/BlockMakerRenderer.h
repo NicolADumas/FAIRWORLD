@@ -32,9 +32,17 @@ public:
         m_extent = extent;
     }
 
-    // Setter per i descriptor sets (prende i forge descriptor sets)
+    // Setter per i descriptor sets di default (forge descriptor sets globali per ambiente/blocchi non-painter)
     void SetDescriptorSets(const std::vector<VkDescriptorSet>* sets) {
         m_descriptorSets = sets;
+    }
+    void SetDefaultDescriptorSets(const std::vector<VkDescriptorSet>* sets) {
+        m_descriptorSets = sets;
+    }
+
+    // Setter per i descriptor sets del Painter dedicati (preview shape attiva)
+    void SetPainterDescriptorSets(const std::vector<VkDescriptorSet>* sets) {
+        m_painterDescriptorSets = sets;
     }
 
     // Setter per il frame corrente
@@ -48,6 +56,7 @@ private:
     VkBuffer m_globalVramBuffer{ VK_NULL_HANDLE };
     VkExtent2D m_extent{ 0, 0 };
     const std::vector<VkDescriptorSet>* m_descriptorSets{ nullptr };
+    const std::vector<VkDescriptorSet>* m_painterDescriptorSets{ nullptr };
     uint32_t m_currentFrame{ 0 };
 };
 

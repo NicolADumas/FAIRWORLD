@@ -62,12 +62,21 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
     // --- 2. Bind Pipeline ---
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-    // --- 3. Bind Descriptor Sets (texture PBR, UBO) ---
+    // --- 3. Setup Descriptor Sets (Isolamento BM-P01) ---
+    VkDescriptorSet defaultDs = VK_NULL_HANDLE;
     if (m_descriptorSets && !m_descriptorSets->empty() && m_currentFrame < m_descriptorSets->size()) {
-        VkDescriptorSet ds = (*m_descriptorSets)[m_currentFrame];
-        if (ds != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &ds, 0, nullptr);
-        }
+        defaultDs = (*m_descriptorSets)[m_currentFrame];
+    }
+
+    VkDescriptorSet painterDs = VK_NULL_HANDLE;
+    if (m_painterDescriptorSets && !m_painterDescriptorSets->empty() && m_currentFrame < m_painterDescriptorSets->size()) {
+        painterDs = (*m_painterDescriptorSets)[m_currentFrame];
+    }
+
+    VkDescriptorSet currentBoundDs = VK_NULL_HANDLE;
+    if (defaultDs != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &defaultDs, 0, nullptr);
+        currentBoundDs = defaultDs;
     }
 
     glm::mat4 viewProjMatrix = projMatrix * viewMatrix;
@@ -101,6 +110,17 @@ void BlockMakerRenderer::Draw(VkCommandBuffer cmd, SharedContext* context, glm::
 
         // Renderizza solo blocchi di tipo Chunk o Editor
         if (mesh.type == fw::MeshType::Chunk || mesh.type == fw::MeshType::Editor) {
+            // BM-P01: Isolamento rigoroso. Solo l'entità PreviewBlock (Shape in editing) riceve painterDs.
+            // BlockMakerEnv (pavimento/ambiente) e altre entità usano defaultDs (Forge PBR standard).
+            VkDescriptorSet targetDs = defaultDs;
+            if (metaName == "PreviewBlock") {
+                targetDs = (painterDs != VK_NULL_HANDLE) ? painterDs : defaultDs;
+            }
+
+            if (targetDs != VK_NULL_HANDLE && targetDs != currentBoundDs) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &targetDs, 0, nullptr);
+                currentBoundDs = targetDs;
+            }
             fw::Mat4 fwModel = trans.computeGlobalMatrix(registry);
             glm::mat4 model = glm::transpose(*reinterpret_cast<glm::mat4*>(&fwModel));
 

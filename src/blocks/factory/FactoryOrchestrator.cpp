@@ -59,8 +59,35 @@ bool FactoryOrchestrator::OpenDraft(const RawAssetID& id, const std::string& dis
     return true;
 }
 
+void FactoryOrchestrator::FlushActiveDraft() {
+    if (m_activeDraft.has_value()) {
+        uint8_t bId = static_cast<uint8_t>(m_activeDraft->manifest.targetRuntimeVoxelId);
+        m_draftMap[bId] = *m_activeDraft;
+    }
+}
+
+bool FactoryOrchestrator::HasDraftForBlock(uint8_t blockId) const {
+    return m_draftMap.find(blockId) != m_draftMap.end();
+}
+
+const RawAssetDraft* FactoryOrchestrator::GetDraftForBlock(uint8_t blockId) const {
+    auto it = m_draftMap.find(blockId);
+    return (it != m_draftMap.end()) ? &it->second : nullptr;
+}
+
 bool FactoryOrchestrator::LoadDraftFromRegistry(uint8_t blockId, BlockRegistry& bReg, MaterialRegistry& mReg, ShapeRegistry& sReg) {
     if (!bReg.IsBlockValid(blockId)) return false;
+
+    // BM-P04: Salva il draft corrente prima di sostituirlo
+    FlushActiveDraft();
+
+    // Se esiste gia' un draft modificato in questa sessione Factory, ripristinalo direttamente
+    auto it = m_draftMap.find(blockId);
+    if (it != m_draftMap.end()) {
+        m_activeDraft = it->second;
+        m_activeStation = ProductionStationID::Shape;
+        return true;
+    }
 
     const auto& bDef = bReg.GetBlock(blockId);
     const auto& mDef = mReg.GetMaterial(blockId);
@@ -120,6 +147,7 @@ bool FactoryOrchestrator::LoadDraftFromRegistry(uint8_t blockId, BlockRegistry& 
     draft.completedStationsMask = 0;
 
     m_activeDraft = draft;
+    m_draftMap[blockId] = draft;
     m_activeStation = ProductionStationID::Shape;
 
     // Valuta le stazioni iniziali per allineare lo stato
@@ -129,10 +157,15 @@ bool FactoryOrchestrator::LoadDraftFromRegistry(uint8_t blockId, BlockRegistry& 
     ExecuteStation(ProductionStationID::Painter, &sReg, &mReg, &bReg);
     ExecuteStation(ProductionStationID::Material, &sReg, &mReg, &bReg);
     ExecuteStation(ProductionStationID::RawPhysics, &sReg, &mReg, &bReg);
+
+    if (m_activeDraft.has_value()) {
+        m_draftMap[blockId] = *m_activeDraft;
+    }
     return true;
 }
 
 void FactoryOrchestrator::CloseDraft() {
+    FlushActiveDraft();
     m_activeDraft.reset();
     for (auto& pair : m_stations) {
         pair.second->Reset();

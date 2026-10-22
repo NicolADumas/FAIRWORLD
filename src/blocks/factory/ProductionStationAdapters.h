@@ -376,9 +376,9 @@ public:
         context.draft.uvLayout = mapRes.layout;
         context.draft.uvRevision = mapRes.layout.uvRevision;
 
-        if (isSculpted) {
-            context.draft.sculptMesh = workMesh;
-        }
+        // BM-UV-PAINTER MG03: Conserva sempre la mesh autoritativa un-wrapped nel draft
+        // in modo che BlockMaker, Painter e Viewport 3D campionino la stessa topologia UV coerente.
+        context.draft.sculptMesh = workMesh;
 
         if (mapRes.topologyClassification == TopologySupportClassification::RequiresRepair) {
             m_diagnostic.warnings.push_back("Mesh topologicamente problematica: richiede riparazione manifold.");

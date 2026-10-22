@@ -41,8 +41,18 @@ inline const char* GetUVToolModeName(UVToolMode m) {
 }
 
 // =============================================================================
+// MODALITA PITTURA CANVAS 2D (BM-UV-PAINTER MG02)
+// =============================================================================
+
+enum class CanvasPaintMode : uint8_t {
+    SurfacePaint = 0, // Pennellata vincolata rigorosamente alla superficie/isola sotto cursore
+    AtlasPaint = 1    // Pennellata libera sull'intero atlante UV (modalita esplicita)
+};
+
+// =============================================================================
 // COMANDO UNDO/REDO UV EDITOR (BM-UV5.2)
 // =============================================================================
+
 
 struct UVEditSnapshot {
     UVLayout layout;
@@ -127,7 +137,8 @@ public:
     bool BeginStroke2D(const glm::vec2& atlasUV, 
                        const PaintBrush& brush, 
                        TexturePaintingService* paintingService, 
-                       uint32_t targetLayerId = 0);
+                       uint32_t targetLayerId = 0,
+                       CanvasPaintMode paintMode = CanvasPaintMode::SurfacePaint);
 
     bool UpdateStroke2D(const glm::vec2& atlasUV, 
                         const PaintBrush& brush, 
@@ -137,6 +148,7 @@ public:
     bool CancelStroke2D(TexturePaintingService* paintingService);
     bool IsStroking2D() const { return m_isStroking2D; }
     UVIslandID GetActiveStrokeIslandId() const { return m_strokeIslandId; }
+    const std::string& GetLastPaintBlockedReason() const { return m_lastPaintBlockedReason; }
 
 private:
     void MarkModified();
@@ -160,6 +172,7 @@ private:
     bool m_isStroking2D = false;
     glm::vec2 m_prevStrokeUV{0.0f};
     UVIslandID m_strokeIslandId = INVALID_UVISLAND_ID;
+    std::string m_lastPaintBlockedReason;
 
     std::vector<UVEditSnapshot> m_undoStack;
     std::vector<UVEditSnapshot> m_redoStack;

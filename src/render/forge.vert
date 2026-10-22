@@ -42,19 +42,17 @@ void main() {
     // Calcolo della posizione a schermo
     gl_Position = push.mvp * vec4(pos, 1.0);
     
-    // UV Mapping procedurale (Proiezione planare basata sulla normale della faccia)
-    vec3 absNormal = abs(inNormal);
-    vec2 uv = vec2(0.0);
-    
-    if (absNormal.y > 0.5) {
-        // Faccia Top o Bottom: spalma su X e Z
-        uv = inPosition.xz;
-    } else if (absNormal.x > 0.5) {
-        // Faccia Left o Right: spalma su Z e Y
-        uv = inPosition.zy;
-    } else {
-        // Faccia Front o Back: spalma su X e Y
-        uv = inPosition.xy;
+    // UV Mapping: adotta coordinate UV atlas unwrapped da inRoughMetal se presenti, altrimenti fallback procedurale planare
+    vec2 uv = inRoughMetal;
+    if (uv.x == 0.0 && uv.y == 0.0) {
+        vec3 absNormal = abs(inNormal);
+        if (absNormal.y > 0.5) {
+            uv = inPosition.xz;
+        } else if (absNormal.x > 0.5) {
+            uv = inPosition.zy;
+        } else {
+            uv = inPosition.xy;
+        }
     }
     
     outWorldPos = inPosition;

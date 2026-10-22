@@ -1531,6 +1531,8 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
             }
 
             if (mode == GameMode::BlockMaker && m_blockMakerRenderer) {
+                m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+                m_blockMakerRenderer->SetPainterDescriptorSets(!m_blockMakerDescriptorSets.empty() ? &m_blockMakerDescriptorSets : nullptr);
                 m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
                 m_blockMakerRenderer->SetCurrentFrame(m_currentFrame);
                 m_blockMakerRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
@@ -2135,6 +2137,7 @@ void RenderManager::Shutdown() {
             m_blockPropertiesBuffer = VK_NULL_HANDLE;
         }
 
+        CleanupPainterPreviewResources();
         CleanupImGuiTextureDescriptors();
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
@@ -2471,6 +2474,7 @@ void RenderManager::CreatePBRTextures(const fw::PackedTextureData& inputData) {
         }
     };
 
+    CleanupPainterPreviewResources();
     CleanupImGuiTextureDescriptors();
     destroyTextureArray(m_albedoImage, m_albedoImageAllocation, m_albedoImageView);
     destroyTextureArray(m_normalImage, m_normalImageAllocation, m_normalImageView);
@@ -3050,6 +3054,242 @@ VkDescriptorSet RenderManager::GetOrCreateImGuiTextureDescriptor(uint32_t layerI
     return ds;
 }
 
+// ---------------------------------------------------------
+// BM-UV-PAINTER-MG01: PAINTER PREVIEW GPU TEXTURE & BINDING
+// ---------------------------------------------------------
+
+void RenderManager::CleanupPainterPreviewResources() {
+    if (!m_core || m_core->GetDevice() == VK_NULL_HANDLE) return;
+    VkDevice device = m_core->GetDevice();
+
+    if (m_painterPreviewImGuiDescriptor != VK_NULL_HANDLE) {
+        ImGui_ImplVulkan_RemoveTexture(m_painterPreviewImGuiDescriptor);
+        m_painterPreviewImGuiDescriptor = VK_NULL_HANDLE;
+    }
+    if (m_painterPreview2DView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_painterPreview2DView, nullptr);
+        m_painterPreview2DView = VK_NULL_HANDLE;
+    }
+    if (m_painterPreviewArrayView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_painterPreviewArrayView, nullptr);
+        m_painterPreviewArrayView = VK_NULL_HANDLE;
+    }
+    if (m_painterPreviewImage != VK_NULL_HANDLE) {
+        vmaDestroyImage(m_memory->GetAllocator(), m_painterPreviewImage, m_painterPreviewImageAllocation);
+        m_painterPreviewImage = VK_NULL_HANDLE;
+        m_painterPreviewImageAllocation = VK_NULL_HANDLE;
+    }
+    if (m_blockMakerDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, m_blockMakerDescriptorPool, nullptr);
+        m_blockMakerDescriptorPool = VK_NULL_HANDLE;
+        m_blockMakerDescriptorSets.clear();
+    }
+    m_painterPreviewWidth = 0;
+    m_painterPreviewHeight = 0;
+
+    if (m_blockMakerRenderer) {
+        m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+        m_blockMakerRenderer->SetPainterDescriptorSets(nullptr);
+    }
+}
+
+void RenderManager::UpdatePainterPreviewTexture(const void* pixelData, uint32_t width, uint32_t height) {
+    if (!m_core || m_core->GetDevice() == VK_NULL_HANDLE || !pixelData || width == 0 || height == 0) return;
+    if (!m_memory || m_memory->GetAllocator() == VK_NULL_HANDLE) return;
+
+    if (width > 4096 || height > 4096) {
+        std::cerr << "[VULKAN ERROR] UpdatePainterPreviewTexture: dimensioni non valide (" << width << "x" << height << ")!\n";
+        return;
+    }
+
+    bool needsRecreate = (m_painterPreviewImage == VK_NULL_HANDLE ||
+                          m_painterPreviewWidth != width ||
+                          m_painterPreviewHeight != height);
+
+    if (needsRecreate) {
+        vkDeviceWaitIdle(m_core->GetDevice());
+        CleanupPainterPreviewResources();
+
+        m_painterPreviewWidth = width;
+        m_painterPreviewHeight = height;
+
+        // 1. Crea l'immagine 2D con 1 layer
+        CreateImage(width, height, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VMA_MEMORY_USAGE_GPU_ONLY, m_painterPreviewImage, m_painterPreviewImageAllocation);
+
+        // 2. Crea la 2D Array ImageView (per forge.frag che campiona sampler2DArray con layerCount=1)
+        VkImageViewCreateInfo arrayViewInfo{};
+        arrayViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        arrayViewInfo.image = m_painterPreviewImage;
+        arrayViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        arrayViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        arrayViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        arrayViewInfo.subresourceRange.baseMipLevel = 0;
+        arrayViewInfo.subresourceRange.levelCount = 1;
+        arrayViewInfo.subresourceRange.baseArrayLayer = 0;
+        arrayViewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(m_core->GetDevice(), &arrayViewInfo, nullptr, &m_painterPreviewArrayView) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] UpdatePainterPreviewTexture: creazione array view fallita!\n";
+            return;
+        }
+
+        // 3. Crea la 2D ImageView (per ImGui 2D canvas)
+        VkImageViewCreateInfo singleViewInfo{};
+        singleViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        singleViewInfo.image = m_painterPreviewImage;
+        singleViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        singleViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        singleViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        singleViewInfo.subresourceRange.baseMipLevel = 0;
+        singleViewInfo.subresourceRange.levelCount = 1;
+        singleViewInfo.subresourceRange.baseArrayLayer = 0;
+        singleViewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(m_core->GetDevice(), &singleViewInfo, nullptr, &m_painterPreview2DView) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] UpdatePainterPreviewTexture: creazione single view fallita!\n";
+            return;
+        }
+
+        // 4. Assicura che m_blockPropertiesBuffer esista
+        if (m_blockPropertiesBuffer == VK_NULL_HANDLE) {
+            VkDeviceSize dummySize = sizeof(fw::BlockPropertiesGPU) * 256;
+            m_memory->CreateBuffer(dummySize, 
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VMA_MEMORY_USAGE_GPU_ONLY, 
+                m_blockPropertiesBuffer, m_blockPropertiesAlloc);
+        }
+
+        // 5. Crea il Descriptor Pool dedicato per BlockMaker
+        std::array<VkDescriptorPoolSize, 2> poolSizes{};
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 3;
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes = poolSizes.data();
+        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        if (vkCreateDescriptorPool(m_core->GetDevice(), &poolInfo, nullptr, &m_blockMakerDescriptorPool) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] UpdatePainterPreviewTexture: creazione descriptor pool fallita!\n";
+            return;
+        }
+
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_forgeDescriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_blockMakerDescriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocInfo.pSetLayouts = layouts.data();
+
+        m_blockMakerDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(m_core->GetDevice(), &allocInfo, m_blockMakerDescriptorSets.data()) != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] UpdatePainterPreviewTexture: allocazione descriptor sets fallita!\n";
+            return;
+        }
+
+        // 6. Configura i descriptor sets dedicati di BlockMaker
+        VkImageView normView = (m_normalImageView != VK_NULL_HANDLE) ? m_normalImageView : m_painterPreviewArrayView;
+        VkImageView ormView = (m_ormImageView != VK_NULL_HANDLE) ? m_ormImageView : m_painterPreviewArrayView;
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            VkDescriptorImageInfo albedoInfo{};
+            albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            albedoInfo.imageView = m_painterPreviewArrayView;
+            albedoInfo.sampler = m_textureSampler;
+
+            VkDescriptorImageInfo normalInfo{};
+            normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            normalInfo.imageView = normView;
+            normalInfo.sampler = m_textureSampler;
+
+            VkDescriptorImageInfo ormInfo{};
+            ormInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            ormInfo.imageView = ormView;
+            ormInfo.sampler = m_textureSampler;
+
+            VkDescriptorBufferInfo ssboInfo{};
+            ssboInfo.buffer = m_blockPropertiesBuffer;
+            ssboInfo.offset = 0;
+            ssboInfo.range = VK_WHOLE_SIZE;
+
+            std::array<VkWriteDescriptorSet, 4> writes{};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = m_blockMakerDescriptorSets[i];
+            writes[0].dstBinding = 0;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].descriptorCount = 1;
+            writes[0].pImageInfo = &albedoInfo;
+
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = m_blockMakerDescriptorSets[i];
+            writes[1].dstBinding = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[1].descriptorCount = 1;
+            writes[1].pImageInfo = &normalInfo;
+
+            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[2].dstSet = m_blockMakerDescriptorSets[i];
+            writes[2].dstBinding = 2;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[2].descriptorCount = 1;
+            writes[2].pImageInfo = &ormInfo;
+
+            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[3].dstSet = m_blockMakerDescriptorSets[i];
+            writes[3].dstBinding = 3;
+            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[3].descriptorCount = 1;
+            writes[3].pBufferInfo = &ssboInfo;
+
+            vkUpdateDescriptorSets(m_core->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+
+        if (m_blockMakerRenderer) {
+            m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+            m_blockMakerRenderer->SetPainterDescriptorSets(!m_blockMakerDescriptorSets.empty() ? &m_blockMakerDescriptorSets : nullptr);
+        }
+
+        // 7. Descriptor ImGui per il 2D canvas
+        if (m_textureSampler != VK_NULL_HANDLE) {
+            m_painterPreviewImGuiDescriptor = ImGui_ImplVulkan_AddTexture(m_textureSampler, m_painterPreview2DView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+    }
+
+    // 8. Upload dei pixel tramite Staging Buffer
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingBufferMemory = VK_NULL_HANDLE;
+    if (!m_memory->CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, stagingBuffer, stagingBufferMemory)) {
+        std::cerr << "[VULKAN ERROR] UpdatePainterPreviewTexture: creazione staging buffer fallita!\n";
+        return;
+    }
+
+    void* data = nullptr;
+    vmaMapMemory(m_memory->GetAllocator(), stagingBufferMemory, &data);
+    memcpy(data, pixelData, static_cast<size_t>(imageSize));
+    vmaUnmapMemory(m_memory->GetAllocator(), stagingBufferMemory);
+
+    VkImageLayout oldLayout = needsRecreate ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    TransitionImageLayout(m_painterPreviewImage, VK_FORMAT_R8G8B8A8_UNORM, oldLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1);
+    CopyBufferToImage(stagingBuffer, m_painterPreviewImage, width, height, 1);
+    TransitionImageLayout(m_painterPreviewImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+    vmaDestroyBuffer(m_memory->GetAllocator(), stagingBuffer, stagingBufferMemory);
+
+    if (m_blockMakerRenderer) {
+        m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+        m_blockMakerRenderer->SetPainterDescriptorSets(!m_blockMakerDescriptorSets.empty() ? &m_blockMakerDescriptorSets : nullptr);
+    }
+
+    std::cout << "[PAINTER DIAG] GPU Upload Completed: (" << width << "x" << height 
+              << ") Recreate=" << (needsRecreate ? "true" : "false")
+              << " DescriptorBound=" << (!m_blockMakerDescriptorSets.empty() ? "YES" : "NO") << "\n";
+}
+
 void RenderManager::UpdateBlockPropertiesSSBO(const std::vector<fw::BlockPropertiesGPU>& properties) {
     if (properties.empty()) return;
 
@@ -3361,6 +3601,10 @@ bool RenderManager::CreateForgePipeline() {
     };
 
     initSubRenderer(m_blockMakerRenderer);
+    if (m_blockMakerRenderer) {
+        m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+        m_blockMakerRenderer->SetPainterDescriptorSets(!m_blockMakerDescriptorSets.empty() ? &m_blockMakerDescriptorSets : nullptr);
+    }
     initSubRenderer(m_mapRenderer);
     initSubRenderer(m_forgeRenderer);
     initSubRenderer(m_playRenderer);

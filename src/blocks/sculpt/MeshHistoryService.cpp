@@ -1,4 +1,210 @@
-#include "pch.h"
+# FAIRWORLD — BM-UV-PAINTER-MG03-FIX02
+## UV Atlas Visibility, Surface Paint & 3D Preview Synchronization
+
+### PROBLEMA RIPRODOTTO VISIVAMENTE
+
+Nel runtime di FAIRWORLD:
+
+1. Il canvas 2D mostra una texture verde, ma non mostra l'atlante UV.
+2. `Seams: ON` risulta attivo, senza contorni visibili delle isole.
+3. Le pennellate rosse vengono ritagliate entro un rettangolo che sembra corrispondere a una singola cella UV della griglia 3×2.
+4. `Surface Paint` è attivo, ma l'isola selezionata non è evidenziata.
+5. Nella preview 3D compaiono segni rossi su più superfici e la corrispondenza con il canvas non è chiara.
+
+OBIETTIVO: correggere la sincronizzazione tra atlante UV, canvas, Painter e preview 3D.
+
+NON aggiungere nuove Shape.
+NON implementare MG04.
+NON rifare l'intero Block Maker.
+
+### MG03-FIX02-A — AUDIT DEL DOCUMENTO UV REALE
+
+Ispezionare tramite IDE:
+
+- `EditableMesh`
+- `UVLayout`
+- `UVIslandExtractor`
+- `UVAtlasPacker`
+- `UVEditorDocument`
+- `BlockMakerState`
+- `TexturePaintingService`
+- `SurfacePaintingAdapter`
+- `MeshBridgeService`
+- `BlockMakerRenderer`
+
+Ricostruire la catena:
+
+EditableMesh → UV per-corner → UVLayout → Canvas 2D → Painter → TextureAsset → GPU Preview.
+
+Determinare esattamente:
+
+- Se il cubo corrente possiede sei isole UV valide.
+- Se le isole sono presenti nel documento usato dal Painter.
+- Se il canvas sta mostrando la texture corretta.
+- Se il renderer 3D sta utilizzando le stesse UV.
+- Se il documento UV viene ricreato, svuotato o sostituito quando si entra nella Painter Station.
+- Se un asset già salvato mantiene una vecchia topologia UV sovrapposta.
+
+Non assumere che la griglia 3×2 introdotta in MG03 sia effettivamente presente in ogni livello della pipeline.
+
+### MG03-FIX02-B — RENDERING VISIBILE DELL'ATLANTE UV
+
+Nel canvas 2D mostrare contemporaneamente:
+
+1. Texture dell'asset.
+2. Contorni delle isole UV reali.
+3. Seam edges.
+4. Isola attualmente selezionata.
+5. Eventuale FaceID / IslandID in overlay diagnostico.
+
+I contorni devono essere generati dalle UV reali della EditableMesh o dal documento UV autoritativo.
+
+NON disegnare una griglia 3×2 fissa come soluzione generale.
+
+La griglia 3×2 può essere il layout del cubo standard, ma altre Shape avranno atlanti differenti.
+
+`Seams: ON` deve produrre un overlay realmente visibile, anche quando la texture è già dipinta.
+
+L'overlay deve essere solo grafico e NON modificare i pixel della texture.
+
+### MG03-FIX02-C — SEPARAZIONE CORRETTA DELLE MODALITÀ
+
+**Surface Paint**
+
+- Limitare la pittura alla superficie/isola selezionata.
+- Evidenziare visivamente la regione attiva.
+- Se il tratto attraversa il bordo dell'isola, non dipingere sulle altre isole.
+- La selezione deve essere coerente con la faccia scelta nel viewport 3D oppure con l'isola scelta nel canvas 2D.
+- Evitare che venga utilizzato implicitamente un IslandID predefinito non corrispondente alla selezione dell'utente.
+- Bloccare l'isola target durante la singola pennellata, evitando cambi accidentali.
+
+**Atlas Paint**
+
+- Consentire di dipingere liberamente l'intera texture.
+- Non applicare il clipping della Surface Paint.
+- Conservare la visualizzazione dei contorni UV.
+- Non modificare la topologia UV.
+
+Le due modalità devono condividere lo stesso documento, gli stessi layer e la stessa texture.
+
+### MG03-FIX02-D — MAPPING RESPONSIVO DEL CANVAS
+
+Verificare la conversione:
+
+Mouse Screen → Canvas Local → Zoom/Pan inversi → UV → Texel.
+
+Usare il rettangolo reale dell'immagine visualizzata, non le dimensioni dell'intero pannello ImGui.
+
+Gestire:
+
+- Ridimensionamento finestra.
+- DPI scaling.
+- Zoom.
+- Pan.
+- Texture con risoluzioni differenti.
+- Aspect ratio.
+- Offset e clipping del viewport.
+
+Non adattare la risoluzione dell'asset a quella dello schermo.
+
+La texture deve mantenere la propria risoluzione indipendentemente dalla dimensione visibile del canvas.
+
+### MG03-FIX02-E — COERENZA CON LA PREVIEW 3D
+
+Verificare che la preview Vulkan utilizzi le UV per-corner della stessa mesh mostrata nello Studio.
+
+Controllare:
+
+- `MeshBridgeService::CompileForPreview`.
+- Ordinamento dei corner.
+- Associazione FaceID / IslandID.
+- UV nel vertex buffer.
+- Campionamento nel vertex/fragment shader.
+- MaterialID e texture layer.
+- Cache e aggiornamenti GPU dirty-driven.
+
+Se il canvas mostra una pennellata sull'isola Front +Z, la preview deve mostrarla sulla corrispondente faccia Front +Z.
+
+Non correggere la preview duplicando la texture per faccia o modificando arbitrariamente le UV nello shader.
+
+Non perdere i PaintLayer durante l'aggiornamento della mesh.
+
+### MG03-FIX02-F — DIAGNOSTICA MIRATA
+
+Aggiungere o correggere la diagnostica esistente affinché riporti:
+
+- BlockID.
+- ShapeType.
+- Numero di facce.
+- Numero di isole UV.
+- Numero di isole visualizzate.
+- UV AABB delle isole.
+- Isola selezionata.
+- PaintMode corrente.
+- Rettangolo canvas effettivo.
+- Mouse locale.
+- Coordinate UV e texel.
+- DirtyRect della pennellata.
+- Versione/revision della mesh e delle UV utilizzate dalla preview.
+
+I log devono essere attivati solo da evento diagnostico o durante uno stroke quando la diagnostica è abilitata.
+
+Niente spam continuo per frame.
+
+### ACCEPTANCE CRITERIA
+
+A. Il cubo mostra chiaramente sei isole UV nel canvas.
+
+B. `Seams: ON/OFF` mostra e nasconde i contorni senza modificare la texture.
+
+C. Surface Paint sulla faccia frontale dipinge soltanto la relativa isola.
+
+D. Atlas Paint permette di dipingere liberamente fuori da quella singola isola.
+
+E. Il segno visualizzato sulla faccia frontale del cubo corrisponde alla posizione della relativa isola UV.
+
+F. Cambiare zoom, pan o dimensione della finestra non altera la posizione logica del tratto.
+
+G. Cambiare BlockID non trasferisce la pittura a un altro asset.
+
+H. Input stabile: zero rebuild della mesh e zero upload texture non necessari.
+
+I. I dati UV e la pittura esistenti non vengono distrutti o resettati silenziosamente.
+
+### VINCOLI OPERATIVI
+
+Antigravity NON deve eseguire alcun comando:
+
+- NO CMD.
+- NO PowerShell.
+- NO terminale.
+- NO shell.
+- NO Git CLI.
+- NO script.
+- NO build.
+- NO test automatici.
+- NO comandi nemmeno read-only.
+
+Sono consentite esclusivamente ispezione e modifica tramite IDE/editor grafico.
+
+Prima identificare le cause effettive; poi applicare soltanto i fix necessari.
+
+Non dichiarare che il problema runtime è risolto senza una verifica effettuata dall'utente.
+
+### REPORT FINALE
+
+Restituire:
+
+1. Root cause accertate e ipotesi ancora da verificare.
+2. File modificati.
+3. Flusso UV/Painter corretto.
+4. Comportamento previsto di Surface Paint e Atlas Paint.
+5. Eventuali limiti residui.
+6. Checklist runtime da eseguire manualmente in Visual Studio.
+
+BUILD NOT RUN
+RUNTIME NOT TESTED
+STOP.#include "pch.h"
 #include "MeshHistoryService.h"
 #include "MeshModelingService.h"
 #include "MeshSculptService.h"

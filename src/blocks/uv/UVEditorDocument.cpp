@@ -410,30 +410,51 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
 bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV, 
                                      const PaintBrush& brush, 
                                      TexturePaintingService* paintingService, 
-                                     uint32_t targetLayerId) {
+                                     uint32_t targetLayerId,
+                                     CanvasPaintMode paintMode) {
     if (!paintingService) return false;
+    m_lastPaintBlockedReason.clear();
 
     UVIslandID targetIsland = INVALID_UVISLAND_ID;
-    if (!m_selectedIslands.empty()) {
-        for (UVIslandID selId : m_selectedIslands) {
-            if (IsPointInIsland(atlasUV, selId)) {
-                targetIsland = selId;
-                break;
+    if (paintMode == CanvasPaintMode::SurfacePaint) {
+        if (!m_selectedIslands.empty()) {
+            for (UVIslandID selId : m_selectedIslands) {
+                if (IsPointInIsland(atlasUV, selId)) {
+                    targetIsland = selId;
+                    break;
+                }
             }
-        }
-        if (targetIsland == INVALID_UVISLAND_ID) {
-            return false;
+            if (targetIsland == INVALID_UVISLAND_ID) {
+                // Click fuori dalle isole selezionate esplicitamente dall'utente
+                m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dall'isola UV selezionata.";
+                return false;
+            }
+        } else {
+            // Nessuna isola selezionata esplicitamente: cerca l'isola sotto il cursore
+            targetIsland = FindIslandAtUV(atlasUV);
+            if (targetIsland == INVALID_UVISLAND_ID) {
+                // BM-P03: In Surface Paint, NON consentire pittura UNCLIPPED fuori superficie
+                m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/isola UV sotto il cursore. Seleziona un'isola o attiva Atlas Paint.";
+                return false;
+            }
+            // Auto-seleziona l'isola sotto il cursore per evidenziarla visivamente sul canvas
+            SelectIsland(targetIsland, false);
         }
     } else {
-        targetIsland = FindIslandAtUV(atlasUV);
-        if (targetIsland == INVALID_UVISLAND_ID) {
-            return false;
-        }
+        // Modalita Atlas Paint esplicita: pittura libera sull'intero canvas senza alcun ritaglio
+        targetIsland = INVALID_UVISLAND_ID;
     }
 
-    uint32_t targetW = m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : paintingService->GetCanvasWidth();
-    uint32_t targetH = m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : paintingService->GetCanvasHeight();
+    // BM-P02: Utilizza autoritativamente le dimensioni reali del canvas del paintingService (512x512)
+    // invece del default 1024 dell'UVLayout che creava un disallineamento 2x!
+    uint32_t targetW = paintingService->GetCanvasWidth();
+    uint32_t targetH = paintingService->GetCanvasHeight();
+    if (targetW == 0) targetW = (m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : 512);
+    if (targetH == 0) targetH = (m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : 512);
+
     glm::vec2 pixelCoords = UVAtlasPacker::AtlasToPixel(atlasUV, targetW, targetH);
+    pixelCoords.x = std::clamp(pixelCoords.x, 0.0f, static_cast<float>(targetW - 1));
+    pixelCoords.y = std::clamp(pixelCoords.y, 0.0f, static_cast<float>(targetH - 1));
 
     uint32_t layerId = targetLayerId;
     if (layerId == 0 && paintingService->GetLayerCount() > 0) {
@@ -450,36 +471,57 @@ bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV,
     m_strokeIslandId = targetIsland;
     m_prevStrokeUV = atlasUV;
 
-    auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
-        glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
-                                  (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
-        return this->IsPointInIsland(pUV, targetIsland);
-    };
+    if (targetIsland != INVALID_UVISLAND_ID) {
+        auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
+            glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
+                                      (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
+            return this->IsPointInIsland(pUV, targetIsland);
+        };
+        paintingService->ApplyDabClipped(pixelCoords, brush, clipCb);
+    } else {
+        paintingService->ApplyDab(pixelCoords, brush);
+    }
 
-    paintingService->ApplyDabClipped(pixelCoords, brush, clipCb);
+    std::cout << "[PAINTER DIAG] StrokeBegin: UV=(" << atlasUV.x << "," << atlasUV.y << ") TargetIsland=" 
+              << (targetIsland != INVALID_UVISLAND_ID ? std::to_string(targetIsland) : "UNCLIPPED") 
+              << " LayerID=" << layerId 
+              << " Mode=" << (paintMode == CanvasPaintMode::SurfacePaint ? "SurfacePaint" : "AtlasPaint") << "\n";
+    std::cout << "[PAINTER DIAG] PaintLayer Initial Point: (" << pixelCoords.x << "," << pixelCoords.y 
+              << ") on LayerID=" << layerId << "\n";
     return true;
 }
 
 bool UVEditorDocument::UpdateStroke2D(const glm::vec2& atlasUV, 
                                       const PaintBrush& brush, 
                                       TexturePaintingService* paintingService) {
-    if (!m_isStroking2D || !paintingService || m_strokeIslandId == INVALID_UVISLAND_ID) {
+    if (!m_isStroking2D || !paintingService) {
         return false;
     }
 
-    uint32_t targetW = m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : paintingService->GetCanvasWidth();
-    uint32_t targetH = m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : paintingService->GetCanvasHeight();
+    uint32_t targetW = paintingService->GetCanvasWidth();
+    uint32_t targetH = paintingService->GetCanvasHeight();
+    if (targetW == 0) targetW = (m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : 512);
+    if (targetH == 0) targetH = (m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : 512);
+
     glm::vec2 curPixel = UVAtlasPacker::AtlasToPixel(atlasUV, targetW, targetH);
     glm::vec2 prevPixel = UVAtlasPacker::AtlasToPixel(m_prevStrokeUV, targetW, targetH);
+    curPixel.x = std::clamp(curPixel.x, 0.0f, static_cast<float>(targetW - 1));
+    curPixel.y = std::clamp(curPixel.y, 0.0f, static_cast<float>(targetH - 1));
+    prevPixel.x = std::clamp(prevPixel.x, 0.0f, static_cast<float>(targetW - 1));
+    prevPixel.y = std::clamp(prevPixel.y, 0.0f, static_cast<float>(targetH - 1));
 
     UVIslandID targetIsland = m_strokeIslandId;
-    auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
-        glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
-                                  (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
-        return this->IsPointInIsland(pUV, targetIsland);
-    };
+    if (targetIsland != INVALID_UVISLAND_ID) {
+        auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
+            glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
+                                      (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
+            return this->IsPointInIsland(pUV, targetIsland);
+        };
+        paintingService->UpdateStrokeClipped(prevPixel, curPixel, brush, clipCb);
+    } else {
+        paintingService->UpdateStroke(prevPixel, curPixel, brush);
+    }
 
-    paintingService->UpdateStrokeClipped(prevPixel, curPixel, brush, clipCb);
     m_prevStrokeUV = atlasUV;
     return true;
 }
@@ -488,6 +530,8 @@ PaintDirtyRect UVEditorDocument::EndStroke2D(TexturePaintingService* paintingSer
     PaintDirtyRect dirty;
     if (m_isStroking2D && paintingService) {
         dirty = paintingService->EndStroke();
+        std::cout << "[PAINTER DIAG] StrokeEnd: DirtyRect=[" << dirty.xMin << "," << dirty.yMin 
+                  << " -> " << dirty.xMax << "," << dirty.yMax << "] isEmpty=" << (dirty.isEmpty ? "true" : "false") << "\n";
     }
     m_isStroking2D = false;
     m_strokeIslandId = INVALID_UVISLAND_ID;

@@ -604,6 +604,14 @@ private:
     void RunPrimitiveUVValidationTests(bool isManualTrigger = false);
     fw::PrimitiveUVMapper m_primitiveUVMapper;
 
+    // --- BM-PAINTER-RECOVERY-AND-STUDIO-MG01B: Unified UV & Painter Studio ---
+    float m_studioSplitterRatio = 0.5f;
+    bool m_studioSplitterDragging = false;
+    bool IsStudioActive() const;
+    void DrawStudioCenterCanvas(float leftX, float topY, float width, float height);
+    void DrawStudioTopToolbar();
+    void DrawStudioRightInspector();
+
     // --- BM-UV8 2D UV Editor State & UI ---
     fw::UVEditorPanel m_uvEditorPanel;
     std::unique_ptr<fw::UVEditorDocument> m_uvEditorDocument;
@@ -612,7 +620,11 @@ private:
     uint64_t m_cachedUVOutlineAtlasRev = 0;
     uint64_t m_cachedUVOutlineSelectionRev = 0;
     bool m_uvCanvasPaintMode = false;
+    fw::CanvasPaintMode m_canvasPaintMode = fw::CanvasPaintMode::SurfacePaint;
+    std::string m_studioPaintNotification;
+    float m_studioPaintNotificationTimer = 0.0f;
     void DrawUVEditorStationUI();
+    void PrintUVStudioDiagnostic();
 
     // --- BM-UV8 3D Painting Viewport Input State ---
     bool m_is3DPaintStroking = false;
@@ -623,6 +635,7 @@ private:
 
     // --- BM-UI2.3-B1 Factory Edit Session Lifecycle & Data Ownership ---
     fw::FactoryEditSessionContext m_sessionContext;
+    void FlushCurrentDraft();
     void LoadFactoryDraft(uint8_t blockId);
     void SynchronizeDraftToPreview();
     void CommitDraftToRegistry();

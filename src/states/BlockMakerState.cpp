@@ -35,6 +35,7 @@
 #include <limits>
 #include <cstring>
 #include "GeometryCompiler.h"
+#include "blocks/uv/UVAtlasPacker.h"
 
 namespace {
     void LogScaleZDiagnostics(
@@ -211,6 +212,9 @@ BlockMakerState::~BlockMakerState() {
             m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
         }
         m_context->isBlockMakerMode = false;
+        if (m_context->engine && m_context->engine->GetRenderManager()) {
+            m_context->engine->GetRenderManager()->CleanupPainterPreviewResources();
+        }
         if (m_context->jobSystem) {
             m_context->jobSystem->Shutdown();
             m_context->jobSystem->Initialize();
@@ -342,8 +346,40 @@ void BlockMakerState::UpdateSessionContext() {
     }
 }
 
+void BlockMakerState::FlushCurrentDraft() {
+    if (m_factoryOrchestrator.IsDraftOpen()) {
+        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            // Finalizza eventuali stroke attivi per non perdere dati
+            if (m_uvEditorDocument && m_uvEditorDocument->IsStroking2D()) {
+                m_uvEditorDocument->EndStroke2D(&m_paintingService);
+            }
+            if (m_is3DPaintStroking) {
+                m_surfacePaintingAdapter.EndStroke3D();
+                m_is3DPaintStroking = false;
+            }
+
+            draft->paintLayers = m_paintingService.GetLayers();
+            draft->paintRevision = m_paintingService.GetRevision();
+
+            if (m_activeEditableMesh.GetFaceCount() > 0) {
+                draft->sculptMesh = m_activeEditableMesh;
+            }
+
+            m_factoryOrchestrator.FlushActiveDraft();
+
+            std::cout << "[PAINTER ASSET] Save BlockID=" << (int)draft->manifest.targetRuntimeVoxelId 
+                      << " Layers=" << draft->paintLayers.size() 
+                      << " Dirty=" << (draft->isDirty ? "true" : "false") << "\n";
+        }
+    }
+}
+
 void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
     if (!m_context || !m_context->blockRegistry || !m_context->materialRegistry || !m_context->shapeRegistry) return;
+
+    // BM-P04: Salva lo stato del blocco uscente prima di caricare il nuovo
+    FlushCurrentDraft();
 
     bool loaded = m_factoryOrchestrator.LoadDraftFromRegistry(blockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
     if (loaded && m_factoryOrchestrator.IsDraftOpen()) {
@@ -359,31 +395,76 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
             m_selectionService.PruneInvalidated(m_activeEditableMesh);
 
             // Connect painting service with draft paint layers
+            m_paintingService.ClearHistory();
+
             if (!draft->paintLayers.empty()) {
                 m_paintingService.GetLayers() = draft->paintLayers;
-                m_paintingService.SetCanvasDimensions(draft->paintLayers[0].pixelBuffer.GetWidth(), draft->paintLayers[0].pixelBuffer.GetHeight());
-            } else if (draft->textures.has_value() && draft->textures->albedo.IsValid()) {
-                m_paintingService.InitializeCanvas(draft->textures->albedo.GetWidth(), draft->textures->albedo.GetHeight());
+                uint32_t w = draft->paintLayers[0].pixelBuffer.GetWidth();
+                uint32_t h = draft->paintLayers[0].pixelBuffer.GetHeight();
+                if (w > 0 && h > 0) {
+                    m_paintingService.SetCanvasDimensions(w, h);
+                }
+            } else if (draft->textures.has_value() && draft->textures->HasBaseColor()) {
+                const auto& baseMap = *draft->textures->GetBaseColorMap();
+                m_paintingService.InitializeCanvas(baseMap.GetWidth(), baseMap.GetHeight());
                 if (m_paintingService.GetLayerCount() > 0) {
-                    m_paintingService.GetLayers()[0].pixelBuffer = draft->textures->albedo;
+                    m_paintingService.GetLayers()[0].pixelBuffer = baseMap;
                 }
             } else {
                 glm::vec4 baseCol(draft->baseColorFallback, 1.0f);
                 m_paintingService.InitializeCanvas(512, 512, baseCol);
             }
 
-            // Safe UV document setup
-            if (draft->uvLayout.has_value() && draft->uvLayout->isValid) {
-                m_uvEditorDocument = std::make_unique<fw::UVEditorDocument>(m_activeEditableMesh, draft->uvLayout.value());
+            // Safe UV document setup & legacy layout migration (BM-UV-PAINTER MG03-FIX02)
+            bool needsLayoutRegen = false;
+            if (!draft->uvLayout.has_value() || !draft->uvLayout->isValid || draft->uvLayout->islands.empty()) {
+                needsLayoutRegen = true;
             } else {
-                m_uvEditorDocument.reset();
+                if (m_activeEditableMesh.GetFaceCount() == 6 && draft->uvLayout->islands.size() < 6) {
+                    needsLayoutRegen = true;
+                } else if (draft->uvLayout->islands.size() >= 2) {
+                    const auto& i0 = draft->uvLayout->islands[0];
+                    const auto& i1 = draft->uvLayout->islands[1];
+                    if (glm::distance(glm::vec2(i0.atlasTransform.z, i0.atlasTransform.w), glm::vec2(i1.atlasTransform.z, i1.atlasTransform.w)) < 1e-4f &&
+                        std::abs(i0.atlasTransform.x - i1.atlasTransform.x) < 1e-4f) {
+                        needsLayoutRegen = true;
+                    }
+                }
             }
+
+            if (needsLayoutRegen) {
+                fw::UVLayout newLayout;
+                fw::PrimitiveUVOptions primOpt;
+                m_primitiveUVMapper.GenerateBoxMapping(m_activeEditableMesh, newLayout, glm::vec3(1.0f), primOpt);
+                draft->uvLayout = newLayout;
+                draft->uvRevision = newLayout.uvRevision;
+                draft->sculptMesh = m_activeEditableMesh;
+                std::cout << "[UV MIGRATION] Regenerated 6-island box mapping for BlockID=" << (int)blockId << "\n";
+            }
+            m_uvEditorDocument = std::make_unique<fw::UVEditorDocument>(m_activeEditableMesh, draft->uvLayout.value());
 
             // Connect painting adapter to painting service and UVLayout
             m_surfacePaintingAdapter.SetPaintingService(&m_paintingService);
             if (draft->uvLayout.has_value()) {
                 m_surfacePaintingAdapter.SetUVLayout(&draft->uvLayout.value());
             }
+
+            // BM-UV-PAINTER-MG01: Upload iniziale della composizione alla preview GPU
+            fw::ImageBitmap initialComp;
+            if (m_paintingService.CompositeLayers(initialComp)) {
+                if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                    m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                        initialComp.GetData(),
+                        initialComp.GetWidth(),
+                        initialComp.GetHeight()
+                    );
+                }
+            }
+
+            std::cout << "[PAINTER ASSET] Load BlockID=" << (int)blockId 
+                      << " Layers=" << draft->paintLayers.size() 
+                      << " Dimensions=(" << m_paintingService.GetCanvasWidth() << "x" << m_paintingService.GetCanvasHeight() << ")\n";
+            std::cout << "[PAINTER ASSET] PreviewUpdated BlockID=" << (int)blockId << "\n";
         }
     }
     UpdateSessionContext();
@@ -426,6 +507,7 @@ void BlockMakerState::SynchronizeDraftToPreview() {
 }
 
 void BlockMakerState::CommitDraftToRegistry() {
+    FlushCurrentDraft();
     if (!m_context || !m_factoryOrchestrator.IsDraftOpen()) return;
     auto* draft = m_factoryOrchestrator.GetCurrentDraft();
     if (!draft) return;
@@ -4656,6 +4738,10 @@ void BlockMakerState::UpdatePreviewMesh() {
     bool isSculptAuthoritative = (m_sculptModeActive || m_modelingTool != 0 || m_meshSelectionEnabled || 
                                  (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->geometrySource == fw::GeometrySource::SculptedMesh));
 
+    bool isEditableMeshAuthoritative = (m_activeEditableMesh.GetFaceCount() > 0 &&
+                                       (isSculptAuthoritative || IsStudioActive() || m_uvEditorDocument != nullptr || 
+                                       (m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->uvLayout.has_value())));
+
     bool needsRecompile = false;
     const char* recompileReason = nullptr;
 
@@ -4664,12 +4750,12 @@ void BlockMakerState::UpdatePreviewMesh() {
         recompileReason = "BlockIDChanged";
     }
 
-    if (isSculptAuthoritative && m_activeEditableMesh.GetFaceCount() > 0) {
+    if (isEditableMeshAuthoritative) {
         if (m_lastGeometryWasParametric ||
-            fw::MeshBridgeService::NeedsPreviewRecompile(m_activeEditableMesh, (uint32_t)m_selectedBlockId, m_bridgePreviewCache) ||
+            fw::MeshBridgeService::NeedsPreviewRecompile(m_activeEditableMesh, 0, m_bridgePreviewCache) ||
             m_cachedGeometryMesh.vertices.empty()) {
             needsRecompile = true;
-            if (!recompileReason) recompileReason = "SculptMeshModified";
+            if (!recompileReason) recompileReason = "EditableMeshModified";
         }
     } else {
         if (!m_lastGeometryWasParametric ||
@@ -4693,9 +4779,9 @@ void BlockMakerState::UpdatePreviewMesh() {
         options.surfaceOverrides = &mat.surfaces;
         options.defaultUVTransform = &mat.baseUVTransform;
         options.defaultProjection = mat.baseProjection;
-        options.defaultMaterialId = (uint32_t)m_selectedBlockId;
+        options.defaultMaterialId = 0; // Layer 0 nella preview texture dedicata di BlockMaker (BM-PAINTER MG-01B)
 
-        if (isSculptAuthoritative && m_activeEditableMesh.GetFaceCount() > 0) {
+        if (isEditableMeshAuthoritative) {
             m_zeroWorkTelemetry.geoCompilerCalls++;
             auto result = fw::MeshBridgeService::CompileForPreview(m_activeEditableMesh, options, m_bridgePreviewCache);
             if (result.success) {
@@ -4703,11 +4789,11 @@ void BlockMakerState::UpdatePreviewMesh() {
                 m_lastGeometryRevision = m_activeEditableMesh.GetGeometryRevision();
                 m_lastMaterialRevision = mat.revision;
                 m_lastGeometryWasParametric = false;
-                std::cout << "[BM-SCULPT][COMPILE] Success BlockID=" << (int)m_selectedBlockId
+                std::cout << "[BM-PREVIEW][COMPILE] EditableMesh Authoritative Success BlockID=" << (int)m_selectedBlockId
                           << " Vertices=" << result.mesh.vertices.size()
                           << " Triangles=" << (result.mesh.vertices.size() / 3) << "\n";
             } else {
-                std::cout << "[BM-SCULPT][COMPILE] ERROR: " << result.errorMessage << "\n";
+                std::cout << "[BM-PREVIEW][COMPILE] ERROR: " << result.errorMessage << "\n";
                 m_lastCompileError = "Compile Error: " + result.errorMessage;
                 return;
             }
@@ -7259,18 +7345,16 @@ void BlockMakerState::DrawInspectorContents() {
         }
 
         ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "FACTORY STATIONS (PIPELINE A 9 STAZIONI)");
+        ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "FACTORY STATIONS (PIPELINE UNIFICATA)");
 
-        static const char* s_stationLabels[9] = {
-            "1. Shape", "2. Sculpt", "3. SurfaceUV", "4. Texture",
-            "5. Painter", "6. Material", "7. Physics", "8. QC", "9. Package"
+        static const char* s_stationLabels[7] = {
+            "1. Shape", "2. Sculpt", "3. UV & Painter Studio",
+            "4. Material", "5. Physics", "6. QC", "7. Package"
         };
-        static const fw::ProductionStationID s_stationIDs[9] = {
+        static const fw::ProductionStationID s_stationIDs[7] = {
             fw::ProductionStationID::Shape,
             fw::ProductionStationID::Sculpt,
-            fw::ProductionStationID::SurfaceUV,
-            fw::ProductionStationID::Texture,
-            fw::ProductionStationID::Painter,
+            fw::ProductionStationID::Painter, // Attiva UV & Painter Studio unificato (BM-UV-PAINTER MG03-D)
             fw::ProductionStationID::Material,
             fw::ProductionStationID::RawPhysics,
             fw::ProductionStationID::QualityControl,
@@ -7283,10 +7367,12 @@ void BlockMakerState::DrawInspectorContents() {
         float itemSpacingX = ImGui::GetStyle().ItemSpacing.x;
         float currentLineWidth = 0.0f;
 
-        for (int s = 0; s < 9; ++s) {
+        for (int s = 0; s < 7; ++s) {
             fw::ProductionStationID sid = s_stationIDs[s];
             const auto* st = m_factoryOrchestrator.GetStation(sid);
-            bool isStationSelected = (!isGenActive && activeStation == sid);
+            bool isStationSelected = (!isGenActive && (activeStation == sid || 
+                (sid == fw::ProductionStationID::Painter && 
+                 (activeStation == fw::ProductionStationID::SurfaceUV || activeStation == fw::ProductionStationID::Texture))));
             bool isImplemented = st ? st->IsImplemented() : false;
             auto status = st ? st->GetStatus() : fw::StationStatus::NotImplemented;
 
@@ -7462,33 +7548,10 @@ void BlockMakerState::DrawInspectorContents() {
                     DrawFactorySculptControls();
                     break;
                 }
-                case fw::ProductionStationID::SurfaceUV: {
-                    ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 3: SURFACE & UV — MAPPATURA SUPERFICI");
-                    DrawUVEditorStationUI();
-                    ImGui::Separator();
-                    bool isDirty = false;
-                    DrawFactorySurfaceUVControls(mat, isDirty);
-                    if (isDirty) {
-                        SynchronizeDraftToPreview();
-                    }
-                    break;
-                }
-                case fw::ProductionStationID::Texture: {
-                    ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 4: TEXTURE — PBR TEXTURE PACK");
-                    bool isDirty = false;
-                    DrawFactoryTextureControls(mat, isDirty);
-                    if (isDirty) {
-                        SynchronizeDraftToPreview();
-                    }
-                    break;
-                }
+                case fw::ProductionStationID::SurfaceUV:
+                case fw::ProductionStationID::Texture:
                 case fw::ProductionStationID::Painter: {
-                    ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.6f, 1.0f), "STAZIONE 5: PAINTER — SURFACE STUDIO (BM-TX4 & BM-UV-PAINTER)");
-                    m_uvCanvasPaintMode = true;
-                    DrawUVEditorStationUI();
+                    DrawStudioRightInspector();
                     break;
                 }
                 case fw::ProductionStationID::Material: {
@@ -7826,6 +7889,10 @@ void BlockMakerState::DrawWorkspaceToolbar(float topY, float& outToolbarHeight) 
         fw::ProductionStationID activeSid = m_factoryOrchestrator.GetActiveStation();
         const auto* curSt = m_factoryOrchestrator.GetStation(activeSid);
         ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "Stazione: %s", curSt ? curSt->GetName() : "-");
+
+        if (IsStudioActive()) {
+            DrawStudioTopToolbar();
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
@@ -7968,6 +8035,33 @@ void BlockMakerState::DrawWorkspaceFooter(float& outFooterHeight) {
 
         if (!m_footerCollapsed) {
             ImGui::Separator();
+            if (IsStudioActive()) {
+                uint32_t activeSurf = 0;
+                std::string faceStr = "None";
+                std::string islStr = "None";
+                if (m_uvEditorDocument) {
+                    if (!m_uvEditorDocument->GetSelectedIslands().empty()) {
+                        islStr = std::to_string(*m_uvEditorDocument->GetSelectedIslands().begin());
+                    }
+                    if (!m_uvEditorDocument->GetSelectedFaces().empty()) {
+                        fw::FaceID fId = *m_uvEditorDocument->GetSelectedFaces().begin();
+                        if (fId.IsValid()) {
+                            faceStr = "#" + std::to_string(fId.index) + ":g" + std::to_string(fId.generation);
+                        } else {
+                            faceStr = "Invalid";
+                        }
+                    }
+                }
+                uint32_t tw = m_paintingService.GetCanvasWidth();
+                uint32_t th = m_paintingService.GetCanvasHeight();
+                bool isDirty = m_factoryOrchestrator.IsDraftOpen() && m_factoryOrchestrator.GetCurrentDraft()->isDirty;
+                ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), 
+                    "[Studio Status] SurfaceID: %u | FaceID: %s | UVIslandID: %s | Texture: %ux%u RGBA8 | Stato: %s",
+                    activeSurf, faceStr.c_str(), islStr.c_str(), tw, th, isDirty ? "MODIFICATO" : "SINCRONIZZATO");
+                ImGui::SameLine();
+                ImGui::TextDisabled("|");
+                ImGui::SameLine();
+            }
             ImGui::Text("History Comandi: %s", m_meshHistoryService.CanUndo() ? m_meshHistoryService.GetUndoCommandName().c_str() : "(nessuno)");
             ImGui::SameLine();
             ImGui::TextDisabled("|");
@@ -8043,11 +8137,63 @@ void BlockMakerState::DrawWorkspaceShell() {
     // 4. Pannello Sinistro (Asset Browser)
     DrawWorkspaceLeftPanel(panelsTopY, panelsBottomY, leftWidth);
 
-    // 5. Area Centrale: NESSUNA finestra ImGui creata qui!
-    // Lo spazio [vpPos.x + leftWidth, vpPos.x + vpSize.x - rightWidth] rimane COMPLETAMENTE LIBERO.
-    // La viewport Vulkan (PreviewBlock e studio) rimane visibile al 100% e io.WantCaptureMouse e' false!
+    // 5. Area Centrale: Unified UV & Painter Studio Workspace (BM-PAINTER-RECOVERY-AND-STUDIO-MG01B)
+    float centerStartX = vpPos.x + leftWidth;
+    float centerTotalWidth = vpSize.x - leftWidth - rightWidth;
+    float centerHeight = panelsBottomY - panelsTopY;
 
-    // 6. Pannello Destro (Inspector con i 4 Tab)
+    if (IsStudioActive()) {
+        float minSplit = 0.25f;
+        float maxSplit = 0.75f;
+        float canvasWidth = centerTotalWidth * m_studioSplitterRatio;
+
+        // Vista A: Canvas 2D / Atlas sul lato sinistro del centro
+        DrawStudioCenterCanvas(centerStartX, panelsTopY, canvasWidth, centerHeight);
+
+        // Splitter Interattivo ridimensionabile tra Vista 2D e Vista 3D
+        float splitterX = centerStartX + canvasWidth;
+        float splitterW = 6.0f;
+        ImGui::SetNextWindowPos(ImVec2(splitterX - 2.0f, panelsTopY));
+        ImGui::SetNextWindowSize(ImVec2(splitterW + 4.0f, centerHeight));
+        ImGuiWindowFlags splitterFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | 
+                                        ImGuiWindowFlags_NoSavedSettings;
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+        if (ImGui::Begin("##StudioSplitter", nullptr, splitterFlags)) {
+            ImVec2 spP0 = ImGui::GetCursorScreenPos();
+            ImVec2 spP1(spP0.x + splitterW, spP0.y + centerHeight);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            bool isHovered = ImGui::IsWindowHovered();
+            if (isHovered) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (isHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                m_studioSplitterDragging = true;
+            }
+            if (m_studioSplitterDragging) {
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    float mouseRelX = ImGui::GetIO().MousePos.x - centerStartX;
+                    m_studioSplitterRatio = std::clamp(mouseRelX / centerTotalWidth, minSplit, maxSplit);
+                } else {
+                    m_studioSplitterDragging = false;
+                }
+            }
+            ImU32 splitCol = (isHovered || m_studioSplitterDragging) ? IM_COL32(70, 150, 240, 220) : IM_COL32(50, 55, 65, 200);
+            dl->AddRectFilled(spP0, spP1, splitCol);
+        }
+        ImGui::End();
+        ImGui::PopStyleColor(2);
+
+        // Vista B: Shape 3D interattiva sul lato destro del centro
+        // Lo spazio da (splitterX + splitterW) fino a (centerStartX + centerTotalWidth)
+        // rimane COMPLETAMENTE LIBERO da finestre ImGui:
+        // La Shape 3D Vulkan è visibile al 100% e reattiva all'input del mouse per camera e selezione!
+    } else {
+        // Nessuna finestra centrale: l'intero spazio rimane libero per la Shape 3D Vulkan
+    }
+
+    // 6. Pannello Destro (Inspector con controlli dedicati e scrolling verticale)
     DrawWorkspaceRightInspector(panelsTopY, panelsBottomY, rightWidth);
 }
 
@@ -8650,6 +8796,9 @@ void BlockMakerState::DrawMeshSelectionVisualFeedback() {
                     m_boxSelectActive = false;
                 } else {
                     m_selectionService.PickAndSelect(mousePos, m_activeEditableMesh, ctx, op);
+                    if (m_uvEditorDocument && m_selectionService.GetActiveFace().IsValid()) {
+                        m_uvEditorDocument->SelectFace3D(m_selectionService.GetActiveFace(), op == fw::SelectionOp::Add);
+                    }
                 }
             }
         } else if (!io.MouseDown[0]) {
@@ -9025,6 +9174,9 @@ void BlockMakerState::Handle3DPaintInput() {
             m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
             m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush);
             m_is3DPaintStroking = true;
+            if (m_uvEditorDocument && hit.faceId.IsValid()) {
+                m_uvEditorDocument->SelectFace3D(hit.faceId, false);
+            }
         }
     } else if (m_is3DPaintStroking && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         glm::vec3 rayOrigin, rayDir;
@@ -9036,323 +9188,883 @@ void BlockMakerState::Handle3DPaintInput() {
     } else if (m_is3DPaintStroking && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         m_surfacePaintingAdapter.EndStroke3D();
         m_is3DPaintStroking = false;
+
+        fw::ImageBitmap comp;
+        if (m_paintingService.CompositeLayers(comp)) {
+            if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                    comp.GetData(),
+                    comp.GetWidth(),
+                    comp.GetHeight()
+                );
+            }
+        }
+
+        if (m_factoryOrchestrator.IsDraftOpen()) {
+            auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+            if (draft) {
+                draft->paintLayers = m_paintingService.GetLayers();
+                draft->paintRevision = m_paintingService.GetRevision();
+                draft->MarkDirty();
+                m_factoryOrchestrator.FlushActiveDraft();
+            }
+        }
     }
 }
 
-void BlockMakerState::DrawUVEditorStationUI() {
-    ImGui::Spacing();
-    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "SURFACE STUDIO — 2D UV & PAINTER (BM-UV5 & BM-UV-PAINTER MG-01)");
-    ImGui::Separator();
+bool BlockMakerState::IsStudioActive() const {
+    if (m_inspectorContext != InspectorContext::GeneralSettings) {
+        fw::ProductionStationID sid = m_factoryOrchestrator.GetActiveStation();
+        return (sid == fw::ProductionStationID::SurfaceUV || 
+                sid == fw::ProductionStationID::Painter || 
+                sid == fw::ProductionStationID::Texture);
+    }
+    return false;
+}
 
-    if (!m_factoryOrchestrator.IsDraftOpen() || !m_factoryOrchestrator.GetCurrentDraft()->uvLayout.has_value()) {
-        ImGui::TextDisabled("Nessun UVLayout generato per la bozza corrente.");
-        if (ImGui::Button("Esegui Unwrapping Stazione Surface & UV##RunUVUnwrap", ImVec2(280, 24))) {
-            m_factoryOrchestrator.ExecuteStation(fw::ProductionStationID::SurfaceUV, 
-                m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+void BlockMakerState::DrawStudioTopToolbar() {
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+
+    ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "Studio:");
+    ImGui::SameLine();
+
+    // Toolbar [UV Edit]
+    bool uvActive = !m_uvCanvasPaintMode;
+    if (uvActive) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.7f, 1.0f));
+    if (ImGui::SmallButton("UV Edit##TopStudioUV")) {
+        m_uvCanvasPaintMode = false;
+    }
+    if (uvActive) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Attiva modalita UV Edit (selezione e trasformazione isole)");
+
+    // Toolbar [Paint]
+    ImGui::SameLine();
+    bool paintActive = m_uvCanvasPaintMode;
+    if (paintActive) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.35f, 1.0f));
+    if (ImGui::SmallButton("Paint##TopStudioPainter")) {
+        m_uvCanvasPaintMode = true;
+    }
+    if (paintActive) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Attiva modalita Paint 2D (pittura texture)");
+
+    // Toolbar [Surface Paint / Atlas Paint]
+    ImGui::SameLine();
+    if (m_uvCanvasPaintMode) {
+        bool isSurface = (m_canvasPaintMode == fw::CanvasPaintMode::SurfacePaint);
+        const char* modeLabel = isSurface ? "[Surface Paint]" : "[Atlas Paint]";
+        if (ImGui::SmallButton(modeLabel)) {
+            m_canvasPaintMode = isSurface ? fw::CanvasPaintMode::AtlasPaint : fw::CanvasPaintMode::SurfacePaint;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(isSurface ? 
+                "Surface Paint: Pennellata vincolata alla superficie/isola sotto il cursore.\nClicca per passare ad Atlas Paint (libero)." :
+                "Atlas Paint: Pennellata libera su tutto l'atlante UV.\nClicca per passare a Surface Paint (vincolato).");
+        }
+
+        // Toolbar [Brush / Eraser]
+        ImGui::SameLine();
+        if (ImGui::SmallButton(m_paintBrush.eraseMode ? "Gomma ON" : "Pennello")) {
+            m_paintBrush.eraseMode = !m_paintBrush.eraseMode;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Alterna tra pennello colore e gomma per cancellare");
+    } else {
+        if (ImGui::SmallButton("Surface Selection")) {
+            // Focus selezione isole
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Modalita selezione superfici / isole UV");
+    }
+
+    // Toolbar [Undo]
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Undo##TopStudioUndo")) {
+        if (m_uvCanvasPaintMode) {
+            if (m_paintingService.CanUndo()) {
+                m_paintingService.Undo();
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp) && m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                    m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(comp.GetData(), comp.GetWidth(), comp.GetHeight());
+                }
+            }
+        } else if (m_uvEditorDocument) {
+            m_uvEditorDocument->Undo();
             UpdatePreviewMesh();
         }
-        return;
     }
 
-    auto& layout = m_factoryOrchestrator.GetCurrentDraft()->uvLayout.value();
-
-    if (!m_uvEditorDocument || &m_uvEditorDocument->GetMesh() != &m_activeEditableMesh) {
-        m_uvEditorDocument = std::make_unique<fw::UVEditorDocument>(m_activeEditableMesh, layout);
-    }
-
-    // Controlli vista 2D (Zoom, Pan, Active Page)
-    auto& viewState = m_uvEditorPanel.GetViewState();
-    ImGui::BeginChild("UVControlsBar", ImVec2(0, 36), true);
-    ImGui::Text("Zoom:");
+    // Toolbar [Redo]
     ImGui::SameLine();
-    ImGui::SliderFloat("##UVZoom", &viewState.zoom, 0.2f, 10.0f, "%.1fx");
-    ImGui::SameLine();
-    if (ImGui::Button("Reset View##UVResetView")) {
-        viewState.zoom = 1.0f;
-        viewState.panOffset = glm::vec2(0.0f);
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Scacchiera##UVCheck", &viewState.showCheckerboard);
-    ImGui::SameLine();
-    ImGui::Checkbox("Seams##UVSeams", &viewState.showSeams);
-    ImGui::SameLine();
-    if (layout.totalAtlasPages > 1) {
-        int page = static_cast<int>(viewState.activeAtlasPage);
-        ImGui::SetNextItemWidth(100.0f);
-        if (ImGui::SliderInt("Pagina Atlas##UVPage", &page, 0, static_cast<int>(layout.totalAtlasPages - 1))) {
-            viewState.activeAtlasPage = static_cast<uint32_t>(page);
-            m_uvEditorDocument->SetActiveAtlasPage(viewState.activeAtlasPage);
+    if (ImGui::SmallButton("Redo##TopStudioRedo")) {
+        if (m_uvCanvasPaintMode) {
+            if (m_paintingService.CanRedo()) {
+                m_paintingService.Redo();
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp) && m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                    m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(comp.GetData(), comp.GetWidth(), comp.GetHeight());
+                }
+            }
+        } else if (m_uvEditorDocument) {
+            m_uvEditorDocument->Redo();
+            UpdatePreviewMesh();
         }
     }
-    ImGui::EndChild();
 
-    // Switcher Modalità UV Editing / Paint (BM-UV-PAINTER MG-01)
-    ImGui::BeginChild("UVModeSwitcherBar", ImVec2(0, 32), false);
-    ImGui::Text("Modalità Canvas:");
     ImGui::SameLine();
-    if (ImGui::RadioButton("UV Editing##ModeUVEdit", !m_uvCanvasPaintMode)) {
+    auto& vs = m_uvEditorPanel.GetViewState();
+    if (ImGui::SmallButton(vs.showSeams ? "Seams: ON" : "Seams: OFF")) {
+        vs.showSeams = !vs.showSeams;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Reset View##StudioResetTop")) {
+        vs.zoom = 1.0f;
+        vs.panOffset = glm::vec2(0.0f);
+    }
+}
+
+void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float width, float height) {
+    ImGui::SetNextWindowPos(ImVec2(leftX, topY));
+    ImGui::SetNextWindowSize(ImVec2(width, height));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | 
+                            ImGuiWindowFlags_NoResize | 
+                            ImGuiWindowFlags_NoMove | 
+                            ImGuiWindowFlags_NoCollapse | 
+                            ImGuiWindowFlags_NoScrollbar |
+                            ImGuiWindowFlags_NoScrollWithMouse |
+                            ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.09f, 0.11f, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.22f, 0.28f, 0.8f));
+
+    if (ImGui::Begin("##StudioCenterCanvasWindow", nullptr, flags)) {
+        if (!m_factoryOrchestrator.IsDraftOpen() || !m_factoryOrchestrator.GetCurrentDraft()->uvLayout.has_value()) {
+            ImGui::SetCursorPos(ImVec2(20.0f, 20.0f));
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Nessun UVLayout generato per la bozza corrente.");
+            if (ImGui::Button("Esegui Unwrapping Stazione Surface & UV##RunUVUnwrapCenter", ImVec2(280, 28))) {
+                m_factoryOrchestrator.ExecuteStation(fw::ProductionStationID::SurfaceUV, 
+                    m_context->shapeRegistry, m_context->materialRegistry, m_context->blockRegistry);
+                UpdatePreviewMesh();
+            }
+            ImGui::End();
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(2);
+            return;
+        }
+
+        auto& layout = m_factoryOrchestrator.GetCurrentDraft()->uvLayout.value();
+        if (!m_uvEditorDocument || &m_uvEditorDocument->GetMesh() != &m_activeEditableMesh) {
+            m_uvEditorDocument = std::make_unique<fw::UVEditorDocument>(m_activeEditableMesh, layout);
+        }
+
+        auto& viewState = m_uvEditorPanel.GetViewState();
+
+        // 1. Mini Top-Bar del Canvas (Zoom & Controls)
+        ImGui::BeginChild("##StudioCanvasMiniBar", ImVec2(0, 30.0f), false);
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", m_uvCanvasPaintMode ? "[PAINTER 2D]" : "[UV EDITING]");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f);
+        ImGui::SliderFloat("Zoom##StudioZoom", &viewState.zoom, 0.2f, 10.0f, "%.1fx");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset##StudioResetZoom")) {
+            viewState.zoom = 1.0f;
+            viewState.panOffset = glm::vec2(0.0f);
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Scacchiera##StudioCheck", &viewState.showCheckerboard);
+        ImGui::SameLine();
+        ImGui::Checkbox("Seams##StudioSeams", &viewState.showSeams);
+        if (layout.totalAtlasPages > 1) {
+            ImGui::SameLine();
+            int page = static_cast<int>(viewState.activeAtlasPage);
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::SliderInt("Pagina##StudioPage", &page, 0, static_cast<int>(layout.totalAtlasPages - 1))) {
+                viewState.activeAtlasPage = static_cast<uint32_t>(page);
+                m_uvEditorDocument->SetActiveAtlasPage(viewState.activeAtlasPage);
+            }
+        }
+        ImGui::EndChild();
+
+        // 2. Canvas 2D adattivo (Deriva dimensioni da ImGui::GetContentRegionAvail - Zero 400x400 fisso)
+        ImVec2 canvasAvail = ImGui::GetContentRegionAvail();
+        if (canvasAvail.x < 100.0f) canvasAvail.x = 100.0f;
+        if (canvasAvail.y < 100.0f) canvasAvail.y = 100.0f;
+
+        float canvasDim = (std::min)(canvasAvail.x, canvasAvail.y);
+        ImVec2 canvasSize(canvasDim, canvasDim);
+        ImVec2 startCursor = ImGui::GetCursorScreenPos();
+        float offsetX = (canvasAvail.x - canvasDim) * 0.5f;
+        float offsetY = (canvasAvail.y - canvasDim) * 0.5f;
+        ImVec2 canvasP0(startCursor.x + offsetX, startCursor.y + offsetY);
+        ImVec2 canvasP1(canvasP0.x + canvasSize.x, canvasP0.y + canvasSize.y);
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(canvasP0, canvasP1, IM_COL32(24, 25, 28, 255));
+        drawList->AddRect(canvasP0, canvasP1, IM_COL32(65, 70, 80, 255));
+
+        glm::vec2 origin(canvasP0.x, canvasP0.y);
+        glm::vec2 size(canvasSize.x, canvasSize.y);
+
+        // Texture Albedo preview (BM-UV-PAINTER MG-01)
+        VkDescriptorSet albedoTexDs = VK_NULL_HANDLE;
+        if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+            albedoTexDs = m_context->engine->GetRenderManager()->GetPainterPreviewImGuiDescriptor();
+            if (albedoTexDs == VK_NULL_HANDLE) {
+                albedoTexDs = m_context->engine->GetRenderManager()->GetOrCreateImGuiTextureDescriptor(
+                    static_cast<uint32_t>(m_selectedBlockId), 
+                    RenderManager::PBRTextureType::ALBEDO
+                );
+            }
+        }
+
+        drawList->PushClipRect(canvasP0, canvasP1, true);
+
+        glm::vec2 scr0 = m_uvEditorPanel.AtlasUVToScreen(glm::vec2(0.0f, 0.0f), origin, size);
+        glm::vec2 scr1 = m_uvEditorPanel.AtlasUVToScreen(glm::vec2(1.0f, 1.0f), origin, size);
+
+        if (viewState.showCheckerboard) {
+            const float checkStep = 16.0f * viewState.zoom;
+            if (checkStep >= 4.0f) {
+                for (float cy = scr0.y; cy < scr1.y; cy += checkStep) {
+                    for (float cx = scr0.x; cx < scr1.x; cx += checkStep) {
+                        int ix = static_cast<int>((cx - scr0.x) / checkStep);
+                        int iy = static_cast<int>((cy - scr0.y) / checkStep);
+                        ImU32 checkCol = ((ix + iy) % 2 == 0) ? IM_COL32(45, 45, 50, 255) : IM_COL32(32, 32, 36, 255);
+                        drawList->AddRectFilled(ImVec2(cx, cy), ImVec2((std::min)(cx + checkStep, scr1.x), (std::min)(cy + checkStep, scr1.y)), checkCol);
+                    }
+                }
+            }
+        }
+
+        if (albedoTexDs != VK_NULL_HANDLE) {
+            drawList->AddImage(
+                reinterpret_cast<ImTextureID>(albedoTexDs),
+                ImVec2(scr0.x, scr0.y),
+                ImVec2(scr1.x, scr1.y),
+                ImVec2(0.0f, 0.0f),
+                ImVec2(1.0f, 1.0f),
+                IM_COL32(255, 255, 255, 255)
+            );
+        }
+
+        // Caching linee di contorno UV (Zero-Work a revisione)
+        uint64_t topoRev = m_activeEditableMesh.GetTopologyRevision();
+        uint64_t atlasRev = layout.atlasRevision;
+        uint64_t selRev = m_uvEditorDocument->GetSelectionRevision();
+        if (topoRev != m_cachedUVOutlineTopologyRev || 
+            atlasRev != m_cachedUVOutlineAtlasRev || 
+            selRev != m_cachedUVOutlineSelectionRev ||
+            m_cachedUVOutlines.empty()) 
+        {
+            m_cachedUVOutlines = m_uvEditorPanel.BuildDrawOutlines(*m_uvEditorDocument);
+            m_cachedUVOutlineTopologyRev = topoRev;
+            m_cachedUVOutlineAtlasRev = atlasRev;
+            m_cachedUVOutlineSelectionRev = selRev;
+        }
+
+        for (const auto& outline : m_cachedUVOutlines) {
+            if (outline.atlasPage != viewState.activeAtlasPage) continue;
+
+            const auto& loops = !outline.loops.empty() ? outline.loops : 
+                (outline.boundaryVerticesAtlasUV.empty() ? std::vector<std::vector<glm::vec2>>{} : std::vector<std::vector<glm::vec2>>{ outline.boundaryVerticesAtlasUV });
+
+            // Evidenziazione superficie/isola attiva in Surface Paint o selezione UV
+            if (outline.isSelected) {
+                for (const auto& loop : loops) {
+                    if (loop.size() >= 3) {
+                        std::vector<ImVec2> polyPoints;
+                        polyPoints.reserve(loop.size());
+                        for (const auto& uvPt : loop) {
+                            glm::vec2 sp = m_uvEditorPanel.AtlasUVToScreen(uvPt, origin, size);
+                            polyPoints.push_back(ImVec2(sp.x, sp.y));
+                        }
+                        drawList->AddConvexPolyFilled(polyPoints.data(), static_cast<int>(polyPoints.size()), IM_COL32(255, 215, 0, 48));
+                    }
+                }
+            }
+
+            // Contorni reali delle isole UV
+            ImU32 col = outline.isSelected ? IM_COL32(255, 215, 0, 255) : IM_COL32(80, 180, 255, 210);
+            float thickness = outline.isSelected ? 2.5f : 1.5f;
+            for (const auto& loop : loops) {
+                if (loop.size() >= 3) {
+                    for (size_t i = 0; i < loop.size(); ++i) {
+                        glm::vec2 uvA = loop[i];
+                        glm::vec2 uvB = loop[(i + 1) % loop.size()];
+                        glm::vec2 pA = m_uvEditorPanel.AtlasUVToScreen(uvA, origin, size);
+                        glm::vec2 pB = m_uvEditorPanel.AtlasUVToScreen(uvB, origin, size);
+                        drawList->AddLine(ImVec2(pA.x, pA.y), ImVec2(pB.x, pB.y), col, thickness);
+                    }
+                }
+            }
+
+            // Seam edges visibili quando Seams: ON
+            if (viewState.showSeams) {
+                for (const auto& seam : outline.seamSegmentsAtlasUV) {
+                    glm::vec2 pA = m_uvEditorPanel.AtlasUVToScreen(seam.first, origin, size);
+                    glm::vec2 pB = m_uvEditorPanel.AtlasUVToScreen(seam.second, origin, size);
+                    drawList->AddLine(ImVec2(pA.x, pA.y), ImVec2(pB.x, pB.y), IM_COL32(255, 50, 50, 255), 2.5f);
+                }
+            }
+
+            // Badge IslandID diagnostico al centroide dell'isola
+            if (!outline.boundaryVerticesAtlasUV.empty()) {
+                glm::vec2 cUv(0.0f);
+                for (const auto& pt : outline.boundaryVerticesAtlasUV) cUv += pt;
+                cUv /= static_cast<float>(outline.boundaryVerticesAtlasUV.size());
+                glm::vec2 sc = m_uvEditorPanel.AtlasUVToScreen(cUv, origin, size);
+                char badge[32];
+                snprintf(badge, sizeof(badge), "Isl %u", outline.islandId);
+                ImVec2 tSz = ImGui::CalcTextSize(badge);
+                ImVec2 b0(sc.x - tSz.x * 0.5f - 4.0f, sc.y - tSz.y * 0.5f - 2.0f);
+                ImVec2 b1(sc.x + tSz.x * 0.5f + 4.0f, sc.y + tSz.y * 0.5f + 2.0f);
+                drawList->AddRectFilled(b0, b1, outline.isSelected ? IM_COL32(60, 50, 10, 220) : IM_COL32(20, 25, 35, 190), 3.0f);
+                drawList->AddRect(b0, b1, outline.isSelected ? IM_COL32(255, 215, 0, 230) : IM_COL32(100, 180, 255, 170), 3.0f);
+                drawList->AddText(ImVec2(sc.x - tSz.x * 0.5f, sc.y - tSz.y * 0.5f), 
+                                  outline.isSelected ? IM_COL32(255, 235, 120, 255) : IM_COL32(210, 230, 255, 220), badge);
+            }
+        }
+
+        // Preview circolare del pennello
+        ImVec2 mousePos = ImGui::GetMousePos();
+        bool isMouseOverImage = (mousePos.x >= scr0.x && mousePos.x <= scr1.x &&
+                                 mousePos.y >= scr0.y && mousePos.y <= scr1.y);
+        bool isMouseInCanvas = (mousePos.x >= canvasP0.x && mousePos.x <= canvasP1.x &&
+                                mousePos.y >= canvasP0.y && mousePos.y <= canvasP1.y);
+
+        if (m_uvCanvasPaintMode && isMouseOverImage && isMouseInCanvas) {
+            uint32_t canvasW = m_paintingService.GetCanvasWidth();
+            if (canvasW == 0) canvasW = 512;
+            float displayedImageW = scr1.x - scr0.x;
+            float brushVisualRadius = m_paintBrush.radiusPixels * (displayedImageW / static_cast<float>(canvasW));
+            if (brushVisualRadius < 2.0f) brushVisualRadius = 2.0f;
+            drawList->AddCircle(mousePos, brushVisualRadius, IM_COL32(255, 255, 255, 220), 28, 1.5f);
+        }
+
+        // Notifica feedback per Surface Paint bloccato
+        if (m_studioPaintNotificationTimer > 0.0f) {
+            m_studioPaintNotificationTimer -= ImGui::GetIO().DeltaTime;
+            float notifW = 480.0f;
+            drawList->AddRectFilled(ImVec2(canvasP0.x + 10, canvasP0.y + 10), ImVec2(canvasP0.x + 10 + notifW, canvasP0.y + 36), IM_COL32(45, 25, 25, 230));
+            drawList->AddRect(ImVec2(canvasP0.x + 10, canvasP0.y + 10), ImVec2(canvasP0.x + 10 + notifW, canvasP0.y + 36), IM_COL32(230, 90, 90, 255));
+            drawList->AddText(ImVec2(canvasP0.x + 16, canvasP0.y + 14), IM_COL32(255, 200, 200, 255), m_studioPaintNotification.c_str());
+        }
+
+        drawList->PopClipRect();
+
+        // Dummy invisibile per catturare eventi mouse su canvas
+        ImGui::SetCursorScreenPos(canvasP0);
+        ImGui::InvisibleButton("##StudioCanvasHitTarget", canvasSize);
+
+        // Zoom centrato sul cursore e Pan
+        if (ImGui::IsItemHovered()) {
+            if (ImGui::GetIO().MouseWheel != 0.0f) {
+                float wheel = ImGui::GetIO().MouseWheel;
+                float oldZoom = viewState.zoom;
+                float newZoom = std::clamp(oldZoom + wheel * 0.15f * oldZoom, 0.2f, 10.0f);
+                if (std::abs(newZoom - oldZoom) > 1e-4f) {
+                    glm::vec2 mPos(ImGui::GetMousePos().x, ImGui::GetMousePos().y);
+                    glm::vec2 mouseRel = (mPos - origin - viewState.panOffset) / oldZoom;
+                    viewState.panOffset = mPos - origin - mouseRel * newZoom;
+                    viewState.zoom = newZoom;
+                }
+            }
+            if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+                ImVec2 mDelta = ImGui::GetIO().MouseDelta;
+                viewState.panOffset.x += mDelta.x;
+                viewState.panOffset.y += mDelta.y;
+            }
+        }
+
+        if (!m_uvCanvasPaintMode) {
+            // Modalità UV Editing: selezione accurata tramite point-in-island
+            if (isMouseOverImage && isMouseInCanvas && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                glm::vec2 clickUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+                fw::UVIslandID hitIsland = m_uvEditorDocument->FindIslandAtUV(clickUV);
+                if (hitIsland != fw::INVALID_UVISLAND_ID) {
+                    m_uvEditorDocument->SelectIsland(hitIsland, ImGui::GetIO().KeyShift);
+                } else if (!ImGui::GetIO().KeyShift) {
+                    m_uvEditorDocument->ClearSelection();
+                }
+            }
+        } else {
+            // Modalità Paint 2D (BM-P02: inizio stroke convalidato sui confini reali dell'immagine)
+            if (isMouseOverImage && isMouseInCanvas && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                glm::vec2 mouseUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+                uint32_t targetW = m_paintingService.GetCanvasWidth();
+                uint32_t targetH = m_paintingService.GetCanvasHeight();
+                if (targetW == 0) targetW = 512;
+                if (targetH == 0) targetH = 512;
+                glm::vec2 texelXY = fw::UVAtlasPacker::AtlasToPixel(mouseUV, targetW, targetH);
+
+                // Diagnostica temporanea obbligatoria su StrokeBegin (MG02-B)
+                std::cout << "[PAINTER DIAG] StrokeBegin: MouseScreen=(" << mousePos.x << "," << mousePos.y << ")"
+                          << " ImageRectMin=(" << scr0.x << "," << scr0.y << ")"
+                          << " ImageRectSize=(" << (scr1.x - scr0.x) << "," << (scr1.y - scr0.y) << ")"
+                          << " UV=(" << mouseUV.x << "," << mouseUV.y << ")"
+                          << " TexelXY=(" << texelXY.x << "," << texelXY.y << ")"
+                          << " Zoom=" << viewState.zoom
+                          << " Pan=(" << viewState.panOffset.x << "," << viewState.panOffset.y << ")\n";
+
+                bool strokeStarted = m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService, 0, m_canvasPaintMode);
+                if (!strokeStarted && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
+                    m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
+                    m_studioPaintNotificationTimer = 3.5f;
+                }
+            }
+
+            if (m_uvEditorDocument->IsStroking2D()) {
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    glm::vec2 mouseUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
+                    m_uvEditorDocument->UpdateStroke2D(mouseUV, m_paintBrush, &m_paintingService);
+                } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    m_uvEditorDocument->EndStroke2D(&m_paintingService);
+                    std::cout << "[PAINTER DIAG] StrokeEnd: Mode=" << (m_canvasPaintMode == fw::CanvasPaintMode::SurfacePaint ? "SurfacePaint" : "AtlasPaint")
+                              << " Revision=" << m_paintingService.GetRevision() << "\n";
+
+                    fw::ImageBitmap comp;
+                    if (m_paintingService.CompositeLayers(comp)) {
+                        if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                            m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                                comp.GetData(),
+                                comp.GetWidth(),
+                                comp.GetHeight()
+                            );
+                        }
+                    }
+
+                    if (m_factoryOrchestrator.IsDraftOpen()) {
+                        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                        if (draft) {
+                            draft->paintLayers = m_paintingService.GetLayers();
+                            draft->paintRevision = m_paintingService.GetRevision();
+                            draft->MarkDirty();
+                            m_factoryOrchestrator.FlushActiveDraft();
+                        }
+                    }
+                }
+            }
+
+            if (m_uvEditorDocument->IsStroking2D() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                m_uvEditorDocument->CancelStroke2D(&m_paintingService);
+            }
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::DrawStudioRightInspector() {
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.3f, 0.85f, 1.0f, 1.0f), "UV & PAINTER STUDIO");
+    ImGui::TextDisabled("Workspace unificato per mappatura UV e pittura texture");
+    ImGui::Separator();
+
+    // Mode Switcher
+    ImGui::Text("Modalita Studio:");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("UV Editing##StudioModeUV", !m_uvCanvasPaintMode)) {
         m_uvCanvasPaintMode = false;
     }
     ImGui::SameLine();
-    if (ImGui::RadioButton("Paint 2D##ModeUVPaint", m_uvCanvasPaintMode)) {
+    if (ImGui::RadioButton("Painting 2D##StudioModePaint", m_uvCanvasPaintMode)) {
         m_uvCanvasPaintMode = true;
     }
-    ImGui::EndChild();
 
-    if (!m_uvCanvasPaintMode) {
-        // Strumenti trasformazione e selezione UV
-        ImGui::BeginChild("UVToolsBar", ImVec2(0, 32), false);
-        if (ImGui::Button("Trasla (+0.05 U)##UVTransU")) {
-            m_uvEditorDocument->TranslateSelectedIslands(glm::vec2(0.05f, 0.0f));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ruota (+90 deg)##UVRot90")) {
-            m_uvEditorDocument->RotateSelectedIslands(90.0f);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Scala (1.1x)##UVSclUp")) {
-            m_uvEditorDocument->ScaleSelectedIslands(glm::vec2(1.1f, 1.1f));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Undo UV##UVUndo", ImVec2(70, 0))) {
-            m_uvEditorDocument->Undo();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Redo UV##UVRedo", ImVec2(70, 0))) {
-            m_uvEditorDocument->Redo();
-        }
-        if (m_uvEditorDocument->RequiresTextureMigration()) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[Migrazione Richiesta]");
-        }
-        ImGui::EndChild();
-    } else {
-        // Parametri pennello circolare Paint 2D (BM-UV-PAINTER MG-01)
-        ImGui::BeginChild("PaintToolsBar", ImVec2(0, 68), true);
-        ImGui::SliderFloat("Raggio##PntRad2D", &m_paintBrush.radiusPixels, 1.0f, 64.0f, "%.1f px");
-        ImGui::SameLine();
-        ImGui::SliderFloat("Forza##PntStr2D", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
-        ImGui::SameLine();
-        ImGui::SliderFloat("Durezza##PntHrd2D", &m_paintBrush.hardness, 0.0f, 1.0f, "%.2f");
+    ImGui::Separator();
 
-        ImGui::ColorEdit4("Colore##PntCol2D", &m_paintBrush.color.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar);
+    if (m_uvCanvasPaintMode) {
+        // --- SEZIONE 1: MODALITA PITTURA & ISOLAMENTO (BM-P03) ---
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "ISOLAMENTO SUPERFICI (PAINT MODE)");
+        bool isSurface = (m_canvasPaintMode == fw::CanvasPaintMode::SurfacePaint);
+        if (ImGui::RadioButton("Surface Paint (Vincolato)##InspModeSurf", isSurface)) {
+            m_canvasPaintMode = fw::CanvasPaintMode::SurfacePaint;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("La pennellata e' vincolata all'isola/superficie attiva. Non colora fuori superficie.");
         ImGui::SameLine();
-        ImGui::Checkbox("Gomma (Erase)##PntErase2D", &m_paintBrush.eraseMode);
+        if (ImGui::RadioButton("Atlas Paint (Libero)##InspModeAtlas", !isSurface)) {
+            m_canvasPaintMode = fw::CanvasPaintMode::AtlasPaint;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("La pennellata opera liberamente sull'intero atlante UV 2D.");
+
+        ImGui::Separator();
+
+        // --- SEZIONE 2: PENNELLO (BRUSH SETTINGS) ---
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PARAMETRI PENNELLO");
+        ImGui::SliderFloat("Dimensione##PntRadStudio", &m_paintBrush.radiusPixels, 1.0f, 64.0f, "%.1f px");
+        ImGui::SliderFloat("Opacita / Forza##PntStrStudio", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Durezza##PntHrdStudio", &m_paintBrush.hardness, 0.0f, 1.0f, "%.2f");
+
+        ImGui::Spacing();
+        ImGui::Text("Colore:");
+        ImGui::ColorEdit4("##PntColStudio", &m_paintBrush.color.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_NoInputs);
         ImGui::SameLine();
-        if (ImGui::Button("Undo Paint##PntUndo2D", ImVec2(80, 0))) {
+        ImGui::Checkbox("Gomma (Erase)##PntEraseStudio", &m_paintBrush.eraseMode);
+
+        ImGui::Spacing();
+        if (ImGui::Button("Undo Paint##StudioUndoPnt", ImVec2(100, 24))) {
             if (m_paintingService.CanUndo()) {
                 m_paintingService.Undo();
                 fw::ImageBitmap comp;
                 if (m_paintingService.CompositeLayers(comp)) {
                     if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-                        m_context->engine->GetRenderManager()->UpdateTextureLayer(
-                            static_cast<uint32_t>(m_selectedBlockId),
-                            comp.GetPixelData(),
-                            comp.GetWidth(),
-                            comp.GetHeight(),
-                            RenderManager::PBRTextureType::ALBEDO
+                        m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                            comp.GetData(), comp.GetWidth(), comp.GetHeight()
                         );
                     }
                 }
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Redo Paint##PntRedo2D", ImVec2(80, 0))) {
+        if (ImGui::Button("Redo Paint##StudioRedoPnt", ImVec2(100, 24))) {
             if (m_paintingService.CanRedo()) {
                 m_paintingService.Redo();
                 fw::ImageBitmap comp;
                 if (m_paintingService.CompositeLayers(comp)) {
                     if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-                        m_context->engine->GetRenderManager()->UpdateTextureLayer(
-                            static_cast<uint32_t>(m_selectedBlockId),
-                            comp.GetPixelData(),
-                            comp.GetWidth(),
-                            comp.GetHeight(),
-                            RenderManager::PBRTextureType::ALBEDO
+                        m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                            comp.GetData(), comp.GetWidth(), comp.GetHeight()
                         );
                     }
                 }
             }
         }
-        ImGui::EndChild();
-    }
 
-    // Canvas ImGui 2D con Caching a revisione (Zero-Work per-frame)
-    uint64_t topoRev = m_activeEditableMesh.GetTopologyRevision();
-    uint64_t atlasRev = layout.atlasRevision;
-    uint64_t selRev = m_uvEditorDocument->GetSelectionRevision();
+        ImGui::Separator();
 
-    if (topoRev != m_cachedUVOutlineTopologyRev || 
-        atlasRev != m_cachedUVOutlineAtlasRev || 
-        selRev != m_cachedUVOutlineSelectionRev ||
-        m_cachedUVOutlines.empty()) 
-    {
-        m_cachedUVOutlines = m_uvEditorPanel.BuildDrawOutlines(*m_uvEditorDocument);
-        m_cachedUVOutlineTopologyRev = topoRev;
-        m_cachedUVOutlineAtlasRev = atlasRev;
-        m_cachedUVOutlineSelectionRev = selRev;
-    }
-
-    ImVec2 canvasSize(400.0f, 400.0f);
-    ImVec2 canvasP0 = ImGui::GetCursorScreenPos();
-    ImVec2 canvasP1 = ImVec2(canvasP0.x + canvasSize.x, canvasP0.y + canvasSize.y);
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    drawList->AddRectFilled(canvasP0, canvasP1, IM_COL32(30, 30, 35, 255));
-    drawList->AddRect(canvasP0, canvasP1, IM_COL32(80, 80, 90, 255));
-
-    glm::vec2 origin(canvasP0.x, canvasP0.y);
-    glm::vec2 size(canvasSize.x, canvasSize.y);
-
-    // 1. Texture Albedo sottostante (BM-UV-PAINTER MG-01)
-    VkDescriptorSet albedoTexDs = VK_NULL_HANDLE;
-    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-        albedoTexDs = m_context->engine->GetRenderManager()->GetOrCreateImGuiTextureDescriptor(
-            static_cast<uint32_t>(m_selectedBlockId), 
-            RenderManager::PBRTextureType::ALBEDO
-        );
-    }
-
-    drawList->PushClipRect(canvasP0, canvasP1, true);
-
-    glm::vec2 scr0 = m_uvEditorPanel.AtlasUVToScreen(glm::vec2(0.0f, 0.0f), origin, size);
-    glm::vec2 scr1 = m_uvEditorPanel.AtlasUVToScreen(glm::vec2(1.0f, 1.0f), origin, size);
-
-    if (viewState.showCheckerboard) {
-        const float checkStep = 16.0f * viewState.zoom;
-        if (checkStep >= 4.0f) {
-            for (float cy = scr0.y; cy < scr1.y; cy += checkStep) {
-                for (float cx = scr0.x; cx < scr1.x; cx += checkStep) {
-                    int ix = static_cast<int>((cx - scr0.x) / checkStep);
-                    int iy = static_cast<int>((cy - scr0.y) / checkStep);
-                    ImU32 checkCol = ((ix + iy) % 2 == 0) ? IM_COL32(50, 50, 55, 255) : IM_COL32(38, 38, 42, 255);
-                    drawList->AddRectFilled(ImVec2(cx, cy), ImVec2(std::min(cx + checkStep, scr1.x), std::min(cy + checkStep, scr1.y)), checkCol);
-                }
-            }
-        }
-    }
-
-    if (albedoTexDs != VK_NULL_HANDLE) {
-        drawList->AddImage(
-            reinterpret_cast<ImTextureID>(albedoTexDs),
-            ImVec2(scr0.x, scr0.y),
-            ImVec2(scr1.x, scr1.y),
-            ImVec2(0.0f, 0.0f),
-            ImVec2(1.0f, 1.0f),
-            IM_COL32(255, 255, 255, 255)
-        );
-    }
-
-    // 2. Disegna contorni delle isole e cuciture dalla cache
-    for (const auto& outline : m_cachedUVOutlines) {
-        if (outline.atlasPage != viewState.activeAtlasPage) continue;
-
-        ImU32 col = outline.isSelected ? IM_COL32(255, 200, 50, 255) : IM_COL32(100, 180, 255, 200);
-
-        if (outline.boundaryVerticesAtlasUV.size() >= 3) {
-            for (size_t i = 0; i < outline.boundaryVerticesAtlasUV.size(); ++i) {
-                glm::vec2 uvA = outline.boundaryVerticesAtlasUV[i];
-                glm::vec2 uvB = outline.boundaryVerticesAtlasUV[(i + 1) % outline.boundaryVerticesAtlasUV.size()];
-                glm::vec2 pA = m_uvEditorPanel.AtlasUVToScreen(uvA, origin, size);
-                glm::vec2 pB = m_uvEditorPanel.AtlasUVToScreen(uvB, origin, size);
-                drawList->AddLine(ImVec2(pA.x, pA.y), ImVec2(pB.x, pB.y), col, outline.isSelected ? 2.5f : 1.5f);
-            }
-        }
-
-        if (viewState.showSeams) {
-            for (const auto& seam : outline.seamSegmentsAtlasUV) {
-                glm::vec2 pA = m_uvEditorPanel.AtlasUVToScreen(seam.first, origin, size);
-                glm::vec2 pB = m_uvEditorPanel.AtlasUVToScreen(seam.second, origin, size);
-                drawList->AddLine(ImVec2(pA.x, pA.y), ImVec2(pB.x, pB.y), IM_COL32(255, 60, 60, 255), 2.0f);
-            }
-        }
-    }
-
-    // 3. Preview circolare del pennello sotto il puntatore mouse in modalità Paint
-    ImVec2 mousePos = ImGui::GetMousePos();
-    bool isCanvasHovered = (mousePos.x >= canvasP0.x && mousePos.x <= canvasP1.x &&
-                            mousePos.y >= canvasP0.y && mousePos.y <= canvasP1.y);
-
-    if (m_uvCanvasPaintMode && isCanvasHovered) {
-        float brushVisualRadius = m_paintBrush.radiusPixels * viewState.zoom;
-        drawList->AddCircle(mousePos, brushVisualRadius, IM_COL32(255, 255, 255, 220), 28, 1.5f);
-    }
-
-    drawList->PopClipRect();
-
-    ImGui::Dummy(canvasSize);
-
-    // Controlli Pan e Zoom con mouse su Canvas
-    if (ImGui::IsItemHovered()) {
-        if (ImGui::GetIO().MouseWheel != 0.0f) {
-            viewState.zoom = std::clamp(viewState.zoom + ImGui::GetIO().MouseWheel * 0.15f, 0.2f, 10.0f);
-        }
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-            ImVec2 mDelta = ImGui::GetIO().MouseDelta;
-            viewState.panOffset.x += mDelta.x;
-            viewState.panOffset.y += mDelta.y;
-        }
-    }
-
-    if (!m_uvCanvasPaintMode) {
-        // Modalità UV EDITING: Selezione isola via click su canvas
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            glm::vec2 clickUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
-
-            for (const auto& isl : layout.islands) {
-                if (isl.atlasPage != viewState.activeAtlasPage) continue;
-                if (clickUV.x >= isl.atlasTransform.z && clickUV.x <= (isl.atlasTransform.z + isl.atlasTransform.x) &&
-                    clickUV.y >= isl.atlasTransform.w && clickUV.y <= (isl.atlasTransform.w + isl.atlasTransform.y)) 
-                {
-                    m_uvEditorDocument->SelectIsland(isl.id, ImGui::GetIO().KeyShift);
-                    break;
-                }
-            }
-        }
-    } else {
-        // Modalità PAINT 2D (BM-UV-PAINTER MG-01): Pittura protetta da island clipping
-        glm::vec2 mouseUV = m_uvEditorPanel.ScreenToAtlasUV(glm::vec2(mousePos.x, mousePos.y), origin, size);
-
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService);
-        }
-
-        if (m_uvEditorDocument->IsStroking2D()) {
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                m_uvEditorDocument->UpdateStroke2D(mouseUV, m_paintBrush, &m_paintingService);
-            } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                m_uvEditorDocument->EndStroke2D(&m_paintingService);
-
-                // Compositing su ImageBitmap e aggiornamento VRAM GPU in-place
+        // --- SEZIONE 3: LIVELLI PITTURA (PAINT LAYERS) ---
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "LIVELLI PITTURA (LAYERS)");
+        auto& layers = m_paintingService.GetLayers();
+        for (size_t i = 0; i < layers.size(); ++i) {
+            auto& layer = layers[i];
+            ImGui::PushID(static_cast<int>(layer.layerId));
+            bool vis = layer.isVisible;
+            if (ImGui::Checkbox("##LayerVis", &vis)) {
+                layer.isVisible = vis;
                 fw::ImageBitmap comp;
                 if (m_paintingService.CompositeLayers(comp)) {
                     if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-                        m_context->engine->GetRenderManager()->UpdateTextureLayer(
-                            static_cast<uint32_t>(m_selectedBlockId),
-                            comp.GetPixelData(),
-                            comp.GetWidth(),
-                            comp.GetHeight(),
-                            RenderManager::PBRTextureType::ALBEDO
-                        );
+                        m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(comp.GetData(), comp.GetWidth(), comp.GetHeight());
                     }
                 }
-
-                // Sincronizzazione autoritativa con il draft
-                if (m_factoryOrchestrator.IsDraftOpen()) {
-                    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
-                    if (draft) {
-                        draft->paintLayers = m_paintingService.GetLayers();
-                        draft->paintRevision = m_paintingService.GetRevision();
-                        draft->MarkDirty();
+            }
+            ImGui::SameLine();
+            ImGui::Text("%s", layer.name.c_str());
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::SliderFloat("##LayerOp", &layer.opacity, 0.0f, 1.0f, "%.2f")) {
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp)) {
+                    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(comp.GetData(), comp.GetWidth(), comp.GetHeight());
                     }
+                }
+            }
+            ImGui::PopID();
+        }
+
+        if (ImGui::Button("+ Nuovo Livello##AddNewLayer", ImVec2(120, 22))) {
+            uint32_t newId = m_paintingService.AddLayer("Layer " + std::to_string(layers.size() + 1));
+            (void)newId;
+        }
+
+    } else {
+        // --- SEZIONE UV EDITING ---
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "STRUMENTI UV ISLANDS");
+        if (m_uvEditorDocument) {
+            size_t selCount = m_uvEditorDocument->GetSelectedIslands().size();
+            ImGui::Text("Isole Selezionate: %zu", selCount);
+
+            if (ImGui::Button("Trasla (+0.05 U)##UVTransStudio")) {
+                if (m_uvEditorDocument->TranslateSelectedIslands(glm::vec2(0.05f, 0.0f))) {
+                    UpdatePreviewMesh();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Ruota (+90 deg)##UVRotStudio")) {
+                if (m_uvEditorDocument->RotateSelectedIslands(90.0f)) {
+                    UpdatePreviewMesh();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Scala (1.1x)##UVSclStudio")) {
+                if (m_uvEditorDocument->ScaleSelectedIslands(glm::vec2(1.1f, 1.1f))) {
+                    UpdatePreviewMesh();
+                }
+            }
+
+            ImGui::Spacing();
+            if (ImGui::Button("Undo UV##StudioUndoUV", ImVec2(90, 24))) {
+                if (m_uvEditorDocument->Undo()) {
+                    UpdatePreviewMesh();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Redo UV##StudioRedoUV", ImVec2(90, 24))) {
+                if (m_uvEditorDocument->Redo()) {
+                    UpdatePreviewMesh();
+                }
+            }
+
+            if (m_uvEditorDocument->RequiresTextureMigration()) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "[Migrazione Richiesta: UV modificate]");
+            }
+        }
+    }
+
+    ImGui::Separator();
+
+    // --- SEZIONE SHAPE / SUPERFICI ---
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "SHAPE / SUPERFICI");
+    ImGui::Text("Mesh: %zu vertici, %zu facce", m_activeEditableMesh.GetVertexCount(), m_activeEditableMesh.GetFaceCount());
+    if (m_uvEditorDocument) {
+        ImGui::Text("Isole UV totali: %zu", m_uvEditorDocument->GetLayout().islands.size());
+    }
+
+    ImGui::Separator();
+
+    // --- SEZIONE PROPRIETA MATERIALE CONDIVISE ---
+    if (m_context && m_context->materialRegistry) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PROPRIETA MATERIALE");
+        auto& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
+        bool matDirty = false;
+        if (ImGui::SliderFloat("Roughness##StudioRough", &mat.roughnessFallback, 0.0f, 1.0f, "%.2f")) matDirty = true;
+        if (ImGui::SliderFloat("Metallic##StudioMetal", &mat.metallicFallback, 0.0f, 1.0f, "%.2f")) matDirty = true;
+        if (ImGui::SliderFloat("Emissive##StudioEmiss", &mat.emissiveStrength, 0.0f, 5.0f, "%.2f")) matDirty = true;
+        if (matDirty) {
+            SynchronizeDraftToPreview();
+        }
+    }
+
+    ImGui::Separator();
+
+    // --- SEZIONE STATO ASSET (BM-P04) ---
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "STATO ASSET (BLOCKID)");
+    ImGui::Text("BlockID Attivo: %u", (uint32_t)m_selectedBlockId);
+    if (m_factoryOrchestrator.IsDraftOpen()) {
+        const auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            ImGui::Text("Asset: %s", draft->manifest.displayName.c_str());
+            ImGui::Text("Stato Draft: %s", draft->isDirty ? "Modificato *" : "Sincronizzato");
+            ImGui::Text("Dimensioni Canvas: %ux%u", m_paintingService.GetCanvasWidth(), m_paintingService.GetCanvasHeight());
+        }
+    }
+
+    ImGui::Separator();
+
+    // --- MG03-E: DIAGNOSTICA STATICA UV STUDIO ---
+    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "DIAGNOSTICA MG03");
+    if (ImGui::Button("Esegui Audit UV Studio (Console)##RunUVDiagMG03", ImVec2(240, 26))) {
+        PrintUVStudioDiagnostic();
+    }
+}
+
+void BlockMakerState::DrawUVEditorStationUI() {
+    DrawStudioRightInspector();
+}
+
+void BlockMakerState::PrintUVStudioDiagnostic() {
+    std::cout << "\n=======================================================\n";
+    std::cout << " [FAIRWORLD UV STUDIO AUDIT - MG03 DIAGNOSTICS]\n";
+    std::cout << "=======================================================\n";
+    std::cout << "BlockID Attivo: " << static_cast<uint32_t>(m_selectedBlockId) << "\n";
+    const char* shapeTypeName = "Unknown";
+    if (m_factoryOrchestrator.IsDraftOpen()) {
+        const auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+        if (draft) {
+            shapeTypeName = GetShapeTypeName(draft->shape.type);
+        }
+    }
+    std::cout << "ShapeType: " << shapeTypeName << "\n";
+    std::cout << "PaintMode Corrente: " << (m_canvasPaintMode == fw::CanvasPaintMode::SurfacePaint ? "SurfacePaint" : "AtlasPaint") << "\n";
+    std::cout << "Canvas Painter: " << m_paintingService.GetCanvasWidth() << "x" << m_paintingService.GetCanvasHeight() << "\n";
+    std::cout << "Livelli Painter: " << m_paintingService.GetLayerCount() << "\n";
+    for (const auto& layer : m_paintingService.GetLayers()) {
+        std::cout << "  - Layer " << layer.layerId << ": \"" << layer.name << "\" vis=" << (layer.isVisible ? "true" : "false")
+                  << " opacity=" << layer.opacity << "\n";
+    }
+
+    if (!m_uvEditorDocument) {
+        std::cout << "[ATTENZIONE] UVEditorDocument non istanziato.\n";
+        std::cout << "=======================================================\n\n";
+        return;
+    }
+
+    const auto& layout = m_uvEditorDocument->GetLayout();
+    size_t numIslands = layout.islands.size();
+    std::cout << "Numero Isole UV: " << numIslands << "\n";
+    std::cout << "Isole Visualizzate (DrawOutlines): " << m_cachedUVOutlines.size() << "\n";
+    std::cout << "Isole Selezionate:";
+    if (m_uvEditorDocument->GetSelectedIslands().empty()) {
+        std::cout << " (nessuna)";
+    } else {
+        for (auto selId : m_uvEditorDocument->GetSelectedIslands()) {
+            std::cout << " " << selId;
+        }
+    }
+    std::cout << "\n";
+
+    std::cout << "Dettaglio Isole UV & AABB:\n";
+    for (const auto& isl : layout.islands) {
+        std::cout << "  - Isola #" << isl.id << " (" << isl.semanticName << ") [Pag. " << isl.atlasPage << "]: AABB=["
+                  << std::fixed << std::setprecision(4)
+                  << isl.atlasTransform.z << "," << isl.atlasTransform.w << " -> "
+                  << (isl.atlasTransform.z + isl.atlasTransform.x) << ","
+                  << (isl.atlasTransform.w + isl.atlasTransform.y) << "]"
+                  << " Facce=" << isl.faces.size()
+                  << " BoundaryHEs=" << isl.boundaryHalfEdges.size()
+                  << " Seams=" << isl.seamEdges.size() << "\n";
+    }
+
+    std::cout << "Revisioni: MeshTopology=" << m_activeEditableMesh.GetTopologyRevision()
+              << " MeshGeometry=" << m_activeEditableMesh.GetGeometryRevision()
+              << " UVAtlas=" << layout.atlasRevision
+              << " PreviewCached=" << m_bridgePreviewCache.lastEvaluatedGeometryRevision << "\n";
+
+    // 1. Verifica overlap tra isole UV
+    bool hasOverlap = false;
+    for (size_t i = 0; i < numIslands; ++i) {
+        for (size_t j = i + 1; j < numIslands; ++j) {
+            const auto& a = layout.islands[i];
+            const auto& b = layout.islands[j];
+            if (a.atlasPage != b.atlasPage) continue;
+
+            float aUmin = a.atlasTransform.z;
+            float aVmin = a.atlasTransform.w;
+            float aUmax = aUmin + a.atlasTransform.x;
+            float aVmax = aVmin + a.atlasTransform.y;
+
+            float bUmin = b.atlasTransform.z;
+            float bVmin = b.atlasTransform.w;
+            float bUmax = bUmin + b.atlasTransform.x;
+            float bVmax = bVmin + b.atlasTransform.y;
+
+            if (aUmin < bUmax - 1e-4f && aUmax > bUmin + 1e-4f &&
+                aVmin < bVmax - 1e-4f && aVmax > bVmin + 1e-4f) {
+                hasOverlap = true;
+                std::cout << "  [ERRORE OVERLAP] Isola " << a.id << " sovrappone Isola " << b.id << "!\n";
+            }
+        }
+    }
+    if (!hasOverlap) {
+        std::cout << "Stato Sovrapposizioni Isole: NESSUN OVERLAP RILEVATO (Tutte le isole sono disgiunte).\n";
+    }
+
+    // 2. Audit Facce & Corner UV in EditableMesh
+    auto activeFaceIDs = m_activeEditableMesh.GetActiveFaceIDs();
+    std::cout << "Facce Attive in EditableMesh: " << activeFaceIDs.size() << "\n";
+
+    struct FaceUVInfo {
+        uint32_t faceIndex = 0;
+        uint32_t islandId = 0xFFFFFFFF;
+        uint32_t materialId = 0;
+        std::vector<glm::vec2> corners;
+        glm::vec2 uvMin{1e9f, 1e9f};
+        glm::vec2 uvMax{-1e9f, -1e9f};
+    };
+    std::vector<FaceUVInfo> faceInfos;
+
+    for (fw::FaceID fId : activeFaceIDs) {
+        const auto* face = m_activeEditableMesh.GetFace(fId);
+        if (!face || !face->halfEdge.IsValid()) continue;
+
+        FaceUVInfo info;
+        info.faceIndex = fId.index;
+        info.materialId = face->materialId;
+        info.islandId = 0xFFFFFFFF;
+
+        for (const auto& isl : layout.islands) {
+            for (fw::FaceID ifId : isl.faces) {
+                if (ifId == fId) {
+                    info.islandId = isl.id;
+                    break;
+                }
+            }
+            if (info.islandId != 0xFFFFFFFF) break;
+        }
+
+        fw::HalfEdgeID h = face->halfEdge;
+        fw::HalfEdgeID startH = h;
+        size_t loopGuard = 0;
+        do {
+            const auto* he = m_activeEditableMesh.GetHalfEdge(h);
+            if (!he) break;
+            info.corners.push_back(he->corner.uv);
+            info.uvMin.x = (std::min)(info.uvMin.x, he->corner.uv.x);
+            info.uvMin.y = (std::min)(info.uvMin.y, he->corner.uv.y);
+            info.uvMax.x = (std::max)(info.uvMax.x, he->corner.uv.x);
+            info.uvMax.y = (std::max)(info.uvMax.y, he->corner.uv.y);
+            h = he->next;
+            if (++loopGuard > 64) break;
+        } while (h != startH && h.IsValid());
+
+        faceInfos.push_back(info);
+    }
+
+    for (const auto& f : faceInfos) {
+        std::cout << "  FaceID: " << f.faceIndex << " | IslandID: " << f.islandId
+                  << " | MaterialID: " << f.materialId
+                  << " | BBox: [" << std::fixed << std::setprecision(4) << f.uvMin.x << "," << f.uvMin.y << " -> "
+                  << f.uvMax.x << "," << f.uvMax.y << "] | Corners: ";
+        for (size_t c = 0; c < f.corners.size(); ++c) {
+            std::cout << "(" << f.corners[c].x << "," << f.corners[c].y << ") ";
+        }
+        std::cout << "\n";
+    }
+
+    // 3. Verifica corrispondenza con GPU Vertex Buffer (m_bridgePreviewCache.cachedMesh)
+    const auto& compiledVerts = m_bridgePreviewCache.cachedMesh.vertices;
+    std::cout << "Vertici Compilati GPU (m_bridgePreviewCache): " << compiledVerts.size() << "\n";
+
+    if (!compiledVerts.empty()) {
+        bool gpuUvReplicationDetected = false;
+        size_t quadsInGpu = compiledVerts.size() / 6;
+        std::vector<std::pair<glm::vec2, glm::vec2>> gpuFaceBBoxes;
+        for (size_t q = 0; q < quadsInGpu; ++q) {
+            glm::vec2 gMin(1e9f, 1e9f);
+            glm::vec2 gMax(-1e9f, -1e9f);
+            for (size_t vi = 0; vi < 6; ++vi) {
+                const auto& vert = compiledVerts[q * 6 + vi];
+                gMin.x = (std::min)(gMin.x, vert.roughMetal.x);
+                gMin.y = (std::min)(gMin.y, vert.roughMetal.y);
+                gMax.x = (std::max)(gMax.x, vert.roughMetal.x);
+                gMax.y = (std::max)(gMax.y, vert.roughMetal.y);
+            }
+            gpuFaceBBoxes.push_back({gMin, gMax});
+        }
+
+        for (size_t i = 0; i < gpuFaceBBoxes.size(); ++i) {
+            for (size_t j = i + 1; j < gpuFaceBBoxes.size(); ++j) {
+                const auto& b1 = gpuFaceBBoxes[i];
+                const auto& b2 = gpuFaceBBoxes[j];
+                if (std::abs(b1.first.x - b2.first.x) < 1e-4f &&
+                    std::abs(b1.first.y - b2.first.y) < 1e-4f &&
+                    std::abs(b1.second.x - b2.second.x) < 1e-4f &&
+                    std::abs(b1.second.y - b2.second.y) < 1e-4f) {
+                    gpuUvReplicationDetected = true;
+                    std::cout << "  [ERRORE GPU] Faccia GPU " << i << " e Faccia GPU " << j
+                              << " hanno UV identici [" << b1.first.x << "," << b1.first.y << "]! REPLICA ATTIVA!\n";
                 }
             }
         }
 
-        if (m_uvEditorDocument->IsStroking2D() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            m_uvEditorDocument->CancelStroke2D(&m_paintingService);
+        if (gpuUvReplicationDetected) {
+            std::cout << "ESITO AUDIT GPU: FAIL - Replicazione UV rilevata nel Vertex Buffer!\n";
+        } else {
+            std::cout << "ESITO AUDIT GPU: PASS - Tutte le " << gpuFaceBBoxes.size()
+                      << " facce GPU mappano su regioni UV distinte nel Vertex Buffer!\n";
         }
+    } else {
+        std::cout << "[INFO] Nessun vertice in cache preview (chiamare UpdatePreviewMesh).\n";
     }
+
+    std::cout << "=======================================================\n\n";
 }
+
 
 
