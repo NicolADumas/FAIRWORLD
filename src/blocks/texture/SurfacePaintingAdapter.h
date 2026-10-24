@@ -304,6 +304,11 @@ public:
     uint32_t GetActiveMaterialId() const { return m_activeMaterialId; }
     bool IsRaycastLost() const { return m_raycastLost; }
 
+    void SetLockToActiveFace(bool lock) { m_lockToActiveFace = lock; }
+    bool IsLockToActiveFace() const { return m_lockToActiveFace; }
+    void SetLockedFaceId(FaceID fid) { m_lockedFaceId = fid; }
+    FaceID GetLockedFaceId() const { return m_lockedFaceId; }
+
 private:
     TexturePaintingService* m_paintingService = nullptr;
     TextureTargetResolver*  m_targetResolver = nullptr;
@@ -328,6 +333,8 @@ private:
     PaintDirtyRect m_accumulatedDirtyRect;
     uint32_t m_activeLayerId = 0;
     bool m_activeTargetMask = false;
+    bool m_lockToActiveFace = true;
+    FaceID m_lockedFaceId;
 };
 
 } // namespace fw

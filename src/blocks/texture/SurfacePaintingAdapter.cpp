@@ -383,6 +383,13 @@ bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh,
 {
     if (!hit.valid) return false;
 
+    if (m_lockToActiveFace) {
+        if (m_lockedFaceId.IsValid() && hit.faceId != m_lockedFaceId) {
+            return false;
+        }
+        m_lockedFaceId = hit.faceId;
+    }
+
     // Risoluzione Target con Copy-On-Write se disponibile
     if (m_targetResolver) {
         auto resolved = m_targetResolver->ResolveTarget(hit, m_activeChannel, m_isolateBySurfaceId);
@@ -455,6 +462,11 @@ bool SurfacePaintingAdapter::UpdateStroke3D(const EditableMesh& mesh,
     if (!hit.valid) {
         // Cursore temporaneamente fuori dalla mesh: impostiamo raycastLost per evitare linee spurie al rientro
         m_raycastLost = true;
+        return false;
+    }
+
+    // Hard Face Lock 3D: impedisce la pittura su facce diverse da quella autorizzata
+    if (m_lockToActiveFace && m_lockedFaceId.IsValid() && hit.faceId != m_lockedFaceId) {
         return false;
     }
 
@@ -534,6 +546,7 @@ PaintDirtyRect SurfacePaintingAdapter::EndStroke3D() {
     PaintDirtyRect dr = m_paintingService->EndStroke();
     m_isStroking = false;
     m_raycastLost = false;
+    m_lockedFaceId = FaceID{};
     return dr;
 }
 
@@ -547,6 +560,7 @@ bool SurfacePaintingAdapter::CancelStroke3D() {
     bool ok = m_paintingService->CancelStroke();
     m_isStroking = false;
     m_raycastLost = false;
+    m_lockedFaceId = FaceID{};
     return ok;
 }
 
@@ -569,6 +583,7 @@ void SurfacePaintingAdapter::PropagateCrossSeamDab(const EditableMesh& mesh,
                                                    const PaintBrush& brush, 
                                                    float metricRadius) {
     if (!m_paintingService || !mesh.IsValid(hit.faceId)) return;
+    if (m_lockToActiveFace) return; // BM-UV-FACE-SYNC-05: Non propagare oltre le cuciture se e attivo il blocco della faccia!
 
     const auto* face = mesh.GetFace(hit.faceId);
     if (!face || !face->halfEdge.IsValid()) return;

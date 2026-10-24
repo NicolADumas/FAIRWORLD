@@ -406,6 +406,9 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
     if (targetIsland == INVALID_UVISLAND_ID) {
         return false;
     }
+    if (!m_selectedIslands.empty() && m_selectedIslands.find(targetIsland) == m_selectedIslands.end()) {
+        return false;
+    }
 
     // Esegue il tratto di pittura 2D delegando a TexturePaintingService (BM-UV5.5)
     if (!paintingService->BeginStroke(layerId, false)) {
@@ -438,30 +441,29 @@ bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV,
             return false;
         }
         ValidateSelection();
-        if (m_selectedIslands.size() > 1) {
-            for (UVIslandID selId : m_selectedIslands) {
-                if (IsPointInIsland(atlasUV, selId)) {
-                    targetIsland = selId;
-                    break;
-                }
-            }
-            if (targetIsland == INVALID_UVISLAND_ID) {
-                // Click fuori dalle isole selezionate esplicitamente dall'utente in modalita multi-selezione
-                m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalle isole UV multi-selezionate.";
-                return false;
-            }
-        } else {
-            // Se c'e' una sola isola selezionata o nessuna, cerca l'isola sotto il cursore.
-            // Se il cursore e' su un'altra isola valida, aggiorna la selezione (auto-switch deterministico)
-            targetIsland = FindIslandAtUV(atlasUV);
-            if (targetIsland == INVALID_UVISLAND_ID) {
-                // BM-P03: In Surface Paint, NON consentire pittura UNCLIPPED fuori superficie
-                m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/isola UV sotto il cursore. Seleziona un'isola o attiva Atlas Paint.";
-                return false;
-            }
-            // Auto-seleziona l'isola sotto il cursore per evidenziarla visivamente sul canvas
-            SelectIsland(targetIsland, false);
+
+        // GATE D: HARD FACE PAINT LOCK
+        // 1. Richiedere una selezione valida: nessuna superficie selezionata = pittura disabilitata
+        if (m_selectedIslands.empty() && m_selectedFaces.empty()) {
+            m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia selezionata. Seleziona una faccia per dipingere o usa Atlas Paint.";
+            return false;
         }
+
+        // 2. Verificare che lo stroke inizi nella regione UV autorizzata (tra le isole selezionate)
+        for (UVIslandID selId : m_selectedIslands) {
+            if (IsPointInIsland(atlasUV, selId)) {
+                targetIsland = selId;
+                break;
+            }
+        }
+
+        if (targetIsland == INVALID_UVISLAND_ID) {
+            // Click fuori dalla superficie/faccia selezionata
+            m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalla superficie selezionata. Pittura bloccata.";
+            return false;
+        }
+
+        // 4. Memorizzare il target dello stroke (targetIsland e' fissato, NESSUN cambio automatico durante drag o click)
     } else {
         // Modalita Atlas Paint esplicita: pittura libera sull'intero canvas senza alcun ritaglio
         targetIsland = INVALID_UVISLAND_ID;

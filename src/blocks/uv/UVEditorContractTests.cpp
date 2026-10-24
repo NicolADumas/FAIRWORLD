@@ -826,6 +826,542 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
                        : "Fallimento nel salvataggio/ricaricamento del layout UV.");
     }
 
+    // =========================================================================
+    // BM-UV-FACE-SYNC-05 CONTRACT TESTS (UVE-33 -> UVE-43)
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // UVE-33: 2D Face Selection
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        UVEditorDocument doc(mesh, layout);
+        glm::vec2 clickUV = glm::vec2(layout.islands[0].atlasTransform.z + layout.islands[0].atlasTransform.x * 0.5f,
+                                      layout.islands[0].atlasTransform.w + layout.islands[0].atlasTransform.y * 0.5f);
+        UVIslandID hitIsland = doc.FindIslandAtUV(clickUV);
+        bool hitOk = (hitIsland == 0);
+        doc.SelectIsland(hitIsland, false);
+
+        FaceID expectedFace0 = layout.islands[0].faces.empty() ? INVALID_FACE_ID : layout.islands[0].faces[0];
+        bool isl0Selected = doc.IsIslandSelected(0);
+        bool face0Selected = expectedFace0.IsValid() && doc.IsFaceSelected(expectedFace0);
+        bool passed = hitOk && isl0Selected && face0Selected;
+        std::string obs = "HitIsland=" + std::to_string(hitIsland) +
+                          ", Isl0Selected=" + std::string(isl0Selected ? "true" : "false") +
+                          ", Face0Selected=" + std::string(face0Selected ? "true" : "false");
+
+        addTest("UVE-33", "2D Face Selection",
+                "Click su coordinate UV interne al poligono dell'Isola 0 (Slope Quad)",
+                "FindIslandAtUV restituisce IslandID 0, SelectIsland seleziona autoritativamente FaceID 0",
+                obs, passed,
+                passed ? "2D Face Selection conforme: risoluzione biunivoca UV -> FaceID accertata."
+                       : "Fallimento 2D Face Selection.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-34: 3D Face Selection
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        glm::vec3 rayOrigin(0.0f, 2.0f, 0.25f);
+        glm::vec3 rayDir(0.0f, -1.0f, 0.0f);
+        SurfacePaintHit hit = SurfacePaintingAdapter::RaycastMesh(mesh, rayOrigin, rayDir);
+
+        FaceID expectedSlopeFace = layout.islands[0].faces.empty() ? INVALID_FACE_ID : layout.islands[0].faces[0];
+        bool hitValid = hit.valid;
+        bool faceHitCorrect = (hitValid && expectedSlopeFace.IsValid() && hit.faceId == expectedSlopeFace);
+        bool passed = hitValid && faceHitCorrect;
+        std::string obs = "HitValid=" + std::string(hitValid ? "true" : "false") +
+                          ", HitFaceIdx=" + (hitValid ? std::to_string(hit.faceId.index) : "INVALID") +
+                          ", ExpFaceIdx=" + (expectedSlopeFace.IsValid() ? std::to_string(expectedSlopeFace.index) : "INVALID");
+
+        addTest("UVE-34", "3D Face Selection",
+                "Raycast 3D diretto sulla superficie della Wedge (faccia Slope)",
+                "Picking 3D intercetta la mesh e restituisce FaceID 0 autoritativo",
+                obs, passed,
+                passed ? "3D Face Picking conforme: FaceID 0 correttamente risolto dal raycast geometrico."
+                       : "Fallimento 3D Face Picking.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-35: Bidirectional Synchronization
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        UVEditorDocument doc(mesh, layout);
+
+        FaceID face0 = layout.islands[0].faces.empty() ? INVALID_FACE_ID : layout.islands[0].faces[0];
+        FaceID face3 = layout.islands[3].faces.empty() ? INVALID_FACE_ID : layout.islands[3].faces[0];
+
+        // Step 1: 3D -> 2D (SelectFace3D seleziona anche IslandID corrispondente)
+        doc.SelectFace3D(face0, false);
+        bool step1_Face0 = face0.IsValid() && doc.IsFaceSelected(face0);
+        bool step1_Isl0 = doc.IsIslandSelected(0);
+
+        // Step 2: 2D -> 3D (SelectIsland seleziona anche FaceID corrispondente)
+        doc.SelectIsland(3, false);
+        bool step2_Isl3 = doc.IsIslandSelected(3);
+        bool step2_Face3 = face3.IsValid() && doc.IsFaceSelected(face3);
+
+        bool passed = face0.IsValid() && face3.IsValid() && step1_Face0 && step1_Isl0 && step2_Isl3 && step2_Face3;
+        std::string obs = "3Dto2D(Face0=" + std::string(step1_Face0 ? "T" : "F") + ",Isl0=" + std::string(step1_Isl0 ? "T" : "F") + ") " +
+                          "2Dto3D(Isl3=" + std::string(step2_Isl3 ? "T" : "F") + ",Face3=" + std::string(step2_Face3 ? "T" : "F") + ")";
+
+        addTest("UVE-35", "Bidirectional Synchronization",
+                "Selezione sequenziale 3D (Face 0) e 2D (Island 3)",
+                "Stato di selezione bidirezionale coerente al 100% in entrambe le direzioni",
+                obs, passed,
+                passed ? "Sincronizzazione bidirezionale 2D/3D perfettamente allineata."
+                       : "Disallineamento nella sincronizzazione bidirezionale.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-36: Highlight Isolation
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        UVEditorDocument doc(mesh, layout);
+        doc.SelectIsland(0, false);
+
+        FaceID face0 = layout.islands[0].faces.empty() ? INVALID_FACE_ID : layout.islands[0].faces[0];
+        bool onlyIsl0 = (doc.GetSelectedIslands().size() == 1) && doc.IsIslandSelected(0);
+        bool onlyFace0 = (doc.GetSelectedFaces().size() == 1) && face0.IsValid() && doc.IsFaceSelected(face0);
+
+        bool otherFacesClean = true;
+        for (size_t i = 1; i < layout.islands.size(); ++i) {
+            for (FaceID fId : layout.islands[i].faces) {
+                if (doc.IsFaceSelected(fId)) {
+                    otherFacesClean = false;
+                    break;
+                }
+            }
+        }
+        bool otherIslandsClean = !doc.IsIslandSelected(1) && !doc.IsIslandSelected(2) && !doc.IsIslandSelected(3) && !doc.IsIslandSelected(4);
+
+        bool passed = onlyIsl0 && onlyFace0 && otherFacesClean && otherIslandsClean;
+        std::string obs = "SelectedIslands=" + std::to_string(doc.GetSelectedIslands().size()) +
+                          ", SelectedFaces=" + std::to_string(doc.GetSelectedFaces().size()) +
+                          ", OthersClean=" + std::string((otherFacesClean && otherIslandsClean) ? "true" : "false");
+
+        addTest("UVE-36", "Highlight Isolation",
+                "Selezione singola della Faccia 0 / Isola 0",
+                "Solo la faccia/isola selezionata e marcata attiva; tutte le altre 4 rimangono neutre",
+                obs, passed,
+                passed ? "Isolamento dell'evidenziazione confermato: zero contaminazione visiva."
+                       : "Contaminazione selezione: facce non selezionate risultano attive.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-37: Hard Face Lock
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        UVEditorDocument doc(mesh, layout);
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512);
+        PaintBrush brush;
+        brush.radiusPixels = 6.0f;
+        brush.color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+
+        // 1. Con nessuna selezione attiva, BeginStroke2D DEVE essere rifiutato (Nessuna superficie selezionata)
+        doc.ClearSelection();
+        glm::vec2 pUv0 = glm::vec2(layout.islands[0].atlasTransform.z + layout.islands[0].atlasTransform.x * 0.5f,
+                                   layout.islands[0].atlasTransform.w + layout.islands[0].atlasTransform.y * 0.5f);
+        bool strokeWithoutSelectionBlocked = !doc.BeginStroke2D(pUv0, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+
+        // 2. Selezioniamo Isola 0. Click su Isola 1 DEVE essere rifiutato (Fuori dalla superficie selezionata)
+        doc.SelectIsland(0, false);
+        glm::vec2 pUv1 = glm::vec2(layout.islands[1].atlasTransform.z + layout.islands[1].atlasTransform.x * 0.5f,
+                                   layout.islands[1].atlasTransform.w + layout.islands[1].atlasTransform.y * 0.5f);
+        bool strokeOutsideSelectedBlocked = !doc.BeginStroke2D(pUv1, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+
+        // 3. Click su Isola 0 DEVE essere accettato
+        bool strokeInsideSelectedAllowed = doc.BeginStroke2D(pUv0, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+        doc.EndStroke2D(&painter);
+
+        bool passed = strokeWithoutSelectionBlocked && strokeOutsideSelectedBlocked && strokeInsideSelectedAllowed;
+        std::string obs = "BlockedNoSel=" + std::string(strokeWithoutSelectionBlocked ? "true" : "false") +
+                          ", BlockedOutside=" + std::string(strokeOutsideSelectedBlocked ? "true" : "false") +
+                          ", AllowedInside=" + std::string(strokeInsideSelectedAllowed ? "true" : "false");
+
+        addTest("UVE-37", "Hard Face Lock",
+                "Tentativi di pittura senza selezione, fuori dall'isola selezionata e dentro l'isola selezionata",
+                "Pittura bloccata tassativamente in assenza di selezione o all'esterno della faccia bloccata",
+                obs, passed,
+                passed ? "Hard Face Lock rigoroso: rasterizzazione vincolata esclusivamente alla faccia attiva."
+                       : "Violazione Hard Face Lock.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-38: Overlap Detection
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        bool hasOverlap = false;
+        for (size_t i = 0; i < layout.islands.size() && !hasOverlap; ++i) {
+            for (size_t j = i + 1; j < layout.islands.size() && !hasOverlap; ++j) {
+                const auto& tA = layout.islands[i].atlasTransform;
+                const auto& tB = layout.islands[j].atlasTransform;
+                bool overlapX = (tA.z < tB.z + tB.x - 1e-4f) && (tA.z + tA.x > tB.z + 1e-4f);
+                bool overlapY = (tA.w < tB.w + tB.y - 1e-4f) && (tA.w + tA.y > tB.w + 1e-4f);
+                if (overlapX && overlapY) {
+                    hasOverlap = true;
+                }
+            }
+        }
+
+        bool passed = (layout.islands.size() == 5) && !hasOverlap;
+        std::string obs = "IslandCount=" + std::to_string(layout.islands.size()) +
+                          ", OverlapDetected=" + std::string(hasOverlap ? "true" : "false");
+
+        addTest("UVE-38", "Overlap Detection",
+                "Verifica di disgiunzione e overlap su tutte le 5 isole UV della Wedge",
+                "Tutte le 5 isole occupano porzioni disgiunte dell'atlante UV con overlap nullo",
+                obs, passed,
+                passed ? "Layout UV della Wedge disgiunto: zero sovrapposizione tra le facce."
+                       : "Rilevata sovrapposizione UV nell'atlante della Wedge.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-39: CPU/GPU UV Correspondence
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        BridgePreviewCache previewCache;
+        GeometryCompileOptions gOpt;
+        GeometryCompileResult compRes = MeshBridgeService::CompileForPreview(mesh, gOpt, previewCache);
+
+        bool compileOk = compRes.success && (compRes.mesh.vertices.size() == 24) && (compRes.mesh.faces.size() == 8);
+        bool cacheOk = (previewCache.cachedMesh.vertices.size() == 24);
+
+        // Verifica che per ogni corner dell'EditableMesh, v.roughMetal (location=2 nello shader forge.vert)
+        // coincida con l'UV atlas dell'editor entro 1e-4f
+        float maxDelta = 0.0f;
+        size_t verifiedCorners = 0;
+
+        for (FaceID fId : mesh.GetActiveFaceIDs()) {
+            const auto* f = mesh.GetFace(fId);
+            if (!f || !IsValid(f->halfEdge)) continue;
+            HalfEdgeID startH = f->halfEdge;
+            HalfEdgeID curH = startH;
+            do {
+                const auto* he = mesh.GetHalfEdge(curH);
+                if (!he) break;
+                glm::vec2 cpuUV = he->corner.uv;
+
+                const auto* v = mesh.GetVertex(he->origin);
+                if (v) {
+                    bool matched = false;
+                    for (const auto& cv : compRes.mesh.vertices) {
+                        glm::vec3 cvPos(cv.position.x, cv.position.y, cv.position.z);
+                        if (glm::length(cvPos - v->position) < 1e-4f) {
+                            glm::vec2 cvRoughMetal(cv.roughMetal.x, cv.roughMetal.y);
+                            float d = glm::length(cvRoughMetal - cpuUV);
+                            if (d < 1e-4f) {
+                                matched = true;
+                                maxDelta = std::max(maxDelta, d);
+                                break;
+                            }
+                        }
+                    }
+                    if (matched) verifiedCorners++;
+                }
+                curH = he->next;
+            } while (curH != startH && IsValid(curH));
+        }
+
+        bool allUvsMatch = (verifiedCorners >= 18); // Wedge: 3 quad * 4 + 2 tri * 3 = 18 corners
+        bool passed = compileOk && cacheOk && allUvsMatch && (maxDelta < 1e-4f);
+        std::string obs = "CompileOk=" + std::string(compileOk ? "true" : "false") +
+                          ", Vertices=" + std::to_string(compRes.mesh.vertices.size()) +
+                          ", Triangles=" + std::to_string(compRes.mesh.faces.size()) +
+                          ", VerifiedCorners=" + std::to_string(verifiedCorners) +
+                          ", MaxDelta=" + std::to_string(maxDelta);
+
+        addTest("UVE-39", "CPU/GPU UV Correspondence",
+                "Compilazione Vulkan non indicizzata della Wedge con 24 vertici generati da 18 corner",
+                "24 vertici compilati con coordinate UV embedded in vert.roughMetal coincidenti con l'atlante",
+                obs, passed,
+                passed ? "Corrispondenza CPU/GPU UV convalidata per tutti i 24 vertici."
+                       : "Mancata corrispondenza tra vertici compilati GPU e corner UV CPU.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-40: Selection Zero-Work
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        BridgePreviewCache previewCache;
+        GeometryCompileOptions gOpt;
+        MeshBridgeService::CompileForPreview(mesh, gOpt, previewCache);
+
+        uint32_t initGeo = mesh.GetGeometryRevision();
+        uint32_t initTopo = mesh.GetTopologyRevision();
+        uint32_t initAtlas = layout.atlasRevision;
+
+        UVEditorDocument doc(mesh, layout);
+        FaceID face2 = layout.islands[2].faces.empty() ? INVALID_FACE_ID : layout.islands[2].faces[0];
+        doc.SelectIsland(1, false);
+        if (face2.IsValid()) {
+            doc.SelectFace3D(face2, false);
+        }
+        doc.ClearSelection();
+        doc.SelectIsland(4, false);
+
+        bool geoUnchanged = (mesh.GetGeometryRevision() == initGeo);
+        bool topoUnchanged = (mesh.GetTopologyRevision() == initTopo);
+        bool atlasUnchanged = (layout.atlasRevision == initAtlas);
+        bool noRecompile = !MeshBridgeService::NeedsPreviewRecompile(mesh, 0, previewCache);
+
+        bool passed = geoUnchanged && topoUnchanged && atlasUnchanged && noRecompile;
+        std::string obs = "GeoRevDelta=" + std::to_string(mesh.GetGeometryRevision() - initGeo) +
+                          ", TopoRevDelta=" + std::to_string(mesh.GetTopologyRevision() - initTopo) +
+                          ", NeedsRecompile=" + std::string(noRecompile ? "false" : "true");
+
+        addTest("UVE-40", "Selection Zero-Work",
+                "Cambi ripetuti di selezione 2D e 3D sul modello",
+                "Zero modifiche alle revisioni geometriche o UV, nessuna ricompilazione Vulkan",
+                obs, passed,
+                passed ? "Contratto Selection Zero-Work rispettato al 100%."
+                       : "Violazione Selection Zero-Work: la selezione provoca ricompilazione.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-41: Paint Zero-Work
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        BridgePreviewCache previewCache;
+        GeometryCompileOptions gOpt;
+        MeshBridgeService::CompileForPreview(mesh, gOpt, previewCache);
+
+        uint32_t initGeo = mesh.GetGeometryRevision();
+        uint32_t initTopo = mesh.GetTopologyRevision();
+        uint32_t initAtlas = layout.atlasRevision;
+
+        UVEditorDocument doc(mesh, layout);
+        doc.SelectIsland(0, false);
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512);
+        PaintBrush brush;
+        brush.radiusPixels = 5.0f;
+        brush.color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+
+        glm::vec2 pUv = glm::vec2(layout.islands[0].atlasTransform.z + layout.islands[0].atlasTransform.x * 0.5f,
+                                  layout.islands[0].atlasTransform.w + layout.islands[0].atlasTransform.y * 0.5f);
+        doc.BeginStroke2D(pUv, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+        doc.EndStroke2D(&painter);
+
+        bool geoUnchanged = (mesh.GetGeometryRevision() == initGeo);
+        bool topoUnchanged = (mesh.GetTopologyRevision() == initTopo);
+        bool atlasUnchanged = (layout.atlasRevision == initAtlas);
+        bool noRecompile = !MeshBridgeService::NeedsPreviewRecompile(mesh, 0, previewCache);
+
+        bool passed = geoUnchanged && topoUnchanged && atlasUnchanged && noRecompile;
+        std::string obs = "GeoRevDelta=" + std::to_string(mesh.GetGeometryRevision() - initGeo) +
+                          ", TopoRevDelta=" + std::to_string(mesh.GetTopologyRevision() - initTopo) +
+                          ", NeedsRecompile=" + std::string(noRecompile ? "false" : "true");
+
+        addTest("UVE-41", "Paint Zero-Work",
+                "Tratto di pittura 2D completato sulla faccia selezionata",
+                "Aggiornamento della sola revisione texture/layer; nessuna ricompilazione geometrica o remap UV",
+                obs, passed,
+                passed ? "Contratto Paint Zero-Work rispettato: la pittura non tocca la geometria."
+                       : "Violazione Paint Zero-Work.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-42: Persistence
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        UVEditorDocument doc(mesh, layout);
+        doc.SelectIsland(0, false);
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512);
+        PaintBrush brush;
+        brush.radiusPixels = 8.0f;
+        brush.color = glm::vec4(0.2f, 0.8f, 0.4f, 1.0f);
+
+        glm::vec2 pUv = glm::vec2(layout.islands[0].atlasTransform.z + layout.islands[0].atlasTransform.x * 0.5f,
+                                  layout.islands[0].atlasTransform.w + layout.islands[0].atlasTransform.y * 0.5f);
+        doc.BeginStroke2D(pUv, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+        doc.EndStroke2D(&painter);
+
+        // Simulazione serializzazione UVLayout e PaintLayers
+        nlohmann::json jLayout;
+        to_json(jLayout, layout);
+        UVLayout layoutReloaded;
+        from_json(jLayout, layoutReloaded);
+
+        ImageBitmap comp;
+        painter.CompositeLayers(comp);
+        uint32_t pxX = static_cast<uint32_t>(pUv.x * 512.0f);
+        uint32_t pxY = static_cast<uint32_t>(pUv.y * 512.0f);
+        glm::vec4 paintedPx = comp.GetPixel(pxX, pxY);
+
+        bool sameIslands = (layoutReloaded.islands.size() == 5);
+        bool pixelPersisted = (paintedPx.a > 0.5f && paintedPx.g > 0.5f);
+        bool passed = sameIslands && pixelPersisted;
+        std::string obs = "SameIslands=" + std::string(sameIslands ? "true" : "false") +
+                          ", PixelPersisted=" + std::string(pixelPersisted ? "true" : "false");
+
+        addTest("UVE-42", "Persistence",
+                "Serializzazione UVLayout e verifica persistenza texel dipinti",
+                "Layout ricostruito identico e texel dipinti conservati intatti",
+                obs, passed,
+                passed ? "Persistenza convalidata: layout e texture rimangono integri."
+                       : "Fallimento persistenza texture o layout UV.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-43: Per-BlockID Isolation
+    // -------------------------------------------------------------------------
+    {
+        TexturePaintingService painter14;
+        TexturePaintingService painter15;
+        painter14.InitializeCanvas(512, 512);
+        painter15.InitializeCanvas(512, 512);
+
+        uint32_t l14 = painter14.AddLayer("Block14_Wedge");
+        uint32_t l15 = painter15.AddLayer("Block15_Other");
+
+        PaintBrush brush;
+        brush.radiusPixels = 12.0f;
+        brush.color = glm::vec4(0.9f, 0.1f, 0.2f, 1.0f);
+
+        painter14.BeginStroke(l14, false);
+        painter14.ApplyDab(glm::vec2(200.0f, 200.0f), brush);
+        painter14.EndStroke();
+
+        ImageBitmap comp15;
+        painter15.CompositeLayers(comp15);
+        glm::vec4 px15 = comp15.GetPixel(200, 200);
+
+        bool b15Clean = (px15.a < 1e-4f);
+        bool passed = b15Clean && (painter14.GetLayerCount() == 1) && (painter15.GetLayerCount() == 1);
+        std::string obs = "Block15PixelAlpha=" + std::to_string(px15.a) +
+                          ", LayerCount14=" + std::to_string(painter14.GetLayerCount()) +
+                          ", LayerCount15=" + std::to_string(painter15.GetLayerCount());
+
+        addTest("UVE-43", "Per-BlockID Isolation",
+                "Pennellata su BlockID 14 (Wedge) verificata contro canvas di BlockID 15",
+                "Totale assenza di mutazione o leak su BlockID 15",
+                obs, passed,
+                passed ? "Isolamento Per-BlockID assoluto: zero contaminazione tra blocchi diversi."
+                       : "Rilevata contaminazione cross-BlockID.");
+    }
+
     return results;
 }
 

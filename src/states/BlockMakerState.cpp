@@ -8818,7 +8818,8 @@ void BlockMakerState::DrawGizmo() {
 }
 
 void BlockMakerState::DrawMeshSelectionVisualFeedback() {
-    if (!m_meshSelectionEnabled || !m_context) {
+    bool studioActive = IsStudioActive();
+    if ((!m_meshSelectionEnabled && !studioActive) || !m_context) {
         return;
     }
 
@@ -8949,9 +8950,15 @@ void BlockMakerState::DrawMeshSelectionVisualFeedback() {
             return true;
         };
 
-        // 1. Highlight Facce Selezionate
-        const auto& selectedFaces = m_selectionService.GetSelectedFaces();
-        for (fw::FaceID fid : selectedFaces) {
+        // 1. Highlight Facce Selezionate (Overlay azzurro luminoso sincronizzato 2D <-> 3D)
+        std::unordered_set<fw::FaceID> allSelectedFaces = m_selectionService.GetSelectedFaces();
+        if (m_uvEditorDocument) {
+            for (fw::FaceID docFid : m_uvEditorDocument->GetSelectedFaces()) {
+                allSelectedFaces.insert(docFid);
+            }
+        }
+
+        for (fw::FaceID fid : allSelectedFaces) {
             auto vIds = m_activeEditableMesh.GetFaceVertices(fid);
             if (vIds.size() < 3) continue;
 
@@ -8972,51 +8979,55 @@ void BlockMakerState::DrawMeshSelectionVisualFeedback() {
 
             if (allVisible && pts.size() >= 3) {
                 bool isActive = (m_selectionService.GetActiveFace() == fid);
-                ImU32 fillCol = isActive ? IM_COL32(255, 215, 0, 75) : IM_COL32(0, 160, 255, 60);
-                ImU32 borderCol = isActive ? IM_COL32(255, 230, 80, 240) : IM_COL32(0, 200, 255, 200);
+                // BM-UV-FACE-SYNC-05: Highlight azzurro luminoso semitrasparente
+                ImU32 fillCol = isActive ? IM_COL32(0, 195, 255, 75) : IM_COL32(0, 160, 240, 50);
+                ImU32 borderCol = isActive ? IM_COL32(0, 225, 255, 255) : IM_COL32(0, 195, 255, 200);
                 drawList->AddConvexPolyFilled(pts.data(), (int)pts.size(), fillCol);
                 drawList->AddPolyline(pts.data(), (int)pts.size(), borderCol, ImDrawFlags_Closed, isActive ? 2.5f : 1.5f);
             }
         }
 
-        // 2. Highlight Edge Selezionati
-        const auto& selectedEdges = m_selectionService.GetSelectedEdges();
-        for (fw::EdgeID eid : selectedEdges) {
-            const auto* edge = m_activeEditableMesh.GetEdge(eid);
-            if (!edge) continue;
-            const auto* he = m_activeEditableMesh.GetHalfEdge(edge->halfEdge);
-            if (!he) continue;
-            const auto* v0 = m_activeEditableMesh.GetVertex(he->origin);
-            const auto* heNext = m_activeEditableMesh.GetHalfEdge(he->next);
-            if (!v0 || !heNext) continue;
-            const auto* v1 = m_activeEditableMesh.GetVertex(heNext->origin);
-            if (!v1) continue;
+        // Edge e Vertici vengono evidenziati solo in Sculpt / Modeling (quando m_meshSelectionEnabled e' esplicitamente abilitato)
+        if (m_meshSelectionEnabled) {
+            // 2. Highlight Edge Selezionati
+            const auto& selectedEdges = m_selectionService.GetSelectedEdges();
+            for (fw::EdgeID eid : selectedEdges) {
+                const auto* edge = m_activeEditableMesh.GetEdge(eid);
+                if (!edge) continue;
+                const auto* he = m_activeEditableMesh.GetHalfEdge(edge->halfEdge);
+                if (!he) continue;
+                const auto* v0 = m_activeEditableMesh.GetVertex(he->origin);
+                const auto* heNext = m_activeEditableMesh.GetHalfEdge(he->next);
+                if (!v0 || !heNext) continue;
+                const auto* v1 = m_activeEditableMesh.GetVertex(heNext->origin);
+                if (!v1) continue;
 
-            glm::vec2 p0, p1;
-            float d0, d1;
-            if (ProjectToScreen(v0->position, p0, d0) && ProjectToScreen(v1->position, p1, d1)) {
-                bool isActive = (m_selectionService.GetActiveEdge() == eid);
-                ImU32 col = isActive ? IM_COL32(255, 215, 0, 255) : IM_COL32(255, 140, 20, 230);
-                float thickness = isActive ? 3.5f : 2.0f;
-                drawList->AddLine(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), col, thickness);
+                glm::vec2 p0, p1;
+                float d0, d1;
+                if (ProjectToScreen(v0->position, p0, d0) && ProjectToScreen(v1->position, p1, d1)) {
+                    bool isActive = (m_selectionService.GetActiveEdge() == eid);
+                    ImU32 col = isActive ? IM_COL32(255, 215, 0, 255) : IM_COL32(255, 140, 20, 230);
+                    float thickness = isActive ? 3.5f : 2.0f;
+                    drawList->AddLine(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), col, thickness);
+                }
             }
-        }
 
-        // 3. Highlight Vertici Selezionati
-        const auto& selectedVertices = m_selectionService.GetSelectedVertices();
-        for (fw::VertexID vid : selectedVertices) {
-            const auto* vert = m_activeEditableMesh.GetVertex(vid);
-            if (!vert) continue;
+            // 3. Highlight Vertici Selezionati
+            const auto& selectedVertices = m_selectionService.GetSelectedVertices();
+            for (fw::VertexID vid : selectedVertices) {
+                const auto* vert = m_activeEditableMesh.GetVertex(vid);
+                if (!vert) continue;
 
-            glm::vec2 sp;
-            float depth;
-            if (ProjectToScreen(vert->position, sp, depth)) {
-                bool isActive = (m_selectionService.GetActiveVertex() == vid);
-                ImU32 colInner = isActive ? IM_COL32(255, 50, 50, 255) : IM_COL32(255, 220, 0, 255);
-                ImU32 colOuter = IM_COL32(20, 20, 20, 240);
-                float radius = isActive ? 6.5f : 4.5f;
-                drawList->AddCircleFilled(ImVec2(sp.x, sp.y), radius, colInner);
-                drawList->AddCircle(ImVec2(sp.x, sp.y), radius + 1.0f, colOuter, 12, 1.5f);
+                glm::vec2 sp;
+                float depth;
+                if (ProjectToScreen(vert->position, sp, depth)) {
+                    bool isActive = (m_selectionService.GetActiveVertex() == vid);
+                    ImU32 colInner = isActive ? IM_COL32(255, 50, 50, 255) : IM_COL32(255, 220, 0, 255);
+                    ImU32 colOuter = IM_COL32(20, 20, 20, 240);
+                    float radius = isActive ? 6.5f : 4.5f;
+                    drawList->AddCircleFilled(ImVec2(sp.x, sp.y), radius, colInner);
+                    drawList->AddCircle(ImVec2(sp.x, sp.y), radius + 1.0f, colOuter, 12, 1.5f);
+                }
             }
         }
 
@@ -9300,11 +9311,17 @@ void BlockMakerState::Handle3DPaintInput() {
         fw::SurfacePaintHit hit = fw::SurfacePaintingAdapter::RaycastMesh(m_activeEditableMesh, rayOrigin, rayDir);
         if (hit.valid) {
             m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
+            m_surfacePaintingAdapter.SetLockToActiveFace(true);
+            m_surfacePaintingAdapter.SetLockedFaceId(hit.faceId);
             m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush);
             m_is3DPaintStroking = true;
             if (m_uvEditorDocument && hit.faceId.IsValid()) {
                 m_uvEditorDocument->SelectFace3D(hit.faceId, false);
             }
+            m_selectionService.SetMode(fw::SelectionMode::Face);
+            m_selectionService.Clear();
+            m_selectionService.SelectFace(hit.faceId, fw::SelectionOp::Add);
+            m_selectionService.SetActiveFace(hit.faceId);
         }
     } else if (m_is3DPaintStroking && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         glm::vec3 rayOrigin, rayDir;
@@ -9625,14 +9642,14 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
                         glm::vec2 sp = m_uvEditorPanel.AtlasUVToScreen(uvPt, origin, size);
                         polyPoints.push_back(ImVec2(sp.x, sp.y));
                     }
-                    ImU32 fillCol = outline.isSelected ? IM_COL32(255, 215, 0, 55) : IM_COL32(30, 140, 255, 25);
+                    ImU32 fillCol = outline.isSelected ? IM_COL32(0, 195, 255, 65) : IM_COL32(30, 140, 255, 25);
                     drawList->AddConvexPolyFilled(polyPoints.data(), static_cast<int>(polyPoints.size()), fillCol);
                 }
             }
 
             // Contorni reali delle isole UV con doppio passaggio (Dark Under-Stroke + Vibrant Line)
-            ImU32 col = outline.isSelected ? IM_COL32(255, 220, 30, 255) : IM_COL32(30, 195, 255, 255);
-            float thickness = outline.isSelected ? 2.5f : 1.8f;
+            ImU32 col = outline.isSelected ? IM_COL32(0, 220, 255, 255) : IM_COL32(30, 195, 255, 255);
+            float thickness = outline.isSelected ? 2.8f : 1.8f;
             for (const auto& loop : loops) {
                 if (loop.size() >= 3) {
                     for (size_t i = 0; i < loop.size(); ++i) {
@@ -9669,10 +9686,10 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
                 ImVec2 tSz = ImGui::CalcTextSize(badge);
                 ImVec2 b0(sc.x - tSz.x * 0.5f - 4.0f, sc.y - tSz.y * 0.5f - 2.0f);
                 ImVec2 b1(sc.x + tSz.x * 0.5f + 4.0f, sc.y + tSz.y * 0.5f + 2.0f);
-                drawList->AddRectFilled(b0, b1, outline.isSelected ? IM_COL32(60, 50, 10, 220) : IM_COL32(20, 25, 35, 190), 3.0f);
-                drawList->AddRect(b0, b1, outline.isSelected ? IM_COL32(255, 215, 0, 230) : IM_COL32(100, 180, 255, 170), 3.0f);
+                drawList->AddRectFilled(b0, b1, outline.isSelected ? IM_COL32(0, 60, 100, 220) : IM_COL32(20, 25, 35, 190), 3.0f);
+                drawList->AddRect(b0, b1, outline.isSelected ? IM_COL32(0, 220, 255, 240) : IM_COL32(100, 180, 255, 170), 3.0f);
                 drawList->AddText(ImVec2(sc.x - tSz.x * 0.5f, sc.y - tSz.y * 0.5f), 
-                                  outline.isSelected ? IM_COL32(255, 235, 120, 255) : IM_COL32(210, 230, 255, 220), badge);
+                                  outline.isSelected ? IM_COL32(0, 235, 255, 255) : IM_COL32(210, 230, 255, 220), badge);
             }
         }
 
@@ -9734,8 +9751,22 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
                 fw::UVIslandID hitIsland = m_uvEditorDocument->FindIslandAtUV(clickUV);
                 if (hitIsland != fw::INVALID_UVISLAND_ID) {
                     m_uvEditorDocument->SelectIsland(hitIsland, ImGui::GetIO().KeyShift);
+                    // BM-UV-FACE-SYNC-05: Sincronizzazione autoritativa 2D -> 3D
+                    m_selectionService.SetMode(fw::SelectionMode::Face);
+                    if (!ImGui::GetIO().KeyShift) {
+                        m_selectionService.Clear();
+                    }
+                    if (hitIsland < layout.islands.size()) {
+                        for (fw::FaceID fId : layout.islands[hitIsland].faces) {
+                            m_selectionService.SelectFace(fId, fw::SelectionOp::Add);
+                        }
+                        if (!layout.islands[hitIsland].faces.empty()) {
+                            m_selectionService.SetActiveFace(layout.islands[hitIsland].faces[0]);
+                        }
+                    }
                 } else if (!ImGui::GetIO().KeyShift) {
                     m_uvEditorDocument->ClearSelection();
+                    m_selectionService.Clear();
                 }
             }
         } else {
@@ -9758,6 +9789,9 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
                           << " Pan=(" << viewState.panOffset.x << "," << viewState.panOffset.y << ")\n";
 
                 bool strokeStarted = m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService, 0, m_canvasPaintMode);
+                if (!strokeStarted) {
+                    std::cout << "[PAINTER LOCK] " << m_uvEditorDocument->GetLastPaintBlockedReason() << "\n";
+                }
                 if (!strokeStarted && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
                     m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
                     m_studioPaintNotificationTimer = 3.5f;
