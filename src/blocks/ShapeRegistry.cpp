@@ -56,6 +56,11 @@ static void SerializeShapeParams(json& j, ShapeType type, const ShapeParameters&
             }
             break; 
         }
+        case ShapeType::Wedge: { auto& p = std::get<ShapeParamsWedge>(params); j["size"] = p.size; break; }
+        case ShapeType::RoundedBox: { auto& p = std::get<ShapeParamsRoundedBox>(params); j["size"] = p.size; j["radius"] = p.radius; j["segments"] = p.segments; break; }
+        case ShapeType::Torus: { auto& p = std::get<ShapeParamsTorus>(params); j["majorRadius"] = p.majorRadius; j["minorRadius"] = p.minorRadius; j["majorSegments"] = p.majorSegments; j["minorSegments"] = p.minorSegments; break; }
+        case ShapeType::Tetrahedron: { auto& p = std::get<ShapeParamsTetrahedron>(params); j["sideLength"] = p.sideLength; break; }
+        case ShapeType::Ellipsoid: { auto& p = std::get<ShapeParamsEllipsoid>(params); j["radius"] = p.radius; j["rings"] = p.rings; j["segments"] = p.segments; break; }
         default: break; // Cube, Heightfield, SignedDistanceField
     }
 }
@@ -86,6 +91,11 @@ static ShapeParameters DeserializeShapeParams(const json& j, ShapeType type) {
             case ShapeType::ConvexHull: return ShapeParamsConvexHull{j.at("vertices").get<std::vector<glm::vec3>>()};
             case ShapeType::TriangleMesh: return ShapeParamsTriangleMesh{j.at("vertices").get<std::vector<glm::vec3>>(), j.at("indices").get<std::vector<uint32_t>>()};
             case ShapeType::LegacySuperSphere: return ShapeParamsLegacySuperSphere{j.at("n").get<float>()};
+            case ShapeType::Wedge: return ShapeParamsWedge{j.at("size").get<glm::vec3>()};
+            case ShapeType::RoundedBox: return ShapeParamsRoundedBox{j.at("size").get<glm::vec3>(), j.at("radius").get<float>(), j.at("segments").get<int>()};
+            case ShapeType::Torus: return ShapeParamsTorus{j.at("majorRadius").get<float>(), j.at("minorRadius").get<float>(), j.at("majorSegments").get<int>(), j.at("minorSegments").get<int>()};
+            case ShapeType::Tetrahedron: return ShapeParamsTetrahedron{j.at("sideLength").get<float>()};
+            case ShapeType::Ellipsoid: return ShapeParamsEllipsoid{j.at("radius").get<glm::vec3>(), j.at("rings").get<int>(), j.at("segments").get<int>()};
             case ShapeType::Compound: {
                 ShapeParamsCompound cmp;
                 for (const auto& cj : j.at("children")) {
@@ -310,6 +320,37 @@ ShapeValidationResult ShapeRegistry::ValidateParameters(ShapeType type, const Sh
                     return fail("Compound shape contains a direct or indirect cycle.");
                 }
             }
+        }
+    }
+    else if (type == ShapeType::Wedge) {
+        if (auto* p = std::get_if<ShapeParamsWedge>(&params)) {
+            if (!IsFinite(p->size) || p->size.x <= 0.0f || p->size.y <= 0.0f || p->size.z <= 0.0f) return fail("Wedge size must be positive finite.");
+        }
+    }
+    else if (type == ShapeType::RoundedBox) {
+        if (auto* p = std::get_if<ShapeParamsRoundedBox>(&params)) {
+            if (!IsFinite(p->size) || p->size.x <= 0.0f || p->size.y <= 0.0f || p->size.z <= 0.0f) return fail("RoundedBox size must be positive finite.");
+            if (!IsFinite(p->radius) || p->radius <= 0.0f) return fail("RoundedBox radius must be positive finite.");
+            if (p->segments < 1) return fail("RoundedBox segments must be at least 1.");
+        }
+    }
+    else if (type == ShapeType::Torus) {
+        if (auto* p = std::get_if<ShapeParamsTorus>(&params)) {
+            if (!IsFinite(p->majorRadius) || !IsFinite(p->minorRadius) || p->majorRadius <= p->minorRadius || p->minorRadius <= 0.0f) {
+                return fail("Torus major radius must exceed minor radius, and both must be positive finite.");
+            }
+            if (p->majorSegments < 3 || p->minorSegments < 3) return fail("Torus segments must be at least 3.");
+        }
+    }
+    else if (type == ShapeType::Tetrahedron) {
+        if (auto* p = std::get_if<ShapeParamsTetrahedron>(&params)) {
+            if (!IsFinite(p->sideLength) || p->sideLength <= 0.0f) return fail("Tetrahedron side length must be positive finite.");
+        }
+    }
+    else if (type == ShapeType::Ellipsoid) {
+        if (auto* p = std::get_if<ShapeParamsEllipsoid>(&params)) {
+            if (!IsFinite(p->radius) || p->radius.x <= 0.0f || p->radius.y <= 0.0f || p->radius.z <= 0.0f) return fail("Ellipsoid radius components must be positive finite.");
+            if (p->rings < 2 || p->segments < 3) return fail("Ellipsoid rings must be >= 2 and segments >= 3.");
         }
     }
 

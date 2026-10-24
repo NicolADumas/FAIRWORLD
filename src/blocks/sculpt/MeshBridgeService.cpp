@@ -108,8 +108,8 @@ EditableMesh MeshBridgeService::CreateMeshFromCompiledTopology(const CompiledTop
         }
     }
 
-    // ComputeVertexNormals() calcola le normali d'area dei vertici (MeshVertex::normal)
-    // senza alterare CornerAttributes::normal memorizzati sui perimetri degli half-edge
+    // Calcolo deterministico di normali piane di faccia e normali d'area dei vertici
+    mesh.ComputeAllFaceNormals();
     mesh.ComputeVertexNormals();
 
     return mesh;
@@ -183,18 +183,35 @@ EditableMesh MeshBridgeService::CreateMeshFromShape(const ShapeDefinition& shape
         for (const auto& f : res.mesh.faces) {
             if (f.indices.size() < 3) continue;
             std::vector<VertexID> fv;
+            std::vector<CornerAttributes> corners;
+            fv.reserve(f.indices.size());
+            corners.reserve(f.indices.size());
             for (int idx : f.indices) {
                 if (idx >= 0 && idx < static_cast<int>(vIds.size())) {
                     fv.push_back(vIds[idx]);
+                    CornerAttributes ca;
+                    ca.uv = glm::vec2(res.mesh.vertices[idx].roughMetal.x, res.mesh.vertices[idx].roughMetal.y);
+                    ca.normal = glm::vec3(res.mesh.vertices[idx].normal.x, res.mesh.vertices[idx].normal.y, res.mesh.vertices[idx].normal.z);
+                    ca.color = glm::vec4(res.mesh.vertices[idx].color.x, res.mesh.vertices[idx].color.y, res.mesh.vertices[idx].color.z, res.mesh.vertices[idx].color.w);
+                    ca.customWeight = 1.0f;
+                    corners.push_back(ca);
                 }
             }
             if (fv.size() >= 3) {
-                mesh.AddFace(fv, f.matIndex, 0);
+                mesh.AddFace(fv, f.surfaceId, f.matIndex, &corners);
             }
         }
     } else {
         for (size_t i = 0; i + 2 < vIds.size(); i += 3) {
-            mesh.AddFace({ vIds[i], vIds[i + 1], vIds[i + 2] }, 0, 0);
+            std::vector<CornerAttributes> corners(3);
+            for (size_t k = 0; k < 3; ++k) {
+                size_t vIdx = i + k;
+                corners[k].uv = glm::vec2(res.mesh.vertices[vIdx].roughMetal.x, res.mesh.vertices[vIdx].roughMetal.y);
+                corners[k].normal = glm::vec3(res.mesh.vertices[vIdx].normal.x, res.mesh.vertices[vIdx].normal.y, res.mesh.vertices[vIdx].normal.z);
+                corners[k].color = glm::vec4(res.mesh.vertices[vIdx].color.x, res.mesh.vertices[vIdx].color.y, res.mesh.vertices[vIdx].color.z, res.mesh.vertices[vIdx].color.w);
+                corners[k].customWeight = 1.0f;
+            }
+            mesh.AddFace({ vIds[i], vIds[i + 1], vIds[i + 2] }, 0, 0, &corners);
         }
     }
     mesh.ComputeAllFaceNormals();

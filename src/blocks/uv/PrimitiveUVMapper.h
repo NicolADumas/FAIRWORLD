@@ -88,6 +88,27 @@ public:
                                                  float topW = 0.0f, float topD = 0.0f,
                                                  const PrimitiveUVOptions& options = {});
 
+    // BM-SHAPES-01: Mappature Specializzate Nuove Primitive
+    PrimitiveMappingResult GenerateWedgeMapping(EditableMesh& mesh, 
+                                                UVLayout& outLayout, 
+                                                const glm::vec3& size = glm::vec3(1.0f),
+                                                const PrimitiveUVOptions& options = {});
+
+    PrimitiveMappingResult GenerateTetrahedronMapping(EditableMesh& mesh, 
+                                                      UVLayout& outLayout, 
+                                                      float sideLength = 1.0f,
+                                                      const PrimitiveUVOptions& options = {});
+
+    PrimitiveMappingResult GenerateTorusMapping(EditableMesh& mesh, 
+                                                UVLayout& outLayout, 
+                                                float majorRadius = 0.75f, float minorRadius = 0.25f,
+                                                const PrimitiveUVOptions& options = {});
+
+    PrimitiveMappingResult GenerateEllipsoidMapping(EditableMesh& mesh, 
+                                                    UVLayout& outLayout, 
+                                                    const glm::vec3& radius = glm::vec3(1.0f),
+                                                    const PrimitiveUVOptions& options = {});
+
     // 4. Forme Cilindriche e Coniche: Cylinder, HollowCylinder, SlicedCylinder, Barrel
     PrimitiveMappingResult GenerateCylindricalMapping(EditableMesh& mesh, 
                                                      UVLayout& outLayout, 

@@ -617,6 +617,7 @@ private:
     std::unique_ptr<fw::UVEditorDocument> m_uvEditorDocument;
     std::vector<fw::UVEditorPanel::IslandDrawOutline> m_cachedUVOutlines;
     uint64_t m_cachedUVOutlineTopologyRev = 0;
+    uint64_t m_cachedUVOutlineAttrRev = 0;
     uint64_t m_cachedUVOutlineAtlasRev = 0;
     uint64_t m_cachedUVOutlineSelectionRev = 0;
     bool m_uvCanvasPaintMode = false;
@@ -625,6 +626,36 @@ private:
     float m_studioPaintNotificationTimer = 0.0f;
     void DrawUVEditorStationUI();
     void PrintUVStudioDiagnostic();
+    void AuditCubeUVPipeline();
+
+    // --- MG03-FIX04 Pipeline Status & UV Remap ---
+    enum class UVPipelineStatus : uint8_t {
+        NO_TOPOLOGY = 0,
+        NO_UV_LAYOUT,
+        INVALID_UV_LAYOUT,
+        NO_ISLANDS,
+        NO_OUTLINES,
+        DOCUMENT_STALE,
+        READY
+    };
+    struct UVPipelineDiagnostic {
+        UVPipelineStatus status = UVPipelineStatus::READY;
+        std::string statusReason;
+        std::string shapeName;
+        uint8_t shapeType = 0;
+        bool hasCompiledTopology = false;
+        bool hasUVLayout = false;
+        bool isUVLayoutValid = false;
+        bool isDocumentInSync = false;
+        size_t faceCount = 0;
+        size_t triangleCount = 0;
+        size_t islandCount = 0;
+        size_t outlineCount = 0;
+        bool isLegacyFallbackActive = false;
+        const char* geometrySource = "Unknown";
+    };
+    UVPipelineDiagnostic EvaluateUVPipelineDiagnostic() const;
+    void RemapActivePrimitiveUV();
 
     // --- BM-UV8 3D Painting Viewport Input State ---
     bool m_is3DPaintStroking = false;

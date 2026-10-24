@@ -136,14 +136,22 @@ inline uint32_t GetSemanticSurfaceCount(ShapeType type) {
         case ShapeType::Pyramid:
             return 5;
         case ShapeType::PyramidFrustum:
+        case ShapeType::RoundedBox:
             return 6;
+        case ShapeType::Wedge:
+            return 5;
+        case ShapeType::Tetrahedron:
+            return 4;
+        case ShapeType::Torus:
+        case ShapeType::Ellipsoid:
+            return 1;
         default:
             return 1;
     }
 }
 
 inline const char* GetSemanticSurfaceName(ShapeType type, uint32_t surfaceId) {
-    if (type == ShapeType::Cube || type == ShapeType::Cuboid || type == ShapeType::Parallelepiped) {
+    if (type == ShapeType::Cube || type == ShapeType::Cuboid || type == ShapeType::Parallelepiped || type == ShapeType::RoundedBox) {
         switch (surfaceId) {
             case 0: return "Back (-Z)";
             case 1: return "Front (+Z)";
@@ -153,6 +161,46 @@ inline const char* GetSemanticSurfaceName(ShapeType type, uint32_t surfaceId) {
             case 5: return "Top (+Y)";
             default: return "Face";
         }
+    } else if (type == ShapeType::Pyramid) {
+        switch (surfaceId) {
+            case 0: return "Back (-Z)";
+            case 1: return "Front (+Z)";
+            case 2: return "Left (-X)";
+            case 3: return "Right (+X)";
+            case 4: return "Bottom (-Y)";
+            default: return "Face";
+        }
+    } else if (type == ShapeType::PyramidFrustum) {
+        switch (surfaceId) {
+            case 0: return "Back (-Z)";
+            case 1: return "Front (+Z)";
+            case 2: return "Left (-X)";
+            case 3: return "Right (+X)";
+            case 4: return "Bottom (-Y)";
+            case 5: return "Top (+Y)";
+            default: return "Face";
+        }
+    } else if (type == ShapeType::Wedge) {
+        switch (surfaceId) {
+            case 0: return "Slope (+Z/+Y)";
+            case 1: return "Bottom (-Y)";
+            case 2: return "Back (-Z)";
+            case 3: return "Left Triangle (-X)";
+            case 4: return "Right Triangle (+X)";
+            default: return "Face";
+        }
+    } else if (type == ShapeType::Tetrahedron) {
+        switch (surfaceId) {
+            case 0: return "Face 0 (Base)";
+            case 1: return "Face 1 (Front)";
+            case 2: return "Face 2 (Left)";
+            case 3: return "Face 3 (Right)";
+            default: return "Face";
+        }
+    } else if (type == ShapeType::Torus) {
+        return "Torus Body";
+    } else if (type == ShapeType::Ellipsoid) {
+        return "Ellipsoid Body";
     } else if (type == ShapeType::Cylinder || type == ShapeType::HollowCylinder || type == ShapeType::Barrel) {
         switch (surfaceId) {
             case 0: return "Body (Lateral)";

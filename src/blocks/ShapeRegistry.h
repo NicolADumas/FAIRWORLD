@@ -55,7 +55,43 @@ enum class ShapeType : uint8_t {
     TriangleMesh,
     LegacySuperSphere,
     Heightfield,
-    SignedDistanceField
+    SignedDistanceField,
+
+    // --- BM-SHAPES MASTER CATALOG ---
+    // A — STRUCTURAL PRIMITIVES
+    Wedge = 26,
+    Ramp = 27,
+    ChamferedBox = 28,
+    RoundedBox = 29,
+    HexagonalPrism = 30,
+
+    // B — ARCHITECTURAL SHAPES
+    Arch = 31,
+    Vault = 32,
+    Dome = 33,
+    Hemisphere = 34,
+    HollowDome = 35,
+
+    // C — TOROIDAL SHAPES
+    Torus = 36,
+    HalfTorus = 37,
+    TorusArc = 38,
+    EllipticalTorus = 39,
+    TwistedTorus = 40,
+
+    // D — POLYHEDRAL SHAPES
+    Tetrahedron = 41,
+    Octahedron = 42,
+    Dodecahedron = 43,
+    Icosahedron = 44,
+    TruncatedCube = 45,
+
+    // E — ADVANCED SHAPES
+    Ellipsoid = 46,
+    Superellipsoid = 47,
+    StarPrism = 48,
+    TwistedPrism = 49,
+    Helix = 50
 };
 
 // Parameter structures
@@ -78,6 +114,13 @@ struct ShapeParamsUngula { float radius, height, cutAngle; };
 struct ShapeParamsBarrel { float midRadius, endRadius, height; };
 struct ShapeParamsCapsule { float radius, halfHeight; };
 struct ShapeParamsLegacySuperSphere { float n; };
+
+// BM-SHAPES-01 Parameter structures
+struct ShapeParamsWedge { glm::vec3 size{1.0f, 1.0f, 1.0f}; };
+struct ShapeParamsRoundedBox { glm::vec3 size{1.0f, 1.0f, 1.0f}; float radius{0.15f}; int segments{3}; };
+struct ShapeParamsTorus { float majorRadius{0.75f}; float minorRadius{0.25f}; int majorSegments{24}; int minorSegments{12}; };
+struct ShapeParamsTetrahedron { float sideLength{1.0f}; };
+struct ShapeParamsEllipsoid { glm::vec3 radius{1.0f, 0.7f, 0.5f}; int rings{16}; int segments{24}; };
 
 struct ShapeParamsConvexHull { std::vector<glm::vec3> vertices; };
 struct ShapeParamsTriangleMesh { std::vector<glm::vec3> vertices; std::vector<uint32_t> indices; };
@@ -113,7 +156,12 @@ using ShapeParameters = std::variant<
     ShapeParamsConvexHull,
     ShapeParamsCompound,
     ShapeParamsTriangleMesh,
-    ShapeParamsLegacySuperSphere
+    ShapeParamsLegacySuperSphere,
+    ShapeParamsWedge,
+    ShapeParamsRoundedBox,
+    ShapeParamsTorus,
+    ShapeParamsTetrahedron,
+    ShapeParamsEllipsoid
 >;
 
 struct ShapeValidationResult {

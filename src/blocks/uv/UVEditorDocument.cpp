@@ -315,21 +315,29 @@ bool UVEditorDocument::IsPointInIsland(const glm::vec2& atlasUV, UVIslandID isla
     const auto& isl = m_layout.islands[islandId];
     if (isl.atlasPage != m_activeAtlasPage) return false;
 
+    // Fail-closed se la revisione topologica della mesh non corrisponde alla revisione registrata nel layout UV
+    if (m_layout.meshTopologyRevision != m_mesh.GetTopologyRevision()) {
+        return false;
+    }
+
+    // Invariante Bounding Box: [scaleU, scaleV, offsetU, offsetV]
+    // x = scaleU, y = scaleV, z = offsetU, w = offsetV
     float uMin = isl.atlasTransform.z - 1e-4f;
     float vMin = isl.atlasTransform.w - 1e-4f;
     float uMax = isl.atlasTransform.z + isl.atlasTransform.x + 1e-4f;
-    float vMax = vMin + isl.atlasTransform.y + 1e-4f;
+    float vMax = isl.atlasTransform.w + isl.atlasTransform.y + 1e-4f;
     if (atlasUV.x < uMin || atlasUV.x > uMax || atlasUV.y < vMin || atlasUV.y > vMax) {
         return false;
     }
 
-    for (FaceID fId : isl.faces) {
+    auto testFace = [this, &atlasUV](FaceID fId) -> bool {
+        if (!m_mesh.IsValid(fId)) return false;
         const auto* f = m_mesh.GetFace(fId);
-        if (!f || !IsValid(f->halfEdge)) continue;
+        if (!f || !IsValid(f->halfEdge)) return false;
 
         HalfEdgeID h0 = f->halfEdge;
         const auto* he0 = m_mesh.GetHalfEdge(h0);
-        if (!he0) continue;
+        if (!he0) return false;
         glm::vec2 uv0 = he0->corner.uv;
 
         HalfEdgeID hPrev = he0->next;
@@ -350,7 +358,16 @@ bool UVEditorDocument::IsPointInIsland(const glm::vec2& atlasUV, UVIslandID isla
 
             hPrev = hCurr;
         }
+        return false;
+    };
+
+    // Testa esclusivamente le facce registrate nell'isola verificando che siano valide
+    for (FaceID fId : isl.faces) {
+        if (m_mesh.IsValid(fId)) {
+            if (testFace(fId)) return true;
+        }
     }
+
     return false;
 }
 
@@ -386,22 +403,21 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
     }
 
     UVIslandID targetIsland = FindIslandAtUV(atlasUV);
+    if (targetIsland == INVALID_UVISLAND_ID) {
+        return false;
+    }
 
     // Esegue il tratto di pittura 2D delegando a TexturePaintingService (BM-UV5.5)
     if (!paintingService->BeginStroke(layerId, false)) {
         return false;
     }
 
-    if (targetIsland != INVALID_UVISLAND_ID) {
-        auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
-            glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
-                                      (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
-            return this->IsPointInIsland(pUV, targetIsland);
-        };
-        paintingService->ApplyDabClipped(pixelCoords, brush, clipCb);
-    } else {
-        paintingService->ApplyDab(pixelCoords, brush);
-    }
+    auto clipCb = [this, targetW, targetH, targetIsland](int32_t px, int32_t py) -> bool {
+        glm::vec2 pUV = glm::vec2((static_cast<float>(px) + 0.5f) / static_cast<float>(targetW),
+                                  (static_cast<float>(py) + 0.5f) / static_cast<float>(targetH));
+        return this->IsPointInIsland(pUV, targetIsland);
+    };
+    paintingService->ApplyDabClipped(pixelCoords, brush, clipCb);
 
     paintingService->EndStroke();
     return true;
@@ -417,7 +433,12 @@ bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV,
 
     UVIslandID targetIsland = INVALID_UVISLAND_ID;
     if (paintMode == CanvasPaintMode::SurfacePaint) {
-        if (!m_selectedIslands.empty()) {
+        if (m_layout.meshTopologyRevision != m_mesh.GetTopologyRevision()) {
+            m_lastPaintBlockedReason = "Surface Paint: Revisione topologica incompatibile. Richiesto aggiornamento del layout UV.";
+            return false;
+        }
+        ValidateSelection();
+        if (m_selectedIslands.size() > 1) {
             for (UVIslandID selId : m_selectedIslands) {
                 if (IsPointInIsland(atlasUV, selId)) {
                     targetIsland = selId;
@@ -425,12 +446,13 @@ bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV,
                 }
             }
             if (targetIsland == INVALID_UVISLAND_ID) {
-                // Click fuori dalle isole selezionate esplicitamente dall'utente
-                m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dall'isola UV selezionata.";
+                // Click fuori dalle isole selezionate esplicitamente dall'utente in modalita multi-selezione
+                m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalle isole UV multi-selezionate.";
                 return false;
             }
         } else {
-            // Nessuna isola selezionata esplicitamente: cerca l'isola sotto il cursore
+            // Se c'e' una sola isola selezionata o nessuna, cerca l'isola sotto il cursore.
+            // Se il cursore e' su un'altra isola valida, aggiorna la selezione (auto-switch deterministico)
             targetIsland = FindIslandAtUV(atlasUV);
             if (targetIsland == INVALID_UVISLAND_ID) {
                 // BM-P03: In Surface Paint, NON consentire pittura UNCLIPPED fuori superficie

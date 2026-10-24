@@ -142,14 +142,18 @@ UVMappingStrategy PrimitiveUVMapper::AnalyzePrimitive(const EditableMesh& mesh,
             case ShapeType::Parallelepiped:
             case ShapeType::Ungula:
             case ShapeType::ConvexHull:
+            case ShapeType::RoundedBox:
                 return UVMappingStrategy::Box;
             case ShapeType::Pyramid:
             case ShapeType::PyramidFrustum:
+            case ShapeType::Wedge:
+            case ShapeType::Tetrahedron:
                 return UVMappingStrategy::Planar;
             case ShapeType::Cylinder:
             case ShapeType::HollowCylinder:
             case ShapeType::SlicedCylinder:
             case ShapeType::Barrel:
+            case ShapeType::Torus:
                 return UVMappingStrategy::Cylindrical;
             case ShapeType::Cone:
             case ShapeType::ConeFrustum:
@@ -160,6 +164,7 @@ UVMappingStrategy PrimitiveUVMapper::AnalyzePrimitive(const EditableMesh& mesh,
             case ShapeType::SphericalSector:
             case ShapeType::Capsule:
             case ShapeType::LegacySuperSphere:
+            case ShapeType::Ellipsoid:
                 return UVMappingStrategy::Hemisphere;
             default:
                 return UVMappingStrategy::Parametric;
@@ -437,25 +442,40 @@ PrimitiveMappingResult PrimitiveUVMapper::GeneratePyramidMapping(EditableMesh& m
     outLayout.strategyUsed = UVMappingStrategy::Planar;
     outLayout.meshTopologyRevision = mesh.GetTopologyRevision();
 
-    // Isole: Base (0), 4 Facce Laterali (1..4), Tappo Superiore se Frustum (5)
-    uint32_t numIslands = isFrustum ? 6 : 5;
+    // Isole: Base (0), 4 Facce Laterali (1..4: North, East, South, West), Tappo Superiore se Frustum (5)
+    const uint32_t numIslands = isFrustum ? 6 : 5;
+    const char* islandNames[6] = {
+        "Base Cap (-Y)",
+        "Lateral Face (North +Z)",
+        "Lateral Face (East +X)",
+        "Lateral Face (South -Z)",
+        "Lateral Face (West -X)",
+        "Top Cap (+Y)"
+    };
+
+    const float margin = 0.004f; // 4px padding anti-bleeding
+    const float tileW = 1.0f / 3.0f;
+    const float tileH = 1.0f / 2.0f;
+    const float cellW = tileW - 2.0f * margin;
+    const float cellH = tileH - 2.0f * margin;
+
     for (uint32_t i = 0; i < numIslands; ++i) {
         UVIsland isl;
         isl.id = i;
+        isl.semanticName = islandNames[i];
         isl.semanticSurfaceId = i;
         isl.localUVBounds = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-        isl.atlasTransform = glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+        float col = static_cast<float>(i % 3);
+        float row = static_cast<float>(i / 3);
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
+        isl.atlasTransform = glm::vec4(cellW, cellH, u0, v0);
         outLayout.islands.push_back(isl);
     }
-    outLayout.islands[0].semanticName = "Base Cap (-Y)";
-    outLayout.islands[1].semanticName = "Lateral Face (North)";
-    outLayout.islands[2].semanticName = "Lateral Face (East)";
-    outLayout.islands[3].semanticName = "Lateral Face (South)";
-    outLayout.islands[4].semanticName = "Lateral Face (West)";
-    if (isFrustum) outLayout.islands[5].semanticName = "Top Cap (+Y)";
 
     AABB bounds = mesh.ComputeAABB();
     float halfH = (height > 1e-4f ? height : bounds.size().y) * 0.5f;
+    if (halfH < 1e-4f) halfH = 0.5f;
 
     for (FaceID fId : mesh.GetActiveFaceIDs()) {
         const auto* face = mesh.GetFace(fId);
@@ -464,35 +484,30 @@ PrimitiveMappingResult PrimitiveUVMapper::GeneratePyramidMapping(EditableMesh& m
         glm::vec3 n = face->faceNormal;
         uint32_t islandIdx = 0;
 
-        if (n.y < -0.6f) {
+        if (face->surfaceId < numIslands) {
+            islandIdx = face->surfaceId;
+        } else if (n.y < -0.6f) {
             islandIdx = 0; // Base
         } else if (isFrustum && n.y > 0.6f) {
             islandIdx = 5; // Top Cap
         } else {
-            // Faccia laterale inclinata
+            // Faccia laterale inclinata classificata da normale
             if (std::abs(n.z) >= std::abs(n.x)) {
-                islandIdx = (n.z >= 0.0f) ? 1 : 3;
+                islandIdx = (n.z >= 0.0f) ? 1 : 3; // North (+Z) / South (-Z)
             } else {
-                islandIdx = (n.x >= 0.0f) ? 2 : 4;
+                islandIdx = (n.x >= 0.0f) ? 2 : 4; // East (+X) / West (-X)
             }
         }
+
+        if (islandIdx >= numIslands) islandIdx = 0;
 
         outLayout.islands[islandIdx].faces.push_back(fId);
         outLayout.faceToIslandMap[fId] = islandIdx;
 
-        // Distribuzione nell'atlas: riga inferiore per basi, riga superiore per facce laterali
-        float uOffset = 0.0f, vOffset = 0.0f, uScale = 0.25f, vScale = 0.5f;
-        if (islandIdx == 0) {
-            uOffset = 0.0f; vOffset = 0.0f; uScale = 0.5f; vScale = 0.5f;
-        } else if (islandIdx == 5) {
-            uOffset = 0.5f; vOffset = 0.0f; uScale = 0.5f; vScale = 0.5f;
-        } else {
-            uint32_t latIdx = islandIdx - 1;
-            uOffset = latIdx * 0.25f;
-            vOffset = 0.5f;
-            uScale = 0.25f;
-            vScale = 0.5f;
-        }
+        float col = static_cast<float>(islandIdx % 3);
+        float row = static_cast<float>(islandIdx / 3);
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
 
         for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
             auto* he = mesh.GetHalfEdgeMutable(heId);
@@ -503,31 +518,82 @@ PrimitiveMappingResult PrimitiveUVMapper::GeneratePyramidMapping(EditableMesh& m
             glm::vec3 p = v->position;
             float uLoc = 0.5f, vLoc = 0.5f;
 
-            if (islandIdx == 0 || islandIdx == 5) {
-                // Proiezione planare orizzontale
-                float w = (islandIdx == 0 ? width : topW);
-                float d = (islandIdx == 0 ? depth : topD);
-                if (w < 1e-4f) w = 1.0f;
-                if (d < 1e-4f) d = 1.0f;
+            if (islandIdx == 0) {
+                // Base Cap (-Y): proiezione orizzontale
+                float w = width > 1e-4f ? width : 1.0f;
+                float d = depth > 1e-4f ? depth : 1.0f;
+                uLoc = (p.x / w) + 0.5f;
+                vLoc = 1.0f - ((p.z / d) + 0.5f);
+            } else if (islandIdx == 5) {
+                // Top Cap (+Y): proiezione orizzontale
+                float w = topW > 1e-4f ? topW : 1.0f;
+                float d = topD > 1e-4f ? topD : 1.0f;
                 uLoc = (p.x / w) + 0.5f;
                 vLoc = (p.z / d) + 0.5f;
             } else {
-                // Sviluppo conforme della faccia laterale
+                // Sviluppo conforme e geometrico della faccia laterale (trapezio o triangolo)
                 float hRatio = glm::clamp((p.y + halfH) / (2.0f * halfH), 0.0f, 1.0f);
                 vLoc = hRatio;
-                // Lungo il perimetro orizzontale
-                if (islandIdx == 1 || islandIdx == 3) {
-                    uLoc = (p.x / (width > 1e-4f ? width : 1.0f)) + 0.5f;
-                } else {
-                    uLoc = (p.z / (depth > 1e-4f ? depth : 1.0f)) + 0.5f;
+
+                float wRef = width > 1e-4f ? width : 1.0f;
+                float dRef = depth > 1e-4f ? depth : 1.0f;
+
+                switch (islandIdx) {
+                    case 1: // North (+Z)
+                        uLoc = (p.x / wRef) + 0.5f;
+                        break;
+                    case 2: // East (+X)
+                        uLoc = 1.0f - ((p.z / dRef) + 0.5f);
+                        break;
+                    case 3: // South (-Z)
+                        uLoc = 1.0f - ((p.x / wRef) + 0.5f);
+                        break;
+                    case 4: // West (-X)
+                        uLoc = (p.z / dRef) + 0.5f;
+                        break;
                 }
             }
 
             uLoc = glm::clamp(uLoc, 0.0f, 1.0f);
             vLoc = glm::clamp(vLoc, 0.0f, 1.0f);
 
-            he->corner.uv = glm::vec2(uOffset + uLoc * uScale, vOffset + vLoc * vScale);
+            he->corner.uv = glm::vec2(u0 + (uLoc * cellW), v0 + (vLoc * cellH));
         }
+    }
+
+    // Popola boundaryHalfEdges e seamEdges per ciascuna isola
+    for (uint32_t i = 0; i < numIslands; ++i) {
+        auto& isl = outLayout.islands[i];
+        isl.boundaryHalfEdges.clear();
+        isl.seamEdges.clear();
+        std::unordered_set<EdgeID> seamSet;
+
+        for (FaceID fId : isl.faces) {
+            for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+                const auto* he = mesh.GetHalfEdge(heId);
+                if (!he) continue;
+
+                bool isBoundary = false;
+                if (!IsValid(he->twin)) {
+                    isBoundary = true;
+                } else {
+                    const auto* twinHe = mesh.GetHalfEdge(he->twin);
+                    if (!twinHe || !IsValid(twinHe->face)) {
+                        isBoundary = true;
+                    } else if (outLayout.faceToIslandMap[twinHe->face] != i) {
+                        isBoundary = true;
+                    }
+                }
+
+                if (isBoundary) {
+                    isl.boundaryHalfEdges.push_back(heId);
+                    if (IsValid(he->edge)) {
+                        seamSet.insert(he->edge);
+                    }
+                }
+            }
+        }
+        isl.seamEdges.assign(seamSet.begin(), seamSet.end());
     }
 
     if (options.markSeamEdges) {
@@ -541,6 +607,404 @@ PrimitiveMappingResult PrimitiveUVMapper::GeneratePyramidMapping(EditableMesh& m
                     MarkSeamEdge(mesh, eId, 1.0f);
                 }
             }
+        }
+    }
+
+    mesh.IncrementAttributeRevision();
+    outLayout.meshAttributeRevision = mesh.GetAttributeRevision();
+
+    ValidateGeneratedUV(mesh, outLayout, res.validation);
+    res.layout = outLayout;
+    res.status = res.validation.isValid ? PrimitiveMappingStatus::SUCCESS : PrimitiveMappingStatus::PARTIAL_SUCCESS;
+    res.success = res.validation.isValid;
+    return res;
+}
+
+// =============================================================================
+// BM-SHAPES-01: MAPPATURE ANALITICHE SPECIALIZZATE
+// =============================================================================
+
+PrimitiveMappingResult PrimitiveUVMapper::GenerateWedgeMapping(EditableMesh& mesh, 
+                                                              UVLayout& outLayout, 
+                                                              const glm::vec3& size,
+                                                              const PrimitiveUVOptions& options) {
+    PrimitiveMappingResult res;
+    outLayout.Clear();
+    outLayout.strategyUsed = UVMappingStrategy::Planar;
+    outLayout.meshTopologyRevision = mesh.GetTopologyRevision();
+
+    // 5 chart in griglia 3x2:
+    // 0: Slope (+Z/+Y), 1: Bottom (-Y), 2: Back (-Z), 3: Left Triangle (-X), 4: Right Triangle (+X)
+    const char* names[5] = { "Slope (+Z/+Y)", "Bottom (-Y)", "Back (-Z)", "Left Triangle (-X)", "Right Triangle (+X)" };
+    const float margin = 0.004f;
+    const float tileW = 1.0f / 3.0f;
+    const float tileH = 1.0f / 2.0f;
+    const float cellW = tileW - 2.0f * margin;
+    const float cellH = tileH - 2.0f * margin;
+
+    for (uint32_t i = 0; i < 5; ++i) {
+        UVIsland isl;
+        isl.id = i;
+        isl.semanticName = names[i];
+        isl.semanticSurfaceId = i;
+        isl.atlasPage = 0;
+        float col = static_cast<float>(i % 3);
+        float row = static_cast<float>(i / 3);
+        isl.atlasTransform = glm::vec4(cellW, cellH, col * tileW + margin, row * tileH + margin);
+        outLayout.islands.push_back(isl);
+    }
+
+    float w = size.x > 1e-4f ? size.x : 1.0f;
+    float h = size.y > 1e-4f ? size.y : 1.0f;
+    float d = size.z > 1e-4f ? size.z : 1.0f;
+
+    for (FaceID fId : mesh.GetActiveFaceIDs()) {
+        const auto* face = mesh.GetFace(fId);
+        if (!face) continue;
+
+        uint32_t islandIdx = face->surfaceId < 5 ? face->surfaceId : 0;
+        outLayout.islands[islandIdx].faces.push_back(fId);
+        outLayout.faceToIslandMap[fId] = islandIdx;
+
+        float col = static_cast<float>(islandIdx % 3);
+        float row = static_cast<float>(islandIdx / 3);
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
+
+        for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+            auto* he = mesh.GetHalfEdgeMutable(heId);
+            if (!he) continue;
+            const auto* v = mesh.GetVertex(he->origin);
+            if (!v) continue;
+
+            glm::vec3 p = v->position;
+            float uLoc = 0.5f, vLoc = 0.5f;
+
+            switch (islandIdx) {
+                case 0: // Slope (+Z/+Y)
+                    uLoc = (p.x / w) + 0.5f;
+                    vLoc = 1.0f - ((p.y / h) + 0.5f);
+                    break;
+                case 1: // Bottom (-Y)
+                    uLoc = (p.x / w) + 0.5f;
+                    vLoc = 1.0f - ((p.z / d) + 0.5f);
+                    break;
+                case 2: // Back (-Z)
+                    uLoc = 1.0f - ((p.x / w) + 0.5f);
+                    vLoc = 1.0f - ((p.y / h) + 0.5f);
+                    break;
+                case 3: // Left (-X)
+                    uLoc = (p.z / d) + 0.5f;
+                    vLoc = 1.0f - ((p.y / h) + 0.5f);
+                    break;
+                case 4: // Right (+X)
+                    uLoc = 1.0f - ((p.z / d) + 0.5f);
+                    vLoc = 1.0f - ((p.y / h) + 0.5f);
+                    break;
+            }
+
+            uLoc = glm::clamp(uLoc, 0.0f, 1.0f);
+            vLoc = glm::clamp(vLoc, 0.0f, 1.0f);
+            he->corner.uv = glm::vec2(u0 + uLoc * cellW, v0 + vLoc * cellH);
+        }
+    }
+
+    // Popola boundaryHalfEdges e seamEdges
+    for (uint32_t i = 0; i < 5; ++i) {
+        auto& isl = outLayout.islands[i];
+        std::unordered_set<EdgeID> seamSet;
+        for (FaceID fId : isl.faces) {
+            for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+                const auto* he = mesh.GetHalfEdge(heId);
+                if (!he) continue;
+                bool isB = !IsValid(he->twin);
+                if (!isB) {
+                    const auto* twinHe = mesh.GetHalfEdge(he->twin);
+                    if (!twinHe || !IsValid(twinHe->face) || outLayout.faceToIslandMap[twinHe->face] != i) isB = true;
+                }
+                if (isB) {
+                    isl.boundaryHalfEdges.push_back(heId);
+                    if (IsValid(he->edge)) seamSet.insert(he->edge);
+                }
+            }
+        }
+        isl.seamEdges.assign(seamSet.begin(), seamSet.end());
+    }
+
+    if (options.markSeamEdges) {
+        for (EdgeID eId : mesh.GetActiveEdgeIDs()) {
+            const auto* e = mesh.GetEdge(eId);
+            if (!e) continue;
+            const auto* he0 = mesh.GetHalfEdge(e->halfEdge);
+            const auto* he1 = mesh.GetHalfEdge(e->twin);
+            if (he0 && he1 && IsValid(he0->face) && IsValid(he1->face)) {
+                if (outLayout.faceToIslandMap[he0->face] != outLayout.faceToIslandMap[he1->face]) {
+                    MarkSeamEdge(mesh, eId, 1.0f);
+                }
+            }
+        }
+    }
+
+    mesh.IncrementAttributeRevision();
+    outLayout.meshAttributeRevision = mesh.GetAttributeRevision();
+
+    ValidateGeneratedUV(mesh, outLayout, res.validation);
+    res.layout = outLayout;
+    res.status = res.validation.isValid ? PrimitiveMappingStatus::SUCCESS : PrimitiveMappingStatus::PARTIAL_SUCCESS;
+    res.success = res.validation.isValid;
+    return res;
+}
+
+PrimitiveMappingResult PrimitiveUVMapper::GenerateTetrahedronMapping(EditableMesh& mesh, 
+                                                                    UVLayout& outLayout, 
+                                                                    float sideLength,
+                                                                    const PrimitiveUVOptions& options) {
+    PrimitiveMappingResult res;
+    outLayout.Clear();
+    outLayout.strategyUsed = UVMappingStrategy::Planar;
+    outLayout.meshTopologyRevision = mesh.GetTopologyRevision();
+
+    // 4 chart triangolari in griglia 2x2
+    const char* names[4] = { "Face 0 (Base)", "Face 1 (Front)", "Face 2 (Left)", "Face 3 (Right)" };
+    const float margin = 0.004f;
+    const float tileW = 0.5f;
+    const float tileH = 0.5f;
+    const float cellW = tileW - 2.0f * margin;
+    const float cellH = tileH - 2.0f * margin;
+
+    for (uint32_t i = 0; i < 4; ++i) {
+        UVIsland isl;
+        isl.id = i;
+        isl.semanticName = names[i];
+        isl.semanticSurfaceId = i;
+        isl.atlasPage = 0;
+        float col = static_cast<float>(i % 2);
+        float row = static_cast<float>(i / 2);
+        isl.atlasTransform = glm::vec4(cellW, cellH, col * tileW + margin, row * tileH + margin);
+        outLayout.islands.push_back(isl);
+    }
+
+    for (FaceID fId : mesh.GetActiveFaceIDs()) {
+        const auto* face = mesh.GetFace(fId);
+        if (!face) continue;
+
+        uint32_t islandIdx = face->surfaceId < 4 ? face->surfaceId : 0;
+        outLayout.islands[islandIdx].faces.push_back(fId);
+        outLayout.faceToIslandMap[fId] = islandIdx;
+
+        float col = static_cast<float>(islandIdx % 2);
+        float row = static_cast<float>(islandIdx / 2);
+        float u0 = col * tileW + margin;
+        float v0 = row * tileH + margin;
+
+        // Costruisci base ortonormale locale 2D sul piano del triangolo
+        auto hes = mesh.GetFaceHalfEdges(fId);
+        if (hes.size() >= 3) {
+            const auto* v0p = mesh.GetVertex(mesh.GetHalfEdge(hes[0])->origin);
+            const auto* v1p = mesh.GetVertex(mesh.GetHalfEdge(hes[1])->origin);
+            const auto* v2p = mesh.GetVertex(mesh.GetHalfEdge(hes[2])->origin);
+            if (v0p && v1p && v2p) {
+                glm::vec3 center = (v0p->position + v1p->position + v2p->position) / 3.0f;
+                glm::vec3 e0 = v1p->position - v0p->position;
+                glm::vec3 tangent = glm::length(e0) > 1e-5f ? glm::normalize(e0) : glm::vec3(1, 0, 0);
+                glm::vec3 normal = face->faceNormal;
+                glm::vec3 bitangent = glm::normalize(glm::cross(normal, tangent));
+
+                float sRef = sideLength > 1e-4f ? sideLength : 1.0f;
+
+                for (HalfEdgeID heId : hes) {
+                    auto* he = mesh.GetHalfEdgeMutable(heId);
+                    if (!he) continue;
+                    const auto* vert = mesh.GetVertex(he->origin);
+                    if (!vert) continue;
+
+                    glm::vec3 p = vert->position - center;
+                    float uLoc = (glm::dot(p, tangent) / sRef) + 0.5f;
+                    float vLoc = (glm::dot(p, bitangent) / (sRef * 0.866f)) + 0.5f;
+                    uLoc = glm::clamp(uLoc, 0.0f, 1.0f);
+                    vLoc = glm::clamp(vLoc, 0.0f, 1.0f);
+                    he->corner.uv = glm::vec2(u0 + uLoc * cellW, v0 + vLoc * cellH);
+                }
+            }
+        }
+    }
+
+    // Popola boundaryHalfEdges e seamEdges
+    for (uint32_t i = 0; i < 4; ++i) {
+        auto& isl = outLayout.islands[i];
+        std::unordered_set<EdgeID> seamSet;
+        for (FaceID fId : isl.faces) {
+            for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+                const auto* he = mesh.GetHalfEdge(heId);
+                if (!he) continue;
+                bool isB = !IsValid(he->twin);
+                if (!isB) {
+                    const auto* twinHe = mesh.GetHalfEdge(he->twin);
+                    if (!twinHe || !IsValid(twinHe->face) || outLayout.faceToIslandMap[twinHe->face] != i) isB = true;
+                }
+                if (isB) {
+                    isl.boundaryHalfEdges.push_back(heId);
+                    if (IsValid(he->edge)) seamSet.insert(he->edge);
+                }
+            }
+        }
+        isl.seamEdges.assign(seamSet.begin(), seamSet.end());
+    }
+
+    if (options.markSeamEdges) {
+        for (EdgeID eId : mesh.GetActiveEdgeIDs()) {
+            const auto* e = mesh.GetEdge(eId);
+            if (!e) continue;
+            const auto* he0 = mesh.GetHalfEdge(e->halfEdge);
+            const auto* he1 = mesh.GetHalfEdge(e->twin);
+            if (he0 && he1 && IsValid(he0->face) && IsValid(he1->face)) {
+                if (outLayout.faceToIslandMap[he0->face] != outLayout.faceToIslandMap[he1->face]) {
+                    MarkSeamEdge(mesh, eId, 1.0f);
+                }
+            }
+        }
+    }
+
+    mesh.IncrementAttributeRevision();
+    outLayout.meshAttributeRevision = mesh.GetAttributeRevision();
+
+    ValidateGeneratedUV(mesh, outLayout, res.validation);
+    res.layout = outLayout;
+    res.status = res.validation.isValid ? PrimitiveMappingStatus::SUCCESS : PrimitiveMappingStatus::PARTIAL_SUCCESS;
+    res.success = res.validation.isValid;
+    return res;
+}
+
+PrimitiveMappingResult PrimitiveUVMapper::GenerateTorusMapping(EditableMesh& mesh, 
+                                                              UVLayout& outLayout, 
+                                                              float majorRadius, float minorRadius,
+                                                              const PrimitiveUVOptions& options) {
+    PrimitiveMappingResult res;
+    outLayout.Clear();
+    outLayout.strategyUsed = UVMappingStrategy::Cylindrical;
+    outLayout.meshTopologyRevision = mesh.GetTopologyRevision();
+
+    UVIsland isl;
+    isl.id = 0;
+    isl.semanticName = "Torus Body";
+    isl.semanticSurfaceId = 0;
+    isl.atlasPage = 0;
+    isl.atlasTransform = glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+    outLayout.islands.push_back(isl);
+
+    float R = majorRadius > 1e-4f ? majorRadius : 0.75f;
+
+    for (FaceID fId : mesh.GetActiveFaceIDs()) {
+        outLayout.islands[0].faces.push_back(fId);
+        outLayout.faceToIslandMap[fId] = 0;
+
+        auto hes = mesh.GetFaceHalfEdges(fId);
+        std::vector<glm::vec2> quadUVs;
+        quadUVs.reserve(hes.size());
+
+        for (HalfEdgeID heId : hes) {
+            const auto* he = mesh.GetHalfEdge(heId);
+            if (!he) continue;
+            const auto* vert = mesh.GetVertex(he->origin);
+            if (!vert) continue;
+
+            glm::vec3 p = vert->position;
+            // Angolo maggiore attorno all'asse Y: theta in [-pi, pi]
+            float theta = std::atan2(p.z, p.x);
+            float u = (theta / glm::two_pi<float>()) + 0.5f;
+
+            // Centro del tubo all'angolo theta
+            glm::vec3 c(R * std::cos(theta), 0.0f, R * std::sin(theta));
+            glm::vec3 dP = p - c;
+            glm::vec3 radDir = glm::length(glm::vec2(p.x, p.z)) > 1e-4f ? glm::normalize(glm::vec3(p.x, 0.0f, p.z)) : glm::vec3(1, 0, 0);
+            float xMinor = glm::dot(dP, radDir);
+            float yMinor = dP.y;
+            float phi = std::atan2(yMinor, xMinor);
+            float v = (phi / glm::two_pi<float>()) + 0.5f;
+
+            quadUVs.push_back(glm::vec2(glm::clamp(u, 0.0f, 1.0f), glm::clamp(v, 0.0f, 1.0f)));
+        }
+
+        // Correzione salto cucitura U=1.0 -> U=0.0
+        if (quadUVs.size() == 4) {
+            CorrectSeamWrapQuad(quadUVs[0], quadUVs[1], quadUVs[2], quadUVs[3]);
+        }
+
+        for (size_t ci = 0; ci < hes.size() && ci < quadUVs.size(); ++ci) {
+            auto* he = mesh.GetHalfEdgeMutable(hes[ci]);
+            if (he) he->corner.uv = quadUVs[ci];
+        }
+    }
+
+    mesh.IncrementAttributeRevision();
+    outLayout.meshAttributeRevision = mesh.GetAttributeRevision();
+
+    ValidateGeneratedUV(mesh, outLayout, res.validation);
+    res.layout = outLayout;
+    res.status = res.validation.isValid ? PrimitiveMappingStatus::SUCCESS : PrimitiveMappingStatus::PARTIAL_SUCCESS;
+    res.success = res.validation.isValid;
+    return res;
+}
+
+PrimitiveMappingResult PrimitiveUVMapper::GenerateEllipsoidMapping(EditableMesh& mesh, 
+                                                                  UVLayout& outLayout, 
+                                                                  const glm::vec3& radius,
+                                                                  const PrimitiveUVOptions& options) {
+    PrimitiveMappingResult res;
+    outLayout.Clear();
+    outLayout.strategyUsed = UVMappingStrategy::Spherical;
+    outLayout.meshTopologyRevision = mesh.GetTopologyRevision();
+
+    UVIsland isl;
+    isl.id = 0;
+    isl.semanticName = "Ellipsoid Body";
+    isl.semanticSurfaceId = 0;
+    isl.atlasPage = 0;
+    isl.atlasTransform = glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+    outLayout.islands.push_back(isl);
+
+    glm::vec3 r = radius;
+    if (r.x < 1e-4f) r.x = 1.0f;
+    if (r.y < 1e-4f) r.y = 1.0f;
+    if (r.z < 1e-4f) r.z = 1.0f;
+
+    for (FaceID fId : mesh.GetActiveFaceIDs()) {
+        outLayout.islands[0].faces.push_back(fId);
+        outLayout.faceToIslandMap[fId] = 0;
+
+        auto hes = mesh.GetFaceHalfEdges(fId);
+        std::vector<glm::vec2> faceUVs;
+        faceUVs.reserve(hes.size());
+
+        for (HalfEdgeID heId : hes) {
+            const auto* he = mesh.GetHalfEdge(heId);
+            if (!he) continue;
+            const auto* vert = mesh.GetVertex(he->origin);
+            if (!vert) continue;
+
+            glm::vec3 p = vert->position;
+            glm::vec3 n(p.x / (r.x * r.x), p.y / (r.y * r.y), p.z / (r.z * r.z));
+            n = glm::length(n) > 1e-6f ? glm::normalize(n) : glm::vec3(0, 1, 0);
+
+            float u = 0.5f + (std::atan2(n.z, n.x) / glm::two_pi<float>());
+            float v = 0.5f - (std::asin(glm::clamp(n.y, -1.0f, 1.0f)) / glm::pi<float>());
+
+            // Protezione poli
+            if (std::abs(n.y) > 0.999f) {
+                glm::vec3 fn = mesh.GetFace(fId)->faceNormal;
+                u = 0.5f + (std::atan2(fn.z, fn.x) / glm::two_pi<float>());
+            }
+
+            faceUVs.push_back(glm::vec2(glm::clamp(u, 0.0f, 1.0f), glm::clamp(v, 0.0f, 1.0f)));
+        }
+
+        if (faceUVs.size() == 4) {
+            CorrectSeamWrapQuad(faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]);
+        }
+
+        for (size_t ci = 0; ci < hes.size() && ci < faceUVs.size(); ++ci) {
+            auto* he = mesh.GetHalfEdgeMutable(hes[ci]);
+            if (he) he->corner.uv = faceUVs[ci];
         }
     }
 
@@ -1321,6 +1785,38 @@ PrimitiveMappingResult PrimitiveUVMapper::AnalyzeAndMap(EditableMesh& mesh,
                 return res;
             }
             return GenerateBoxMapping(mesh, layout, glm::vec3(1.0f), options);
+        }
+
+        case ShapeType::Wedge: {
+            glm::vec3 sz(1.0f);
+            if (const auto* p = std::get_if<ShapeParamsWedge>(&params)) sz = p->size;
+            return GenerateWedgeMapping(mesh, layout, sz, options);
+        }
+
+        case ShapeType::RoundedBox: {
+            glm::vec3 sz(1.0f);
+            if (const auto* p = std::get_if<ShapeParamsRoundedBox>(&params)) sz = p->size;
+            return GenerateBoxMapping(mesh, layout, sz, options);
+        }
+
+        case ShapeType::Torus: {
+            float R = 0.75f, r = 0.25f;
+            if (const auto* p = std::get_if<ShapeParamsTorus>(&params)) {
+                R = p->majorRadius; r = p->minorRadius;
+            }
+            return GenerateTorusMapping(mesh, layout, R, r, options);
+        }
+
+        case ShapeType::Tetrahedron: {
+            float s = 1.0f;
+            if (const auto* p = std::get_if<ShapeParamsTetrahedron>(&params)) s = p->sideLength;
+            return GenerateTetrahedronMapping(mesh, layout, s, options);
+        }
+
+        case ShapeType::Ellipsoid: {
+            glm::vec3 r(1.0f, 0.7f, 0.5f);
+            if (const auto* p = std::get_if<ShapeParamsEllipsoid>(&params)) r = p->radius;
+            return GenerateEllipsoidMapping(mesh, layout, r, options);
         }
 
         case ShapeType::Compound: {

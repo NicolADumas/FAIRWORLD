@@ -43,8 +43,9 @@ void main() {
     gl_Position = push.mvp * vec4(pos, 1.0);
     
     // UV Mapping: adotta coordinate UV atlas unwrapped da inRoughMetal se presenti, altrimenti fallback procedurale planare
+    // Solo coordinate negative segnalano UV non assegnate: (0,0) e' una coordinata atlas perfettamente lecita (BM-UV-PAINTER MG03-FIX03)
     vec2 uv = inRoughMetal;
-    if (uv.x == 0.0 && uv.y == 0.0) {
+    if (uv.x < -0.5 || uv.y < -0.5) {
         vec3 absNormal = abs(inNormal);
         if (absNormal.y > 0.5) {
             uv = inPosition.xz;

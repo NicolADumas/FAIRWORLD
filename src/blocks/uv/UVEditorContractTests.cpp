@@ -5,6 +5,9 @@
 #include "UVAtlasPacker.h"
 #include "blocks/texture/SurfacePaintingAdapter.h"
 #include "blocks/texture/TexturePaintingService.h"
+#include "PrimitiveUVMapper.h"
+#include "world/GeometryCompiler.h"
+#include "blocks/sculpt/MeshBridgeService.h"
 #include <sstream>
 #include <cmath>
 
@@ -507,6 +510,320 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
                 "Conservazione esatta dei gradi di rotazione e revisione atlas",
                 obs, passed,
                 passed ? "Stato dell'editor coerente con serializzazione JSON." : "Incoerenza di serializzazione.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-19: Fail-closed Topology Revision & FaceID Validation
+    // -------------------------------------------------------------------------
+    {
+        auto [mesh, layout] = setupCubeLayout();
+        UVEditorDocument doc(mesh, layout);
+
+        glm::vec2 validUV = glm::vec2(layout.islands[0].atlasTransform.z + layout.islands[0].atlasTransform.x * 0.5f,
+                                      layout.islands[0].atlasTransform.w + layout.islands[0].atlasTransform.y * 0.5f);
+        bool initialHit = doc.IsPointInIsland(validUV, 0);
+
+        // Modifica la revisione topologica della mesh senza aggiornare il layout UV
+        mesh.IncrementTopologyRevision();
+
+        // Con revisione disallineata, IsPointInIsland deve fallire (fail-closed)
+        bool hitAfterTopoChange = doc.IsPointInIsland(validUV, 0);
+
+        // Anche BeginStroke2D in SurfacePaint deve fallire closed e riportare blocco
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512);
+        PaintBrush brush;
+        brush.radiusPixels = 5.0f;
+        brush.color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+        bool strokeStarted = doc.BeginStroke2D(validUV, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+
+        bool passed = initialHit && !hitAfterTopoChange && !strokeStarted &&
+                      !doc.GetLastPaintBlockedReason().empty();
+
+        std::string obs = "InitialHit=" + std::string(initialHit ? "true" : "false") +
+                          ", HitAfterTopoChange=" + std::string(hitAfterTopoChange ? "true" : "false") +
+                          ", StrokeStarted=" + std::string(strokeStarted ? "true" : "false") +
+                          ", BlockedReason='" + doc.GetLastPaintBlockedReason() + "'";
+
+        addTest("UVE-FailClosed", "Fail-closed Topology Revision & FaceID Contract",
+                "Verifica fail-closed su IsPointInIsland e BeginStroke2D con revisione topologica disallineata",
+                "Rifiuto categorico del test di contenimento e blocco della pennellata",
+                obs, passed,
+                passed ? "Contratto fail-closed rispettato: nessuna pittura non autorizzata."
+                       : "Violazione fail-closed: tratto consentito con revisione topologica disallineata.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-19: Polygon Mask Isolation (Wedge Triangle vs Quad Islands)
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+        UVEditorDocument doc(mesh, layout);
+
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512);
+
+        // Isola 3 e' il triangolo sinistro (col 0, row 1), Isola 1 e' il quad centrale (col 1, row 0).
+        // Esegui una pennellata centrata sull'isola triangolare con raggio ampio
+        const auto& isl3 = layout.islands[3];
+        glm::vec2 triCenterUV = glm::vec2(isl3.atlasTransform.z + isl3.atlasTransform.x * 0.25f,
+                                          isl3.atlasTransform.w + isl3.atlasTransform.y * 0.75f);
+        PaintBrush brush;
+        brush.radiusPixels = 40.0f;
+        brush.color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+        brush.opacity = 1.0f;
+        brush.strength = 1.0f;
+
+        bool strokeOk = doc.BeginStroke2D(triCenterUV, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+        doc.EndStroke2D(&painter);
+
+        // Verifica che i texel dell'Isola 1 (quad) NON siano stati alterati (alpha == 0)
+        const auto& isl1 = layout.islands[1];
+        glm::vec2 quadCenterUV = glm::vec2(isl1.atlasTransform.z + isl1.atlasTransform.x * 0.5f,
+                                           isl1.atlasTransform.w + isl1.atlasTransform.y * 0.5f);
+        glm::vec2 quadPx = UVAtlasPacker::AtlasToPixel(quadCenterUV, 512, 512);
+        PaintLayer* l = painter.GetLayer(1);
+        glm::vec4 quadCol = l ? l->pixelBuffer.GetPixel(static_cast<uint32_t>(quadPx.x), static_cast<uint32_t>(quadPx.y)) : glm::vec4(1.0f);
+
+        // Verifica che il centro del triangolo abbia ricevuto il colore del pennello
+        glm::vec2 triPx = UVAtlasPacker::AtlasToPixel(triCenterUV, 512, 512);
+        glm::vec4 triCol = l ? l->pixelBuffer.GetPixel(static_cast<uint32_t>(triPx.x), static_cast<uint32_t>(triPx.y)) : glm::vec4(0.0f);
+
+        bool passed = strokeOk && (quadCol.a < 1e-4f) && (triCol.r > 0.5f);
+        std::string obs = "StrokeOk=" + std::string(strokeOk ? "true" : "false") +
+                          ", QuadTexelAlpha=" + std::to_string(quadCol.a) +
+                          ", TriTexelRed=" + std::to_string(triCol.r);
+
+        addTest("UVE-19", "Polygon Mask Isolation",
+                "Pennellata su isola triangolare (isola 3) con maschera poligonale SurfacePaint",
+                "Texel interni di isola 1 intatti (alpha=0), texel interni triangolo dipinti",
+                obs, passed,
+                passed ? "Isolamento maschera poligonale rispettato: nessuna contaminazione multi-isola."
+                       : "Violazione isolamento: texel di altre isole contaminati.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-20: CPU/GPU UV Correspondence (Zero Divergence on Wedge)
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        // Compila mesh per rendering Vulkan 3D
+        GeometryCompileOptions gOpt;
+        auto compRes = GeometryCompiler::CompileEditableMesh(mesh, gOpt);
+        bool compileOk = compRes.success && !compRes.mesh.vertices.empty();
+
+        // Verifica che per ogni corner dell'EditableMesh, v.roughMetal (location=2 nello shader)
+        // coincida esattamente con l'UV atlas dell'editor entro 1e-4f
+        float maxDelta = 0.0f;
+        size_t verifiedCorners = 0;
+
+        for (FaceID fId : mesh.GetActiveFaceIDs()) {
+            const auto* f = mesh.GetFace(fId);
+            if (!f || !IsValid(f->halfEdge)) continue;
+            HalfEdgeID startH = f->halfEdge;
+            HalfEdgeID curH = startH;
+            do {
+                const auto* he = mesh.GetHalfEdge(curH);
+                if (!he) break;
+                glm::vec2 cpuUV = he->corner.uv;
+                
+                const auto* v = mesh.GetVertex(he->origin);
+                if (v) {
+                    bool matched = false;
+                    for (const auto& cv : compRes.mesh.vertices) {
+                        glm::vec3 cvPos(cv.position.x, cv.position.y, cv.position.z);
+                        if (glm::length(cvPos - v->position) < 1e-4f) {
+                            glm::vec2 cvRoughMetal(cv.roughMetal.x, cv.roughMetal.y);
+                            float d = glm::length(cvRoughMetal - cpuUV);
+                            if (d < 1e-4f) {
+                                matched = true;
+                                maxDelta = std::max(maxDelta, d);
+                                break;
+                            }
+                        }
+                    }
+                    if (matched) verifiedCorners++;
+                }
+                curH = he->next;
+            } while (curH != startH && IsValid(curH));
+        }
+
+        bool allUvsMatch = (verifiedCorners >= 18); // Wedge: 3 quad * 4 + 2 tri * 3 = 18 corners
+        bool passed = compileOk && allUvsMatch && (maxDelta < 1e-4f);
+        std::string obs = "CompileOk=" + std::string(compileOk ? "true" : "false") +
+                          ", VerifiedCorners=" + std::to_string(verifiedCorners) +
+                          ", MaxDelta=" + std::to_string(maxDelta);
+
+        addTest("UVE-20", "CPU/GPU UV Correspondence",
+                "Wedge UV analitico da EditableMesh a vertici compilati (v.roughMetal)",
+                "UV compilate Vulkan identiche alle UV CPU dell'editor entro 1e-4f senza duplicazioni o scaling",
+                obs, passed,
+                passed ? "Corrispondenza CPU/GPU UV perfetta: 2D Painter e 3D Vulkan in perfetta sincronia."
+                       : "Divergenza UV CPU/GPU: vertici compilati non corrispondono alle UV dell'editor.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-21: Stable UV / Zero Work (No Geometry Recompiles on Paint Stroke)
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layout;
+        primMapper.GenerateWedgeMapping(mesh, layout, glm::vec3(1.0f), opt);
+
+        BridgePreviewCache previewCache;
+        GeometryCompileOptions gOpt;
+        MeshBridgeService::CompileForPreview(mesh, gOpt, previewCache);
+
+        uint32_t initialGeoRev = mesh.GetGeometryRevision();
+        uint32_t initialTopoRev = mesh.GetTopologyRevision();
+        uint32_t initialAtlasRev = layout.atlasRevision;
+
+        UVEditorDocument doc(mesh, layout);
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512);
+        PaintBrush brush;
+        brush.radiusPixels = 5.0f;
+        brush.color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+
+        glm::vec2 pUV = glm::vec2(layout.islands[0].atlasTransform.z + 0.05f,
+                                  layout.islands[0].atlasTransform.w + 0.05f);
+        doc.BeginStroke2D(pUV, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
+        doc.EndStroke2D(&painter);
+
+        bool geoUnchanged = (mesh.GetGeometryRevision() == initialGeoRev);
+        bool topoUnchanged = (mesh.GetTopologyRevision() == initialTopoRev);
+        bool atlasUnchanged = (layout.atlasRevision == initialAtlasRev);
+        bool zeroWorkPreserved = !MeshBridgeService::NeedsPreviewRecompile(mesh, 0, previewCache);
+
+        bool passed = geoUnchanged && topoUnchanged && atlasUnchanged && zeroWorkPreserved;
+        std::string obs = "GeoRevDelta=" + std::to_string(mesh.GetGeometryRevision() - initialGeoRev) +
+                          ", TopoRevDelta=" + std::to_string(mesh.GetTopologyRevision() - initialTopoRev) +
+                          ", NeedsRecompile=" + std::string(zeroWorkPreserved ? "false" : "true");
+
+        addTest("UVE-21", "Stable UV / Zero Work",
+                "Pennellata 2D su mesh con cache preview compilata",
+                "Nessun incremento di Geometry/Topology/Atlas revision; NeedsPreviewRecompile restituisce false",
+                obs, passed,
+                passed ? "Contratto Zero-Work rispettato: nessuna ricompilazione geometrica per la pittura."
+                       : "Violazione Zero-Work: pittura causa ricompilazione della geometria.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-22: Per-BlockID Isolation
+    // -------------------------------------------------------------------------
+    {
+        TexturePaintingService painter14;
+        TexturePaintingService painter15;
+        painter14.InitializeCanvas(512, 512);
+        painter15.InitializeCanvas(512, 512);
+
+        uint32_t l14 = painter14.AddLayer("Block14_Layer");
+        uint32_t l15 = painter15.AddLayer("Block15_Layer");
+
+        PaintBrush brush;
+        brush.radiusPixels = 10.0f;
+        brush.color = glm::vec4(1.0f, 0.5f, 0.0f, 1.0f);
+
+        painter14.BeginStroke(l14, false);
+        painter14.ApplyDab(glm::vec2(100.0f, 100.0f), brush);
+        painter14.EndStroke();
+
+        PaintLayer* layer15 = painter15.GetLayer(l15);
+        bool p15Clean = true;
+        if (layer15) {
+            glm::vec4 sample = layer15->pixelBuffer.GetPixel(100, 100);
+            if (sample.a > 1e-4f) p15Clean = false;
+        }
+
+        bool passed = p15Clean && (painter14.GetLayerCount() == 1) && (painter15.GetLayerCount() == 1);
+        std::string obs = "Block15Clean=" + std::string(p15Clean ? "true" : "false") +
+                          ", LayerCount14=" + std::to_string(painter14.GetLayerCount()) +
+                          ", LayerCount15=" + std::to_string(painter15.GetLayerCount());
+
+        addTest("UVE-22", "Per-BlockID Isolation",
+                "Pennellata su BlockID 14 verificata contro canvas di BlockID 15",
+                "Nessuna mutazione su BlockID 15; completo isolamento dei layer e dei pixel",
+                obs, passed,
+                passed ? "Isolamento Per-BlockID garantito."
+                       : "Contaminazione inter-BlockID rilevata.");
+    }
+
+    // -------------------------------------------------------------------------
+    // UVE-23: Save/Reload Persistence
+    // -------------------------------------------------------------------------
+    {
+        ShapeDefinition sDef;
+        sDef.type = ShapeType::Wedge;
+        ShapeParamsWedge p;
+        p.size = glm::vec3(1.0f);
+        sDef.parameters = p;
+
+        EditableMesh mesh = MeshBridgeService::CreateMeshFromShape(sDef);
+        PrimitiveUVMapper primMapper;
+        PrimitiveUVOptions opt;
+        UVLayout layoutOriginal;
+        primMapper.GenerateWedgeMapping(mesh, layoutOriginal, glm::vec3(1.0f), opt);
+
+        nlohmann::json j;
+        to_json(j, layoutOriginal);
+
+        UVLayout layoutReloaded;
+        from_json(j, layoutReloaded);
+
+        bool sameIslandCount = (layoutOriginal.islands.size() == layoutReloaded.islands.size());
+        bool sameTransforms = true;
+        for (size_t i = 0; i < layoutOriginal.islands.size() && sameTransforms; ++i) {
+            if (glm::length(layoutOriginal.islands[i].atlasTransform - layoutReloaded.islands[i].atlasTransform) > 1e-4f) {
+                sameTransforms = false;
+            }
+        }
+
+        UVEditorDocument docReloaded(mesh, layoutReloaded);
+        const auto& isl3 = layoutReloaded.islands[3];
+        glm::vec2 triCenterUV = glm::vec2(isl3.atlasTransform.z + isl3.atlasTransform.x * 0.25f,
+                                          isl3.atlasTransform.w + isl3.atlasTransform.y * 0.75f);
+        bool hitValidAfterReload = docReloaded.IsPointInIsland(triCenterUV, 3);
+
+        bool passed = sameIslandCount && sameTransforms && hitValidAfterReload;
+        std::string obs = "SameIslandCount=" + std::string(sameIslandCount ? "true" : "false") +
+                          ", SameTransforms=" + std::string(sameTransforms ? "true" : "false") +
+                          ", HitValidAfterReload=" + std::string(hitValidAfterReload ? "true" : "false");
+
+        addTest("UVE-23", "Save/Reload Persistence",
+                "Serializzazione e deserializzazione JSON di UVLayout Wedge e ricostruzione UVEditorDocument",
+                "Isola triangolare e trasformazioni atlas conservate fedelmente dopo ricaricamento",
+                obs, passed,
+                passed ? "Persistenza UV e associazione superfici verificata con successo."
+                       : "Fallimento nel salvataggio/ricaricamento del layout UV.");
     }
 
     return results;

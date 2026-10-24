@@ -1,3 +1,4 @@
+/*
 # FAIRWORLD — BM-UV-PAINTER-MG03-FIX02
 ## UV Atlas Visibility, Surface Paint & 3D Preview Synchronization
 
@@ -204,7 +205,10 @@ Restituire:
 
 BUILD NOT RUN
 RUNTIME NOT TESTED
-STOP.#include "pch.h"
+STOP.
+*/
+
+#include "pch.h"
 #include "MeshHistoryService.h"
 #include "MeshModelingService.h"
 #include "MeshSculptService.h"

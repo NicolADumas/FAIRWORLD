@@ -320,18 +320,20 @@ public:
                                                                isSculpted, 
                                                                opt);
 
-        // BM-UV4: Packing deterministico delle isole UV in Texture Atlas
-        AtlasPackOptions packOpt;
-        packOpt.targetWidth = 1024;
-        packOpt.targetHeight = 1024;
-        packOpt.paddingPixels = 4.0f;
-        packOpt.allowRotation = true;
-        packOpt.allowMultiAtlas = true;
-        auto packRes = m_atlasPacker.PackLayout(workMesh, mapRes.layout, packOpt);
+        // BM-UV4: Packing deterministico delle isole UV in Texture Atlas (solo per unwrapping generale non analitico)
+        if (mapRes.modeUsed == UVUnwrapDispatchMode::GeneralUnwrapping) {
+            AtlasPackOptions packOpt;
+            packOpt.targetWidth = 1024;
+            packOpt.targetHeight = 1024;
+            packOpt.paddingPixels = 4.0f;
+            packOpt.allowRotation = true;
+            packOpt.allowMultiAtlas = true;
+            auto packRes = m_atlasPacker.PackLayout(workMesh, mapRes.layout, packOpt);
 
-        if (!packRes.success) {
-            for (const auto& err : packRes.errors) {
-                m_diagnostic.warnings.push_back("AtlasPacking error: " + err);
+            if (!packRes.success) {
+                for (const auto& err : packRes.errors) {
+                    m_diagnostic.warnings.push_back("AtlasPacking error: " + err);
+                }
             }
         }
 
