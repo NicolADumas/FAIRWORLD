@@ -111,11 +111,25 @@ vec3 calculateNormalFromMap(vec3 geomNormal, vec3 tangentNormal, vec3 pos, vec2 
 }
 
 void main() {
+    // BM-UV-DEBUG-08: Diagnostica GPU UV Visualization (precedenza assoluta, zero campionamento texture)
+    const bool DIAG_SHOW_UV = false;
+    if (DIAG_SHOW_UV) {
+        outColor = vec4(inUV.x, inUV.y, 0.0, 1.0);
+        return;
+    }
+
     // 1. Campiona le 3 texture con clamping di sicurezza sul layer count (supporto preview 1-layer BlockMaker & global PBR array)
     int maxLayer = textureSize(albedoArray, 0).z - 1;
     float safeLayer = clamp(float(inMaterialID), 0.0, float(max(maxLayer, 0)));
     vec3 uvLayer = vec3(inUV, safeLayer);
     vec4 albedo = texture(albedoArray, uvLayer);
+
+    // BM-UV-DEBUG-07: Diagnostica GPU Albedo pura (impostare a false per disattivare)
+    const bool DIAG_RAW_ALBEDO = false;
+    if (DIAG_RAW_ALBEDO) {
+        outColor = vec4(albedo.rgb, 1.0);
+        return;
+    }
     
     if(albedo.a < 0.1) discard; 
     

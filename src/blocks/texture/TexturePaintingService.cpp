@@ -1,6 +1,7 @@
 #include "TexturePaintingService.h"
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
 namespace fw {
 
@@ -227,7 +228,12 @@ bool TexturePaintingService::InvertLayerMask(uint32_t layerId) {
 // BM-TX3.5 & BM-TX3.6 — STROKE TRANSACTIONS
 // =============================================================================
 
+// BM-UV-DEBUG-04: Diagnostica runtime isolamento pixel pre/post stroke
+static bool s_uvPaintDiagActive = true; // Impostare a true per eseguire la diagnostica sul prossimo stroke (one-shot)
+static PixelClipCallback s_activeClipCallback = nullptr;
+
 bool TexturePaintingService::BeginStroke(uint32_t layerId, bool targetMask) {
+    s_activeClipCallback = nullptr;
     if (layerId == 0 && !m_layers.empty()) {
         layerId = m_layers[0].layerId;
     }
@@ -268,6 +274,7 @@ bool TexturePaintingService::ApplyDabClipped(glm::vec2 pixelCoords, const PaintB
     PaintLayer* l = GetLayer(m_activeTransaction.layerId);
     if (!l) return false;
 
+    if (clipCb) s_activeClipCallback = clipCb;
     ApplyDabInternal(*l, pixelCoords, brush, m_activeTransaction.isMaskStroke, clipCb);
     return true;
 }
@@ -281,6 +288,7 @@ bool TexturePaintingService::UpdateStrokeClipped(glm::vec2 prevCoords, glm::vec2
     PaintLayer* l = GetLayer(m_activeTransaction.layerId);
     if (!l) return false;
 
+    if (clipCb) s_activeClipCallback = clipCb;
     glm::vec2 delta = curCoords - prevCoords;
     float dist = glm::length(delta);
     float step = std::max(1.0f, brush.radiusPixels * std::clamp(brush.spacing, 0.02f, 1.0f));
@@ -357,8 +365,56 @@ PaintDirtyRect TexturePaintingService::EndStroke() {
     PaintDirtyRect resultDirty = m_activeTransaction.dirtyRect;
     resultDirty.ClipTo(m_canvasWidth, m_canvasHeight);
 
+    PaintLayer* l = GetLayer(m_activeTransaction.layerId);
+
+    // BM-UV-DEBUG-04: Diagnostica runtime confronto buffer pixel pre/post stroke
+    if (s_uvPaintDiagActive && l) {
+        const ImageBitmap& preBuf = m_activeTransaction.preStrokeBackup;
+        const ImageBitmap& curBuf = (m_activeTransaction.isMaskStroke && l->mask.has_value()) ? l->mask->GetBitmap() : l->pixelBuffer;
+
+        uint32_t insideChanged = 0;
+        uint32_t outsideChanged = 0;
+        uint32_t totalChanged = 0;
+
+        uint32_t w = std::min(preBuf.GetWidth(), curBuf.GetWidth());
+        uint32_t h = std::min(preBuf.GetHeight(), curBuf.GetHeight());
+        const uint8_t* pPre = preBuf.GetData();
+        const uint8_t* pCur = curBuf.GetData();
+        size_t bpp = curBuf.GetBytesPerPixel();
+
+        if (pPre && pCur && bpp > 0) {
+            for (uint32_t y = 0; y < h; ++y) {
+                for (uint32_t x = 0; x < w; ++x) {
+                    size_t pixelOffset = (static_cast<size_t>(y) * w + x) * bpp;
+                    bool modified = false;
+                    for (size_t b = 0; b < bpp; ++b) {
+                        if (pPre[pixelOffset + b] != pCur[pixelOffset + b]) {
+                            modified = true;
+                            break;
+                        }
+                    }
+
+                    if (modified) {
+                        totalChanged++;
+                        bool inside = s_activeClipCallback ? s_activeClipCallback(static_cast<int32_t>(x), static_cast<int32_t>(y)) : false;
+                        if (inside) {
+                            insideChanged++;
+                        } else {
+                            outsideChanged++;
+                        }
+                    }
+                }
+            }
+        }
+
+        std::cout << "[UV-PAINT-DIAG] InsideChanged=" << insideChanged 
+                  << " OutsideChanged=" << outsideChanged 
+                  << " TotalChanged=" << totalChanged << "\n" << std::flush;
+
+        s_uvPaintDiagActive = false; // One-shot
+    }
+
     if (!resultDirty.isEmpty) {
-        PaintLayer* l = GetLayer(m_activeTransaction.layerId);
         if (l) {
             l->revision++;
             m_compositionRevision++;
@@ -389,6 +445,7 @@ PaintDirtyRect TexturePaintingService::EndStroke() {
 }
 
 bool TexturePaintingService::CancelStroke() {
+    s_activeClipCallback = nullptr;
     if (!m_activeTransaction.isActive) return false;
 
     if (!m_activeTransaction.dirtyRect.isEmpty) {

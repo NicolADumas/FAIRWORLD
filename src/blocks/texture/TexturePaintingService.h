@@ -7,6 +7,8 @@
 #include <optional>
 #include <deque>
 #include <functional>
+#include <iostream>
+#include <limits>
 #include <glm/glm.hpp>
 #include "PaintLayer.h"
 
@@ -100,6 +102,41 @@ public:
     const std::vector<PaintLayer>& GetLayers() const { return m_layers; }
     size_t GetLayerCount() const { return m_layers.size(); }
     void ClearAllLayers();
+
+    // BM-PAINT-UI-03C: Integrita e sincronizzazione ID dei PaintLayer
+    uint32_t GetNextLayerId() const { return m_nextLayerId; }
+    void SetNextLayerId(uint32_t id) { m_nextLayerId = id; }
+    bool SynchronizeNextLayerId() {
+        if (m_layers.empty()) {
+            m_nextLayerId = 1;
+            return true;
+        }
+
+        uint32_t maxId = 0;
+        bool hasDuplicates = false;
+        for (size_t i = 0; i < m_layers.size(); ++i) {
+            uint32_t id = m_layers[i].layerId;
+            if (id > maxId) {
+                maxId = id;
+            }
+            for (size_t j = i + 1; j < m_layers.size(); ++j) {
+                if (m_layers[j].layerId == id) {
+                    hasDuplicates = true;
+                    std::cerr << "[TexturePaintingService] ATTENZIONE: Rilevato layerId duplicato (" 
+                              << id << ", nome: '" << m_layers[i].name << "'). Nessuna rinumerazione eseguita.\n";
+                }
+            }
+        }
+
+        if (maxId < (std::numeric_limits<uint32_t>::max)()) {
+            m_nextLayerId = maxId + 1;
+        } else {
+            std::cerr << "[TexturePaintingService] ATTENZIONE: layerId massimo ha raggiunto UINT32_MAX. Overflow evitato.\n";
+            m_nextLayerId = (std::numeric_limits<uint32_t>::max)();
+        }
+
+        return !hasDuplicates;
+    }
 
     // --- Gestione Maschere (BM-TX3.3) ---
     bool AddMaskToLayer(uint32_t layerId, float defaultFill = 1.0f);

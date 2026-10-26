@@ -489,6 +489,8 @@ public:
         auto resolvePath = [](const std::string& p) -> std::string {
             if (p.empty()) return "";
             if (std::filesystem::exists(p)) return p;
+            if (std::filesystem::exists("assets/" + p)) return "assets/" + p;
+            if (std::filesystem::exists("../assets/" + p)) return "../assets/" + p;
             if (std::filesystem::exists("../" + p)) return "../" + p;
             return "";
         };

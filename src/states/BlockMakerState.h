@@ -612,6 +612,19 @@ private:
     void DrawStudioTopToolbar();
     void DrawStudioRightInspector();
 
+    // BM-PAINT-UI-02: Active paint layer tracking
+    uint32_t m_activePaintLayerId = 0;
+    void EnsureActivePaintLayerValid();
+    uint32_t GetActivePaintLayerId() const { return m_activePaintLayerId; }
+
+    // BM-PAINT-UI-03: Layer renaming state & helpers
+    uint32_t m_renamingLayerId = 0;
+    char m_renameBuffer[128] = {0};
+    bool m_renameNeedsFocus = false;
+    void StartRenamingLayer(uint32_t layerId, const std::string& currentName);
+    void CancelRenamingLayer();
+    void CommitRenamingLayer();
+
     // --- BM-UV8 2D UV Editor State & UI ---
     fw::UVEditorPanel m_uvEditorPanel;
     std::unique_ptr<fw::UVEditorDocument> m_uvEditorDocument;

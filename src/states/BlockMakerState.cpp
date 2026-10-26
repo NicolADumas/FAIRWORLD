@@ -28,6 +28,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <filesystem>
+#include <fstream>
 #include <thread>
 #include <chrono>
 #include <algorithm>
@@ -227,6 +228,157 @@ namespace {
             default: return "Custom / Other";
         }
     }
+
+    // BM-PAINT-PERSIST-04: Risoluzione percorso documento layer per BlockID
+    std::string ResolveLayerFilePath(uint8_t blockId) {
+        std::string p1 = "assets/layers/block_" + std::to_string(blockId) + "_layers.json";
+        if (std::filesystem::exists(p1)) return p1;
+        std::string p2 = "../assets/layers/block_" + std::to_string(blockId) + "_layers.json";
+        if (std::filesystem::exists(p2)) return p2;
+        return "";
+    }
+
+    // Scrittura atomica crash-safe con file temporaneo e rename
+    bool AtomicWriteLayerJson(const std::string& targetPath, const nlohmann::json& j) {
+        try {
+            std::filesystem::path tp(targetPath);
+            std::filesystem::path parent = tp.parent_path();
+            if (!parent.empty() && !std::filesystem::exists(parent)) {
+                std::filesystem::create_directories(parent);
+            }
+
+            auto ticks = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+            std::filesystem::path tempPath = tp;
+            tempPath += ".tmp." + std::to_string(ticks);
+
+            std::string jsonStr = j.dump(2);
+            {
+                std::ofstream f(tempPath, std::ios::binary | std::ios::trunc);
+                if (!f.is_open()) return false;
+                f.write(jsonStr.data(), jsonStr.size());
+                f.flush();
+                if (!f.good()) {
+                    f.close();
+                    std::error_code ec;
+                    std::filesystem::remove(tempPath, ec);
+                    return false;
+                }
+                f.close();
+            }
+
+            std::error_code ec;
+            uint64_t writtenSize = std::filesystem::file_size(tempPath, ec);
+            if (ec || writtenSize != jsonStr.size()) {
+                std::filesystem::remove(tempPath, ec);
+                return false;
+            }
+
+#if defined(_WIN32)
+            if (MoveFileExW(tempPath.wstring().c_str(), tp.wstring().c_str(),
+                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                return true;
+            } else {
+                std::filesystem::rename(tempPath, tp, ec);
+                return !ec;
+            }
+#else
+            std::filesystem::rename(tempPath, tp, ec);
+            return !ec;
+#endif
+        } catch (const std::exception& e) {
+            std::cerr << "[PAINTER ASSET] Eccezione scrittura atomica layer: " << e.what() << "\n";
+            return false;
+        }
+    }
+
+    // Cache Zero-Work per evitare riscritture inutili di layer identici
+    static std::unordered_map<uint8_t, uint64_t> s_lastSavedLayerFingerprints;
+
+    bool SavePaintLayersToDisk(uint8_t blockId, const fw::RawAssetDraft& draft, const fw::TexturePaintingService& paintingService) {
+        if (draft.paintLayers.empty()) return false;
+
+        uint64_t fp = paintingService.ComputeCombinedFingerprint();
+        auto it = s_lastSavedLayerFingerprints.find(blockId);
+        std::string existingPath = ResolveLayerFilePath(blockId);
+        if (it != s_lastSavedLayerFingerprints.end() && it->second == fp && !existingPath.empty()) {
+            return true;
+        }
+
+        nlohmann::json j;
+        j["schemaVersion"] = 1;
+        j["blockId"] = blockId;
+        j["canvasWidth"] = paintingService.GetCanvasWidth();
+        j["canvasHeight"] = paintingService.GetCanvasHeight();
+        j["paintRevision"] = draft.paintRevision;
+
+        nlohmann::json jLayers = nlohmann::json::array();
+        for (const auto& l : draft.paintLayers) {
+            jLayers.push_back(l.ToJson());
+        }
+        j["layers"] = std::move(jLayers);
+
+        std::string primaryPath = "assets/layers/block_" + std::to_string(blockId) + "_layers.json";
+        bool ok1 = AtomicWriteLayerJson(primaryPath, j);
+        bool ok2 = true;
+        if (std::filesystem::exists("../assets")) {
+            std::string secPath = "../assets/layers/block_" + std::to_string(blockId) + "_layers.json";
+            ok2 = AtomicWriteLayerJson(secPath, j);
+        }
+
+        if (ok1 || ok2) {
+            s_lastSavedLayerFingerprints[blockId] = fp;
+            std::cout << "[PAINTER ASSET] Salvati " << draft.paintLayers.size()
+                      << " PaintLayer persistenti per BlockID=" << (int)blockId 
+                      << " in " << primaryPath << "\n";
+            return true;
+        }
+        return false;
+    }
+
+    bool LoadPaintLayersFromDisk(uint8_t blockId, fw::RawAssetDraft& draft, fw::TexturePaintingService& paintingService) {
+        std::string layerFile = ResolveLayerFilePath(blockId);
+        if (layerFile.empty()) return false;
+
+        std::ifstream f(layerFile);
+        if (!f.is_open()) return false;
+
+        try {
+            nlohmann::json j;
+            f >> j;
+            if (!j.contains("layers") || !j["layers"].is_array() || j["layers"].empty()) {
+                return false;
+            }
+
+            std::vector<fw::PaintLayer> loadedLayers;
+            for (const auto& jLayer : j["layers"]) {
+                loadedLayers.push_back(fw::PaintLayer::FromJson(jLayer));
+            }
+
+            if (loadedLayers.empty()) return false;
+
+            draft.paintLayers = std::move(loadedLayers);
+            if (j.contains("canvasWidth") && j.contains("canvasHeight")) {
+                uint32_t cw = j["canvasWidth"].get<uint32_t>();
+                uint32_t ch = j["canvasHeight"].get<uint32_t>();
+                if (cw > 0 && ch > 0) {
+                    paintingService.SetCanvasDimensions(cw, ch);
+                }
+            }
+            if (j.contains("paintRevision")) {
+                draft.paintRevision = j["paintRevision"].get<uint64_t>();
+            }
+
+            s_lastSavedLayerFingerprints[blockId] = paintingService.ComputeCombinedFingerprint();
+
+            std::cout << "[PAINTER ASSET] Caricati " << draft.paintLayers.size()
+                      << " PaintLayer persistenti da " << layerFile 
+                      << " per BlockID=" << (int)blockId << "\n";
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "[PAINTER ASSET] Errore parsing layer JSON: " << e.what() << "\n";
+            return false;
+        }
+    }
 }
 
 BlockMakerState::BlockMakerState(SharedContext* context) : m_context(context) {
@@ -412,6 +564,10 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
     // BM-P04: Salva lo stato del blocco uscente prima di caricare il nuovo
     FlushCurrentDraft();
 
+    // BM-PAINT-UI-02 & BM-PAINT-UI-03: Reset layer attivo e stato rinomina su cambio blocco
+    m_activePaintLayerId = 0;
+    m_renamingLayerId = 0;
+
     bool loaded = m_factoryOrchestrator.LoadDraftFromRegistry(blockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
     if (loaded && m_factoryOrchestrator.IsDraftOpen()) {
         auto* draft = m_factoryOrchestrator.GetCurrentDraft();
@@ -428,8 +584,14 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
             // Connect painting service with draft paint layers
             m_paintingService.ClearHistory();
 
+            // BM-PAINT-PERSIST-04: Carica i PaintLayer editabili da disco se non già presenti in RAM
+            if (draft->paintLayers.empty()) {
+                LoadPaintLayersFromDisk(blockId, *draft, m_paintingService);
+            }
+
             if (!draft->paintLayers.empty()) {
                 m_paintingService.GetLayers() = draft->paintLayers;
+                m_paintingService.SynchronizeNextLayerId();
                 uint32_t w = draft->paintLayers[0].pixelBuffer.GetWidth();
                 uint32_t h = draft->paintLayers[0].pixelBuffer.GetHeight();
                 if (w > 0 && h > 0) {
@@ -531,6 +693,7 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
                       << " Layers=" << draft->paintLayers.size() 
                       << " Dimensions=(" << m_paintingService.GetCanvasWidth() << "x" << m_paintingService.GetCanvasHeight() << ")\n";
             std::cout << "[PAINTER ASSET] PreviewUpdated BlockID=" << (int)blockId << "\n";
+            EnsureActivePaintLayerValid();
         }
     }
     UpdateSessionContext();
@@ -578,6 +741,25 @@ void BlockMakerState::CommitDraftToRegistry() {
     if (!m_context || !m_factoryOrchestrator.IsDraftOpen()) return;
     auto* draft = m_factoryOrchestrator.GetCurrentDraft();
     if (!draft) return;
+
+    // BM-PAINT-PERSIST-03: Esegui il bake dell'Albedo solo se la pittura è modificata; preserva gli asset non dipinti
+    bool hasPaintModified = (m_paintingService.GetRevision() > 1 || m_paintingService.CanUndo() || 
+                             m_paintingService.GetLayerCount() > 1 || !draft->albedoPath.empty());
+    if (!draft->paintLayers.empty()) {
+        if (hasPaintModified) {
+            m_factoryOrchestrator.ExecuteStation(fw::ProductionStationID::SurfaceUV);
+            m_factoryOrchestrator.ExecuteStation(fw::ProductionStationID::Painter);
+            auto bakeRes = m_factoryOrchestrator.BakeCurrentDraftAlbedo(false);
+            if (bakeRes.success) {
+                std::cout << "[PAINTER ASSET] Bake Albedo completato con successo: " << draft->albedoPath << "\n";
+            } else {
+                std::cerr << "[PAINTER ASSET] ERRORE durante il bake Albedo: " << bakeRes.errorMessage << "\n";
+            }
+        }
+
+        // BM-PAINT-PERSIST-04 & BM-PAINT-UI-03: Salva lo stack dei PaintLayer editabili su disco (anche se solo metadati/nomi modificati)
+        SavePaintLayersToDisk(m_selectedBlockId, *draft, m_paintingService);
+    }
 
     // 1. Commit Shape to ShapeRegistry & update mat.sharedShape
     if (m_context->shapeRegistry && draft->shape.type != fw::ShapeType::None) {
@@ -7772,6 +7954,13 @@ void BlockMakerState::DrawInspectorContents() {
             if (m_context->cacheManager) {
                 m_context->cacheManager->SyncMaterialGpuCache(m_selectedBlockId, m_context);
             }
+            if (m_context && m_context->engine && m_context->engine->GetRenderManager() && !mat.albedoPath.empty()) {
+                std::string p = mat.albedoPath;
+                if (!std::filesystem::exists(p) && std::filesystem::exists("assets/" + p)) {
+                    p = "assets/" + p;
+                }
+                m_context->engine->GetRenderManager()->LoadPBRTextureFromFile(p, m_selectedBlockId, RenderManager::PBRTextureType::ALBEDO);
+            }
             if (m_context->engine && m_context->engine->GetRenderManager()) {
                 m_context->engine->GetRenderManager()->InvalidateForgeCache();
             }
@@ -9310,18 +9499,22 @@ void BlockMakerState::Handle3DPaintInput() {
         ComputeMouseRay(io.MousePos, rayOrigin, rayDir);
         fw::SurfacePaintHit hit = fw::SurfacePaintingAdapter::RaycastMesh(m_activeEditableMesh, rayOrigin, rayDir);
         if (hit.valid) {
-            m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
-            m_surfacePaintingAdapter.SetLockToActiveFace(true);
-            m_surfacePaintingAdapter.SetLockedFaceId(hit.faceId);
-            m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush);
-            m_is3DPaintStroking = true;
-            if (m_uvEditorDocument && hit.faceId.IsValid()) {
-                m_uvEditorDocument->SelectFace3D(hit.faceId, false);
+            EnsureActivePaintLayerValid();
+            if (m_activePaintLayerId != 0) {
+                m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
+                m_surfacePaintingAdapter.SetLockToActiveFace(true);
+                m_surfacePaintingAdapter.SetLockedFaceId(hit.faceId);
+                if (m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush, m_activePaintLayerId)) {
+                    m_is3DPaintStroking = true;
+                    if (m_uvEditorDocument && hit.faceId.IsValid()) {
+                        m_uvEditorDocument->SelectFace3D(hit.faceId, false);
+                    }
+                    m_selectionService.SetMode(fw::SelectionMode::Face);
+                    m_selectionService.Clear();
+                    m_selectionService.SelectFace(hit.faceId, fw::SelectionOp::Add);
+                    m_selectionService.SetActiveFace(hit.faceId);
+                }
             }
-            m_selectionService.SetMode(fw::SelectionMode::Face);
-            m_selectionService.Clear();
-            m_selectionService.SelectFace(hit.faceId, fw::SelectionOp::Add);
-            m_selectionService.SetActiveFace(hit.faceId);
         }
     } else if (m_is3DPaintStroking && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         glm::vec3 rayOrigin, rayDir;
@@ -9788,12 +9981,18 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
                           << " Zoom=" << viewState.zoom
                           << " Pan=(" << viewState.panOffset.x << "," << viewState.panOffset.y << ")\n";
 
-                bool strokeStarted = m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService, 0, m_canvasPaintMode);
-                if (!strokeStarted) {
-                    std::cout << "[PAINTER LOCK] " << m_uvEditorDocument->GetLastPaintBlockedReason() << "\n";
-                }
-                if (!strokeStarted && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
-                    m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
+                EnsureActivePaintLayerValid();
+                if (m_activePaintLayerId != 0) {
+                    bool strokeStarted = m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService, m_activePaintLayerId, m_canvasPaintMode);
+                    if (!strokeStarted) {
+                        std::cout << "[PAINTER LOCK] " << m_uvEditorDocument->GetLastPaintBlockedReason() << "\n";
+                    }
+                    if (!strokeStarted && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
+                        m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
+                        m_studioPaintNotificationTimer = 3.5f;
+                    }
+                } else {
+                    m_studioPaintNotification = "Nessun layer disponibile per la pittura";
                     m_studioPaintNotificationTimer = 3.5f;
                 }
             }
@@ -9839,6 +10038,68 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
 
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(2);
+}
+
+void BlockMakerState::EnsureActivePaintLayerValid() {
+    const auto& layers = m_paintingService.GetLayers();
+    if (layers.empty()) {
+        m_activePaintLayerId = 0;
+        if (m_renamingLayerId != 0) {
+            CancelRenamingLayer();
+        }
+        return;
+    }
+    if (m_renamingLayerId != 0 && m_paintingService.GetLayer(m_renamingLayerId) == nullptr) {
+        CancelRenamingLayer();
+    }
+    if (m_activePaintLayerId != 0) {
+        for (const auto& layer : layers) {
+            if (layer.layerId == m_activePaintLayerId) {
+                return;
+            }
+        }
+    }
+    m_activePaintLayerId = layers[0].layerId;
+}
+
+void BlockMakerState::StartRenamingLayer(uint32_t layerId, const std::string& currentName) {
+    m_renamingLayerId = layerId;
+    std::strncpy(m_renameBuffer, currentName.c_str(), sizeof(m_renameBuffer) - 1);
+    m_renameBuffer[sizeof(m_renameBuffer) - 1] = '\0';
+    m_renameNeedsFocus = true;
+}
+
+void BlockMakerState::CancelRenamingLayer() {
+    m_renamingLayerId = 0;
+    m_renameBuffer[0] = '\0';
+    m_renameNeedsFocus = false;
+}
+
+void BlockMakerState::CommitRenamingLayer() {
+    if (m_renamingLayerId == 0) return;
+    std::string newName(m_renameBuffer);
+    size_t first = newName.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        CancelRenamingLayer();
+        return;
+    }
+    size_t last = newName.find_last_not_of(" \t\r\n");
+    newName = newName.substr(first, (last - first + 1));
+
+    fw::PaintLayer* layer = m_paintingService.GetLayer(m_renamingLayerId);
+    if (layer) {
+        if (!newName.empty() && newName != layer->GetName()) {
+            layer->SetName(newName);
+            if (m_factoryOrchestrator.IsDraftOpen()) {
+                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                if (draft) {
+                    draft->paintLayers = m_paintingService.GetLayers();
+                    draft->MarkDirty();
+                }
+            }
+        }
+    }
+    CancelRenamingLayer();
 }
 
 void BlockMakerState::DrawStudioRightInspector() {
@@ -9921,6 +10182,7 @@ void BlockMakerState::DrawStudioRightInspector() {
 
         // --- SEZIONE 3: LIVELLI PITTURA (PAINT LAYERS) ---
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "LIVELLI PITTURA (LAYERS)");
+        EnsureActivePaintLayerValid();
         auto& layers = m_paintingService.GetLayers();
         for (size_t i = 0; i < layers.size(); ++i) {
             auto& layer = layers[i];
@@ -9936,7 +10198,38 @@ void BlockMakerState::DrawStudioRightInspector() {
                 }
             }
             ImGui::SameLine();
-            ImGui::Text("%s", layer.name.c_str());
+            if (layer.layerId == m_renamingLayerId) {
+                ImGui::SetNextItemWidth(120.0f);
+                if (m_renameNeedsFocus) {
+                    ImGui::SetKeyboardFocusHere();
+                    m_renameNeedsFocus = false;
+                }
+                ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll;
+                if (ImGui::InputText("###LayerRenameInput", m_renameBuffer, sizeof(m_renameBuffer), inputFlags)) {
+                    CommitRenamingLayer();
+                } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    CancelRenamingLayer();
+                } else if (ImGui::IsItemDeactivated()) {
+                    CancelRenamingLayer();
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Invio per confermare, Esc per annullare");
+            } else {
+                bool isSelected = (layer.layerId == m_activePaintLayerId);
+                std::string label = (isSelected ? "> " : "  ") + layer.name + "###LayerSelectable";
+                if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(120.0f, 0.0f))) {
+                    if (m_renamingLayerId != 0 && m_renamingLayerId != layer.layerId) {
+                        CancelRenamingLayer();
+                    }
+                    m_activePaintLayerId = layer.layerId;
+                }
+                if (ImGui::IsItemHovered()) {
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        StartRenamingLayer(layer.layerId, layer.name);
+                    } else {
+                        ImGui::SetTooltip("Doppio clic o pulsante 'Rinomina' per modificare");
+                    }
+                }
+            }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80.0f);
             if (ImGui::SliderFloat("##LayerOp", &layer.opacity, 0.0f, 1.0f, "%.2f")) {
@@ -9952,8 +10245,25 @@ void BlockMakerState::DrawStudioRightInspector() {
 
         if (ImGui::Button("+ Nuovo Livello##AddNewLayer", ImVec2(120, 22))) {
             uint32_t newId = m_paintingService.AddLayer("Layer " + std::to_string(layers.size() + 1));
-            (void)newId;
+            m_activePaintLayerId = newId;
+            if (m_factoryOrchestrator.IsDraftOpen()) {
+                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                if (draft) {
+                    draft->paintLayers = m_paintingService.GetLayers();
+                    draft->MarkDirty();
+                }
+            }
         }
+        ImGui::SameLine();
+        fw::PaintLayer* activeLayer = m_paintingService.GetLayer(m_activePaintLayerId);
+        bool canRename = (activeLayer != nullptr && m_renamingLayerId == 0);
+        if (!canRename) ImGui::BeginDisabled();
+        if (ImGui::Button("Rinomina##RenameActiveLayer", ImVec2(80, 22))) {
+            if (activeLayer) {
+                StartRenamingLayer(activeLayer->layerId, activeLayer->name);
+            }
+        }
+        if (!canRename) ImGui::EndDisabled();
 
     } else {
         // --- SEZIONE UV EDITING ---
