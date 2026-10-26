@@ -549,6 +549,16 @@ void BlockMakerState::FlushCurrentDraft() {
                 draft->sculptMesh = m_activeEditableMesh;
             }
 
+            // BM-A3.3-SCALE-02: Sincronizza i valori Transform live dal BlockRegistry nel RawAssetDraft
+            uint8_t draftBlockId = static_cast<uint8_t>(draft->manifest.targetRuntimeVoxelId);
+            if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(draftBlockId)) {
+                const auto& def = m_context->blockRegistry->GetBlock(draftBlockId);
+                draft->localPosition = def.localPosition;
+                draft->localRotation = def.localRotation;
+                draft->localScale = def.localScale;
+                draft->pivotOffset = def.pivotOffset;
+            }
+
             m_factoryOrchestrator.FlushActiveDraft();
 
             std::cout << "[PAINTER ASSET] Save BlockID=" << (int)draft->manifest.targetRuntimeVoxelId 
@@ -572,6 +582,15 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
     if (loaded && m_factoryOrchestrator.IsDraftOpen()) {
         auto* draft = m_factoryOrchestrator.GetCurrentDraft();
         if (draft) {
+            // BM-A3.3-SCALE-02: Sincronizza i valori Transform dal draft nel BlockRegistry per garantire lockstep
+            if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(blockId)) {
+                auto& def = m_context->blockRegistry->GetBlockMutable(blockId);
+                def.localPosition = draft->localPosition;
+                def.localRotation = draft->localRotation;
+                def.localScale = draft->localScale;
+                def.pivotOffset = draft->pivotOffset;
+            }
+
             // BM-UI2.3-B1: Safe mesh initialization guaranteeing non-dangling lifetime
             if (draft->sculptMesh.has_value() && draft->sculptMesh->GetFaceCount() > 0) {
                 m_activeEditableMesh = draft->sculptMesh.value();
@@ -6730,7 +6749,7 @@ void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& is
         { fw::ShapeType::Arch, "Arch", false },
         { fw::ShapeType::Vault, "Vault", false },
         { fw::ShapeType::Dome, "Dome", false },
-        { fw::ShapeType::Hemisphere, "Hemisphere", false },
+        { fw::ShapeType::Hemisphere, "Hemisphere", true },
         { fw::ShapeType::HollowDome, "Hollow Dome", false },
         { fw::ShapeType::HalfTorus, "Half Torus", false },
         { fw::ShapeType::TorusArc, "Torus Arc", false },
@@ -6813,6 +6832,7 @@ void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& is
                     case fw::ShapeType::Torus: newDef.parameters = fw::ShapeParamsTorus{ 0.75f, 0.25f, 24, 12 }; break;
                     case fw::ShapeType::Tetrahedron: newDef.parameters = fw::ShapeParamsTetrahedron{ 1.0f }; break;
                     case fw::ShapeType::Ellipsoid: newDef.parameters = fw::ShapeParamsEllipsoid{ glm::vec3(1.0f, 0.7f, 0.5f), 16, 24 }; break;
+                    case fw::ShapeType::Hemisphere: newDef.parameters = fw::ShapeParamsHemisphere{ 0.5f, 16, 32, 0.05f }; break;
                     default: break;
                 }
                 newDef.supportsVisualCompilation = true;
@@ -7002,6 +7022,19 @@ void BlockMakerState::DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& is
                 if (ImGui::DragFloat("Semiasse Z (rz)", &p->radius.z, 0.05f, 0.01f, 100.0f)) paramsChanged = true;
                 if (ImGui::SliderInt("Anelli Polari", &p->rings, 4, 64)) paramsChanged = true;
                 if (ImGui::SliderInt("Segmenti Azimutali", &p->segments, 4, 64)) paramsChanged = true;
+            }
+            else if (auto* p = std::get_if<fw::ShapeParamsHemisphere>(&m_editorParams)) {
+                if (ImGui::DragFloat("Raggio (r)", &p->radius, 0.02f, 0.01f, 50.0f)) paramsChanged = true;
+                if (ImGui::SliderInt("Anelli Latitudinali", &p->rings, 2, 64)) paramsChanged = true;
+                if (ImGui::SliderInt("Segmenti Longitudinali", &p->segments, 3, 64)) paramsChanged = true;
+                if (ImGui::DragFloat("Altezza Bordo (Rim)", &p->rimHeight, 0.01f, 0.0f, 10.0f)) paramsChanged = true;
+            }
+            
+            if (paramsChanged) {
+                // Zero-Work (BM-SHAPES-02B): Se i parametri nell'editor sono identici alla definizione corrente, sopprimi
+                if (currentDef->parameters == m_editorParams) {
+                    paramsChanged = false;
+                }
             }
             
             if (paramsChanged) {
@@ -9501,18 +9534,62 @@ void BlockMakerState::Handle3DPaintInput() {
         if (hit.valid) {
             EnsureActivePaintLayerValid();
             if (m_activePaintLayerId != 0) {
-                m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
-                m_surfacePaintingAdapter.SetLockToActiveFace(true);
-                m_surfacePaintingAdapter.SetLockedFaceId(hit.faceId);
-                if (m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush, m_activePaintLayerId)) {
-                    m_is3DPaintStroking = true;
-                    if (m_uvEditorDocument && hit.faceId.IsValid()) {
-                        m_uvEditorDocument->SelectFace3D(hit.faceId, false);
+                if (m_painterToolMode == PainterToolMode::Brush) {
+                    m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
+                    m_surfacePaintingAdapter.SetLockToActiveFace(m_canvasPaintMode == fw::CanvasPaintMode::SurfacePaint);
+                    m_surfacePaintingAdapter.SetLockedFaceId(hit.faceId);
+                    if (m_surfacePaintingAdapter.BeginStroke3D(m_activeEditableMesh, hit, m_paintBrush, m_activePaintLayerId)) {
+                        m_is3DPaintStroking = true;
+                        if (m_uvEditorDocument && hit.faceId.IsValid()) {
+                            m_uvEditorDocument->SelectFace3D(hit.faceId, false);
+                        }
+                        m_selectionService.SetMode(fw::SelectionMode::Face);
+                        m_selectionService.Clear();
+                        m_selectionService.SelectFace(hit.faceId, fw::SelectionOp::Add);
+                        m_selectionService.SetActiveFace(hit.faceId);
                     }
-                    m_selectionService.SetMode(fw::SelectionMode::Face);
-                    m_selectionService.Clear();
-                    m_selectionService.SelectFace(hit.faceId, fw::SelectionOp::Add);
-                    m_selectionService.SetActiveFace(hit.faceId);
+                } else if (m_painterToolMode == PainterToolMode::Stamp) {
+                    m_stampDef.color = m_paintBrush.color;
+                    m_stampDef.rotationRadians = glm::radians(m_stampRotationDegrees);
+                    std::cout << "[STAMP-DIAG-01] DISPATCH: Path=3D ToolMode=Stamp LayerID=" << m_activePaintLayerId
+                              << " Shape=" << (m_stampDef.shape == fw::StampShape::Circle ? "Circle" : "Square")
+                              << " Size=" << m_stampDef.sizePixels
+                              << " Rotation=" << m_stampRotationDegrees << "deg"
+                              << " Opacity=" << m_stampDef.opacity
+                              << " Color=(" << m_stampDef.color.r << "," << m_stampDef.color.g << "," << m_stampDef.color.b << "," << m_stampDef.color.a << ")\n";
+                    m_surfacePaintingAdapter.SetActiveChannel(m_activePaintChannel);
+                    m_surfacePaintingAdapter.SetLockToActiveFace(m_canvasPaintMode == fw::CanvasPaintMode::SurfacePaint);
+                    m_surfacePaintingAdapter.SetLockedFaceId(hit.faceId);
+                    if (m_surfacePaintingAdapter.ApplyStamp3D(m_activeEditableMesh, hit, m_stampDef, m_activePaintLayerId)) {
+                        if (m_uvEditorDocument && hit.faceId.IsValid()) {
+                            m_uvEditorDocument->SelectFace3D(hit.faceId, false);
+                        }
+                        m_selectionService.SetMode(fw::SelectionMode::Face);
+                        m_selectionService.Clear();
+                        m_selectionService.SelectFace(hit.faceId, fw::SelectionOp::Add);
+                        m_selectionService.SetActiveFace(hit.faceId);
+
+                        fw::ImageBitmap comp;
+                        if (m_paintingService.CompositeLayers(comp)) {
+                            if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                                m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                                    comp.GetData(),
+                                    comp.GetWidth(),
+                                    comp.GetHeight()
+                                );
+                            }
+                        }
+
+                        if (m_factoryOrchestrator.IsDraftOpen()) {
+                            auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                            if (draft) {
+                                draft->paintLayers = m_paintingService.GetLayers();
+                                draft->paintRevision = m_paintingService.GetRevision();
+                                draft->MarkDirty();
+                                m_factoryOrchestrator.FlushActiveDraft();
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -9983,13 +10060,56 @@ void BlockMakerState::DrawStudioCenterCanvas(float leftX, float topY, float widt
 
                 EnsureActivePaintLayerValid();
                 if (m_activePaintLayerId != 0) {
-                    bool strokeStarted = m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService, m_activePaintLayerId, m_canvasPaintMode);
-                    if (!strokeStarted) {
-                        std::cout << "[PAINTER LOCK] " << m_uvEditorDocument->GetLastPaintBlockedReason() << "\n";
-                    }
-                    if (!strokeStarted && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
-                        m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
-                        m_studioPaintNotificationTimer = 3.5f;
+                    if (m_painterToolMode == PainterToolMode::Brush) {
+                        bool strokeStarted = m_uvEditorDocument->BeginStroke2D(mouseUV, m_paintBrush, &m_paintingService, m_activePaintLayerId, m_canvasPaintMode);
+                        if (!strokeStarted) {
+                            std::cout << "[PAINTER LOCK] " << m_uvEditorDocument->GetLastPaintBlockedReason() << "\n";
+                        }
+                        if (!strokeStarted && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
+                            m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
+                            m_studioPaintNotificationTimer = 3.5f;
+                        }
+                    } else if (m_painterToolMode == PainterToolMode::Stamp) {
+                        m_stampDef.color = m_paintBrush.color;
+                        m_stampDef.rotationRadians = glm::radians(m_stampRotationDegrees);
+                        std::cout << "[STAMP-DIAG-01] DISPATCH: Path=2D ToolMode=Stamp LayerID=" << m_activePaintLayerId
+                                  << " Shape=" << (m_stampDef.shape == fw::StampShape::Circle ? "Circle" : "Square")
+                                  << " Size=" << m_stampDef.sizePixels
+                                  << " Rotation=" << m_stampRotationDegrees << "deg"
+                                  << " Opacity=" << m_stampDef.opacity
+                                  << " Color=(" << m_stampDef.color.r << "," << m_stampDef.color.g << "," << m_stampDef.color.b << "," << m_stampDef.color.a << ")\n";
+                        bool applied = m_uvEditorDocument->ApplyStamp2D(mouseUV, m_stampDef, &m_paintingService, m_activePaintLayerId, m_canvasPaintMode);
+                        if (!applied && !m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
+                            m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
+                            m_studioPaintNotificationTimer = 3.5f;
+                        }
+                        if (applied) {
+                            fw::ImageBitmap comp;
+                            if (m_paintingService.CompositeLayers(comp)) {
+                                if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                                    m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                                        comp.GetData(),
+                                        comp.GetWidth(),
+                                        comp.GetHeight()
+                                    );
+                                }
+                            }
+
+                            if (m_factoryOrchestrator.IsDraftOpen()) {
+                                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                                if (draft) {
+                                    draft->paintLayers = m_paintingService.GetLayers();
+                                    draft->paintRevision = m_paintingService.GetRevision();
+                                    draft->MarkDirty();
+                                    m_factoryOrchestrator.FlushActiveDraft();
+                                }
+                            }
+                        } else {
+                            if (!m_uvEditorDocument->GetLastPaintBlockedReason().empty()) {
+                                m_studioPaintNotification = m_uvEditorDocument->GetLastPaintBlockedReason();
+                                m_studioPaintNotificationTimer = 3.5f;
+                            }
+                        }
                     }
                 } else {
                     m_studioPaintNotification = "Nessun layer disponibile per la pittura";
@@ -10137,17 +10257,44 @@ void BlockMakerState::DrawStudioRightInspector() {
 
         ImGui::Separator();
 
-        // --- SEZIONE 2: PENNELLO (BRUSH SETTINGS) ---
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PARAMETRI PENNELLO");
-        ImGui::SliderFloat("Dimensione##PntRadStudio", &m_paintBrush.radiusPixels, 1.0f, 64.0f, "%.1f px");
-        ImGui::SliderFloat("Opacita / Forza##PntStrStudio", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Durezza##PntHrdStudio", &m_paintBrush.hardness, 0.0f, 1.0f, "%.2f");
+        // --- SEZIONE 2: STRUMENTO & PARAMETRI ---
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "STRUMENTO PITTURA");
+        bool isBrush = (m_painterToolMode == PainterToolMode::Brush);
+        if (ImGui::RadioButton("Pennello (Brush)##ToolBrush", isBrush)) {
+            m_painterToolMode = PainterToolMode::Brush;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Timbro (Stamp)##ToolStamp", !isBrush)) {
+            m_painterToolMode = PainterToolMode::Stamp;
+        }
+
+        if (m_painterToolMode == PainterToolMode::Brush) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PARAMETRI PENNELLO");
+            ImGui::SliderFloat("Dimensione##PntRadStudio", &m_paintBrush.radiusPixels, 1.0f, 64.0f, "%.1f px");
+            ImGui::SliderFloat("Opacita / Forza##PntStrStudio", &m_paintBrush.strength, 0.05f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Durezza##PntHrdStudio", &m_paintBrush.hardness, 0.0f, 1.0f, "%.2f");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PARAMETRI TIMBRO (STAMP)");
+            bool isCircle = (m_stampDef.shape == fw::StampShape::Circle);
+            if (ImGui::RadioButton("Cerchio (Circle)##StampShapeCircle", isCircle)) {
+                m_stampDef.shape = fw::StampShape::Circle;
+            }
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Quadrato (Square)##StampShapeSquare", !isCircle)) {
+                m_stampDef.shape = fw::StampShape::Square;
+            }
+            ImGui::SliderFloat("Dimensione##StampSizeStudio", &m_stampDef.sizePixels, 1.0f, 64.0f, "%.1f px");
+            ImGui::SliderFloat("Rotazione##StampRotStudio", &m_stampRotationDegrees, 0.0f, 360.0f, "%.1f deg");
+            ImGui::SliderFloat("Opacita##StampOpStudio", &m_stampDef.opacity, 0.05f, 1.0f, "%.2f");
+        }
 
         ImGui::Spacing();
         ImGui::Text("Colore:");
         ImGui::ColorEdit4("##PntColStudio", &m_paintBrush.color.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_NoInputs);
-        ImGui::SameLine();
-        ImGui::Checkbox("Gomma (Erase)##PntEraseStudio", &m_paintBrush.eraseMode);
+        if (m_painterToolMode == PainterToolMode::Brush) {
+            ImGui::SameLine();
+            ImGui::Checkbox("Gomma (Erase)##PntEraseStudio", &m_paintBrush.eraseMode);
+        }
 
         ImGui::Spacing();
         if (ImGui::Button("Undo Paint##StudioUndoPnt", ImVec2(100, 24))) {
@@ -10216,18 +10363,14 @@ void BlockMakerState::DrawStudioRightInspector() {
             } else {
                 bool isSelected = (layer.layerId == m_activePaintLayerId);
                 std::string label = (isSelected ? "> " : "  ") + layer.name + "###LayerSelectable";
-                if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(120.0f, 0.0f))) {
+                if (ImGui::Selectable(label.c_str(), isSelected, 0, ImVec2(120.0f, 0.0f))) {
                     if (m_renamingLayerId != 0 && m_renamingLayerId != layer.layerId) {
                         CancelRenamingLayer();
                     }
                     m_activePaintLayerId = layer.layerId;
                 }
                 if (ImGui::IsItemHovered()) {
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        StartRenamingLayer(layer.layerId, layer.name);
-                    } else {
-                        ImGui::SetTooltip("Doppio clic o pulsante 'Rinomina' per modificare");
-                    }
+                    ImGui::SetTooltip("Pulsante 'Rinomina' per modificare");
                 }
             }
             ImGui::SameLine();

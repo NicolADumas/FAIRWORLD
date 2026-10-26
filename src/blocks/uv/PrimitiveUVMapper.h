@@ -133,6 +133,12 @@ public:
                                                    float phiRange = glm::pi<float>(),
                                                    const PrimitiveUVOptions& options = {});
 
+    PrimitiveMappingResult GenerateHemisphereMapping(EditableMesh& mesh, 
+                                                    UVLayout& outLayout, 
+                                                    float radius = 0.5f,
+                                                    float rimHeight = 0.05f,
+                                                    const PrimitiveUVOptions& options = {});
+
     // 7. Forme con Cavità: SphereWithCylindricalBore, SphereWithConicalCavities
     PrimitiveMappingResult GenerateCavityMapping(EditableMesh& mesh, 
                                                 UVLayout& outLayout, 

@@ -295,6 +295,19 @@ public:
     PaintDirtyRect EndStroke3D();
     bool CancelStroke3D();
 
+    // --- 3D Surface Stamp Tool Integration (BM-PAINT-STAMP-04) ---
+    bool ApplyStamp3D(const EditableMesh& mesh, 
+                      const SurfacePaintHit& hit, 
+                      const StampDefinition& stamp, 
+                      uint32_t targetLayerId = 0);
+
+    bool ApplyStamp3D(const EditableMesh& mesh, 
+                      const glm::vec3& rayOrigin, 
+                      const glm::vec3& rayDirection, 
+                      const StampDefinition& stamp, 
+                      uint32_t targetLayerId = 0,
+                      const glm::mat4& modelMatrix = glm::mat4(1.0f));
+
     // Staging GPU token per BM-TX5
     PaintGPUStagingToken GenerateGPUStagingToken(const std::string& assetId) const;
 

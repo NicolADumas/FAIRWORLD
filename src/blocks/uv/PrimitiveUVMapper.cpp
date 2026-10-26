@@ -1414,6 +1414,119 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateSphericalMapping(EditableMesh&
     return res;
 }
 
+PrimitiveMappingResult PrimitiveUVMapper::GenerateHemisphereMapping(EditableMesh& mesh, 
+                                                                    UVLayout& outLayout, 
+                                                                    float radius, 
+                                                                    float rimHeight,
+                                                                    const PrimitiveUVOptions& options) {
+    PrimitiveMappingResult res;
+    outLayout.Clear();
+    outLayout.strategyUsed = UVMappingStrategy::Hemisphere;
+    outLayout.meshTopologyRevision = mesh.GetTopologyRevision();
+
+    float safeR = (radius > 1e-4f) ? radius : 1.0f;
+    float safeRimH = std::max(0.0f, rimHeight);
+
+    // Isola 0: Upper Dome (+Y)
+    UVIsland islDome;
+    islDome.id = 0;
+    islDome.semanticName = "Upper Dome (+Y)";
+    islDome.semanticSurfaceId = 0;
+    outLayout.islands.push_back(islDome);
+
+    // Isola 1: Rim (Lateral)
+    UVIsland islRim;
+    islRim.id = 1;
+    islRim.semanticName = "Rim (Lateral)";
+    islRim.semanticSurfaceId = 1;
+    outLayout.islands.push_back(islRim);
+
+    // Isola 2: Bottom Cap (-Y)
+    UVIsland islBase;
+    islBase.id = 2;
+    islBase.semanticName = "Bottom Cap (-Y)";
+    islBase.semanticSurfaceId = 2;
+    outLayout.islands.push_back(islBase);
+
+    for (FaceID fId : mesh.GetActiveFaceIDs()) {
+        const auto* face = mesh.GetFace(fId);
+        if (!face) continue;
+
+        uint32_t islandIdx = 0;
+        if (face->surfaceId == 2 || face->faceNormal.y < -0.7f) {
+            islandIdx = 2; // Bottom Cap (-Y)
+        } else if (face->surfaceId == 1 || (safeRimH > 1e-4f && std::abs(face->faceNormal.y) < 0.25f)) {
+            islandIdx = 1; // Rim (Lateral)
+        } else {
+            islandIdx = 0; // Upper Dome (+Y)
+        }
+
+        outLayout.islands[islandIdx].faces.push_back(fId);
+        outLayout.faceToIslandMap[fId] = islandIdx;
+
+        for (HalfEdgeID heId : mesh.GetFaceHalfEdges(fId)) {
+            auto* he = mesh.GetHalfEdgeMutable(heId);
+            if (!he) continue;
+            const auto* v = mesh.GetVertex(he->origin);
+            if (!v) continue;
+
+            if (islandIdx == 2) {
+                // Bottom Cap: disco proiettato planarmente nel settore [0.35..0.65] x [0.02..0.20]
+                float uDisc = 0.5f + 0.5f * (v->position.x / safeR);
+                float vDisc = 0.5f + 0.5f * (v->position.z / safeR);
+                uDisc = glm::clamp(uDisc, 0.0f, 1.0f);
+                vDisc = glm::clamp(vDisc, 0.0f, 1.0f);
+                he->corner.uv = glm::vec2(0.35f + uDisc * 0.30f, 0.02f + vDisc * 0.18f);
+            } else if (islandIdx == 1) {
+                // Rim: fascia cilindrica rettangolare srotolata in [0.02..0.98] x [0.24..0.42]
+                float omega = std::atan2(v->position.z, v->position.x);
+                float u = 0.5f + (omega / glm::two_pi<float>());
+                float vBand = (safeRimH > 1e-4f) ? glm::clamp(v->position.y / safeRimH, 0.0f, 1.0f) : 0.5f;
+                u = glm::clamp(u, 0.0f, 1.0f);
+                he->corner.uv = glm::vec2(0.02f + u * 0.96f, 0.24f + vBand * 0.18f);
+            } else {
+                // Upper Dome: srotolamento della cupola in [0.02..0.98] x [0.46..0.98]
+                float yRel = std::max(0.0f, v->position.y - safeRimH);
+                glm::vec3 n = glm::length(glm::vec3(v->position.x, yRel, v->position.z)) > 1e-4f ? 
+                              glm::normalize(glm::vec3(v->position.x, yRel, v->position.z)) : glm::vec3(0, 1, 0);
+                float u = 0.5f + (std::atan2(n.z, n.x) / glm::two_pi<float>());
+                float vCoord = std::asin(glm::clamp(n.y, 0.0f, 1.0f)) / glm::half_pi<float>();
+
+                if (n.y > 0.999f) {
+                    glm::vec3 fn = face->faceNormal;
+                    u = 0.5f + (std::atan2(fn.z, fn.x) / glm::two_pi<float>());
+                }
+                u = glm::clamp(u, 0.0f, 1.0f);
+                vCoord = glm::clamp(vCoord, 0.0f, 1.0f);
+                he->corner.uv = glm::vec2(0.02f + u * 0.96f, 0.46f + vCoord * 0.50f);
+            }
+        }
+    }
+
+    if (options.markSeamEdges) {
+        for (EdgeID eId : mesh.GetActiveEdgeIDs()) {
+            const auto* e = mesh.GetEdge(eId);
+            if (!e) continue;
+            const auto* he0 = mesh.GetHalfEdge(e->halfEdge);
+            const auto* he1 = mesh.GetHalfEdge(e->twin);
+            if (he0 && he1 && IsValid(he0->face) && IsValid(he1->face)) {
+                if (outLayout.faceToIslandMap[he0->face] != outLayout.faceToIslandMap[he1->face]) {
+                    MarkSeamEdge(mesh, eId, 1.0f);
+                }
+            }
+        }
+    }
+
+    mesh.IncrementAttributeRevision();
+    outLayout.meshAttributeRevision = mesh.GetAttributeRevision();
+
+    ValidateGeneratedUV(mesh, outLayout, res.validation);
+    res.layout = outLayout;
+    res.status = res.validation.isValid ? PrimitiveMappingStatus::SUCCESS : PrimitiveMappingStatus::PARTIAL_SUCCESS;
+    res.success = res.validation.isValid;
+    return res;
+}
+
 // =============================================================================
 // 7. FORME CON CAVITA (BM-UV2.7)
 // SphereWithCylindricalBore, SphereWithConicalCavities
@@ -1745,6 +1858,16 @@ PrimitiveMappingResult PrimitiveUVMapper::AnalyzeAndMap(EditableMesh& mesh,
                 r = p->radius; baseY = p->baseY;
             }
             return GenerateSphericalMapping(mesh, layout, r, UVMappingStrategy::Spherical, baseY, r, glm::two_pi<float>(), glm::pi<float>(), options);
+        }
+
+        case ShapeType::Hemisphere: {
+            float r = 0.5f;
+            float rimH = 0.05f;
+            if (const auto* p = std::get_if<ShapeParamsHemisphere>(&params)) {
+                r = p->radius;
+                rimH = p->rimHeight;
+            }
+            return GenerateHemisphereMapping(mesh, layout, r, rimH, options);
         }
 
         case ShapeType::SphericalSector: {

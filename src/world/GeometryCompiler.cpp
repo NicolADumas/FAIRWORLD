@@ -1003,6 +1003,207 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
         return topo;
     };
 
+    auto buildHemisphereTopology = [&](float radius, float rimHeight, int rings, int segs) -> CompiledTopology {
+        CompiledTopology topo;
+        int M = std::max(2, rings);
+        int N = std::max(3, segs);
+        bool hasRim = (rimHeight > 1e-4f);
+
+        float yBase = 0.0f;
+        float yDomeBase = yBase + (hasRim ? rimHeight : 0.0f);
+
+        size_t totalVerts = 2 + N * M + (hasRim ? N : 0);
+        topo.geometricPositions.reserve(totalVerts);
+
+        topo.geometricPositions.push_back(glm::vec3(0.0f, yDomeBase + radius, 0.0f)); // 0: North Pole
+        topo.geometricPositions.push_back(glm::vec3(0.0f, yBase, 0.0f));             // 1: Bottom Center
+
+        // Anelli cupola: r = 0 .. M - 1
+        for (int r = 0; r < M; ++r) {
+            float phi = glm::half_pi<float>() * (float)r / (float)M;
+            float y = yDomeBase + radius * std::sin(phi);
+            float rCross = radius * std::cos(phi);
+            for (int s = 0; s < N; ++s) {
+                float omega = -glm::pi<float>() + (glm::two_pi<float>() * (float)s / (float)N);
+                topo.geometricPositions.push_back(glm::vec3(rCross * std::cos(omega), y, rCross * std::sin(omega)));
+            }
+        }
+
+        // Anello inferiore del rim (se hasRim): s = 0 .. N - 1 a yBase
+        if (hasRim) {
+            for (int s = 0; s < N; ++s) {
+                float omega = -glm::pi<float>() + (glm::two_pi<float>() * (float)s / (float)N);
+                topo.geometricPositions.push_back(glm::vec3(radius * std::cos(omega), yBase, radius * std::sin(omega)));
+            }
+        }
+
+        auto getDomeVIdx = [&](int r, int s) -> uint32_t {
+            if (r == M) return 0; // North Pole
+            return 2 + r * N + (s % N);
+        };
+
+        auto getRimBotVIdx = [&](int s) -> uint32_t {
+            if (hasRim) {
+                return 2 + M * N + (s % N);
+            }
+            return getDomeVIdx(0, s); // Se no rim, la base coincide con ring 0 della cupola
+        };
+
+        SurfaceContext scDome = resolveSurface(0);
+        SurfaceContext scRim  = resolveSurface(1);
+        SurfaceContext scBot  = resolveSurface(2);
+
+        // 2. Upper Dome (SurfaceID = 0)
+        // 2a. Quads intermedi: r = 0 .. M - 2
+        for (int r = 0; r < M - 1; ++r) {
+            float vLat0 = (float)r / (float)M;
+            float vLat1 = (float)(r + 1) / (float)M;
+            for (int s = 0; s < N; ++s) {
+                int nextS = (s + 1) % N;
+                uint32_t v0 = getDomeVIdx(r, nextS);
+                uint32_t v1 = getDomeVIdx(r, s);
+                uint32_t v2 = getDomeVIdx(r + 1, s);
+                uint32_t v3 = getDomeVIdx(r + 1, nextS);
+
+                CompiledFace f;
+                f.surfaceId = 0;
+                f.materialId = scDome.materialId;
+
+                const glm::vec3& p0 = topo.geometricPositions[v0];
+                const glm::vec3& p1 = topo.geometricPositions[v1];
+                const glm::vec3& p2 = topo.geometricPositions[v2];
+                const glm::vec3& p3 = topo.geometricPositions[v3];
+                f.faceNormal = glm::normalize((p0 + p1 + p2 + p3) * 0.25f - glm::vec3(0.0f, yDomeBase, 0.0f));
+
+                float u0 = (float)s / (float)N;
+                float u1 = (s + 1 == N) ? 1.0f : ((float)(s + 1) / (float)N);
+
+                auto makeDomeCorner = [&](uint32_t vIdx, float u, float vLat) {
+                    CompiledCorner c;
+                    c.geometricVertexIndex = vIdx;
+                    c.uv = scDome.uvTransform.Transform(glm::vec2(u, vLat));
+                    glm::vec3 relPos = topo.geometricPositions[vIdx] - glm::vec3(0.0f, yDomeBase, 0.0f);
+                    c.normal = (glm::length(relPos) > 1e-4f) ? glm::normalize(relPos) : glm::vec3(0.0f, 1.0f, 0.0f);
+                    c.color = scDome.hasPbrOverride ? glm::vec4(scDome.baseColor, 1.0f) : glm::vec4(1.0f);
+                    return c;
+                };
+
+                f.corners.push_back(makeDomeCorner(v0, u1, vLat0));
+                f.corners.push_back(makeDomeCorner(v1, u0, vLat0));
+                f.corners.push_back(makeDomeCorner(v2, u0, vLat1));
+                f.corners.push_back(makeDomeCorner(v3, u1, vLat1));
+                topo.faces.push_back(std::move(f));
+            }
+        }
+
+        // 2b. North Polar Triangles: r = M - 1 -> Pole (0)
+        for (int s = 0; s < N; ++s) {
+            int nextS = (s + 1) % N;
+            uint32_t v0 = getDomeVIdx(M - 1, nextS);
+            uint32_t v1 = getDomeVIdx(M - 1, s);
+            uint32_t v2 = 0; // North Pole
+
+            CompiledFace f;
+            f.surfaceId = 0;
+            f.materialId = scDome.materialId;
+
+            const glm::vec3& p0 = topo.geometricPositions[v0];
+            const glm::vec3& p1 = topo.geometricPositions[v1];
+            const glm::vec3& p2 = topo.geometricPositions[v2];
+            f.faceNormal = glm::normalize((p0 + p1 + p2) / 3.0f - glm::vec3(0.0f, yDomeBase, 0.0f));
+
+            float u0 = (float)s / (float)N;
+            float u1 = (s + 1 == N) ? 1.0f : ((float)(s + 1) / (float)N);
+            float uMid = ((float)s + 0.5f) / (float)N;
+            float vLat = (float)(M - 1) / (float)M;
+
+            auto makeDomeCorner = [&](uint32_t vIdx, float u, float v) {
+                CompiledCorner c;
+                c.geometricVertexIndex = vIdx;
+                c.uv = scDome.uvTransform.Transform(glm::vec2(u, v));
+                glm::vec3 relPos = topo.geometricPositions[vIdx] - glm::vec3(0.0f, yDomeBase, 0.0f);
+                c.normal = (glm::length(relPos) > 1e-4f) ? glm::normalize(relPos) : glm::vec3(0.0f, 1.0f, 0.0f);
+                c.color = scDome.hasPbrOverride ? glm::vec4(scDome.baseColor, 1.0f) : glm::vec4(1.0f);
+                return c;
+            };
+
+            f.corners.push_back(makeDomeCorner(v0, u1, vLat));
+            f.corners.push_back(makeDomeCorner(v1, u0, vLat));
+            f.corners.push_back(makeDomeCorner(v2, uMid, 1.0f));
+            topo.faces.push_back(std::move(f));
+        }
+
+        // 3. Rim Quads (SurfaceID = 1, se hasRim)
+        if (hasRim) {
+            for (int s = 0; s < N; ++s) {
+                int nextS = (s + 1) % N;
+                uint32_t vBnext = getRimBotVIdx(nextS);
+                uint32_t vBcurr = getRimBotVIdx(s);
+                uint32_t vTcurr = getDomeVIdx(0, s);
+                uint32_t vTnext = getDomeVIdx(0, nextS);
+
+                CompiledFace f;
+                f.surfaceId = 1;
+                f.materialId = scRim.materialId;
+
+                float a0 = (float)s / (float)N * glm::two_pi<float>();
+                float a1 = (float)(s + 1) / (float)N * glm::two_pi<float>();
+                float aMid = ((float)s + 0.5f) / (float)N * glm::two_pi<float>();
+                f.faceNormal = glm::vec3(std::cos(aMid), 0.0f, std::sin(aMid));
+
+                float u0 = (float)s / (float)N;
+                float u1 = (s + 1 == N) ? 1.0f : ((float)(s + 1) / (float)N);
+
+                auto makeRimCorner = [&](uint32_t vIdx, float u, float v, float angle) {
+                    CompiledCorner c;
+                    c.geometricVertexIndex = vIdx;
+                    c.uv = scRim.uvTransform.Transform(glm::vec2(u, v));
+                    c.normal = glm::vec3(std::cos(angle), 0.0f, std::sin(angle));
+                    c.color = scRim.hasPbrOverride ? glm::vec4(scRim.baseColor, 1.0f) : glm::vec4(1.0f);
+                    return c;
+                };
+
+                f.corners.push_back(makeRimCorner(vBnext, u1, 0.0f, a1));
+                f.corners.push_back(makeRimCorner(vBcurr, u0, 0.0f, a0));
+                f.corners.push_back(makeRimCorner(vTcurr, u0, 1.0f, a0));
+                f.corners.push_back(makeRimCorner(vTnext, u1, 1.0f, a1));
+                topo.faces.push_back(std::move(f));
+            }
+        }
+
+        // 4. Bottom Cap Triangles (SurfaceID = 2)
+        // Winding CCW visto dall'esterno (-Y): Center (1) -> B_s -> B_{nextS}
+        for (int s = 0; s < N; ++s) {
+            int nextS = (s + 1) % N;
+            uint32_t vCenter = 1;
+            uint32_t vBs = getRimBotVIdx(s);
+            uint32_t vBnext = getRimBotVIdx(nextS);
+
+            CompiledFace f;
+            f.surfaceId = 2;
+            f.materialId = scBot.materialId;
+            f.faceNormal = glm::vec3(0.0f, -1.0f, 0.0f);
+
+            auto makeBotCapCorner = [&](uint32_t vIdx) {
+                CompiledCorner c;
+                c.geometricVertexIndex = vIdx;
+                const glm::vec3& pos = topo.geometricPositions[vIdx];
+                glm::vec2 rawUv(pos.x / (2.0f * radius) + 0.5f, -pos.z / (2.0f * radius) + 0.5f);
+                c.uv = scBot.uvTransform.Transform(rawUv);
+                c.normal = glm::vec3(0.0f, -1.0f, 0.0f);
+                c.color = scBot.hasPbrOverride ? glm::vec4(scBot.baseColor, 1.0f) : glm::vec4(1.0f);
+                return c;
+            };
+
+            f.corners.push_back(makeBotCapCorner(vCenter));
+            f.corners.push_back(makeBotCapCorner(vBs));
+            f.corners.push_back(makeBotCapCorner(vBnext));
+            topo.faces.push_back(std::move(f));
+        }
+
+        return topo;
+    };
+
     if (definition.type == ShapeType::Cube) {
         float h = 0.5f; // Standard 1.0 size
         glm::vec3 n[6] = {
@@ -1434,19 +1635,18 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
         float radius = 1.0f;
         float topY = 1.0f;
         float bottomY = -1.0f;
+        int rings = options.maxResolution;
+        int segs = options.maxResolution * 2;
         if (definition.type == ShapeType::SphericalZone) {
             const auto* p = std::get_if<ShapeParamsSphericalZone>(&definition.parameters);
             if(p) { radius = p->radius; topY = p->topY; bottomY = p->bottomY; }
-        } else {
+        } else if (definition.type == ShapeType::SphericalSegment) {
             const auto* p = std::get_if<ShapeParamsSphericalSegment>(&definition.parameters);
             if(p) { radius = p->radius; bottomY = p->baseY; topY = p->radius; } // Assumes top segment
         }
         if (bottomY > topY) std::swap(bottomY, topY);
         bottomY = glm::clamp(bottomY, -radius, radius);
         topY = glm::clamp(topY, -radius, radius);
-
-        int rings = options.maxResolution;
-        int segs = options.maxResolution * 2;
         
         int startVert = vBuffer.size();
         for (int r = 0; r <= rings; ++r) {
@@ -1493,6 +1693,86 @@ GeometryCompileResult GeometryCompiler::Compile(const ShapeDefinition& definitio
                 vBuffer.push_back(CreateVertex(toGlm(vBuffer[capRingStart + s + 1].position), {0, -1, 0}));
                 addTri(botCenter, start, start + 1);
             }
+        }
+    }
+    else if (definition.type == ShapeType::Hemisphere) {
+        float radius = 0.5f;
+        int rings = 16;
+        int segs = 32;
+        float rimHeight = 0.05f;
+        if (const auto* p = std::get_if<ShapeParamsHemisphere>(&definition.parameters)) {
+            radius = p->radius;
+            rings = std::max(2, p->rings);
+            segs = std::max(3, p->segments);
+            rimHeight = std::max(0.0f, p->rimHeight);
+        }
+
+        float yBase = 0.0f;
+        float yDomeBase = yBase + rimHeight;
+
+        // 1. Upper Dome (SurfaceID = 0)
+        int domeStartVert = vBuffer.size();
+        for (int r = 0; r <= rings; ++r) {
+            float phi = glm::half_pi<float>() * static_cast<float>(r) / static_cast<float>(rings);
+            float y = yDomeBase + radius * std::sin(phi);
+            float rCross = radius * std::cos(phi);
+            for (int s = 0; s <= segs; ++s) {
+                float omega = -glm::pi<float>() + (2.0f * glm::pi<float>() * s / segs);
+                float nx = std::cos(phi) * std::cos(omega);
+                float ny = std::sin(phi);
+                float nz = std::cos(phi) * std::sin(omega);
+                glm::vec3 norm = glm::normalize(glm::vec3(nx, ny, nz));
+                glm::vec3 pos{ rCross * std::cos(omega), y, rCross * std::sin(omega) };
+                vBuffer.push_back(createSurfVertex(pos, norm, 0));
+            }
+        }
+        for (int r = 0; r < rings; ++r) {
+            for (int s = 0; s < segs; ++s) {
+                int a = domeStartVert + r * (segs + 1) + s;
+                int b = a + 1;
+                int c = domeStartVert + (r + 1) * (segs + 1) + s;
+                int d = c + 1;
+                addTri(a, b, c);
+                addTri(c, b, d);
+            }
+        }
+
+        // 2. Rim (SurfaceID = 1, se rimHeight > 0)
+        if (rimHeight > 1e-4f) {
+            int rimStartVert = vBuffer.size();
+            for (int s = 0; s <= segs; ++s) {
+                float omega = -glm::pi<float>() + (2.0f * glm::pi<float>() * s / segs);
+                float nx = std::cos(omega);
+                float nz = std::sin(omega);
+                glm::vec3 norm{ nx, 0.0f, nz };
+                vBuffer.push_back(createSurfVertex(glm::vec3(radius * nx, yBase, radius * nz), norm, 1));
+                vBuffer.push_back(createSurfVertex(glm::vec3(radius * nx, yDomeBase, radius * nz), norm, 1));
+            }
+            for (int s = 0; s < segs; ++s) {
+                int bl = rimStartVert + s * 2;
+                int tl = bl + 1;
+                int br = rimStartVert + (s + 1) * 2;
+                int tr = br + 1;
+                addTri(bl, br, tl);
+                addTri(tl, br, tr);
+            }
+        }
+
+        // 3. Bottom Cap (SurfaceID = 2)
+        int botCenter = vBuffer.size();
+        glm::vec3 botNorm{ 0.0f, -1.0f, 0.0f };
+        vBuffer.push_back(createSurfVertex(glm::vec3(0.0f, yBase, 0.0f), botNorm, 2));
+        int capRingStart = vBuffer.size();
+        for (int s = 0; s <= segs; ++s) {
+            float omega = -glm::pi<float>() + (2.0f * glm::pi<float>() * s / segs);
+            vBuffer.push_back(createSurfVertex(glm::vec3(radius * std::cos(omega), yBase, radius * std::sin(omega)), botNorm, 2));
+        }
+        for (int s = 0; s < segs; ++s) {
+            addTri(botCenter, capRingStart + s, capRingStart + s + 1);
+        }
+
+        if (radius > 1e-4f && rings >= 2 && segs >= 3) {
+            result.topology = buildHemisphereTopology(radius, rimHeight, rings, segs);
         }
     }
     else if (definition.type == ShapeType::SphericalSector) {

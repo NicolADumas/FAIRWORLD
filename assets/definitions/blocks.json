@@ -549,13 +549,13 @@
             ],
             "localRotation": [
                 0.0,
-                0.0,
+                -72.19611358642578,
                 0.0
             ],
             "localScale": [
-                1.0,
-                1.0,
-                1.0
+                1.9653352499008179,
+                2.601163148880005,
+                1.987789273262024
             ],
             "mass": 1.0,
             "massMode": 0,
@@ -605,6 +605,44 @@
             ],
             "restitution": 0.0,
             "stringId": "fairworld:prova1",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
+        },
+        {
+            "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
+            "displayName": "EMISFERO",
+            "friction": 0.6000000238418579,
+            "id": 16,
+            "isSolid": true,
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                -0.014131471514701843,
+                0.7234804034233093,
+                0.20439685881137848
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                2.180000066757202,
+                2.16316556930542,
+                2.180000066757202
+            ],
+            "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "restitution": 0.0,
+            "stringId": "fairworld:emisfero",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         }

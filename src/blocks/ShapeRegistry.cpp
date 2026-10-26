@@ -61,6 +61,7 @@ static void SerializeShapeParams(json& j, ShapeType type, const ShapeParameters&
         case ShapeType::Torus: { auto& p = std::get<ShapeParamsTorus>(params); j["majorRadius"] = p.majorRadius; j["minorRadius"] = p.minorRadius; j["majorSegments"] = p.majorSegments; j["minorSegments"] = p.minorSegments; break; }
         case ShapeType::Tetrahedron: { auto& p = std::get<ShapeParamsTetrahedron>(params); j["sideLength"] = p.sideLength; break; }
         case ShapeType::Ellipsoid: { auto& p = std::get<ShapeParamsEllipsoid>(params); j["radius"] = p.radius; j["rings"] = p.rings; j["segments"] = p.segments; break; }
+        case ShapeType::Hemisphere: { auto& p = std::get<ShapeParamsHemisphere>(params); j["radius"] = p.radius; j["rings"] = p.rings; j["segments"] = p.segments; j["rimHeight"] = p.rimHeight; break; }
         default: break; // Cube, Heightfield, SignedDistanceField
     }
 }
@@ -96,6 +97,7 @@ static ShapeParameters DeserializeShapeParams(const json& j, ShapeType type) {
             case ShapeType::Torus: return ShapeParamsTorus{j.at("majorRadius").get<float>(), j.at("minorRadius").get<float>(), j.at("majorSegments").get<int>(), j.at("minorSegments").get<int>()};
             case ShapeType::Tetrahedron: return ShapeParamsTetrahedron{j.at("sideLength").get<float>()};
             case ShapeType::Ellipsoid: return ShapeParamsEllipsoid{j.at("radius").get<glm::vec3>(), j.at("rings").get<int>(), j.at("segments").get<int>()};
+            case ShapeType::Hemisphere: return ShapeParamsHemisphere{j.at("radius").get<float>(), j.at("rings").get<int>(), j.at("segments").get<int>(), j.value("rimHeight", 0.0f)};
             case ShapeType::Compound: {
                 ShapeParamsCompound cmp;
                 for (const auto& cj : j.at("children")) {
@@ -353,6 +355,13 @@ ShapeValidationResult ShapeRegistry::ValidateParameters(ShapeType type, const Sh
             if (p->rings < 2 || p->segments < 3) return fail("Ellipsoid rings must be >= 2 and segments >= 3.");
         }
     }
+    else if (type == ShapeType::Hemisphere) {
+        if (auto* p = std::get_if<ShapeParamsHemisphere>(&params)) {
+            if (!IsFinite(p->radius) || p->radius <= 0.0f) return fail("Hemisphere radius must be positive finite.");
+            if (!IsFinite(p->rimHeight) || p->rimHeight < 0.0f) return fail("Hemisphere rim height must be non-negative finite.");
+            if (p->rings < 2 || p->segments < 3) return fail("Hemisphere rings must be >= 2 and segments >= 3.");
+        }
+    }
 
     return res;
 }
@@ -419,6 +428,11 @@ bool ShapeRegistry::UpdateShape(ShapeHandle handle, const ShapeParameters& newPa
     auto it = m_shapes.find(handle.id);
     if (it == m_shapes.end()) return false;
     
+    // Zero-Work (BM-SHAPES-02B): Se i parametri sono identici, nessuna modifica ne incremento di revisione
+    if (it->second.parameters == newParams) {
+        return false;
+    }
+
     auto valid = ValidateParameters(it->second.type, newParams, handle.id);
     if (!valid.isValid) return false;
     

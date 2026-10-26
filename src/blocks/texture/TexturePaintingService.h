@@ -14,6 +14,8 @@
 
 namespace fw {
 
+struct UVIslandRasterMask;
+
 using PixelClipCallback = std::function<bool(int32_t x, int32_t y)>;
 
 // =============================================================================
@@ -40,6 +42,23 @@ struct PaintBrush {
     bool eraseMode = false;    // Se true, riduce alpha/cancella
 
     float EvaluateFalloff(float distNormalized) const;
+};
+
+// =============================================================================
+// BM-PAINT-STAMP-02 — GEOMETRIC STAMP DEFINITION
+// =============================================================================
+
+enum class StampShape : uint8_t {
+    Circle = 0,
+    Square = 1
+};
+
+struct StampDefinition {
+    StampShape shape = StampShape::Circle;
+    float sizePixels = 16.0f;                // Raggio (Circle) o semilato (Square) in pixel
+    float rotationRadians = 0.0f;            // Rotazione in radianti
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f}; // RGBA lineare
+    float opacity = 1.0f;                    // [0.0, 1.0]
 };
 
 // =============================================================================
@@ -155,6 +174,20 @@ public:
     bool IsStroking() const { return m_activeTransaction.isActive; }
     const PaintDirtyRect& GetActiveStrokeDirtyRect() const { return m_activeTransaction.dirtyRect; }
 
+    // --- BM-PAINTER-PERF-02: Maschera raster cached per isola UV (Fast O(1) Dab Clipping) ---
+    void SetStrokeClipMask(std::shared_ptr<const UVIslandRasterMask> mask) {
+        m_activeClipMask = std::move(mask);
+    }
+    std::shared_ptr<const UVIslandRasterMask> GetStrokeClipMask() const {
+        return m_activeClipMask;
+    }
+
+    // --- Geometric Stamp Tool (BM-PAINT-STAMP-02) ---
+    bool ApplyStampClipped(uint32_t layerId, glm::vec2 centerCoords, const StampDefinition& stamp, const PixelClipCallback& clipCb = nullptr);
+    bool ApplyStamp(uint32_t layerId, glm::vec2 centerCoords, const StampDefinition& stamp) {
+        return ApplyStampClipped(layerId, centerCoords, stamp, nullptr);
+    }
+
     // --- Blending & Compositing Incrementale (BM-TX3.4 & BM-TX3.8) ---
     static glm::vec4 BlendPixelsLinear(const glm::vec4& srcColor, float srcAlpha, 
                                        const glm::vec4& dstColor, float dstAlpha, 
@@ -197,6 +230,9 @@ private:
 
     void ApplyDabInternal(PaintLayer& layer, glm::vec2 center, const PaintBrush& brush, bool isMask, const PixelClipCallback& clipCb = nullptr);
     size_t FindLayerIndex(uint32_t layerId) const;
+
+    // Maschera raster attiva per la transazione di pittura corrente (BM-PAINTER-PERF-02)
+    std::shared_ptr<const UVIslandRasterMask> m_activeClipMask = nullptr;
 };
 
 } // namespace fw

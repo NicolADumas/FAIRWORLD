@@ -674,6 +674,16 @@ private:
     bool m_is3DPaintStroking = false;
     fw::PaintBrush m_paintBrush;
     fw::PaintChannel m_activePaintChannel = fw::PaintChannel::BaseColor;
+
+    // --- BM-PAINT-STAMP-05: Painter Tool Mode & Stamp State ---
+    enum class PainterToolMode : uint8_t {
+        Brush = 0,
+        Stamp = 1
+    };
+    PainterToolMode m_painterToolMode = PainterToolMode::Brush;
+    fw::StampDefinition m_stampDef;
+    float m_stampRotationDegrees = 0.0f;
+
     void Handle3DPaintInput();
     void ComputeMouseRay(const ImVec2& mousePos, glm::vec3& outOrigin, glm::vec3& outDir);
 

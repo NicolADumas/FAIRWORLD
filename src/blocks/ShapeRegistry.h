@@ -95,43 +95,136 @@ enum class ShapeType : uint8_t {
 };
 
 // Parameter structures
-struct ShapeParamsCuboid { glm::vec3 size; };
-struct ShapeParamsParallelepiped { glm::vec3 basisX, basisY, basisZ; };
-struct ShapeParamsPyramid { float baseWidth, baseDepth, height; glm::vec2 apexOffset; };
-struct ShapeParamsPyramidFrustum { float bottomWidth, bottomDepth, topWidth, topDepth, height; glm::vec2 apexOffset; };
-struct ShapeParamsCylinder { float radius, height; };
-struct ShapeParamsHollowCylinder { float outerRadius, innerRadius, height; };
-struct ShapeParamsCone { float radius, height; };
-struct ShapeParamsConeFrustum { float bottomRadius, topRadius, height; };
-struct ShapeParamsSphere { float radius; };
-struct ShapeParamsSphericalZone { float radius, bottomY, topY; };
-struct ShapeParamsSphericalSegment { float radius, baseY; };
-struct ShapeParamsSphericalSector { float radius, thetaRange, phiRange; };
-struct ShapeParamsSphereWithCylindricalBore { float sphereRadius, cylinderRadius, cylinderHeight; };
-struct ShapeParamsSphereWithConicalCavities { float sphereRadius, coneRadius, coneHeight; };
-struct ShapeParamsSlicedCylinder { float radius, height; glm::vec3 cutNormal; };
-struct ShapeParamsUngula { float radius, height, cutAngle; };
-struct ShapeParamsBarrel { float midRadius, endRadius, height; };
-struct ShapeParamsCapsule { float radius, halfHeight; };
-struct ShapeParamsLegacySuperSphere { float n; };
+struct ShapeParamsCuboid {
+    glm::vec3 size;
+    bool operator==(const ShapeParamsCuboid& o) const { return size == o.size; }
+};
+struct ShapeParamsParallelepiped {
+    glm::vec3 basisX, basisY, basisZ;
+    bool operator==(const ShapeParamsParallelepiped& o) const { return basisX == o.basisX && basisY == o.basisY && basisZ == o.basisZ; }
+};
+struct ShapeParamsPyramid {
+    float baseWidth, baseDepth, height; glm::vec2 apexOffset;
+    bool operator==(const ShapeParamsPyramid& o) const { return baseWidth == o.baseWidth && baseDepth == o.baseDepth && height == o.height && apexOffset == o.apexOffset; }
+};
+struct ShapeParamsPyramidFrustum {
+    float bottomWidth, bottomDepth, topWidth, topDepth, height; glm::vec2 apexOffset;
+    bool operator==(const ShapeParamsPyramidFrustum& o) const { return bottomWidth == o.bottomWidth && bottomDepth == o.bottomDepth && topWidth == o.topWidth && topDepth == o.topDepth && height == o.height && apexOffset == o.apexOffset; }
+};
+struct ShapeParamsCylinder {
+    float radius, height;
+    bool operator==(const ShapeParamsCylinder& o) const { return radius == o.radius && height == o.height; }
+};
+struct ShapeParamsHollowCylinder {
+    float outerRadius, innerRadius, height;
+    bool operator==(const ShapeParamsHollowCylinder& o) const { return outerRadius == o.outerRadius && innerRadius == o.innerRadius && height == o.height; }
+};
+struct ShapeParamsCone {
+    float radius, height;
+    bool operator==(const ShapeParamsCone& o) const { return radius == o.radius && height == o.height; }
+};
+struct ShapeParamsConeFrustum {
+    float bottomRadius, topRadius, height;
+    bool operator==(const ShapeParamsConeFrustum& o) const { return bottomRadius == o.bottomRadius && topRadius == o.topRadius && height == o.height; }
+};
+struct ShapeParamsSphere {
+    float radius;
+    bool operator==(const ShapeParamsSphere& o) const { return radius == o.radius; }
+};
+struct ShapeParamsSphericalZone {
+    float radius, bottomY, topY;
+    bool operator==(const ShapeParamsSphericalZone& o) const { return radius == o.radius && bottomY == o.bottomY && topY == o.topY; }
+};
+struct ShapeParamsSphericalSegment {
+    float radius, baseY;
+    bool operator==(const ShapeParamsSphericalSegment& o) const { return radius == o.radius && baseY == o.baseY; }
+};
+struct ShapeParamsSphericalSector {
+    float radius, thetaRange, phiRange;
+    bool operator==(const ShapeParamsSphericalSector& o) const { return radius == o.radius && thetaRange == o.thetaRange && phiRange == o.phiRange; }
+};
+struct ShapeParamsSphereWithCylindricalBore {
+    float sphereRadius, cylinderRadius, cylinderHeight;
+    bool operator==(const ShapeParamsSphereWithCylindricalBore& o) const { return sphereRadius == o.sphereRadius && cylinderRadius == o.cylinderRadius && cylinderHeight == o.cylinderHeight; }
+};
+struct ShapeParamsSphereWithConicalCavities {
+    float sphereRadius, coneRadius, coneHeight;
+    bool operator==(const ShapeParamsSphereWithConicalCavities& o) const { return sphereRadius == o.sphereRadius && coneRadius == o.coneRadius && coneHeight == o.coneHeight; }
+};
+struct ShapeParamsSlicedCylinder {
+    float radius, height; glm::vec3 cutNormal;
+    bool operator==(const ShapeParamsSlicedCylinder& o) const { return radius == o.radius && height == o.height && cutNormal == o.cutNormal; }
+};
+struct ShapeParamsUngula {
+    float radius, height, cutAngle;
+    bool operator==(const ShapeParamsUngula& o) const { return radius == o.radius && height == o.height && cutAngle == o.cutAngle; }
+};
+struct ShapeParamsBarrel {
+    float midRadius, endRadius, height;
+    bool operator==(const ShapeParamsBarrel& o) const { return midRadius == o.midRadius && endRadius == o.endRadius && height == o.height; }
+};
+struct ShapeParamsCapsule {
+    float radius, halfHeight;
+    bool operator==(const ShapeParamsCapsule& o) const { return radius == o.radius && halfHeight == o.halfHeight; }
+};
+struct ShapeParamsLegacySuperSphere {
+    float n;
+    bool operator==(const ShapeParamsLegacySuperSphere& o) const { return n == o.n; }
+};
 
 // BM-SHAPES-01 Parameter structures
-struct ShapeParamsWedge { glm::vec3 size{1.0f, 1.0f, 1.0f}; };
-struct ShapeParamsRoundedBox { glm::vec3 size{1.0f, 1.0f, 1.0f}; float radius{0.15f}; int segments{3}; };
-struct ShapeParamsTorus { float majorRadius{0.75f}; float minorRadius{0.25f}; int majorSegments{24}; int minorSegments{12}; };
-struct ShapeParamsTetrahedron { float sideLength{1.0f}; };
-struct ShapeParamsEllipsoid { glm::vec3 radius{1.0f, 0.7f, 0.5f}; int rings{16}; int segments{24}; };
+struct ShapeParamsWedge {
+    glm::vec3 size{1.0f, 1.0f, 1.0f};
+    bool operator==(const ShapeParamsWedge& o) const { return size == o.size; }
+};
+struct ShapeParamsRoundedBox {
+    glm::vec3 size{1.0f, 1.0f, 1.0f}; float radius{0.15f}; int segments{3};
+    bool operator==(const ShapeParamsRoundedBox& o) const { return size == o.size && radius == o.radius && segments == o.segments; }
+};
+struct ShapeParamsTorus {
+    float majorRadius{0.75f}; float minorRadius{0.25f}; int majorSegments{24}; int minorSegments{12};
+    bool operator==(const ShapeParamsTorus& o) const { return majorRadius == o.majorRadius && minorRadius == o.minorRadius && majorSegments == o.majorSegments && minorSegments == o.minorSegments; }
+};
+struct ShapeParamsTetrahedron {
+    float sideLength{1.0f};
+    bool operator==(const ShapeParamsTetrahedron& o) const { return sideLength == o.sideLength; }
+};
+struct ShapeParamsEllipsoid {
+    glm::vec3 radius{1.0f, 0.7f, 0.5f}; int rings{16}; int segments{24};
+    bool operator==(const ShapeParamsEllipsoid& o) const { return radius == o.radius && rings == o.rings && segments == o.segments; }
+};
+struct ShapeParamsHemisphere {
+    float radius{0.5f}; int rings{16}; int segments{32}; float rimHeight{0.05f};
+    bool operator==(const ShapeParamsHemisphere& o) const {
+        return radius == o.radius && rings == o.rings && segments == o.segments && rimHeight == o.rimHeight;
+    }
+};
 
-struct ShapeParamsConvexHull { std::vector<glm::vec3> vertices; };
-struct ShapeParamsTriangleMesh { std::vector<glm::vec3> vertices; std::vector<uint32_t> indices; };
+struct ShapeParamsConvexHull {
+    std::vector<glm::vec3> vertices;
+    bool operator==(const ShapeParamsConvexHull& o) const { return vertices == o.vertices; }
+};
+struct ShapeParamsTriangleMesh {
+    std::vector<glm::vec3> vertices; std::vector<uint32_t> indices;
+    bool operator==(const ShapeParamsTriangleMesh& o) const { return vertices == o.vertices && indices == o.indices; }
+};
 
 struct CompoundChild {
     ShapeHandle handle;
     glm::vec3 position{0.0f};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};
+    bool operator==(const CompoundChild& o) const {
+        return handle == o.handle && position == o.position &&
+               rotation.w == o.rotation.w && rotation.x == o.rotation.x &&
+               rotation.y == o.rotation.y && rotation.z == o.rotation.z &&
+               scale == o.scale;
+    }
 };
-struct ShapeParamsCompound { std::vector<CompoundChild> children; };
+struct ShapeParamsCompound {
+    std::vector<CompoundChild> children;
+    bool operator==(const ShapeParamsCompound& o) const { return children == o.children; }
+};
 
 using ShapeParameters = std::variant<
     std::monostate,
@@ -161,7 +254,8 @@ using ShapeParameters = std::variant<
     ShapeParamsRoundedBox,
     ShapeParamsTorus,
     ShapeParamsTetrahedron,
-    ShapeParamsEllipsoid
+    ShapeParamsEllipsoid,
+    ShapeParamsHemisphere
 >;
 
 struct ShapeValidationResult {

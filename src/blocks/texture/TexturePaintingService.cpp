@@ -1,4 +1,5 @@
 #include "TexturePaintingService.h"
+#include "blocks/uv/UVLayout.h"
 #include <cmath>
 #include <algorithm>
 #include <iostream>
@@ -319,15 +320,30 @@ void TexturePaintingService::ApplyDabInternal(PaintLayer& layer, glm::vec2 cente
 
     if (x0 > x1 || y0 > y1) return;
 
+    const UVIslandRasterMask* maskPtr = m_activeClipMask.get();
+    float rSq = r * r;
+    size_t canvasW = m_canvasWidth;
+
     for (int32_t y = y0; y <= y1; ++y) {
+        float dy = (y + 0.5f) - center.y;
+        float dySq = dy * dy;
+        size_t rowOffset = static_cast<size_t>(y) * canvasW;
+
         for (int32_t x = x0; x <= x1; ++x) {
             float dx = (x + 0.5f) - center.x;
-            float dy = (y + 0.5f) - center.y;
-            float dist = std::sqrt(dx * dx + dy * dy);
+            float distSq = dx * dx + dySq;
 
-            if (dist <= r) {
+            if (distSq <= rSq) {
+                // BM-PAINTER-PERF-02: Lookup diretto O(1) nella maschera raster cached
+                if (maskPtr) {
+                    if (rowOffset + static_cast<size_t>(x) >= maskPtr->pixels.size() || 
+                        maskPtr->pixels[rowOffset + static_cast<size_t>(x)] == 0) {
+                        continue;
+                    }
+                }
                 if (clipCb && !clipCb(x, y)) continue;
 
+                float dist = std::sqrt(distSq);
                 float falloffFactor = brush.EvaluateFalloff(dist / r);
                 float factor = falloffFactor * brush.opacity * brush.strength;
 
@@ -441,6 +457,7 @@ PaintDirtyRect TexturePaintingService::EndStroke() {
 
     m_activeTransaction.isActive = false;
     m_activeTransaction.dirtyRect.Clear();
+    m_activeClipMask = nullptr;
     return resultDirty;
 }
 
@@ -463,6 +480,150 @@ bool TexturePaintingService::CancelStroke() {
 
     m_activeTransaction.isActive = false;
     m_activeTransaction.dirtyRect.Clear();
+    m_activeClipMask = nullptr;
+    return true;
+}
+
+// =============================================================================
+// BM-PAINT-STAMP-02 — GEOMETRIC STAMP EXECUTION (CPU RASTER ENGINE)
+// =============================================================================
+
+bool TexturePaintingService::ApplyStampClipped(uint32_t layerId, glm::vec2 centerCoords, const StampDefinition& stamp, const PixelClipCallback& clipCb) {
+    // 1. Validazione parametri essenziali (Zero-Work se input non valido)
+    if (stamp.sizePixels <= 0.0f || stamp.opacity <= 0.0f || stamp.color.a <= 0.0f) {
+        std::cout << "[STAMP-DIAG-04] RASTER RESULT: Candidates=0 Modified=0 Result=FAIL(InvalidStampDef: size=" 
+                  << stamp.sizePixels << " opacity=" << stamp.opacity << " alpha=" << stamp.color.a << ")"
+                  << " UndoRecordCreated=false DirtyPreviewRequested=false\n";
+        return false;
+    }
+
+    PaintLayer* targetLayer = GetLayer(layerId);
+    if (!targetLayer || targetLayer->isLocked) {
+        std::cout << "[STAMP-DIAG-04] RASTER RESULT: Candidates=0 Modified=0 Result=FAIL(TargetLayerInvalidOrLocked: layerId=" 
+                  << layerId << ")"
+                  << " UndoRecordCreated=false DirtyPreviewRequested=false\n";
+        return false;
+    }
+
+    // 2. Calcolo raggio / AABB di contenimento del bound ruotato
+    float rBound = stamp.sizePixels;
+    if (stamp.shape == StampShape::Square) {
+        // Estensione massima del semilato proiettato lungo gli assi
+        rBound = stamp.sizePixels * (std::abs(std::cos(stamp.rotationRadians)) + std::abs(std::sin(stamp.rotationRadians)));
+    }
+
+    int32_t x0 = std::max(0, static_cast<int32_t>(std::floor(centerCoords.x - rBound)));
+    int32_t y0 = std::max(0, static_cast<int32_t>(std::floor(centerCoords.y - rBound)));
+    int32_t x1 = std::min(static_cast<int32_t>(m_canvasWidth - 1), static_cast<int32_t>(std::ceil(centerCoords.x + rBound)));
+    int32_t y1 = std::min(static_cast<int32_t>(m_canvasHeight - 1), static_cast<int32_t>(std::ceil(centerCoords.y + rBound)));
+
+    if (x0 > x1 || y0 > y1) {
+        std::cout << "[STAMP-DIAG-04] RASTER RESULT: Candidates=0 Modified=0 Result=FAIL(AABBOutOfBounds: x0=" 
+                  << x0 << " x1=" << x1 << " y0=" << y0 << " y1=" << y1 << ")"
+                  << " UndoRecordCreated=false DirtyPreviewRequested=false\n";
+        return false;
+    }
+
+    // 3. Gestione transazione atomica (chiude transazioni orfane per garantire singolo record Undo/Redo)
+    if (m_activeTransaction.isActive) {
+        EndStroke();
+    }
+
+    if (!BeginStroke(layerId, false)) {
+        std::cout << "[STAMP-DIAG-04] RASTER RESULT: Candidates=0 Modified=0 Result=FAIL(BeginStrokeFailed: layerId=" 
+                  << layerId << ")"
+                  << " UndoRecordCreated=false DirtyPreviewRequested=false\n";
+        return false;
+    }
+
+    float cosR = std::cos(stamp.rotationRadians);
+    float sinR = std::sin(stamp.rotationRadians);
+    float stampAlpha = std::clamp(stamp.color.a * stamp.opacity, 0.0f, 1.0f);
+    float sizeSq = stamp.sizePixels * stamp.sizePixels;
+
+    auto toByte = [](float v) -> uint8_t {
+        return static_cast<uint8_t>(std::clamp(v * 255.0f + 0.5f, 0.0f, 255.0f));
+    };
+
+    uint32_t candidatePixels = 0;
+    uint32_t clippedOutPixels = 0;
+    uint32_t acceptedPixels = 0;
+    uint32_t modifiedPixels = 0;
+
+    for (int32_t y = y0; y <= y1; ++y) {
+        for (int32_t x = x0; x <= x1; ++x) {
+            float dx = (static_cast<float>(x) + 0.5f) - centerCoords.x;
+            float dy = (static_cast<float>(y) + 0.5f) - centerCoords.y;
+
+            // Trasformazione inversa deterministica in coordinate locali dello stampo
+            float u = dx * cosR + dy * sinR;
+            float v = -dx * sinR + dy * cosR;
+
+            bool inside = false;
+            if (stamp.shape == StampShape::Circle) {
+                inside = (u * u + v * v <= sizeSq);
+            } else if (stamp.shape == StampShape::Square) {
+                inside = (std::abs(u) <= stamp.sizePixels && std::abs(v) <= stamp.sizePixels);
+            }
+
+            if (!inside) continue;
+
+            candidatePixels++;
+
+            // BM-PAINTER-PERF-02: Fast O(1) mask lookup replaces per-pixel geometric face scans
+            const UVIslandRasterMask* maskPtr = m_activeClipMask.get();
+            if (maskPtr) {
+                size_t rowOffset = static_cast<size_t>(y) * m_canvasWidth;
+                if (rowOffset + static_cast<size_t>(x) >= maskPtr->pixels.size() || 
+                    maskPtr->pixels[rowOffset + static_cast<size_t>(x)] == 0) {
+                    clippedOutPixels++;
+                    continue;
+                }
+            }
+            if (clipCb && !clipCb(x, y)) {
+                clippedOutPixels++;
+                continue;
+            }
+
+            acceptedPixels++;
+
+            glm::vec4 curCol = targetLayer->pixelBuffer.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+            glm::vec4 newCol = BlendPixelsLinear(stamp.color, stampAlpha, curCol, curCol.a, PaintLayerBlendMode::Normal);
+
+            bool isDifferent = (toByte(newCol.r) != toByte(curCol.r) ||
+                                toByte(newCol.g) != toByte(curCol.g) ||
+                                toByte(newCol.b) != toByte(curCol.b) ||
+                                toByte(newCol.a) != toByte(curCol.a));
+
+            if (isDifferent) {
+                targetLayer->pixelBuffer.SetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y), newCol);
+                m_activeTransaction.dirtyRect.ExpandToInclude(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                modifiedPixels++;
+            }
+        }
+    }
+
+    // [STAMP-DIAG-03] CLIPPING: riassunto atomico per singola operazione
+    std::cout << "[STAMP-DIAG-03] CLIPPING: Candidates=" << candidatePixels 
+              << " Accepted=" << acceptedPixels 
+              << " ClippedOut=" << clippedOutPixels 
+              << " HasClipCb=" << (clipCb != nullptr ? "true" : "false") << "\n";
+
+    // 4. Se nessun pixel e' stato modificato, rollback e zero-work senza sporcare revisioni ne' history
+    if (modifiedPixels == 0) {
+        CancelStroke();
+        std::cout << "[STAMP-DIAG-04] RASTER RESULT: Candidates=" << candidatePixels 
+                  << " Modified=0 Result=FAIL(Zero-Work/Identical-Pixels)"
+                  << " UndoRecordCreated=false DirtyPreviewRequested=false\n";
+        return false;
+    }
+
+    // 5. Finalizza lo stroke in un singolo record atomico di Undo/Redo
+    EndStroke();
+    std::cout << "[STAMP-DIAG-04] RASTER RESULT: Candidates=" << candidatePixels 
+              << " Modified=" << modifiedPixels 
+              << " Result=SUCCESS"
+              << " UndoRecordCreated=true DirtyPreviewRequested=true\n";
     return true;
 }
 

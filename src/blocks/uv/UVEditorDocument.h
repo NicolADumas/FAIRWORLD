@@ -150,6 +150,13 @@ public:
     UVIslandID GetActiveStrokeIslandId() const { return m_strokeIslandId; }
     const std::string& GetLastPaintBlockedReason() const { return m_lastPaintBlockedReason; }
 
+    // --- 2D Stamp Tool Integration (BM-PAINT-STAMP-03) ---
+    bool ApplyStamp2D(const glm::vec2& atlasUV, 
+                      const StampDefinition& stamp, 
+                      TexturePaintingService* paintingService, 
+                      uint32_t targetLayerId,
+                      CanvasPaintMode paintMode = CanvasPaintMode::SurfacePaint);
+
 private:
     void MarkModified();
     void ApplyAtlasTransformToIslandCorners(UVIsland& island);

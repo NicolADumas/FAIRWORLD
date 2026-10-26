@@ -1,6 +1,7 @@
 #include "SurfacePaintingAdapter.h"
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
 namespace fw {
 
@@ -423,6 +424,17 @@ bool SurfacePaintingAdapter::BeginStroke3D(const EditableMesh& mesh,
         return false;
     }
 
+    // BM-PAINTER-PERF-02: Maschera raster cached per isolamento isola UV
+    if (m_uvLayout) {
+        auto it = m_uvLayout->faceToIslandMap.find(hit.faceId);
+        if (it != m_uvLayout->faceToIslandMap.end() && it->second < m_uvLayout->islands.size()) {
+            auto mask = GetOrCreateIslandRasterMask(mesh, *m_uvLayout, it->second, m_uvConfig.textureWidth, m_uvConfig.textureHeight, m_uvConfig.flipV);
+            m_paintingService->SetStrokeClipMask(mask);
+        } else {
+            m_paintingService->SetStrokeClipMask(nullptr);
+        }
+    }
+
     m_paintingService->ApplyDab(pxCoords, effectiveBrush);
 
     float metricR = (brush.radiusMetric > 0.0f) ? brush.radiusMetric : (brush.radiusPixels * 0.05f);
@@ -465,9 +477,21 @@ bool SurfacePaintingAdapter::UpdateStroke3D(const EditableMesh& mesh,
         return false;
     }
 
-    // Hard Face Lock 3D: impedisce la pittura su facce diverse da quella autorizzata
+    // Hard Face Lock 3D: impedisce la pittura su isole/superfici diverse da quella autorizzata
     if (m_lockToActiveFace && m_lockedFaceId.IsValid() && hit.faceId != m_lockedFaceId) {
-        return false;
+        bool sameIsland = false;
+        if (m_uvLayout) {
+            auto itA = m_uvLayout->faceToIslandMap.find(m_lockedFaceId);
+            auto itB = m_uvLayout->faceToIslandMap.find(hit.faceId);
+            if (itA != m_uvLayout->faceToIslandMap.end() && itB != m_uvLayout->faceToIslandMap.end()) {
+                sameIsland = (itA->second == itB->second);
+            }
+        }
+        if (sameIsland) {
+            m_lockedFaceId = hit.faceId;
+        } else {
+            return false;
+        }
     }
 
     // Normal Culling su superfici curve e pareti opposte (BM-TX4.8)
@@ -633,6 +657,178 @@ void SurfacePaintingAdapter::PropagateCrossSeamDab(const EditableMesh& mesh,
         }
         curHe = he->next;
     } while (curHe != startHe && curHe.IsValid());
+}
+
+// =============================================================================
+// BM-PAINT-STAMP-04 — 3D SURFACE STAMP TOOL INTEGRATION
+// =============================================================================
+
+static inline bool PointInTriangle2D(const glm::vec2& p, const glm::vec2& a, const glm::vec2& b, const glm::vec2& c) {
+    float d1 = (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+    float d2 = (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y);
+    float d3 = (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y);
+    bool has_neg = (d1 < -1e-5f) || (d2 < -1e-5f) || (d3 < -1e-5f);
+    bool has_pos = (d1 > 1e-5f) || (d2 > 1e-5f) || (d3 > 1e-5f);
+    return !(has_neg && has_pos);
+}
+
+static inline bool IsPointInFaceUV(const EditableMesh& mesh, FaceID fId, const glm::vec2& pUV) {
+    if (!mesh.IsValid(fId)) return false;
+    const auto* f = mesh.GetFace(fId);
+    if (!f || !f->halfEdge.IsValid()) return false;
+
+    HalfEdgeID h0 = f->halfEdge;
+    const auto* he0 = mesh.GetHalfEdge(h0);
+    if (!he0) return false;
+    glm::vec2 uv0 = he0->corner.uv;
+
+    HalfEdgeID hPrev = he0->next;
+    while (hPrev.IsValid()) {
+        const auto* hePrev = mesh.GetHalfEdge(hPrev);
+        if (!hePrev) break;
+        HalfEdgeID hCurr = hePrev->next;
+        if (!hCurr.IsValid() || hCurr == h0) break;
+        const auto* heCurr = mesh.GetHalfEdge(hCurr);
+        if (!heCurr) break;
+
+        glm::vec2 uv1 = hePrev->corner.uv;
+        glm::vec2 uv2 = heCurr->corner.uv;
+
+        if (PointInTriangle2D(pUV, uv0, uv1, uv2)) {
+            return true;
+        }
+
+        hPrev = hCurr;
+    }
+    return false;
+}
+
+bool SurfacePaintingAdapter::ApplyStamp3D(const EditableMesh& mesh, 
+                                         const SurfacePaintHit& hit, 
+                                         const StampDefinition& stamp, 
+                                         uint32_t targetLayerId) {
+    // 1. Validazione hit e topologia mesh (Requisito 8)
+    if (!hit.valid || !mesh.IsValid(hit.faceId)) {
+        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D Rejection='hit.valid=false or mesh face invalid'\n";
+        return false;
+    }
+
+    if (std::isnan(hit.interpolatedUV.x) || std::isnan(hit.interpolatedUV.y)) {
+        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D Rejection='hit.interpolatedUV has NaN'\n";
+        return false;
+    }
+
+    // Rispetto del blocco faccia attiva se configurato (consente continuita' sulla stessa isola UV)
+    if (m_lockToActiveFace && m_lockedFaceId.IsValid() && hit.faceId != m_lockedFaceId) {
+        bool sameIsland = false;
+        if (m_uvLayout) {
+            auto itA = m_uvLayout->faceToIslandMap.find(m_lockedFaceId);
+            auto itB = m_uvLayout->faceToIslandMap.find(hit.faceId);
+            if (itA != m_uvLayout->faceToIslandMap.end() && itB != m_uvLayout->faceToIslandMap.end()) {
+                sameIsland = (itA->second == itB->second);
+            }
+        }
+        if (sameIsland) {
+            m_lockedFaceId = hit.faceId;
+        } else {
+            std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D FaceID=" << hit.faceId.index
+                      << " LockedFaceID=" << m_lockedFaceId.index << " Rejection='Face is locked to another face'\n";
+            return false;
+        }
+    }
+
+    // 2. Risoluzione Target con Copy-On-Write se disponibile
+    if (m_targetResolver) {
+        auto resolved = m_targetResolver->ResolveTarget(hit, m_activeChannel, m_isolateBySurfaceId);
+        if (resolved.valid && resolved.paintingService) {
+            m_paintingService = resolved.paintingService;
+        }
+    }
+
+    if (!m_paintingService) {
+        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D Rejection='paintingService is null'\n";
+        return false;
+    }
+
+    // 3. Validazione PaintLayer attivo (Requisito 4 & 8)
+    if (targetLayerId == 0) {
+        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D Rejection='targetLayerId is 0'\n";
+        return false;
+    }
+    const PaintLayer* targetLayer = m_paintingService->GetLayer(targetLayerId);
+    if (!targetLayer || targetLayer->isLocked) {
+        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D LayerID=" << targetLayerId 
+                  << " Rejection='Layer does not exist or is locked'\n";
+        return false;
+    }
+
+    // 4. Sincronizzazione dimensioni canvas e conversione UV -> Pixel (Requisiti 1 & 3)
+    m_uvConfig.textureWidth = m_paintingService->GetCanvasWidth();
+    m_uvConfig.textureHeight = m_paintingService->GetCanvasHeight();
+    if (m_uvConfig.textureWidth == 0 || m_uvConfig.textureHeight == 0) {
+        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D Rejection='Canvas dimensions are 0'\n";
+        return false;
+    }
+
+    glm::vec2 pxCoords = MapUVToPixelCoords(hit.interpolatedUV, m_uvConfig);
+
+    // 5. Costruzione del PixelClipCallback per l'isolamento della UV island (Requisiti 5 & 8)
+    // Impedisce di dipingere sulle altre UV islands anche quando lo stampo supera i bordi della faccia
+    UVIslandID targetIsland = INVALID_UVISLAND_ID;
+    if (m_uvLayout) {
+        auto it = m_uvLayout->faceToIslandMap.find(hit.faceId);
+        if (it != m_uvLayout->faceToIslandMap.end()) {
+            targetIsland = it->second;
+        }
+        if (targetIsland >= m_uvLayout->islands.size()) {
+            std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=3D FaceID=" << hit.faceId.index 
+                      << " Rejection='targetIsland out of bounds (" << targetIsland << " >= " << m_uvLayout->islands.size() << ")'\n";
+            return false; // UV island non valida
+        }
+    }
+
+    std::cout << "[STAMP-DIAG-02] TARGET: Valid=true Path=3D FaceID=" << hit.faceId.index
+              << " TargetIsland=" << (targetIsland != INVALID_UVISLAND_ID ? std::to_string(targetIsland) : "NONE")
+              << " UV=(" << hit.interpolatedUV.x << "," << hit.interpolatedUV.y << ")"
+              << " Pixel=(" << pxCoords.x << "," << pxCoords.y << ")"
+              << " CanvasSize=(" << m_uvConfig.textureWidth << "x" << m_uvConfig.textureHeight << ")\n";
+
+    uint32_t texW = m_uvConfig.textureWidth;
+    uint32_t texH = m_uvConfig.textureHeight;
+    bool flipV = m_uvConfig.flipV;
+
+    PixelClipCallback clipCb = nullptr;
+    if (m_uvLayout && targetIsland < m_uvLayout->islands.size()) {
+        // BM-PAINTER-PERF-02: Fast O(1) mask lookup replaces per-pixel geometric face scans
+        auto mask = GetOrCreateIslandRasterMask(mesh, *m_uvLayout, targetIsland, texW, texH, flipV);
+        m_paintingService->SetStrokeClipMask(mask);
+    } else {
+        m_paintingService->SetStrokeClipMask(nullptr);
+        // Fallback: se nessun UVLayout e' associato, vincola rigorosamente alla sola faccia di impatto
+        FaceID hitFace = hit.faceId;
+        clipCb = [&mesh, hitFace, texW, texH, flipV](int32_t px, int32_t py) -> bool {
+            float u = (static_cast<float>(px) + 0.5f) / static_cast<float>(texW);
+            float v = (static_cast<float>(py) + 0.5f) / static_cast<float>(texH);
+            if (flipV) v = 1.0f - v;
+            glm::vec2 pUV(u, v);
+            return IsPointInFaceUV(mesh, hitFace, pUV);
+        };
+    }
+
+    // 6. Applicazione atomica one-shot sul TexturePaintingService (Requisiti 6 & 7)
+    bool applied = m_paintingService->ApplyStampClipped(targetLayerId, pxCoords, stamp, clipCb);
+    m_paintingService->SetStrokeClipMask(nullptr);
+    return applied;
+}
+
+bool SurfacePaintingAdapter::ApplyStamp3D(const EditableMesh& mesh, 
+                                         const glm::vec3& rayOrigin, 
+                                         const glm::vec3& rayDirection, 
+                                         const StampDefinition& stamp, 
+                                         uint32_t targetLayerId,
+                                         const glm::mat4& modelMatrix) {
+    SurfacePaintHit hit = RaycastMesh(mesh, rayOrigin, rayDirection, 1000.0f, modelMatrix);
+    return ApplyStamp3D(mesh, hit, stamp, targetLayerId);
 }
 
 } // namespace fw

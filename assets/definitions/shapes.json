@@ -3302,6 +3302,36 @@
             },
             "revision": 1,
             "type": 19
+        },
+        {
+            "id": 193,
+            "parameters": {
+                "radius": 0.5,
+                "rings": 16,
+                "segments": 32
+            },
+            "revision": 1,
+            "type": 34
+        },
+        {
+            "id": 194,
+            "parameters": {
+                "radius": 0.5,
+                "rings": 16,
+                "segments": 32
+            },
+            "revision": 1,
+            "type": 34
+        },
+        {
+            "id": 195,
+            "parameters": {
+                "radius": 0.5,
+                "rings": 16,
+                "segments": 32
+            },
+            "revision": 1,
+            "type": 34
         }
     ]
 }

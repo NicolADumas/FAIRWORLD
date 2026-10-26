@@ -7,6 +7,7 @@
 #include <limits>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 #include <glm/glm.hpp>
 #include "blocks/sculpt/EditableMesh.h"
 #include "blocks/ShapeRegistry.h"
@@ -21,6 +22,30 @@ namespace fw {
 using UVLayoutID = uint64_t;
 using UVIslandID = uint32_t;
 inline constexpr UVIslandID INVALID_UVISLAND_ID = 0xFFFFFFFF;
+
+// =============================================================================
+// BM-PAINTER-PERF-02: CACHED UV ISLAND RASTER MASK
+// Maschera raster precalcolata per isola UV alla risoluzione del canvas
+// =============================================================================
+
+struct UVIslandRasterMask {
+    UVIslandID islandId = INVALID_UVISLAND_ID;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint64_t meshTopologyRevision = 0;
+    uint64_t meshAttributeRevision = 0;
+    uint64_t atlasRevision = 0;
+    bool flipV = false;
+    std::vector<uint8_t> pixels;
+
+    inline bool IsInside(int32_t px, int32_t py) const {
+        if (px < 0 || py < 0 || static_cast<uint32_t>(px) >= width || static_cast<uint32_t>(py) >= height) {
+            return false;
+        }
+        if (pixels.empty()) return false;
+        return pixels[static_cast<size_t>(py) * width + static_cast<size_t>(px)] != 0;
+    }
+};
 
 // Strategie di proiezione e sviluppo bidimensionale
 enum class UVMappingStrategy : uint8_t {
@@ -142,6 +167,9 @@ struct UVIsland {
     float texelDensity = 0.0f; // pixel per unita 3D
 
     IslandDistortion distortion;
+
+    // Cache maschera raster per isola UV (BM-PAINTER-PERF-02)
+    mutable std::shared_ptr<const UVIslandRasterMask> cachedRasterMask;
 };
 
 // =============================================================================
@@ -193,6 +221,16 @@ struct UVLayout {
         errors.clear();
     }
 };
+
+// Generatore e lookup autoritativo cache maschera raster per isola UV (BM-PAINTER-PERF-02)
+std::shared_ptr<const UVIslandRasterMask> GetOrCreateIslandRasterMask(
+    const EditableMesh& mesh,
+    const UVLayout& layout,
+    UVIslandID islandId,
+    uint32_t width,
+    uint32_t height,
+    bool flipV = false
+);
 
 // =============================================================================
 // REPORT DIAGNOSTICO VALIDAZIONE UV (BM-UV2.10)
