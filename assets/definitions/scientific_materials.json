@@ -1,0 +1,469 @@
+{
+    "schemaVersion": 1,
+    "materials": [
+        {
+            "id": 1,
+            "canonicalId": "fairworld:mat/water",
+            "displayName": "Pure Water",
+            "chemicalFormula": "H2O",
+            "classification": "Liquid Oxide",
+            "description": "Pure liquid water at standard temperature and pressure.",
+            "density": {
+                "value": 1000.0,
+                "unit": "kg/m^3",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "IAPWS Release 1995"
+            },
+            "porosity": {
+                "value": 0.0,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "NotApplicable",
+                "quality": "Estimated",
+                "source": ""
+            },
+            "compressiveStrength": {
+                "value": 0.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "NotApplicable",
+                "quality": "Estimated",
+                "source": ""
+            },
+            "tensileStrength": {
+                "value": 0.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "NotApplicable",
+                "quality": "Estimated",
+                "source": ""
+            },
+            "elasticModulus": {
+                "value": 2200000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Bulk Modulus"
+            },
+            "staticFriction": {
+                "value": 0.1,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Estimated",
+                "source": "Hydrodynamic boundary"
+            },
+            "dynamicFriction": {
+                "value": 0.05,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Estimated",
+                "source": "Viscous shear"
+            },
+            "restitution": {
+                "value": 0.0,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Inelastic liquid boundary"
+            },
+            "specificHeatCapacity": {
+                "value": 4184.0,
+                "unit": "J/(kg*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "CRC Handbook 97th"
+            },
+            "thermalConductivity": {
+                "value": 0.598,
+                "unit": "W/(m*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "CRC Handbook 97th"
+            },
+            "thermalExpansion": {
+                "value": 0.000207,
+                "unit": "1/K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Volumetric at 20 C"
+            },
+            "meltingPoint": {
+                "value": 273.15,
+                "unit": "K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "ITS-90"
+            }
+        },
+        {
+            "id": 2,
+            "canonicalId": "fairworld:mat/granite",
+            "displayName": "Granite",
+            "chemicalFormula": "SiO2 (72%), Al2O3 (14%), K2O/Na2O (9%)",
+            "classification": "Igneous / Felsic Plutonic",
+            "description": "Coarse-grained intrusive igneous rock rich in quartz and feldspar.",
+            "density": {
+                "value": 2650.0,
+                "unit": "kg/m^3",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "USGS Rock Properties"
+            },
+            "porosity": {
+                "value": 0.015,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Average crystalline porosity"
+            },
+            "compressiveStrength": {
+                "value": 175000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "ASTM C170 Uniaxial"
+            },
+            "tensileStrength": {
+                "value": 7500000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Brazilian tensile test"
+            },
+            "elasticModulus": {
+                "value": 50000000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Young's Modulus"
+            },
+            "staticFriction": {
+                "value": 0.65,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Byerlee's law"
+            },
+            "dynamicFriction": {
+                "value": 0.55,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Byerlee's law"
+            },
+            "restitution": {
+                "value": 0.15,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Estimated",
+                "source": "Elastic collision recovery"
+            },
+            "specificHeatCapacity": {
+                "value": 790.0,
+                "unit": "J/(kg*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Waples & Waples 2004"
+            },
+            "thermalConductivity": {
+                "value": 2.8,
+                "unit": "W/(m*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Robertson 1988"
+            },
+            "thermalExpansion": {
+                "value": 8e-06,
+                "unit": "1/K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Linear thermal coefficient"
+            },
+            "meltingPoint": {
+                "value": 1488.15,
+                "unit": "K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Liquidus temperature (~1215 C)"
+            }
+        },
+        {
+            "id": 3,
+            "canonicalId": "fairworld:mat/basalt",
+            "displayName": "Basalt",
+            "chemicalFormula": "SiO2 (49%), Al2O3 (16%), FeO/Fe2O3 (11%), CaO (10%), MgO (7%)",
+            "classification": "Igneous / Mafic Volcanic",
+            "description": "Aphanitic extrusive igneous rock forming oceanic crust and planetary plains.",
+            "density": {
+                "value": 2900.0,
+                "unit": "kg/m^3",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "USGS Rock Properties"
+            },
+            "porosity": {
+                "value": 0.03,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Vesicular-compact mean"
+            },
+            "compressiveStrength": {
+                "value": 200000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Uniaxial compressive strength"
+            },
+            "tensileStrength": {
+                "value": 12000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Tensile strength"
+            },
+            "elasticModulus": {
+                "value": 65000000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Young's Modulus"
+            },
+            "staticFriction": {
+                "value": 0.7,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Dry surface contact"
+            },
+            "dynamicFriction": {
+                "value": 0.6,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Sliding friction"
+            },
+            "restitution": {
+                "value": 0.2,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Estimated",
+                "source": "Rock impact rebound"
+            },
+            "specificHeatCapacity": {
+                "value": 840.0,
+                "unit": "J/(kg*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Thermal properties of rocks"
+            },
+            "thermalConductivity": {
+                "value": 2.1,
+                "unit": "W/(m*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Clauser & Huenges 1995"
+            },
+            "thermalExpansion": {
+                "value": 6.5e-06,
+                "unit": "1/K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Linear expansion coefficient"
+            },
+            "meltingPoint": {
+                "value": 1473.15,
+                "unit": "K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Liquidus temperature (~1200 C)"
+            }
+        },
+        {
+            "id": 4,
+            "canonicalId": "fairworld:mat/iron",
+            "displayName": "Iron / Structural Steel",
+            "chemicalFormula": "Fe (>98%), C (<0.2%)",
+            "classification": "Transition Metal / Alloy",
+            "description": "Structural iron with high tensile strength and thermal conductivity.",
+            "density": {
+                "value": 7870.0,
+                "unit": "kg/m^3",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "NIST Chemistry WebBook"
+            },
+            "porosity": {
+                "value": 0.0,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "Full density wrought metal"
+            },
+            "compressiveStrength": {
+                "value": 250000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Yield strength in compression"
+            },
+            "tensileStrength": {
+                "value": 400000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "PeerReviewed",
+                "source": "Ultimate tensile strength"
+            },
+            "elasticModulus": {
+                "value": 210000000000.0,
+                "unit": "Pa",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "Young's Modulus 210 GPa"
+            },
+            "staticFriction": {
+                "value": 0.5,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Steel on steel dry"
+            },
+            "dynamicFriction": {
+                "value": 0.4,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Steel on steel dry"
+            },
+            "restitution": {
+                "value": 0.45,
+                "unit": "",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "Experimental",
+                "source": "Elastic ball rebound"
+            },
+            "specificHeatCapacity": {
+                "value": 450.0,
+                "unit": "J/(kg*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "NIST 298K"
+            },
+            "thermalConductivity": {
+                "value": 80.0,
+                "unit": "W/(m*K)",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "NIST 298K"
+            },
+            "thermalExpansion": {
+                "value": 1.18e-05,
+                "unit": "1/K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "Linear coefficient"
+            },
+            "meltingPoint": {
+                "value": 1811.0,
+                "unit": "K",
+                "temperatureKelvin": 293.15,
+                "pressurePascal": 101325.0,
+                "state": "Known",
+                "quality": "SyntheticStandard",
+                "source": "Pure Fe melting point (1538 C)"
+            }
+        }
+    ]
+}

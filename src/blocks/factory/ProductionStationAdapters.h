@@ -241,7 +241,7 @@ public:
             hashU64((uvT.mirrorU ? 1ULL : 0ULL) | (uvT.mirrorV ? 2ULL : 0ULL));
         };
 
-        bool isSculptedInput = context.draft.sculptMesh.has_value();
+        bool isSculptedInput = (context.draft.geometrySource == GeometrySource::SculptedMesh) && context.draft.sculptMesh.has_value();
         hashU64(isSculptedInput ? 1ULL : 0ULL);
 
         if (isSculptedInput) {
@@ -303,11 +303,22 @@ public:
 
         // BM-UV2 & BM-UV3: Generazione autoritativa del layout UV su EditableMesh
         EditableMesh workMesh;
-        bool isSculpted = context.draft.sculptMesh.has_value();
+        bool isSculpted = (context.draft.geometrySource == GeometrySource::SculptedMesh) && context.draft.sculptMesh.has_value();
         if (isSculpted) {
             workMesh = *context.draft.sculptMesh;
         } else {
             workMesh = MeshBridgeService::CreateMeshFromShape(context.draft.shape);
+        }
+
+        // Risoluzione target coerente con i layer correnti o il layout precedente (previene mutazione 512->1024)
+        uint32_t targetResW = 512;
+        uint32_t targetResH = 512;
+        if (!context.draft.paintLayers.empty() && context.draft.paintLayers[0].pixelBuffer.IsValid()) {
+            targetResW = context.draft.paintLayers[0].pixelBuffer.GetWidth();
+            targetResH = context.draft.paintLayers[0].pixelBuffer.GetHeight();
+        } else if (hasPreviousUV && previousLayout.atlasTargetWidth > 0 && previousLayout.atlasTargetHeight > 0) {
+            targetResW = previousLayout.atlasTargetWidth;
+            targetResH = previousLayout.atlasTargetHeight;
         }
 
         GeneralUVOptions opt;
@@ -320,13 +331,16 @@ public:
                                                                isSculpted, 
                                                                opt);
 
+        mapRes.layout.atlasTargetWidth = targetResW;
+        mapRes.layout.atlasTargetHeight = targetResH;
+
         // BM-UV4: Packing deterministico delle isole UV in Texture Atlas (solo per unwrapping generale non analitico)
         if (mapRes.modeUsed == UVUnwrapDispatchMode::GeneralUnwrapping) {
             AtlasPackOptions packOpt;
-            packOpt.targetWidth = 1024;
-            packOpt.targetHeight = 1024;
+            packOpt.targetWidth = targetResW;
+            packOpt.targetHeight = targetResH;
             packOpt.paddingPixels = 4.0f;
-            packOpt.allowRotation = true;
+            packOpt.allowRotation = false; // Preserva orientamento per consistenza visuale
             packOpt.allowMultiAtlas = true;
             auto packRes = m_atlasPacker.PackLayout(workMesh, mapRes.layout, packOpt);
 
@@ -339,9 +353,19 @@ public:
 
         // BM-UV8: Rilevamento modifiche effettive UV e invocazione transazionale di TextureReprojectionService
         if (hasExistingPaint && hasPreviousUV) {
-            bool uvActuallyChanged = (previousLayout.uvRevision != mapRes.layout.uvRevision) ||
-                                     (previousLayout.atlasRevision != mapRes.layout.atlasRevision) ||
-                                     (previousLayout.islands.size() != mapRes.layout.islands.size());
+            bool uvActuallyChanged = (previousLayout.islands.size() != mapRes.layout.islands.size()) ||
+                                     (previousLayout.strategyUsed != mapRes.layout.strategyUsed) ||
+                                     (previousLayout.atlasTargetWidth != mapRes.layout.atlasTargetWidth) ||
+                                     (previousLayout.atlasTargetHeight != mapRes.layout.atlasTargetHeight);
+
+            if (!uvActuallyChanged) {
+                for (size_t i = 0; i < previousLayout.islands.size(); ++i) {
+                    if (glm::distance(previousLayout.islands[i].atlasTransform, mapRes.layout.islands[i].atlasTransform) > 1e-4f) {
+                        uvActuallyChanged = true;
+                        break;
+                    }
+                }
+            }
 
             if (uvActuallyChanged) {
                 // Distinzione tra modifica UV pura e alterazione topologica della mesh
@@ -352,12 +376,14 @@ public:
                     m_diagnostic.warnings.push_back("TextureReprojection: Rilevata modifica topologica senza corrispondenza esplicita (REQUIRES_CORRESPONDENCE). Migrazione pittura sospesa in sicurezza per prevenire corruzioni.");
                 } else if (!context.draft.paintLayers.empty()) {
                     TexturePaintingService tempPainter;
-                    tempPainter.InitializeCanvas(previousLayout.atlasTargetWidth, previousLayout.atlasTargetHeight);
+                    tempPainter.InitializeCanvas(targetResW, targetResH);
                     tempPainter.GetLayers() = context.draft.paintLayers;
 
                     ReprojectionOptions reprojOpt;
                     reprojOpt.strategy = ReprojectionStrategy::Auto;
                     reprojOpt.preserveLayersIndividually = true;
+                    reprojOpt.overrideWidth = targetResW;
+                    reprojOpt.overrideHeight = targetResH;
 
                     auto reprojReport = m_reprojectionService.ReprojectPaintingService(
                         previousMesh, previousLayout, tempPainter,
@@ -372,6 +398,10 @@ public:
                             std::string(GetReprojectionStatusName(reprojReport.status)) + "). Ripristinato layout precedente.");
                     }
                 }
+            } else {
+                // Se il layout non è mutato, preserva le revisioni e le coordinate esistenti per non invalidare la pittura
+                mapRes.layout.uvRevision = previousLayout.uvRevision;
+                mapRes.layout.atlasRevision = previousLayout.atlasRevision;
             }
         }
 

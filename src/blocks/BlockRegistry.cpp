@@ -145,6 +145,7 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
 
             def.stringId = jBlock.value("stringId", defaultStrId);
             def.displayName = jBlock.value("displayName", defaultDispName);
+            def.scientificMaterialId = jBlock.value("scientificMaterialId", 0u);
             
             // Baseline and legacy compatibility values
             def.isSolid = jBlock.value("isSolid", true);
@@ -221,6 +222,7 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
         jBlock["id"] = def.id > 0 ? def.id : (uint8_t)i;
         jBlock["stringId"] = def.stringId;
         jBlock["displayName"] = def.displayName;
+        jBlock["scientificMaterialId"] = def.scientificMaterialId;
         
         // Legacy fields for backward compatibility
         jBlock["isSolid"] = def.isSolid;

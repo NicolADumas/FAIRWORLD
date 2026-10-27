@@ -402,6 +402,7 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     SimBlockDef& bDef = bReg.GetBlockMutable(targetVoxelId);
     bDef.stringId = package.manifest.assetId;
     bDef.displayName = package.manifest.displayName;
+    bDef.scientificMaterialId = package.scientificMaterialId;
     bDef.physics = package.compiledPhysics;
     bDef.localPosition = package.packagePosition;
     bDef.localRotation = package.packageRotation;

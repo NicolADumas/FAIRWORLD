@@ -264,9 +264,9 @@
         {
             "id": 24,
             "parameters": {
-                "coneHeight": 0.5,
-                "coneRadius": 0.5,
-                "sphereRadius": 1.0
+                "coneHeight": 0.6000000238418579,
+                "coneRadius": -1.0,
+                "sphereRadius": -0.20000000298023224
             },
             "revision": 1,
             "type": 15
@@ -3307,6 +3307,7 @@
             "id": 193,
             "parameters": {
                 "radius": 0.5,
+                "rimHeight": 0.0,
                 "rings": 16,
                 "segments": 32
             },
@@ -3317,6 +3318,7 @@
             "id": 194,
             "parameters": {
                 "radius": 0.5,
+                "rimHeight": 0.0,
                 "rings": 16,
                 "segments": 32
             },
@@ -3327,6 +3329,7 @@
             "id": 195,
             "parameters": {
                 "radius": 0.5,
+                "rimHeight": 0.0,
                 "rings": 16,
                 "segments": 32
             },

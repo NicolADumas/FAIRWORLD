@@ -127,6 +127,7 @@ bool FactoryOrchestrator::LoadDraftFromRegistry(uint8_t blockId, BlockRegistry& 
     draft.surfaces = mDef.surfaces;
 
     // Grafica & PBR
+    draft.scientificMaterialId = bDef.scientificMaterialId;
     draft.baseColorFallback = mDef.baseColorFallback;
     draft.roughnessFallback = mDef.roughnessFallback;
     draft.metallicFallback = mDef.metallicFallback;
@@ -467,6 +468,7 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
     package.compiledPhysics = m_activeDraft->physics;
 
     // Parametri visivi compilati (BM-F2C)
+    package.scientificMaterialId = m_activeDraft->scientificMaterialId;
     package.baseColorFallback = m_activeDraft->baseColorFallback;
     package.roughnessFallback = m_activeDraft->roughnessFallback;
     package.metallicFallback = m_activeDraft->metallicFallback;

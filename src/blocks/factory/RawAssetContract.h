@@ -295,6 +295,7 @@ struct RawAssetDraft {
     std::optional<UVLayout> uvLayout;
 
     // 4. Stazione Material & Texture: Parametri visivi PBR e mappe
+    uint32_t scientificMaterialId = 0; // MA-02.2: Scientific Material Core reference (0 = none/custom)
     glm::vec3 baseColorFallback{1.0f, 1.0f, 1.0f};
     float roughnessFallback = 1.0f;
     float metallicFallback = 0.0f;
@@ -397,6 +398,7 @@ struct RawAssetPackage {
     ShapeDefinition shape;
 
     // Parametri visivi compilati (BM-F2C)
+    uint32_t scientificMaterialId = 0; // MA-02.2: Scientific Material Core reference
     glm::vec3 baseColorFallback{1.0f};
     float roughnessFallback = 1.0f;
     float metallicFallback = 0.0f;
@@ -753,6 +755,7 @@ inline void to_json(nlohmann::json& j, const RawAssetDraft& d) {
             {"pivot", {d.pivotOffset.x, d.pivotOffset.y, d.pivotOffset.z}}
         }},
         {"graphics", {
+            {"scientificMaterialId", d.scientificMaterialId},
             {"baseColor", {d.baseColorFallback.x, d.baseColorFallback.y, d.baseColorFallback.z}},
             {"roughness", d.roughnessFallback},
             {"metallic", d.metallicFallback},
@@ -829,6 +832,7 @@ inline void from_json(const nlohmann::json& j, RawAssetDraft& d) {
     }
     if (j.contains("graphics")) {
         const auto& jg = j["graphics"];
+        d.scientificMaterialId = jg.value("scientificMaterialId", 0u);
         if (jg.contains("baseColor") && jg["baseColor"].size() >= 3) {
             d.baseColorFallback = {jg["baseColor"][0], jg["baseColor"][1], jg["baseColor"][2]};
         }
@@ -1010,6 +1014,7 @@ inline void to_json(nlohmann::json& j, const RawAssetPackage& p) {
             {"pivot", {p.packagePivot.x, p.packagePivot.y, p.packagePivot.z}}
         }},
         {"graphics", {
+            {"scientificMaterialId", p.scientificMaterialId},
             {"baseColor", {p.baseColorFallback.x, p.baseColorFallback.y, p.baseColorFallback.z}},
             {"roughness", p.roughnessFallback},
             {"metallic", p.metallicFallback},
@@ -1089,6 +1094,7 @@ inline void from_json(const nlohmann::json& j, RawAssetPackage& p) {
     }
     if (j.contains("graphics")) {
         const auto& jg = j["graphics"];
+        p.scientificMaterialId = jg.value("scientificMaterialId", 0u);
         if (jg.contains("baseColor") && jg["baseColor"].size() >= 3) {
             p.baseColorFallback = {jg["baseColor"][0], jg["baseColor"][1], jg["baseColor"][2]};
         }

@@ -11,6 +11,7 @@
 #include "Systems.h"
 #include "Components.h"
 #include "BlockRegistry.h"
+#include "blocks/ScientificMaterialRegistry.h"
 #include "DeviceManager.h"
 #include <shellapi.h>  // ShellExecuteA - apre cartelle/file con l'OS
 #include "MaterialRegistry.h"
@@ -553,6 +554,7 @@ void BlockMakerState::FlushCurrentDraft() {
             uint8_t draftBlockId = static_cast<uint8_t>(draft->manifest.targetRuntimeVoxelId);
             if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(draftBlockId)) {
                 const auto& def = m_context->blockRegistry->GetBlock(draftBlockId);
+                draft->scientificMaterialId = def.scientificMaterialId;
                 draft->localPosition = def.localPosition;
                 draft->localRotation = def.localRotation;
                 draft->localScale = def.localScale;
@@ -574,9 +576,10 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
     // BM-P04: Salva lo stato del blocco uscente prima di caricare il nuovo
     FlushCurrentDraft();
 
-    // BM-PAINT-UI-02 & BM-PAINT-UI-03: Reset layer attivo e stato rinomina su cambio blocco
+    // BM-PAINT-UI-02 & BM-PAINT-UI-03: Reset layer attivo, stato rinomina ed eliminazione su cambio blocco
     m_activePaintLayerId = 0;
     m_renamingLayerId = 0;
+    m_layerPendingDeleteId = 0;
 
     bool loaded = m_factoryOrchestrator.LoadDraftFromRegistry(blockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
     if (loaded && m_factoryOrchestrator.IsDraftOpen()) {
@@ -585,6 +588,7 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
             // BM-A3.3-SCALE-02: Sincronizza i valori Transform dal draft nel BlockRegistry per garantire lockstep
             if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(blockId)) {
                 auto& def = m_context->blockRegistry->GetBlockMutable(blockId);
+                def.scientificMaterialId = draft->scientificMaterialId;
                 def.localPosition = draft->localPosition;
                 def.localRotation = draft->localRotation;
                 def.localScale = draft->localScale;
@@ -611,10 +615,14 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
             if (!draft->paintLayers.empty()) {
                 m_paintingService.GetLayers() = draft->paintLayers;
                 m_paintingService.SynchronizeNextLayerId();
-                uint32_t w = draft->paintLayers[0].pixelBuffer.GetWidth();
-                uint32_t h = draft->paintLayers[0].pixelBuffer.GetHeight();
-                if (w > 0 && h > 0) {
-                    m_paintingService.SetCanvasDimensions(w, h);
+                uint32_t w = m_paintingService.GetCanvasWidth();
+                uint32_t h = m_paintingService.GetCanvasHeight();
+                if (w == 0 || h == 0) {
+                    w = draft->paintLayers[0].pixelBuffer.GetWidth();
+                    h = draft->paintLayers[0].pixelBuffer.GetHeight();
+                    if (w > 0 && h > 0) {
+                        m_paintingService.SetCanvasDimensions(w, h);
+                    }
                 }
             } else if (draft->textures.has_value() && draft->textures->HasBaseColor()) {
                 const auto& baseMap = *draft->textures->GetBaseColorMap();
@@ -814,6 +822,7 @@ void BlockMakerState::CommitDraftToRegistry() {
     // 3. Commit Transforms & Physics to BlockRegistry
     if (m_context->blockRegistry) {
         auto& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
+        def.scientificMaterialId = draft->scientificMaterialId;
         def.localPosition = draft->localPosition;
         def.localRotation = draft->localRotation;
         def.localScale = draft->localScale;
@@ -6647,6 +6656,174 @@ void BlockMakerState::DrawGeneralIdentityUI(fw::SimBlockDef& def) {
     ImGui::SliderFloat("Light Emission", &def.lightEmissionLevel, 0.0f, 15.0f);
 }
 
+void BlockMakerState::DrawScientificMaterialUI(fw::SimBlockDef& def, bool& isDirty) {
+    if (!m_context || !m_context->scientificMaterialRegistry) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "ScientificMaterialRegistry non disponibile.");
+        return;
+    }
+
+    auto* sciReg = m_context->scientificMaterialRegistry;
+
+    ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "MATERIAL SCIENTIFIC CORE (MA-02.2)");
+    ImGui::TextWrapped("Associa opzionalmente un materiale scientifico standard dal registro. Non altera texture PBR o fisica esistente.");
+
+    // 1. Etichetta anteprima selezione corrente
+    std::string previewLabel;
+    bool isOrphan = false;
+    if (def.scientificMaterialId == 0) {
+        previewLabel = "[0] Nessuno / Personalizzato";
+    } else if (sciReg->HasMaterial(def.scientificMaterialId)) {
+        const auto& curMat = sciReg->GetMaterial(def.scientificMaterialId);
+        previewLabel = "[" + std::to_string(curMat.id) + "] " + curMat.displayName + " (" + curMat.canonicalId + ")";
+    } else {
+        previewLabel = "[" + std::to_string(def.scientificMaterialId) + "] Riferimento Orfano (Non trovato)";
+        isOrphan = true;
+    }
+
+    if (isOrphan) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+    }
+
+    if (ImGui::BeginCombo("Materiale Scientifico##SciMatCombo", previewLabel.c_str())) {
+        if (isOrphan) {
+            ImGui::PopStyleColor();
+        }
+
+        // Opzione 0: Nessuno / Personalizzato
+        bool isZeroSelected = (def.scientificMaterialId == 0);
+        if (ImGui::Selectable("[0] Nessuno / Personalizzato", isZeroSelected)) {
+            if (def.scientificMaterialId != 0) {
+                def.scientificMaterialId = 0;
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                    if (draft) {
+                        draft->scientificMaterialId = 0;
+                        draft->MarkDirty();
+                    }
+                }
+                isDirty = true;
+            }
+        }
+        if (isZeroSelected) {
+            ImGui::SetItemDefaultFocus();
+        }
+
+        // Opzioni dal Registry (ordinate stabilmente per ID numerico)
+        std::vector<const fw::ScientificMaterialDef*> sortedMats;
+        sortedMats.reserve(sciReg->GetAllMaterials().size());
+        for (const auto& [matId, matDef] : sciReg->GetAllMaterials()) {
+            sortedMats.push_back(&matDef);
+        }
+        std::sort(sortedMats.begin(), sortedMats.end(), [](const auto* a, const auto* b) {
+            return a->id < b->id;
+        });
+
+        for (const auto* matDef : sortedMats) {
+            bool isSelected = (def.scientificMaterialId == matDef->id);
+            std::string itemText = "[" + std::to_string(matDef->id) + "] " + matDef->displayName + " (" + matDef->canonicalId + ")";
+            if (ImGui::Selectable(itemText.c_str(), isSelected)) {
+                if (def.scientificMaterialId != matDef->id) {
+                    def.scientificMaterialId = matDef->id;
+                    if (m_factoryOrchestrator.IsDraftOpen()) {
+                        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                        if (draft) {
+                            draft->scientificMaterialId = matDef->id;
+                            draft->MarkDirty();
+                        }
+                    }
+                    isDirty = true;
+                }
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+
+        ImGui::EndCombo();
+    } else if (isOrphan) {
+        ImGui::PopStyleColor();
+    }
+
+    // 2. Scheda dettagli proprietà sola lettura / Avviso orfano (MA-02.2 Req 3 & 6)
+    if (def.scientificMaterialId == 0) {
+        ImGui::TextDisabled("Nessun materiale scientifico associato (PBR e fisica liberi da vincoli scientifici).");
+    } else if (isOrphan) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+        ImGui::Text("[AVVISO ORFANO] ID scientifico %u non presente in ScientificMaterialRegistry.", def.scientificMaterialId);
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("L'identificatore e' preservato intatto su disco senza alcuna sovrascrittura o riassegnazione automatica.");
+    } else {
+        const auto& matDef = sciReg->GetMaterial(def.scientificMaterialId);
+        
+        ImGui::Spacing();
+        if (ImGui::TreeNodeEx("Scheda Scientifica Sola Lettura##SciMatDetails", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("Nome:              "); ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "%s", matDef.displayName.c_str());
+
+            ImGui::Text("ID Canonico:       "); ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", matDef.canonicalId.c_str());
+
+            if (!matDef.chemicalFormula.empty()) {
+                ImGui::Text("Formula Chimica:   %s", matDef.chemicalFormula.c_str());
+            }
+            if (!matDef.classification.empty()) {
+                ImGui::Text("Classificazione:   %s", matDef.classification.c_str());
+            }
+            if (!matDef.description.empty()) {
+                ImGui::TextDisabled("Descrizione: %s", matDef.description.c_str());
+            }
+
+            ImGui::Spacing();
+            if (ImGui::BeginTable("SciPropsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("Proprieta", ImGuiTableColumnFlags_WidthStretch, 0.40f);
+                ImGui::TableSetupColumn("Valore (SI) / Stato", ImGuiTableColumnFlags_WidthStretch, 0.35f);
+                ImGui::TableSetupColumn("Qualita", ImGuiTableColumnFlags_WidthStretch, 0.25f);
+                ImGui::TableHeadersRow();
+
+                auto drawSciRow = [](const char* name, const fw::ScientificQuantity& q) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(name);
+
+                    ImGui::TableSetColumnIndex(1);
+                    if (q.state == fw::PropertyState::Known) {
+                        std::string unitStr = q.unit.empty() ? "" : (" " + q.unit);
+                        ImGui::Text("%.4g%s", q.value, unitStr.c_str());
+                    } else if (q.state == fw::PropertyState::NotApplicable) {
+                        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.55f, 1.0f), "NotApplicable");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.25f, 1.0f), "Unknown");
+                    }
+
+                    ImGui::TableSetColumnIndex(2);
+                    if (q.state == fw::PropertyState::Known) {
+                        ImGui::TextDisabled("%s", fw::DataQualityToString(q.quality));
+                    } else {
+                        ImGui::TextDisabled("-");
+                    }
+                };
+
+                drawSciRow("Densita", matDef.density);
+                drawSciRow("Porosita", matDef.porosity);
+                drawSciRow("Modulo di Young", matDef.elasticModulus);
+                drawSciRow("Resistenza Compressione", matDef.compressiveStrength);
+                drawSciRow("Resistenza Trazione", matDef.tensileStrength);
+                drawSciRow("Capacita Termica Specifica", matDef.specificHeatCapacity);
+                drawSciRow("Conducibilita Termica", matDef.thermalConductivity);
+                drawSciRow("Espansione Termica", matDef.thermalExpansion);
+                drawSciRow("Punto di Fusione", matDef.meltingPoint);
+                drawSciRow("Attrito Statico", matDef.staticFriction);
+                drawSciRow("Attrito Dinamico", matDef.dynamicFriction);
+                drawSciRow("Restituzione", matDef.restitution);
+
+                ImGui::EndTable();
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
 void BlockMakerState::DrawGeneralGraphicsUI(fw::PBRMaterialDef& mat, bool& isDirty) {
     // Fallback Colors
     ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Fallback / Solid Colors");
@@ -7898,10 +8075,13 @@ void BlockMakerState::DrawInspectorContents() {
                     break;
                 }
                 case fw::ProductionStationID::Material: {
-                    // MICRO-GATE B1: Attivazione Funzionale Stazione Material (Consolidamento Controlli PBR Legacy)
+                    // MICRO-GATE B1: Attivazione Funzionale Stazione Material (MA-02.2: Scientific Material Core & PBR)
                     ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE 6: MATERIAL — PROPRIETÀ PBR & COMPORTAMENTI GPU");
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "STAZIONE: MATERIAL — SELEZIONE SCIENTIFICA & PBR");
                     bool isDirty = false;
+                    DrawScientificMaterialUI(def, isDirty);
+                    ImGui::Spacing();
+                    ImGui::Separator();
                     DrawGeneralGraphicsUI(mat, isDirty);
                     if (isDirty) {
                         SynchronizeDraftToPreview();
@@ -10167,10 +10347,14 @@ void BlockMakerState::EnsureActivePaintLayerValid() {
         if (m_renamingLayerId != 0) {
             CancelRenamingLayer();
         }
+        m_layerPendingDeleteId = 0;
         return;
     }
     if (m_renamingLayerId != 0 && m_paintingService.GetLayer(m_renamingLayerId) == nullptr) {
         CancelRenamingLayer();
+    }
+    if (m_layerPendingDeleteId != 0 && m_paintingService.GetLayer(m_layerPendingDeleteId) == nullptr) {
+        m_layerPendingDeleteId = 0;
     }
     if (m_activePaintLayerId != 0) {
         for (const auto& layer : layers) {
@@ -10367,10 +10551,13 @@ void BlockMakerState::DrawStudioRightInspector() {
                     if (m_renamingLayerId != 0 && m_renamingLayerId != layer.layerId) {
                         CancelRenamingLayer();
                     }
+                    if (m_layerPendingDeleteId != 0 && m_layerPendingDeleteId != layer.layerId) {
+                        m_layerPendingDeleteId = 0;
+                    }
                     m_activePaintLayerId = layer.layerId;
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Pulsante 'Rinomina' per modificare");
+                    ImGui::SetTooltip("Pulsante 'Rinomina' per modificare, 'Elimina' per rimuovere");
                 }
             }
             ImGui::SameLine();
@@ -10389,10 +10576,12 @@ void BlockMakerState::DrawStudioRightInspector() {
         if (ImGui::Button("+ Nuovo Livello##AddNewLayer", ImVec2(120, 22))) {
             uint32_t newId = m_paintingService.AddLayer("Layer " + std::to_string(layers.size() + 1));
             m_activePaintLayerId = newId;
+            m_layerPendingDeleteId = 0;
             if (m_factoryOrchestrator.IsDraftOpen()) {
                 auto* draft = m_factoryOrchestrator.GetCurrentDraft();
                 if (draft) {
                     draft->paintLayers = m_paintingService.GetLayers();
+                    draft->paintRevision++;
                     draft->MarkDirty();
                 }
             }
@@ -10403,10 +10592,84 @@ void BlockMakerState::DrawStudioRightInspector() {
         if (!canRename) ImGui::BeginDisabled();
         if (ImGui::Button("Rinomina##RenameActiveLayer", ImVec2(80, 22))) {
             if (activeLayer) {
+                m_layerPendingDeleteId = 0;
                 StartRenamingLayer(activeLayer->layerId, activeLayer->name);
             }
         }
         if (!canRename) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        bool canDelete = (activeLayer != nullptr && layers.size() > 1 && m_renamingLayerId == 0);
+        if (!canDelete) ImGui::BeginDisabled();
+        if (ImGui::Button("Elimina##DeleteActiveLayer", ImVec2(80, 22))) {
+            if (activeLayer) {
+                m_layerPendingDeleteId = activeLayer->layerId;
+            }
+        }
+        if (!canDelete) ImGui::EndDisabled();
+        if (layers.size() <= 1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Impossibile eliminare l'unico livello esistente");
+        }
+
+        // Inline Form: Conferma Eliminazione Layer (MA-02.2R.1)
+        if (m_layerPendingDeleteId != 0 && m_paintingService.GetLayer(m_layerPendingDeleteId) != nullptr) {
+            fw::PaintLayer* pendingLayer = m_paintingService.GetLayer(m_layerPendingDeleteId);
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Eliminare '%s'?", pendingLayer ? pendingLayer->name.c_str() : "Livello");
+            ImGui::SameLine();
+            if (ImGui::Button("Conferma##ConfirmDeleteLayer", ImVec2(70, 20))) {
+                uint32_t idToDelete = m_layerPendingDeleteId;
+                m_layerPendingDeleteId = 0;
+                if (m_renamingLayerId == idToDelete) {
+                    CancelRenamingLayer();
+                }
+
+                // Preserva selezione indicizzando un layer rimanente adiacente
+                const auto& curLayers = m_paintingService.GetLayers();
+                size_t targetIdx = 0;
+                for (size_t i = 0; i < curLayers.size(); ++i) {
+                    if (curLayers[i].layerId == idToDelete) {
+                        targetIdx = (i > 0) ? (i - 1) : 0;
+                        break;
+                    }
+                }
+
+                if (m_paintingService.RemoveLayer(idToDelete)) {
+                    const auto& remaining = m_paintingService.GetLayers();
+                    if (!remaining.empty()) {
+                        if (targetIdx >= remaining.size()) targetIdx = remaining.size() - 1;
+                        m_activePaintLayerId = remaining[targetIdx].layerId;
+                    } else {
+                        m_activePaintLayerId = 0;
+                    }
+                    EnsureActivePaintLayerValid();
+
+                    if (m_factoryOrchestrator.IsDraftOpen()) {
+                        auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                        if (draft) {
+                            draft->paintLayers = m_paintingService.GetLayers();
+                            draft->paintRevision++;
+                            draft->MarkDirty();
+                        }
+                    }
+
+                    fw::ImageBitmap comp;
+                    if (m_paintingService.CompositeLayers(comp)) {
+                        if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                            m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                                comp.GetData(), comp.GetWidth(), comp.GetHeight()
+                            );
+                        }
+                    }
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Annulla##CancelDeleteLayer", ImVec2(70, 20))) {
+                m_layerPendingDeleteId = 0;
+            }
+        } else if (m_layerPendingDeleteId != 0) {
+            m_layerPendingDeleteId = 0;
+        }
 
     } else {
         // --- SEZIONE UV EDITING ---
@@ -10588,11 +10851,12 @@ void BlockMakerState::RemapActivePrimitiveUV() {
     if (!draft) return;
 
     fw::PrimitiveUVOptions primOpt;
-    primOpt.strategy = fw::UVMappingStrategy::Planar;
+    primOpt.strategy = fw::UVMappingStrategy::Auto;
     primOpt.normalizeTexelDensity = true;
     primOpt.separateCapIslands = true;
     primOpt.paddingPixels = 4.0f;
-    primOpt.atlasTargetResolution = 1024;
+    uint32_t canvasRes = (m_paintingService.GetCanvasWidth() > 0) ? m_paintingService.GetCanvasWidth() : 512;
+    primOpt.atlasTargetResolution = canvasRes;
 
     fw::PrimitiveMappingResult mappingRes = m_primitiveUVMapper.AnalyzeAndMap(
         m_activeEditableMesh,
@@ -10602,6 +10866,8 @@ void BlockMakerState::RemapActivePrimitiveUV() {
     );
 
     if (mappingRes.status == fw::PrimitiveMappingStatus::SUCCESS) {
+        mappingRes.layout.atlasTargetWidth = canvasRes;
+        mappingRes.layout.atlasTargetHeight = canvasRes;
         draft->uvLayout = mappingRes.layout;
         draft->uvRevision = mappingRes.layout.atlasRevision;
         draft->sculptMesh = m_activeEditableMesh;

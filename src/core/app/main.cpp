@@ -25,6 +25,7 @@
 #include "BlockRegistry.h"
 #include "ShapeRegistry.h"
 #include "MaterialRegistry.h"
+#include "ScientificMaterialRegistry.h"
 #include "CacheManager.h"
 #include "LifecycleFreezeGate.h"
 #include "JobSystem.h"
@@ -219,6 +220,7 @@ int main(int argc, char* argv[]) {
     fw::BlockRegistry blockRegistry;
     fw::ShapeRegistry shapeRegistry;
     fw::MaterialRegistry materialRegistry;
+    fw::ScientificMaterialRegistry scientificMaterialRegistry;
     
     shapeRegistry.Initialize();
     shapeRegistry.LoadFromJson("assets/definitions/shapes.json");
@@ -232,6 +234,9 @@ int main(int argc, char* argv[]) {
     
     materialRegistry.Initialize();
     materialRegistry.LoadFromJson("assets/definitions/materials.json");
+
+    scientificMaterialRegistry.Initialize();
+    scientificMaterialRegistry.LoadFromJson("assets/definitions/scientific_materials.json");
     
     fw::CacheManager cacheManager;
     cacheManager.Initialize(&context);
@@ -245,6 +250,7 @@ int main(int argc, char* argv[]) {
     context.blockRegistry = &blockRegistry;
     context.shapeRegistry = &shapeRegistry;
     context.materialRegistry = &materialRegistry;
+    context.scientificMaterialRegistry = &scientificMaterialRegistry;
     context.cacheManager = &cacheManager;
     context.projectManager = &projectManager;
 

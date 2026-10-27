@@ -49,6 +49,7 @@ struct SimBlockDef {
     uint8_t id = 0;
     std::string stringId = "fairworld:unknown";
     std::string displayName = "Unknown Block";
+    uint32_t scientificMaterialId = 0; // Scientific Material Core ID (0 = None/Custom)
 
     // Physics Contract (Per-Asset Independent Definition)
     BlockPhysicsDef physics;

@@ -97,6 +97,7 @@ private:
     void DrawGeneralTransformUI(fw::SimBlockDef& def);
     void DrawGeneralIdentityUI(fw::SimBlockDef& def);
     void DrawGeneralGraphicsUI(fw::PBRMaterialDef& mat, bool& isDirty);
+    void DrawScientificMaterialUI(fw::SimBlockDef& def, bool& isDirty);
     void DrawGeneralPhysicsUI(fw::SimBlockDef& def);
 
     void DrawFactoryShapeControls(fw::PBRMaterialDef& mat, bool& isDirty);
@@ -624,6 +625,9 @@ private:
     void StartRenamingLayer(uint32_t layerId, const std::string& currentName);
     void CancelRenamingLayer();
     void CommitRenamingLayer();
+
+    // MA-02.2R.1: Layer deletion confirmation state
+    uint32_t m_layerPendingDeleteId = 0;
 
     // --- BM-UV8 2D UV Editor State & UI ---
     fw::UVEditorPanel m_uvEditorPanel;

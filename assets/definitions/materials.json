@@ -241,7 +241,7 @@
             "target_block_id": 11
         },
         {
-            "albedoPath": "",
+            "albedoPath": "textures/blocks/fairworld_thesims_albedo.png",
             "alphaFallback": 1.0,
             "baseColorFallback": [
                 0.0,
@@ -339,6 +339,66 @@
             "sharedShapeRevision": 1,
             "superSphereN": 2.0,
             "target_block_id": 16
+        },
+        {
+            "albedoPath": "textures/blocks/fairworld_granito_albedo.png",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                0.699999988079071,
+                0.699999988079071,
+                0.699999988079071
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 0.800000011920929,
+            "shapeType": 0,
+            "sharedShapeId": 1,
+            "sharedShapeRevision": 1,
+            "superSphereN": 2.0,
+            "target_block_id": 17
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 1.0,
+            "shapeType": 0,
+            "sharedShapeId": 1,
+            "sharedShapeRevision": 1,
+            "superSphereN": 2.0,
+            "target_block_id": 19
+        },
+        {
+            "albedoPath": "",
+            "alphaFallback": 1.0,
+            "baseColorFallback": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "behaviors": 0,
+            "emissiveStrength": 0.0,
+            "metallicFallback": 0.0,
+            "normalPath": "",
+            "ormPath": "",
+            "roughnessFallback": 1.0,
+            "shapeType": 0,
+            "sharedShapeId": 1,
+            "sharedShapeRevision": 1,
+            "superSphereN": 2.0,
+            "target_block_id": 20
         }
     ]
 }
