@@ -555,6 +555,7 @@ void BlockMakerState::FlushCurrentDraft() {
             if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(draftBlockId)) {
                 const auto& def = m_context->blockRegistry->GetBlock(draftBlockId);
                 draft->scientificMaterialId = def.scientificMaterialId;
+                draft->scientificOverrides = def.scientificOverrides;
                 draft->localPosition = def.localPosition;
                 draft->localRotation = def.localRotation;
                 draft->localScale = def.localScale;
@@ -580,6 +581,10 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
     m_activePaintLayerId = 0;
     m_renamingLayerId = 0;
     m_layerPendingDeleteId = 0;
+    m_selectedSciPropForEdit = "";
+    m_stagingSciOverride = fw::ScientificQuantity();
+    m_isCreatingNewSciOverride = false;
+    m_sciOverrideErrorMsg = "";
 
     bool loaded = m_factoryOrchestrator.LoadDraftFromRegistry(blockId, *m_context->blockRegistry, *m_context->materialRegistry, *m_context->shapeRegistry);
     if (loaded && m_factoryOrchestrator.IsDraftOpen()) {
@@ -589,6 +594,7 @@ void BlockMakerState::LoadFactoryDraft(uint8_t blockId) {
             if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(blockId)) {
                 auto& def = m_context->blockRegistry->GetBlockMutable(blockId);
                 def.scientificMaterialId = draft->scientificMaterialId;
+                def.scientificOverrides = draft->scientificOverrides;
                 def.localPosition = draft->localPosition;
                 def.localRotation = draft->localRotation;
                 def.localScale = draft->localScale;
@@ -823,6 +829,7 @@ void BlockMakerState::CommitDraftToRegistry() {
     if (m_context->blockRegistry) {
         auto& def = m_context->blockRegistry->GetBlockMutable(m_selectedBlockId);
         def.scientificMaterialId = draft->scientificMaterialId;
+        def.scientificOverrides = draft->scientificOverrides;
         def.localPosition = draft->localPosition;
         def.localRotation = draft->localRotation;
         def.localScale = draft->localScale;
@@ -6744,9 +6751,9 @@ void BlockMakerState::DrawScientificMaterialUI(fw::SimBlockDef& def, bool& isDir
         ImGui::PopStyleColor();
     }
 
-    // 2. Scheda dettagli proprietà sola lettura / Avviso orfano (MA-02.2 Req 3 & 6)
+    // 2. Metadati Materiale Scientifico di Base / Avviso Orfano (MA-02.2)
     if (def.scientificMaterialId == 0) {
-        ImGui::TextDisabled("Nessun materiale scientifico associato (PBR e fisica liberi da vincoli scientifici).");
+        ImGui::TextDisabled("Nessun materiale scientifico base associato. E' comunque possibile definire override per-blocco.");
     } else if (isOrphan) {
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
@@ -6755,9 +6762,8 @@ void BlockMakerState::DrawScientificMaterialUI(fw::SimBlockDef& def, bool& isDir
         ImGui::TextDisabled("L'identificatore e' preservato intatto su disco senza alcuna sovrascrittura o riassegnazione automatica.");
     } else {
         const auto& matDef = sciReg->GetMaterial(def.scientificMaterialId);
-        
         ImGui::Spacing();
-        if (ImGui::TreeNodeEx("Scheda Scientifica Sola Lettura##SciMatDetails", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::TreeNodeEx("Dettagli Materiale Base (Sola Lettura)##SciMatBaseDetails", ImGuiTreeNodeFlags_None)) {
             ImGui::Text("Nome:              "); ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "%s", matDef.displayName.c_str());
 
@@ -6773,54 +6779,315 @@ void BlockMakerState::DrawScientificMaterialUI(fw::SimBlockDef& def, bool& isDir
             if (!matDef.description.empty()) {
                 ImGui::TextDisabled("Descrizione: %s", matDef.description.c_str());
             }
-
-            ImGui::Spacing();
-            if (ImGui::BeginTable("SciPropsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
-                ImGui::TableSetupColumn("Proprieta", ImGuiTableColumnFlags_WidthStretch, 0.40f);
-                ImGui::TableSetupColumn("Valore (SI) / Stato", ImGuiTableColumnFlags_WidthStretch, 0.35f);
-                ImGui::TableSetupColumn("Qualita", ImGuiTableColumnFlags_WidthStretch, 0.25f);
-                ImGui::TableHeadersRow();
-
-                auto drawSciRow = [](const char* name, const fw::ScientificQuantity& q) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::TextUnformatted(name);
-
-                    ImGui::TableSetColumnIndex(1);
-                    if (q.state == fw::PropertyState::Known) {
-                        std::string unitStr = q.unit.empty() ? "" : (" " + q.unit);
-                        ImGui::Text("%.4g%s", q.value, unitStr.c_str());
-                    } else if (q.state == fw::PropertyState::NotApplicable) {
-                        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.55f, 1.0f), "NotApplicable");
-                    } else {
-                        ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.25f, 1.0f), "Unknown");
-                    }
-
-                    ImGui::TableSetColumnIndex(2);
-                    if (q.state == fw::PropertyState::Known) {
-                        ImGui::TextDisabled("%s", fw::DataQualityToString(q.quality));
-                    } else {
-                        ImGui::TextDisabled("-");
-                    }
-                };
-
-                drawSciRow("Densita", matDef.density);
-                drawSciRow("Porosita", matDef.porosity);
-                drawSciRow("Modulo di Young", matDef.elasticModulus);
-                drawSciRow("Resistenza Compressione", matDef.compressiveStrength);
-                drawSciRow("Resistenza Trazione", matDef.tensileStrength);
-                drawSciRow("Capacita Termica Specifica", matDef.specificHeatCapacity);
-                drawSciRow("Conducibilita Termica", matDef.thermalConductivity);
-                drawSciRow("Espansione Termica", matDef.thermalExpansion);
-                drawSciRow("Punto di Fusione", matDef.meltingPoint);
-                drawSciRow("Attrito Statico", matDef.staticFriction);
-                drawSciRow("Attrito Dinamico", matDef.dynamicFriction);
-                drawSciRow("Restituzione", matDef.restitution);
-
-                ImGui::EndTable();
-            }
             ImGui::TreePop();
         }
+    }
+
+    // 3. Tabella Proprietà Scientifiche & Gestione Override (MA-02.3C)
+    struct PropDescriptor {
+        const char* canonicalName;
+        const char* displayName;
+        const char* defaultUnit;
+    };
+
+    static const PropDescriptor s_sciPropDescriptors[12] = {
+        { fw::ScientificPropertyNames::Density, "Densita'", "kg/m^3" },
+        { fw::ScientificPropertyNames::Porosity, "Porosita'", "" },
+        { fw::ScientificPropertyNames::CompressiveStrength, "Resistenza Compressione", "Pa" },
+        { fw::ScientificPropertyNames::TensileStrength, "Resistenza Trazione", "Pa" },
+        { fw::ScientificPropertyNames::ElasticModulus, "Modulo di Young", "Pa" },
+        { fw::ScientificPropertyNames::StaticFriction, "Attrito Statico", "" },
+        { fw::ScientificPropertyNames::DynamicFriction, "Attrito Dinamico", "" },
+        { fw::ScientificPropertyNames::Restitution, "Restituzione", "" },
+        { fw::ScientificPropertyNames::SpecificHeatCapacity, "Capacita' Termica Specifica", "J/(kg*K)" },
+        { fw::ScientificPropertyNames::ThermalConductivity, "Conducibilita' Termica", "W/(m*K)" },
+        { fw::ScientificPropertyNames::ThermalExpansion, "Espansione Termica", "1/K" },
+        { fw::ScientificPropertyNames::MeltingPoint, "Punto di Fusione", "K" }
+    };
+
+    ImGui::Spacing();
+    if (ImGui::TreeNodeEx("Proprieta' Scientifiche & Override del Blocco##SciPropsAndOverrides", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Visualizza le 12 proprieta' SI. Gli override personalizzano questo blocco senza modificare il registro.");
+
+        auto syncDraft = [&]() {
+            if (m_factoryOrchestrator.IsDraftOpen()) {
+                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                if (draft) {
+                    draft->scientificOverrides = def.scientificOverrides;
+                    draft->scientificMaterialId = def.scientificMaterialId;
+                    draft->MarkDirty();
+                }
+            }
+        };
+
+        if (ImGui::BeginTable("SciPropsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::TableSetupColumn("Proprieta'", ImGuiTableColumnFlags_WidthStretch, 0.32f);
+            ImGui::TableSetupColumn("Valore (SI)", ImGuiTableColumnFlags_WidthStretch, 0.28f);
+            ImGui::TableSetupColumn("Stato / Origine", ImGuiTableColumnFlags_WidthStretch, 0.40f);
+            ImGui::TableSetupColumn("Azioni", ImGuiTableColumnFlags_WidthFixed, 145.0f);
+            ImGui::TableHeadersRow();
+
+            for (int p = 0; p < 12; ++p) {
+                const auto& desc = s_sciPropDescriptors[p];
+                fw::ScientificQuantity resolvedQ = sciReg->ResolveProperty(def.scientificMaterialId, desc.canonicalName, def.scientificOverrides);
+                bool isOverridden = def.scientificOverrides.HasOverride(desc.canonicalName);
+                bool isBeingEdited = (m_selectedSciPropForEdit == desc.canonicalName);
+
+                ImGui::TableNextRow();
+
+                // Colonna 0: Nome Proprieta' & Unita'
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(desc.displayName);
+                if (desc.defaultUnit[0] != '\0') {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("[%s]", desc.defaultUnit);
+                }
+
+                // Colonna 1: Valore Formattato
+                ImGui::TableSetColumnIndex(1);
+                if (resolvedQ.state == fw::PropertyState::Known) {
+                    std::string unitSuffix = resolvedQ.unit.empty() ? "" : (" " + resolvedQ.unit);
+                    ImGui::Text("%.4g%s", resolvedQ.value, unitSuffix.c_str());
+                } else if (resolvedQ.state == fw::PropertyState::NotApplicable) {
+                    ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.55f, 1.0f), "NotApplicable");
+                } else {
+                    ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.25f, 1.0f), "Unknown");
+                }
+
+                // Colonna 2: Stato / Origine (INHERITED, OVERRIDE, UNKNOWN, NOT APPLICABLE)
+                ImGui::TableSetColumnIndex(2);
+                if (isOverridden) {
+                    ImGui::TextColored(ImVec4(0.2f, 0.85f, 1.0f, 1.0f), "OVERRIDE");
+                    if (resolvedQ.state == fw::PropertyState::Unknown) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.25f, 1.0f), "(UNKNOWN)");
+                    } else if (resolvedQ.state == fw::PropertyState::NotApplicable) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.55f, 1.0f), "(NOT APPLICABLE)");
+                    }
+                } else {
+                    if (resolvedQ.state == fw::PropertyState::NotApplicable) {
+                        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.55f, 1.0f), "NOT APPLICABLE");
+                    } else if (resolvedQ.state == fw::PropertyState::Unknown) {
+                        ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.25f, 1.0f), "UNKNOWN");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.45f, 1.0f), "INHERITED");
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    std::string qualStr = (resolvedQ.state == fw::PropertyState::Known) 
+                        ? fw::DataQualityToString(resolvedQ.quality) 
+                        : "-";
+                    std::string srcStr = resolvedQ.source.empty() ? "(Nessuna fonte indicata)" : resolvedQ.source;
+                    ImGui::SetTooltip("Qualita': %s\nFonte: %s\nCondizioni: T=%.2f K (%.1f C), P=%.0f Pa (%.2f atm)",
+                        qualStr.c_str(), srcStr.c_str(),
+                        resolvedQ.temperatureKelvin, resolvedQ.temperatureKelvin - 273.15,
+                        resolvedQ.pressurePascal, resolvedQ.pressurePascal / 101325.0);
+                }
+
+                // Colonna 3: Azioni (Crea Override, Modifica, Ripristina)
+                ImGui::TableSetColumnIndex(3);
+                ImGui::PushID(desc.canonicalName);
+                if (!isOverridden) {
+                    if (isBeingEdited) {
+                        if (ImGui::Button("Annulla##CancelNew", ImVec2(75, 20))) {
+                            m_selectedSciPropForEdit.clear();
+                            m_stagingSciOverride = fw::ScientificQuantity();
+                            m_isCreatingNewSciOverride = false;
+                            m_sciOverrideErrorMsg.clear();
+                        }
+                    } else {
+                        if (ImGui::Button("+ Override", ImVec2(75, 20))) {
+                            m_selectedSciPropForEdit = desc.canonicalName;
+                            m_stagingSciOverride = resolvedQ;
+                            if (m_stagingSciOverride.source.empty()) {
+                                m_stagingSciOverride.source = "Custom Block Override";
+                            }
+                            if (m_stagingSciOverride.unit.empty()) {
+                                m_stagingSciOverride.unit = desc.defaultUnit;
+                            }
+                            m_isCreatingNewSciOverride = true;
+                            m_sciOverrideErrorMsg.clear();
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Apre l'editor con una copia temporanea del valore ereditato");
+                        }
+                    }
+                } else {
+                    if (isBeingEdited) {
+                        if (ImGui::Button("Annulla##CancelEdit", ImVec2(58, 20))) {
+                            m_selectedSciPropForEdit.clear();
+                            m_stagingSciOverride = fw::ScientificQuantity();
+                            m_isCreatingNewSciOverride = false;
+                            m_sciOverrideErrorMsg.clear();
+                        }
+                    } else {
+                        if (ImGui::Button("Modifica##Edit", ImVec2(58, 20))) {
+                            m_selectedSciPropForEdit = desc.canonicalName;
+                            const auto* existing = def.scientificOverrides.GetOverride(desc.canonicalName);
+                            m_stagingSciOverride = existing ? *existing : resolvedQ;
+                            m_isCreatingNewSciOverride = false;
+                            m_sciOverrideErrorMsg.clear();
+                        }
+                    }
+
+                    // Layout responsive: affianca se c'e' spazio sufficiente, altrimenti va a capo per non subire clipping
+                    if (ImGui::GetContentRegionAvail().x >= 70.0f) {
+                        ImGui::SameLine(0.0f, 4.0f);
+                    }
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.22f, 0.22f, 0.85f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.68f, 0.28f, 0.28f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.78f, 0.18f, 0.18f, 1.0f));
+                    if (ImGui::Button("Ripristina##Reset", ImVec2(68, 20))) {
+                        def.scientificOverrides.RemoveOverride(desc.canonicalName);
+                        if (m_selectedSciPropForEdit == desc.canonicalName) {
+                            m_selectedSciPropForEdit.clear();
+                            m_stagingSciOverride = fw::ScientificQuantity();
+                            m_isCreatingNewSciOverride = false;
+                            m_sciOverrideErrorMsg.clear();
+                        }
+                        isDirty = true;
+                        syncDraft();
+                    }
+                    ImGui::PopStyleColor(3);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Rimuove l'override ed elimina la personalizzazione, ripristinando l'ereditarieta'");
+                    }
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+
+        // 4. Editor Dettagliato dell'Override Selezionato (MA-02.3C.1)
+        if (!m_selectedSciPropForEdit.empty()) {
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            const char* propDisplay = m_selectedSciPropForEdit.c_str();
+            const char* defaultUnit = "";
+            for (const auto& d : s_sciPropDescriptors) {
+                if (std::string(d.canonicalName) == m_selectedSciPropForEdit) {
+                    propDisplay = d.displayName;
+                    defaultUnit = d.defaultUnit;
+                    break;
+                }
+            }
+
+            bool hasExistingOverride = def.scientificOverrides.HasOverride(m_selectedSciPropForEdit);
+            ImGui::TextColored(ImVec4(0.2f, 0.85f, 1.0f, 1.0f), "EDITOR OVERRIDE (%s): %s (%s)",
+                m_isCreatingNewSciOverride ? "NUOVO" : "MODIFICA", propDisplay, m_selectedSciPropForEdit.c_str());
+            ImGui::PushID(m_selectedSciPropForEdit.c_str());
+
+            // Stato della Proprieta' (Known / Unknown / NotApplicable)
+            int currentStateIdx = static_cast<int>(m_stagingSciOverride.state);
+            const char* stateNames[] = { "Known (Noto / Misurato)", "Unknown (Sconosciuto)", "NotApplicable (Non Applicabile)" };
+            if (ImGui::Combo("Stato Dato##EditState", &currentStateIdx, stateNames, 3)) {
+                m_stagingSciOverride.state = static_cast<fw::PropertyState>(currentStateIdx);
+                if (m_stagingSciOverride.state == fw::PropertyState::Known && m_stagingSciOverride.unit.empty()) {
+                    m_stagingSciOverride.unit = defaultUnit;
+                }
+                m_sciOverrideErrorMsg.clear();
+            }
+
+            // Valore Numerico (se Known)
+            if (m_stagingSciOverride.state == fw::PropertyState::Known) {
+                double tempVal = m_stagingSciOverride.value;
+                std::string unitLabel = m_stagingSciOverride.unit.empty() ? "" : (" [" + m_stagingSciOverride.unit + "]");
+                std::string valLabel = "Valore" + unitLabel + "##EditVal";
+                if (ImGui::InputDouble(valLabel.c_str(), &tempVal, 0.0, 0.0, "%.4g")) {
+                    m_stagingSciOverride.value = tempVal;
+                    m_sciOverrideErrorMsg.clear();
+                }
+            }
+
+            // Qualita' del Dato
+            int currentQualityIdx = static_cast<int>(m_stagingSciOverride.quality);
+            const char* qualityNames[] = { "Estimated (Stimato)", "Experimental (Sperimentale)", "PeerReviewed (Revisionato)", "SyntheticStandard (Standard Sintetico)" };
+            if (ImGui::Combo("Qualita'##EditQuality", &currentQualityIdx, qualityNames, 4)) {
+                m_stagingSciOverride.quality = static_cast<fw::DataQuality>(currentQualityIdx);
+            }
+
+            // Fonte / Riferimento Bibliografico
+            char srcBuf[128] = {0};
+            strncpy_s(srcBuf, m_stagingSciOverride.source.c_str(), sizeof(srcBuf) - 1);
+            if (ImGui::InputText("Fonte / Riferimento##EditSrc", srcBuf, sizeof(srcBuf))) {
+                m_stagingSciOverride.source = srcBuf;
+            }
+
+            // Condizioni di Riferimento (T & P)
+            double tempK = m_stagingSciOverride.temperatureKelvin;
+            if (ImGui::InputDouble("Temperatura [K]##EditT", &tempK, 1.0, 10.0, "%.2f")) {
+                if (tempK >= 0.0) {
+                    m_stagingSciOverride.temperatureKelvin = tempK;
+                }
+            }
+            double pressPa = m_stagingSciOverride.pressurePascal;
+            if (ImGui::InputDouble("Pressione [Pa]##EditP", &pressPa, 100.0, 1000.0, "%.0f")) {
+                if (pressPa >= 0.0) {
+                    m_stagingSciOverride.pressurePascal = pressPa;
+                }
+            }
+
+            // Avviso validazione in tempo reale
+            if (!m_sciOverrideErrorMsg.empty()) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "[AVVISO VALIDAZIONE] %s", m_sciOverrideErrorMsg.c_str());
+            }
+
+            ImGui::Spacing();
+            // Applica: valida la proprietà e salva l'override tramite SetOverride, sincronizzando il draft e impostando il dirty flag
+            if (ImGui::Button("Applica##ApplySciOverride", ImVec2(90, 22))) {
+                std::string valErr;
+                if (!fw::ValidateScientificQuantity(m_selectedSciPropForEdit, m_stagingSciOverride, &valErr)) {
+                    m_sciOverrideErrorMsg = valErr;
+                } else {
+                    std::string setErr;
+                    if (def.scientificOverrides.SetOverride(m_selectedSciPropForEdit, m_stagingSciOverride, &setErr)) {
+                        m_selectedSciPropForEdit.clear();
+                        m_stagingSciOverride = fw::ScientificQuantity();
+                        m_isCreatingNewSciOverride = false;
+                        m_sciOverrideErrorMsg.clear();
+                        isDirty = true;
+                        syncDraft();
+                    } else {
+                        m_sciOverrideErrorMsg = setErr;
+                    }
+                }
+            }
+
+            // Annulla: scarta le modifiche temporanee
+            ImGui::SameLine();
+            if (ImGui::Button("Annulla##CancelSciOverride", ImVec2(90, 22))) {
+                m_selectedSciPropForEdit.clear();
+                m_stagingSciOverride = fw::ScientificQuantity();
+                m_isCreatingNewSciOverride = false;
+                m_sciOverrideErrorMsg.clear();
+            }
+
+            // Ripristina Ereditarietà: rimuove l'override esistente e aggiorna il draft
+            if (hasExistingOverride) {
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.48f, 0.22f, 0.22f, 0.85f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.68f, 0.28f, 0.28f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.78f, 0.18f, 0.18f, 1.0f));
+                if (ImGui::Button("Ripristina Ereditarieta'##ResetFromEditor", ImVec2(160, 22))) {
+                    def.scientificOverrides.RemoveOverride(m_selectedSciPropForEdit);
+                    m_selectedSciPropForEdit.clear();
+                    m_stagingSciOverride = fw::ScientificQuantity();
+                    m_isCreatingNewSciOverride = false;
+                    m_sciOverrideErrorMsg.clear();
+                    isDirty = true;
+                    syncDraft();
+                }
+                ImGui::PopStyleColor(3);
+            }
+
+            ImGui::PopID();
+        }
+
+        ImGui::TreePop();
     }
 }
 
@@ -10515,7 +10782,9 @@ void BlockMakerState::DrawStudioRightInspector() {
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "LIVELLI PITTURA (LAYERS)");
         EnsureActivePaintLayerValid();
         auto& layers = m_paintingService.GetLayers();
-        for (size_t i = 0; i < layers.size(); ++i) {
+        // Ordine visivo inverso: layer superiore (indice più alto nello stack) in alto, base (indice 0) in basso
+        for (size_t rev = 0; rev < layers.size(); ++rev) {
+            size_t i = layers.size() - 1 - rev;
             auto& layer = layers[i];
             ImGui::PushID(static_cast<int>(layer.layerId));
             bool vis = layer.isVisible;
@@ -10609,6 +10878,72 @@ void BlockMakerState::DrawStudioRightInspector() {
         if (!canDelete) ImGui::EndDisabled();
         if (layers.size() <= 1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip("Impossibile eliminare l'unico livello esistente");
+        }
+
+        // MA-02.2R.2: Riordinamento Stacking Layer (↑ Porta Sopra / ↓ Porta Sotto)
+        size_t activeIdx = layers.size();
+        for (size_t i = 0; i < layers.size(); ++i) {
+            if (layers[i].layerId == m_activePaintLayerId) {
+                activeIdx = i;
+                break;
+            }
+        }
+        bool hasValidActive = (activeLayer != nullptr && activeIdx < layers.size());
+        bool canMoveUp = (hasValidActive && activeIdx + 1 < layers.size() && m_renamingLayerId == 0 && m_layerPendingDeleteId == 0);
+        bool canMoveDown = (hasValidActive && activeIdx > 0 && m_renamingLayerId == 0 && m_layerPendingDeleteId == 0);
+
+        ImGui::SameLine();
+        if (!canMoveUp) ImGui::BeginDisabled();
+        if (ImGui::Button("↑##MoveActiveLayerUp", ImVec2(24, 22))) {
+            if (m_paintingService.MoveLayerUp(m_activePaintLayerId)) {
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                    if (draft) {
+                        draft->paintLayers = m_paintingService.GetLayers();
+                        draft->paintRevision = m_paintingService.GetRevision();
+                        draft->MarkDirty();
+                    }
+                }
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp)) {
+                    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                            comp.GetData(), comp.GetWidth(), comp.GetHeight()
+                        );
+                    }
+                }
+            }
+        }
+        if (!canMoveUp) ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip(canMoveUp ? "Sposta layer sopra nello stack" : "Layer già in cima allo stack");
+        }
+
+        ImGui::SameLine();
+        if (!canMoveDown) ImGui::BeginDisabled();
+        if (ImGui::Button("↓##MoveActiveLayerDown", ImVec2(24, 22))) {
+            if (m_paintingService.MoveLayerDown(m_activePaintLayerId)) {
+                if (m_factoryOrchestrator.IsDraftOpen()) {
+                    auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                    if (draft) {
+                        draft->paintLayers = m_paintingService.GetLayers();
+                        draft->paintRevision = m_paintingService.GetRevision();
+                        draft->MarkDirty();
+                    }
+                }
+                fw::ImageBitmap comp;
+                if (m_paintingService.CompositeLayers(comp)) {
+                    if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
+                        m_context->engine->GetRenderManager()->UpdatePainterPreviewTexture(
+                            comp.GetData(), comp.GetWidth(), comp.GetHeight()
+                        );
+                    }
+                }
+            }
+        }
+        if (!canMoveDown) ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip(canMoveDown ? "Sposta layer sotto nello stack" : "Layer già alla base dello stack");
         }
 
         // Inline Form: Conferma Eliminazione Layer (MA-02.2R.1)

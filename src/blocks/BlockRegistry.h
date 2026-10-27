@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include <cstdint>
+#include "ScientificMaterialRegistry.h"
 
 namespace fw {
 
@@ -50,6 +51,7 @@ struct SimBlockDef {
     std::string stringId = "fairworld:unknown";
     std::string displayName = "Unknown Block";
     uint32_t scientificMaterialId = 0; // Scientific Material Core ID (0 = None/Custom)
+    ScientificPropertyOverrides scientificOverrides; // MA-02.3: Per-asset scientific property overrides
 
     // Physics Contract (Per-Asset Independent Definition)
     BlockPhysicsDef physics;

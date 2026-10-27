@@ -629,6 +629,12 @@ private:
     // MA-02.2R.1: Layer deletion confirmation state
     uint32_t m_layerPendingDeleteId = 0;
 
+    // MA-02.3C.1: Scientific Property Overrides UI staging state
+    std::string m_selectedSciPropForEdit;
+    fw::ScientificQuantity m_stagingSciOverride;
+    bool m_isCreatingNewSciOverride = false;
+    std::string m_sciOverrideErrorMsg;
+
     // --- BM-UV8 2D UV Editor State & UI ---
     fw::UVEditorPanel m_uvEditorPanel;
     std::unique_ptr<fw::UVEditorDocument> m_uvEditorDocument;

@@ -296,6 +296,7 @@ struct RawAssetDraft {
 
     // 4. Stazione Material & Texture: Parametri visivi PBR e mappe
     uint32_t scientificMaterialId = 0; // MA-02.2: Scientific Material Core reference (0 = none/custom)
+    ScientificPropertyOverrides scientificOverrides; // MA-02.3: Per-asset scientific property overrides
     glm::vec3 baseColorFallback{1.0f, 1.0f, 1.0f};
     float roughnessFallback = 1.0f;
     float metallicFallback = 0.0f;
@@ -399,6 +400,7 @@ struct RawAssetPackage {
 
     // Parametri visivi compilati (BM-F2C)
     uint32_t scientificMaterialId = 0; // MA-02.2: Scientific Material Core reference
+    ScientificPropertyOverrides scientificOverrides; // MA-02.3: Compiled scientific property overrides
     glm::vec3 baseColorFallback{1.0f};
     float roughnessFallback = 1.0f;
     float metallicFallback = 0.0f;
@@ -809,6 +811,16 @@ inline void to_json(nlohmann::json& j, const RawAssetDraft& d) {
         j["paintLayers"] = jLayers;
         j["paintRevision"] = d.paintRevision;
     }
+    if (d.scientificMaterialId != 0 || !d.scientificOverrides.Empty()) {
+        nlohmann::json jSci;
+        jSci["materialId"] = d.scientificMaterialId;
+        if (!d.scientificOverrides.Empty()) {
+            nlohmann::json jOv;
+            to_json(jOv, d.scientificOverrides);
+            jSci["overrides"] = jOv;
+        }
+        j["scientific"] = jSci;
+    }
 }
 
 inline void from_json(const nlohmann::json& j, RawAssetDraft& d) {
@@ -845,6 +857,13 @@ inline void from_json(const nlohmann::json& j, RawAssetDraft& d) {
         d.ormPath = jg.value("ormPath", "");
         d.emissivePath = jg.value("emissivePath", "");
         d.behaviors = jg.value("behaviors", 0u);
+    }
+    if (j.contains("scientific") && j["scientific"].is_object()) {
+        const auto& js = j["scientific"];
+        d.scientificMaterialId = js.value("materialId", d.scientificMaterialId);
+        if (js.contains("overrides")) {
+            from_json(js["overrides"], d.scientificOverrides);
+        }
     }
     if (j.contains("physics")) {
         const auto& jp = j["physics"];
@@ -1072,6 +1091,16 @@ inline void to_json(nlohmann::json& j, const RawAssetPackage& p) {
         jGeom["faces"] = jFaces;
     }
     j["geometry"] = jGeom;
+    if (p.scientificMaterialId != 0 || !p.scientificOverrides.Empty()) {
+        nlohmann::json jSci;
+        jSci["materialId"] = p.scientificMaterialId;
+        if (!p.scientificOverrides.Empty()) {
+            nlohmann::json jOv;
+            to_json(jOv, p.scientificOverrides);
+            jSci["overrides"] = jOv;
+        }
+        j["scientific"] = jSci;
+    }
 }
 
 inline void from_json(const nlohmann::json& j, RawAssetPackage& p) {
@@ -1108,6 +1137,13 @@ inline void from_json(const nlohmann::json& j, RawAssetPackage& p) {
         p.ormMapUri = jg.value("ormMapUri", "");
         p.emissiveMapUri = jg.value("emissiveMapUri", "");
         p.textureFingerprint = jg.value("textureFingerprint", static_cast<uint64_t>(0));
+    }
+    if (j.contains("scientific") && j["scientific"].is_object()) {
+        const auto& js = j["scientific"];
+        p.scientificMaterialId = js.value("materialId", p.scientificMaterialId);
+        if (js.contains("overrides")) {
+            from_json(js["overrides"], p.scientificOverrides);
+        }
     }
     if (j.contains("physics")) {
         const auto& jp = j["physics"];

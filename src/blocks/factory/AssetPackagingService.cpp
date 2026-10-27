@@ -403,6 +403,7 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     bDef.stringId = package.manifest.assetId;
     bDef.displayName = package.manifest.displayName;
     bDef.scientificMaterialId = package.scientificMaterialId;
+    bDef.scientificOverrides = package.scientificOverrides;
     bDef.physics = package.compiledPhysics;
     bDef.localPosition = package.packagePosition;
     bDef.localRotation = package.packageRotation;

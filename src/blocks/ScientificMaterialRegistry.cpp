@@ -85,6 +85,143 @@ static void from_json(const json& j, ScientificTensor3x3& t) {
     }
 }
 
+// =============================================================================
+// MA-02.3: VALIDATION HELPERS & OVERRIDES SERIALIZATION
+// =============================================================================
+
+bool IsValidScientificPropertyName(const std::string& name) {
+    static const std::unordered_set<std::string> s_validProps = {
+        ScientificPropertyNames::Density,
+        ScientificPropertyNames::Porosity,
+        ScientificPropertyNames::CompressiveStrength,
+        ScientificPropertyNames::TensileStrength,
+        ScientificPropertyNames::ElasticModulus,
+        ScientificPropertyNames::StaticFriction,
+        ScientificPropertyNames::DynamicFriction,
+        ScientificPropertyNames::Restitution,
+        ScientificPropertyNames::SpecificHeatCapacity,
+        ScientificPropertyNames::ThermalConductivity,
+        ScientificPropertyNames::ThermalExpansion,
+        ScientificPropertyNames::MeltingPoint
+    };
+    return s_validProps.find(name) != s_validProps.end();
+}
+
+std::string GetCanonicalUnitForProperty(const std::string& name) {
+    if (name == ScientificPropertyNames::Density) return "kg/m^3";
+    if (name == ScientificPropertyNames::Porosity) return "";
+    if (name == ScientificPropertyNames::CompressiveStrength) return "Pa";
+    if (name == ScientificPropertyNames::TensileStrength) return "Pa";
+    if (name == ScientificPropertyNames::ElasticModulus) return "Pa";
+    if (name == ScientificPropertyNames::StaticFriction) return "";
+    if (name == ScientificPropertyNames::DynamicFriction) return "";
+    if (name == ScientificPropertyNames::Restitution) return "";
+    if (name == ScientificPropertyNames::SpecificHeatCapacity) return "J/(kg*K)";
+    if (name == ScientificPropertyNames::ThermalConductivity) return "W/(m*K)";
+    if (name == ScientificPropertyNames::ThermalExpansion) return "1/K";
+    if (name == ScientificPropertyNames::MeltingPoint) return "K";
+    return "";
+}
+
+bool ValidateScientificQuantity(const std::string& propName, const ScientificQuantity& q, std::string* outError) {
+    if (!IsValidScientificPropertyName(propName)) {
+        if (outError) *outError = "Nome proprieta' non valido o non riconosciuto: " + propName;
+        return false;
+    }
+
+    // Se lo stato è Unknown o NotApplicable, il valore non è vincolato (senza interpretare Unknown come zero)
+    if (q.state == PropertyState::Unknown || q.state == PropertyState::NotApplicable) {
+        return true;
+    }
+
+    // Validazione unita' (se fornita, deve coincidere con l'unita' SI canonica)
+    std::string canonicalUnit = GetCanonicalUnitForProperty(propName);
+    if (!q.unit.empty() && q.unit != canonicalUnit) {
+        if (outError) *outError = "Unita' non compatibile per '" + propName + "': attesa '" + canonicalUnit + "', trovata '" + q.unit + "'";
+        return false;
+    }
+
+    // Per PropertyState::Known, validazione finitezza e limiti fisici
+    if (!std::isfinite(q.value)) {
+        if (outError) *outError = "Valore non finito (NaN/Inf) per proprieta': " + propName;
+        return false;
+    }
+
+    if (propName == ScientificPropertyNames::Density && q.value <= 0.0) {
+        if (outError) *outError = "La densita' deve essere strettamente positiva (> 0)";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::Porosity && (q.value < 0.0 || q.value > 1.0)) {
+        if (outError) *outError = "La porosita' deve essere compresa nell'intervallo [0.0, 1.0]";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::CompressiveStrength && q.value < 0.0) {
+        if (outError) *outError = "La resistenza a compressione non puo' essere negativa";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::TensileStrength && q.value < 0.0) {
+        if (outError) *outError = "La resistenza a trazione non puo' essere negativa";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::ElasticModulus && q.value < 0.0) {
+        if (outError) *outError = "Il modulo elastico non puo' essere negativo";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::StaticFriction && q.value < 0.0) {
+        if (outError) *outError = "L'attrito statico non puo' essere negativo";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::DynamicFriction && q.value < 0.0) {
+        if (outError) *outError = "L'attrito dinamico non puo' essere negativo";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::Restitution && (q.value < 0.0 || q.value > 1.0)) {
+        if (outError) *outError = "Il coefficiente di restituzione deve essere compreso nell'intervallo [0.0, 1.0]";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::SpecificHeatCapacity && q.value <= 0.0) {
+        if (outError) *outError = "La capacita' termica specifica deve essere strettamente positiva (> 0)";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::ThermalConductivity && q.value < 0.0) {
+        if (outError) *outError = "La conducibilita' termica non puo' essere negativa";
+        return false;
+    }
+    if (propName == ScientificPropertyNames::MeltingPoint && q.value < 0.0) {
+        if (outError) *outError = "Il punto di fusione (in Kelvin) non puo' essere negativo (< 0 K)";
+        return false;
+    }
+
+    return true;
+}
+
+void to_json(json& j, const ScientificPropertyOverrides& o) {
+    j = json::object();
+    for (const auto& pair : o.overrides) {
+        json jq;
+        to_json(jq, pair.second);
+        j[pair.first] = jq;
+    }
+}
+
+void from_json(const json& j, ScientificPropertyOverrides& o) {
+    o.Clear();
+    if (!j.is_object()) return;
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string& propName = it.key();
+        if (IsValidScientificPropertyName(propName)) {
+            ScientificQuantity q;
+            from_json(it.value(), q);
+            std::string err;
+            if (ValidateScientificQuantity(propName, q, &err)) {
+                o.overrides[propName] = q;
+            } else {
+                std::cerr << "[ScientificPropertyOverrides] Override scartato per '" << propName << "': " << err << "\n";
+            }
+        }
+    }
+}
+
 static void to_json(json& j, const ScientificMaterialDef& m) {
     j = json{
         {"id", m.id},
@@ -271,6 +408,37 @@ ScientificMaterialID ScientificMaterialRegistry::GetMaterialIdByCanonical(const 
         return it->second;
     }
     return INVALID_SCIENTIFIC_MATERIAL_ID;
+}
+
+ScientificQuantity ScientificMaterialRegistry::ResolveProperty(
+    ScientificMaterialID baseId, 
+    const std::string& propertyName, 
+    const ScientificPropertyOverrides& overrides) const 
+{
+    // 1. Priorita' assoluta all'override esplicito per-asset (preservando Known/Unknown/NotApplicable)
+    if (const ScientificQuantity* ov = overrides.GetOverride(propertyName)) {
+        return *ov;
+    }
+
+    // 2. Risoluzione tramite ereditarieta' dal materiale scientifico di base
+    if (baseId != INVALID_SCIENTIFIC_MATERIAL_ID && HasMaterial(baseId)) {
+        const auto& mat = GetMaterial(baseId);
+        if (propertyName == ScientificPropertyNames::Density) return mat.density;
+        if (propertyName == ScientificPropertyNames::Porosity) return mat.porosity;
+        if (propertyName == ScientificPropertyNames::CompressiveStrength) return mat.compressiveStrength;
+        if (propertyName == ScientificPropertyNames::TensileStrength) return mat.tensileStrength;
+        if (propertyName == ScientificPropertyNames::ElasticModulus) return mat.elasticModulus;
+        if (propertyName == ScientificPropertyNames::StaticFriction) return mat.staticFriction;
+        if (propertyName == ScientificPropertyNames::DynamicFriction) return mat.dynamicFriction;
+        if (propertyName == ScientificPropertyNames::Restitution) return mat.restitution;
+        if (propertyName == ScientificPropertyNames::SpecificHeatCapacity) return mat.specificHeatCapacity;
+        if (propertyName == ScientificPropertyNames::ThermalConductivity) return mat.thermalConductivity;
+        if (propertyName == ScientificPropertyNames::ThermalExpansion) return mat.thermalExpansion;
+        if (propertyName == ScientificPropertyNames::MeltingPoint) return mat.meltingPoint;
+    }
+
+    // 3. Proprieta' non trovata ne' ereditabile: ritorna Unknown con unita' SI canonica
+    return ScientificQuantity::Unknown(GetCanonicalUnitForProperty(propertyName));
 }
 
 bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {

@@ -150,6 +150,99 @@ struct ScientificMaterialDef {
 };
 
 // =============================================================================
+// MA-02.3: SCIENTIFIC PROPERTY OVERRIDES & VALIDATION
+// =============================================================================
+
+namespace ScientificPropertyNames {
+    inline constexpr const char* Density = "density";
+    inline constexpr const char* Porosity = "porosity";
+    inline constexpr const char* CompressiveStrength = "compressiveStrength";
+    inline constexpr const char* TensileStrength = "tensileStrength";
+    inline constexpr const char* ElasticModulus = "elasticModulus";
+    inline constexpr const char* StaticFriction = "staticFriction";
+    inline constexpr const char* DynamicFriction = "dynamicFriction";
+    inline constexpr const char* Restitution = "restitution";
+    inline constexpr const char* SpecificHeatCapacity = "specificHeatCapacity";
+    inline constexpr const char* ThermalConductivity = "thermalConductivity";
+    inline constexpr const char* ThermalExpansion = "thermalExpansion";
+    inline constexpr const char* MeltingPoint = "meltingPoint";
+}
+
+bool IsValidScientificPropertyName(const std::string& name);
+std::string GetCanonicalUnitForProperty(const std::string& name);
+bool ValidateScientificQuantity(const std::string& propName, const ScientificQuantity& q, std::string* outError = nullptr);
+
+struct ScientificPropertyOverrides {
+    std::unordered_map<std::string, ScientificQuantity> overrides;
+
+    bool SetOverride(const std::string& propName, const ScientificQuantity& quantity, std::string* outError = nullptr) {
+        if (!ValidateScientificQuantity(propName, quantity, outError)) {
+            return false;
+        }
+        overrides[propName] = quantity;
+        return true;
+    }
+
+    bool RemoveOverride(const std::string& propName) {
+        return overrides.erase(propName) > 0;
+    }
+
+    bool HasOverride(const std::string& propName) const {
+        return overrides.find(propName) != overrides.end();
+    }
+
+    const ScientificQuantity* GetOverride(const std::string& propName) const {
+        auto it = overrides.find(propName);
+        if (it != overrides.end()) {
+            return &it->second;
+        }
+        return nullptr;
+    }
+
+    void Clear() {
+        overrides.clear();
+    }
+
+    bool Empty() const {
+        return overrides.empty();
+    }
+
+    bool empty() const {
+        return overrides.empty();
+    }
+
+    size_t Size() const {
+        return overrides.size();
+    }
+
+    size_t size() const {
+        return overrides.size();
+    }
+
+    bool operator==(const ScientificPropertyOverrides& other) const {
+        if (overrides.size() != other.overrides.size()) return false;
+        for (const auto& pair : overrides) {
+            auto it = other.overrides.find(pair.first);
+            if (it == other.overrides.end()) return false;
+            const auto& a = pair.second;
+            const auto& b = it->second;
+            if (a.state != b.state) return false;
+            if (a.state == PropertyState::Known && (a.value != b.value || a.unit != b.unit)) return false;
+            if (a.quality != b.quality || a.source != b.source) return false;
+            if (a.temperatureKelvin != b.temperatureKelvin || a.pressurePascal != b.pressurePascal) return false;
+        }
+        return true;
+    }
+
+    bool operator!=(const ScientificPropertyOverrides& other) const {
+        return !(*this == other);
+    }
+};
+
+void to_json(nlohmann::json& j, const ScientificPropertyOverrides& o);
+void from_json(const nlohmann::json& j, ScientificPropertyOverrides& o);
+
+// =============================================================================
 // SCIENTIFIC MATERIAL REGISTRY (Headless, Zero Vulkan dependencies)
 // =============================================================================
 
@@ -169,6 +262,13 @@ public:
     const ScientificMaterialDef& GetMaterial(ScientificMaterialID id) const;
     const ScientificMaterialDef& GetMaterial(const std::string& canonicalId) const;
     ScientificMaterialID GetMaterialIdByCanonical(const std::string& canonicalId) const;
+
+    // MA-02.3: Risoluzione gerarchica delle proprietà (override esplicito -> ereditarietà dal registry -> Unknown)
+    ScientificQuantity ResolveProperty(
+        ScientificMaterialID baseId, 
+        const std::string& propertyName, 
+        const ScientificPropertyOverrides& overrides = ScientificPropertyOverrides()
+    ) const;
 
     const std::unordered_map<ScientificMaterialID, ScientificMaterialDef>& GetAllMaterials() const {
         return m_materials;

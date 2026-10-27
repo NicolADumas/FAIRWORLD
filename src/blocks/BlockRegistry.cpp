@@ -146,6 +146,13 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
             def.stringId = jBlock.value("stringId", defaultStrId);
             def.displayName = jBlock.value("displayName", defaultDispName);
             def.scientificMaterialId = jBlock.value("scientificMaterialId", 0u);
+            if (jBlock.contains("scientific") && jBlock["scientific"].is_object()) {
+                const auto& js = jBlock["scientific"];
+                def.scientificMaterialId = js.value("materialId", def.scientificMaterialId);
+                if (js.contains("overrides")) {
+                    from_json(js["overrides"], def.scientificOverrides);
+                }
+            }
             
             // Baseline and legacy compatibility values
             def.isSolid = jBlock.value("isSolid", true);
@@ -223,6 +230,16 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
         jBlock["stringId"] = def.stringId;
         jBlock["displayName"] = def.displayName;
         jBlock["scientificMaterialId"] = def.scientificMaterialId;
+        if (def.scientificMaterialId != 0 || !def.scientificOverrides.Empty()) {
+            json jSci;
+            jSci["materialId"] = def.scientificMaterialId;
+            if (!def.scientificOverrides.Empty()) {
+                json jOv;
+                to_json(jOv, def.scientificOverrides);
+                jSci["overrides"] = jOv;
+            }
+            jBlock["scientific"] = jSci;
+        }
         
         // Legacy fields for backward compatibility
         jBlock["isSolid"] = def.isSolid;

@@ -697,6 +697,9 @@
                 0.0
             ],
             "restitution": 0.0,
+            "scientific": {
+                "materialId": 2
+            },
             "scientificMaterialId": 2,
             "stringId": "fairworld:granito",
             "thermal_capacity": 1.0,
