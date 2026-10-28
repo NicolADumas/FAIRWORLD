@@ -1,5 +1,5 @@
 {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "materials": [
         {
             "id": 1,
@@ -8,6 +8,8 @@
             "chemicalFormula": "H2O",
             "classification": "Liquid Oxide",
             "description": "Pure liquid water at standard temperature and pressure.",
+            "kind": "Compound",
+            "aggregationState": "Liquid",
             "density": {
                 "value": 1000.0,
                 "unit": "kg/m^3",
@@ -124,6 +126,8 @@
             "chemicalFormula": "SiO2 (72%), Al2O3 (14%), K2O/Na2O (9%)",
             "classification": "Igneous / Felsic Plutonic",
             "description": "Coarse-grained intrusive igneous rock rich in quartz and feldspar.",
+            "kind": "Rock",
+            "aggregationState": "Solid",
             "density": {
                 "value": 2650.0,
                 "unit": "kg/m^3",
@@ -240,6 +244,8 @@
             "chemicalFormula": "SiO2 (49%), Al2O3 (16%), FeO/Fe2O3 (11%), CaO (10%), MgO (7%)",
             "classification": "Igneous / Mafic Volcanic",
             "description": "Aphanitic extrusive igneous rock forming oceanic crust and planetary plains.",
+            "kind": "Rock",
+            "aggregationState": "Solid",
             "density": {
                 "value": 2900.0,
                 "unit": "kg/m^3",
@@ -356,6 +362,8 @@
             "chemicalFormula": "Fe (>98%), C (<0.2%)",
             "classification": "Transition Metal / Alloy",
             "description": "Structural iron with high tensile strength and thermal conductivity.",
+            "kind": "Unknown",
+            "aggregationState": "Solid",
             "density": {
                 "value": 7870.0,
                 "unit": "kg/m^3",
