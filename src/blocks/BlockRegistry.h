@@ -109,6 +109,28 @@ struct AssetOpResult {
     uint8_t allocatedId = 0;
 };
 
+// =============================================================================
+// MA-03.2E.2A: CROSS-REGISTRY SCIENTIFIC REFERENCE DIAGNOSTICS
+// =============================================================================
+
+struct BlockScientificReferenceDiagnostic {
+    uint8_t blockId = 0;
+    std::string stringId = "";
+    std::string displayName = "";
+    uint32_t unresolvedScientificId = 0;
+    std::string context = "";
+    std::string message = "";
+};
+
+struct BlockRegistryValidationReport {
+    size_t totalBlocksChecked = 0;
+    size_t validAssociations = 0;
+    size_t unassociatedBlocks = 0;
+    std::vector<BlockScientificReferenceDiagnostic> warnings;
+
+    bool HasWarnings() const { return !warnings.empty(); }
+};
+
 class BlockRegistry {
 public:
     BlockRegistry();
@@ -117,6 +139,12 @@ public:
     void Initialize();
     bool LoadFromJson(const std::string& filepath);
     bool SaveToJson(const std::string& filepath);
+
+    // MA-03.2E.2A: Validazione read-only dei riferimenti al catalogo scientifico
+    BlockRegistryValidationReport ValidateScientificReferences(
+        const ScientificMaterialRegistry& sciRegistry,
+        const std::string& context = "Bootstrap"
+    ) const;
 
     // Asset Management Operations (BM-A4)
     static std::string SanitizeStringId(const std::string& input);

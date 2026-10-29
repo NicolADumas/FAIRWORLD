@@ -1,5 +1,6 @@
 #include "blocks/ScientificMaterialRegistryContractTests.h"
 #include "blocks/ScientificMaterialRegistry.h"
+#include "blocks/BlockRegistry.h"
 #include "nlohmann/json.hpp"
 
 #include <filesystem>
@@ -50,7 +51,7 @@ void RemoveTempFile(const std::string& path) {
 
 std::vector<ScientificRegistryTestResult> ScientificMaterialRegistryContractTests::RunAllTests() {
     std::vector<ScientificRegistryTestResult> results;
-    results.reserve(33);
+    results.reserve(38);
 
     // MA-03.1D: Test isolati di regressione contrattuale (SCI-01 .. SCI-10)
     results.push_back(Test01_LoadV1WithoutTaxonomy());
@@ -92,6 +93,13 @@ std::vector<ScientificRegistryTestResult> ScientificMaterialRegistryContractTest
     results.push_back(TestEXT17_OldSnapshotHandleImmutabilityPostRegister());
     results.push_back(TestEXT18_ObservationLifetimePreservedInOldSnapshot());
     results.push_back(TestEXT19_RegisterMaterialAtomicRollbackOnValidationError());
+
+    // MA-03.2E.2A: Test diagnostica riferimenti incrociati catalogo scientifico (DIAG-01 .. DIAG-05)
+    results.push_back(TestDIAG01_UnassociatedBlockIdZeroIsValid());
+    results.push_back(TestDIAG02_ExistingScientificMaterialIdIsValid());
+    results.push_back(TestDIAG03_OrphanScientificMaterialIdGeneratesWarning());
+    results.push_back(TestDIAG04_NoAssetMutationOnValidation());
+    results.push_back(TestDIAG05_LoadingBehaviorUnchangedWithOrphans());
 
     return results;
 }
@@ -2390,6 +2398,472 @@ ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT19_
     } else {
         r.passed = false;
         r.observedDesc = "Materiale invalido parzialmente registrato o stato corrotto";
+    }
+    return r;
+}
+
+// =============================================================================
+// MA-03.2E.2A: TEST DIAGNOSTICA RIFERIMENTI INCROCIATI (DIAG-01 .. DIAG-05)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Test DIAG-01: Riferimento scientifico ID 0 valido (nessuna associazione)
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestDIAG01_UnassociatedBlockIdZeroIsValid() {
+    ScientificRegistryTestResult r;
+    r.testId = "DIAG-01";
+    r.testName = "Riferimento scientifico ID 0 valido (nessuna associazione)";
+    r.inputDesc = "BlockRegistry con blocchi privi di scientificMaterialId (ID 0) convalidati contro ScientificMaterialRegistry";
+    r.expectedDesc = "Validazione eseguita senza warning; conteggio blocchi non associati coerente; zero warning generati";
+
+    ScientificMaterialRegistry sciReg;
+    sciReg.Initialize();
+
+    BlockRegistry blockReg;
+    blockReg.Initialize();
+
+    auto createRes = blockReg.CreateBlock("fairworld:diag_test_unassociated", "Diag Test Block 0");
+    if (!createRes.success) {
+        r.passed = false;
+        r.observedDesc = "Impossibile creare blocco di test nel registry";
+        return r;
+    }
+
+    auto report = blockReg.ValidateScientificReferences(sciReg, "TestDIAG01");
+
+    bool hasNoWarnings = !report.HasWarnings() && report.warnings.empty();
+    bool unassociatedCountMatches = (report.unassociatedBlocks >= 10);
+    bool validAssociationsZero = (report.validAssociations == 0);
+
+    if (hasNoWarnings && unassociatedCountMatches && validAssociationsZero) {
+        r.passed = true;
+        r.observedDesc = "Validazione read-only confermata: ID 0 trattato come non associato e valido; nessun warning (unassociatedBlocks=" +
+                         std::to_string(report.unassociatedBlocks) + ", total=" + std::to_string(report.totalBlocksChecked) + ")";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Fallimento validazione: warning emessi o conteggi errati (warnings=" +
+                         std::to_string(report.warnings.size()) + ", unassociated=" + std::to_string(report.unassociatedBlocks) + ")";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// Test DIAG-02: Riferimento scientifico a materiale esistente valido
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestDIAG02_ExistingScientificMaterialIdIsValid() {
+    ScientificRegistryTestResult r;
+    r.testId = "DIAG-02";
+    r.testName = "Riferimento scientifico a materiale esistente valido";
+    r.inputDesc = "Blocco associato a un ScientificMaterialID registrato ed esistente nel catalogo scientifico";
+    r.expectedDesc = "Validazione read-only ha successo; validAssociations incrementato; zero warning generati";
+
+    ScientificMaterialRegistry sciReg;
+    sciReg.Initialize();
+
+    ScientificMaterialDef matDef;
+    matDef.id = 101;
+    matDef.canonicalId = "fairworld:mat/diag_valid";
+    matDef.displayName = "Diag Valid Material";
+    if (!sciReg.RegisterMaterial(matDef)) {
+        r.passed = false;
+        r.observedDesc = "Impossibile registrare materiale scientifico di test";
+        return r;
+    }
+
+    BlockRegistry blockReg;
+    blockReg.Initialize();
+
+    auto createRes = blockReg.CreateBlock("fairworld:diag_test_valid", "Diag Test Valid Block");
+    if (!createRes.success) {
+        r.passed = false;
+        r.observedDesc = "Impossibile creare blocco nel BlockRegistry";
+        return r;
+    }
+
+    auto& blockDef = blockReg.GetBlockMutable(createRes.allocatedId);
+    blockDef.scientificMaterialId = 101;
+
+    auto report = blockReg.ValidateScientificReferences(sciReg, "TestDIAG02");
+
+    bool hasNoWarnings = !report.HasWarnings() && report.warnings.empty();
+    bool validCountIsOne = (report.validAssociations == 1);
+
+    if (hasNoWarnings && validCountIsOne) {
+        r.passed = true;
+        r.observedDesc = "Validazione completata con successo: materiale 101 risolto correttamente, validAssociations=1, zero warning";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Validazione fallita: warnings=" + std::to_string(report.warnings.size()) +
+                         ", validAssociations=" + std::to_string(report.validAssociations);
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// Test DIAG-03: Riferimento scientifico orfano genera diagnostica di WARNING non bloccante
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestDIAG03_OrphanScientificMaterialIdGeneratesWarning() {
+    ScientificRegistryTestResult r;
+    r.testId = "DIAG-03";
+    r.testName = "Riferimento scientifico orfano genera diagnostica di WARNING non bloccante";
+    r.inputDesc = "Blocco associato a un ScientificMaterialID orfano (99999) non presente nel catalogo scientifico";
+    r.expectedDesc = "Rilevamento diagnostico di WARNING con blockId, stringId, displayName, unresolvedScientificId (99999) e contesto";
+
+    ScientificMaterialRegistry sciReg;
+    sciReg.Initialize();
+
+    BlockRegistry blockReg;
+    blockReg.Initialize();
+
+    auto createRes = blockReg.CreateBlock("fairworld:diag_test_orphan", "Orphan Asset");
+    if (!createRes.success) {
+        r.passed = false;
+        r.observedDesc = "Impossibile creare blocco nel BlockRegistry";
+        return r;
+    }
+
+    auto& blockDef = blockReg.GetBlockMutable(createRes.allocatedId);
+    blockDef.scientificMaterialId = 99999;
+
+    const std::string testContext = "TestContext_DIAG03";
+    auto report = blockReg.ValidateScientificReferences(sciReg, testContext);
+
+    if (report.warnings.size() != 1) {
+        r.passed = false;
+        r.observedDesc = "Atteso 1 warning diagnostico, osservati: " + std::to_string(report.warnings.size());
+        return r;
+    }
+
+    const auto& diag = report.warnings[0];
+    bool blockIdMatches = (diag.blockId == createRes.allocatedId);
+    bool stringIdMatches = (diag.stringId == "fairworld:diag_test_orphan");
+    bool displayNameMatches = (diag.displayName == "Orphan Asset");
+    bool unresIdMatches = (diag.unresolvedScientificId == 99999);
+    bool contextMatches = (diag.context == testContext);
+    bool messageNonEmpty = (!diag.message.empty() && diag.message.find("99999") != std::string::npos);
+
+    if (blockIdMatches && stringIdMatches && displayNameMatches && unresIdMatches && contextMatches && messageNonEmpty) {
+        r.passed = true;
+        r.observedDesc = "Diagnostica WARNING conforme al contratto: blocco " + std::to_string(diag.blockId) +
+                         " (" + diag.stringId + "), ID orfano 99999, contesto '" + diag.context + "'";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Campi del warning non conformi al contratto diagnostico";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// Test DIAG-04: Invarianza e assenza di mutazione degli asset dopo la diagnostica
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestDIAG04_NoAssetMutationOnValidation() {
+    ScientificRegistryTestResult r;
+    r.testId = "DIAG-04";
+    r.testName = "Invarianza e assenza di mutazione degli asset dopo la diagnostica";
+    r.inputDesc = "Asset con ID scientifico valido, orfano e override scientifici personalizzati sottoposti a validazione";
+    r.expectedDesc = "Tutte le definizioni, ID scientifici, override e proprieta' fisiche rimangono immutate dopo la diagnostica";
+
+    ScientificMaterialRegistry sciReg;
+    sciReg.Initialize();
+
+    ScientificMaterialDef matDef;
+    matDef.id = 50;
+    matDef.canonicalId = "fairworld:mat/diag_stable";
+    matDef.displayName = "Diag Stable";
+    if (!sciReg.RegisterMaterial(matDef)) {
+        r.passed = false;
+        r.observedDesc = "Fallimento setup: impossibile registrare materiale scientifico 50";
+        return r;
+    }
+
+    BlockRegistry blockReg;
+    blockReg.Initialize();
+
+    // 1. Blocco valido con ID scientifico 50
+    auto resValid = blockReg.CreateBlock("fairworld:diag_mut_valid", "Valid Asset");
+    if (!resValid.success) {
+        r.passed = false;
+        r.observedDesc = "Fallimento setup: impossibile creare blocco valido";
+        return r;
+    }
+    auto& bValid = blockReg.GetBlockMutable(resValid.allocatedId);
+    bValid.scientificMaterialId = 50;
+    bValid.physics.mass = 10.0f;
+    bValid.physics.density = 2000.0f;
+    bValid.physics.friction = 0.5f;
+    bValid.physics.restitution = 0.1f;
+    bValid.SyncLegacyPhysicsFields();
+
+    // 2. Blocco orfano con ID 88888, override scientifici e parametri fisici personalizzati
+    auto resOrphan = blockReg.CreateBlock("fairworld:diag_mut_orphan", "Orphan Asset");
+    if (!resOrphan.success) {
+        r.passed = false;
+        r.observedDesc = "Fallimento setup: impossibile creare blocco orfano";
+        return r;
+    }
+    auto& bOrphan = blockReg.GetBlockMutable(resOrphan.allocatedId);
+    bOrphan.scientificMaterialId = 88888;
+    bool setDensityOk = bOrphan.scientificOverrides.SetOverride(ScientificPropertyNames::Density, ScientificQuantity::Known(1234.5, "kg/m^3"));
+    bool setFrictionOk = bOrphan.scientificOverrides.SetOverride(ScientificPropertyNames::DynamicFriction, ScientificQuantity::Known(0.42, ""));
+    if (!setDensityOk || !setFrictionOk) {
+        r.passed = false;
+        r.observedDesc = "Fallimento setup: impossibile configurare gli override scientifici canonici";
+        return r;
+    }
+    bOrphan.physics.mass = 42.0f;
+    bOrphan.physics.density = 2500.0f;
+    bOrphan.physics.friction = 0.75f;
+    bOrphan.physics.restitution = 0.15f;
+    bOrphan.SyncLegacyPhysicsFields();
+
+    // 3. Blocco non associato (ID scientifico 0)
+    auto resUnassoc = blockReg.CreateBlock("fairworld:diag_mut_unassoc", "Unassociated Asset");
+    if (!resUnassoc.success) {
+        r.passed = false;
+        r.observedDesc = "Fallimento setup: impossibile creare blocco non associato";
+        return r;
+    }
+    auto& bUnassoc = blockReg.GetBlockMutable(resUnassoc.allocatedId);
+    bUnassoc.scientificMaterialId = 0;
+    bUnassoc.SyncLegacyPhysicsFields();
+
+    // Cattura snapshot profondo pre-validazione
+    SimBlockDef preValid = blockReg.GetBlock(resValid.allocatedId);
+    SimBlockDef preOrphan = blockReg.GetBlock(resOrphan.allocatedId);
+    SimBlockDef preUnassoc = blockReg.GetBlock(resUnassoc.allocatedId);
+
+    // Esecuzione validazione diagnostica read-only
+    auto report = blockReg.ValidateScientificReferences(sciReg, "TestDIAG04_MutationCheck");
+
+    // Acquisizione stato post-validazione
+    const SimBlockDef& postValid = blockReg.GetBlock(resValid.allocatedId);
+    const SimBlockDef& postOrphan = blockReg.GetBlock(resOrphan.allocatedId);
+    const SimBlockDef& postUnassoc = blockReg.GetBlock(resUnassoc.allocatedId);
+
+    // Funzione diagnostica di confronto semantico campo per campo
+    auto compareBlockSemantic = [](const SimBlockDef& pre, const SimBlockDef& post, std::string& outDiff) -> bool {
+        std::vector<std::string> diffs;
+
+        // Identità
+        if (pre.id != post.id) {
+            diffs.push_back("id divergente (prima: " + std::to_string(pre.id) + ", dopo: " + std::to_string(post.id) + ")");
+        }
+        if (pre.stringId != post.stringId) {
+            diffs.push_back("stringId divergente (prima: '" + pre.stringId + "', dopo: '" + post.stringId + "')");
+        }
+        if (pre.displayName != post.displayName) {
+            diffs.push_back("displayName divergente (prima: '" + pre.displayName + "', dopo: '" + post.displayName + "')");
+        }
+
+        // Riferimento scientifico
+        if (pre.scientificMaterialId != post.scientificMaterialId) {
+            diffs.push_back("scientificMaterialId divergente (prima: " + std::to_string(pre.scientificMaterialId) +
+                            ", dopo: " + std::to_string(post.scientificMaterialId) + ")");
+        }
+
+        // Override scientifici
+        if (pre.scientificOverrides.Size() != post.scientificOverrides.Size()) {
+            diffs.push_back("scientificOverrides count divergente (prima: " + std::to_string(pre.scientificOverrides.Size()) +
+                            ", dopo: " + std::to_string(post.scientificOverrides.Size()) + ")");
+        } else {
+            for (const auto& kv : pre.scientificOverrides.overrides) {
+                const auto* postQ = post.scientificOverrides.GetOverride(kv.first);
+                if (!postQ) {
+                    diffs.push_back("override '" + kv.first + "' mancante dopo validazione");
+                } else if (postQ->value != kv.second.value || postQ->unit != kv.second.unit ||
+                           postQ->state != kv.second.state || postQ->quality != kv.second.quality) {
+                    diffs.push_back("override '" + kv.first + "' modificato (prima val=" + std::to_string(kv.second.value) + " " + kv.second.unit +
+                                    ", dopo val=" + std::to_string(postQ->value) + " " + postQ->unit + ")");
+                }
+            }
+        }
+
+        // BlockPhysicsDef
+        if (pre.physics.mass != post.physics.mass) {
+            diffs.push_back("physics.mass divergente (prima: " + std::to_string(pre.physics.mass) +
+                            ", dopo: " + std::to_string(post.physics.mass) + ")");
+        }
+        if (pre.physics.density != post.physics.density) {
+            diffs.push_back("physics.density divergente (prima: " + std::to_string(pre.physics.density) +
+                            ", dopo: " + std::to_string(post.physics.density) + ")");
+        }
+        if (pre.physics.friction != post.physics.friction) {
+            diffs.push_back("physics.friction divergente (prima: " + std::to_string(pre.physics.friction) +
+                            ", dopo: " + std::to_string(post.physics.friction) + ")");
+        }
+        if (pre.physics.restitution != post.physics.restitution) {
+            diffs.push_back("physics.restitution divergente (prima: " + std::to_string(pre.physics.restitution) +
+                            ", dopo: " + std::to_string(post.physics.restitution) + ")");
+        }
+        if (pre.physics.collisionEnabled != post.physics.collisionEnabled) {
+            diffs.push_back("physics.collisionEnabled divergente (prima: " + std::to_string(pre.physics.collisionEnabled) +
+                            ", dopo: " + std::to_string(post.physics.collisionEnabled) + ")");
+        }
+        if (pre.physics.motionType != post.physics.motionType) {
+            diffs.push_back("physics.motionType divergente");
+        }
+        if (pre.physics.massMode != post.physics.massMode) {
+            diffs.push_back("physics.massMode divergente");
+        }
+
+        // Specchi legacy
+        if (pre.isSolid != post.isSolid) {
+            diffs.push_back("isSolid divergente (prima: " + std::to_string(pre.isSolid) +
+                            ", dopo: " + std::to_string(post.isSolid) + ")");
+        }
+        if (pre.isTransparent != post.isTransparent) {
+            diffs.push_back("isTransparent divergente (prima: " + std::to_string(pre.isTransparent) +
+                            ", dopo: " + std::to_string(post.isTransparent) + ")");
+        }
+        if (pre.mass != post.mass) {
+            diffs.push_back("legacy mass divergente (prima: " + std::to_string(pre.mass) +
+                            ", dopo: " + std::to_string(post.mass) + ")");
+        }
+        if (pre.friction != post.friction) {
+            diffs.push_back("legacy friction divergente (prima: " + std::to_string(pre.friction) +
+                            ", dopo: " + std::to_string(post.friction) + ")");
+        }
+        if (pre.bounciness != post.bounciness) {
+            diffs.push_back("legacy bounciness divergente (prima: " + std::to_string(pre.bounciness) +
+                            ", dopo: " + std::to_string(post.bounciness) + ")");
+        }
+
+        if (!diffs.empty()) {
+            std::ostringstream oss;
+            oss << "Blocco ID " << std::to_string(pre.id) << " (" << pre.stringId << "): [";
+            for (size_t i = 0; i < diffs.size(); ++i) {
+                if (i > 0) oss << "; ";
+                oss << diffs[i];
+            }
+            oss << "]";
+            outDiff = oss.str();
+            return false;
+        }
+        return true;
+    };
+
+    std::string diffValid, diffOrphan, diffUnassoc;
+    bool validMatches = compareBlockSemantic(preValid, postValid, diffValid);
+    bool orphanMatches = compareBlockSemantic(preOrphan, postOrphan, diffOrphan);
+    bool unassocMatches = compareBlockSemantic(preUnassoc, postUnassoc, diffUnassoc);
+
+    // Verifiche specifiche di invarianza contrattuale
+    bool orphanIdPreserved = (postOrphan.scientificMaterialId == 88888);
+    bool orphanOverridesPreserved = (postOrphan.scientificOverrides.Size() == 2) &&
+                                    postOrphan.scientificOverrides.HasOverride(ScientificPropertyNames::Density) &&
+                                    (postOrphan.scientificOverrides.GetOverride(ScientificPropertyNames::Density)->value == 1234.5) &&
+                                    postOrphan.scientificOverrides.HasOverride(ScientificPropertyNames::DynamicFriction) &&
+                                    (postOrphan.scientificOverrides.GetOverride(ScientificPropertyNames::DynamicFriction)->value == 0.42);
+    bool validIdPreserved = (postValid.scientificMaterialId == 50);
+    bool unassocIdPreserved = (postUnassoc.scientificMaterialId == 0);
+    bool reportWarningsOk = (report.warnings.size() == 1) && (report.warnings[0].unresolvedScientificId == 88888);
+
+    if (validMatches && orphanMatches && unassocMatches &&
+        orphanIdPreserved && orphanOverridesPreserved &&
+        validIdPreserved && unassocIdPreserved && reportWarningsOk) {
+        r.passed = true;
+        r.observedDesc = "Invarianza confermata al 100%: nessuna mutazione di ID, override e BlockPhysicsDef (confronto semantico campo per campo PASS)";
+    } else {
+        r.passed = false;
+        std::string errDetails;
+        if (!validMatches) errDetails += diffValid + " ";
+        if (!orphanMatches) errDetails += diffOrphan + " ";
+        if (!unassocMatches) errDetails += diffUnassoc + " ";
+        if (!orphanIdPreserved) errDetails += "orphanId non preservato (trovato " + std::to_string(postOrphan.scientificMaterialId) + "); ";
+        if (!orphanOverridesPreserved) errDetails += "override orfani non preservati o modificati; ";
+        if (!reportWarningsOk) errDetails += "warnings report non conformi (atteso 1 su ID 88888, trovati " + std::to_string(report.warnings.size()) + "); ";
+        r.observedDesc = "Rilevata violazione di invarianza durante la validazione";
+        r.details = errDetails;
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// Test DIAG-05: Comportamento di caricamento e integrita' registry invariati con asset orfani
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestDIAG05_LoadingBehaviorUnchangedWithOrphans() {
+    ScientificRegistryTestResult r;
+    r.testId = "DIAG-05";
+    r.testName = "Comportamento di caricamento e integrita' registry invariati con asset orfani";
+    r.inputDesc = "File JSON con blocchi legacy contenenti scientificMaterialId orfani caricati tramite BlockRegistry::LoadFromJson";
+    r.expectedDesc = "LoadFromJson restituisce true; blocchi orfani validi e accessibili; validazione produce warning senza alterare il funzionamento";
+
+    // Prepariamo un JSON sintetico con blocchi legacy, di cui uno orfano
+    json jRoot;
+    json jBlocks = json::array();
+
+    json b0;
+    b0["id"] = 0;
+    b0["stringId"] = "fairworld:air";
+    b0["displayName"] = "Air";
+    b0["isSolid"] = false;
+    b0["isTransparent"] = true;
+    b0["scientificMaterialId"] = 0;
+    jBlocks.push_back(b0);
+
+    json b1;
+    b1["id"] = 1;
+    b1["stringId"] = "fairworld:legacy_stone";
+    b1["displayName"] = "Legacy Stone";
+    b1["isSolid"] = true;
+    b1["isTransparent"] = false;
+    b1["scientificMaterialId"] = 200; // Valido
+    jBlocks.push_back(b1);
+
+    json b2;
+    b2["id"] = 2;
+    b2["stringId"] = "fairworld:legacy_orphan";
+    b2["displayName"] = "Legacy Orphan";
+    b2["isSolid"] = true;
+    b2["isTransparent"] = false;
+    b2["scientificMaterialId"] = 77777; // Orfano
+    jBlocks.push_back(b2);
+
+    jRoot["blocks"] = jBlocks;
+
+    std::string tempFile = CreateTempJsonFile("diag_test_orphans.json", jRoot);
+
+    ScientificMaterialRegistry sciReg;
+    sciReg.Initialize();
+    ScientificMaterialDef matDef;
+    matDef.id = 200;
+    matDef.canonicalId = "fairworld:mat/stone";
+    matDef.displayName = "Stone Material";
+    sciReg.RegisterMaterial(matDef);
+
+    BlockRegistry blockReg;
+    blockReg.Initialize();
+    bool loadSuccess = blockReg.LoadFromJson(tempFile);
+    RemoveTempFile(tempFile);
+
+    if (!loadSuccess) {
+        r.passed = false;
+        r.observedDesc = "LoadFromJson ha fallito su JSON con riferimenti orfani";
+        return r;
+    }
+
+    bool b0Valid = blockReg.IsBlockValid(0);
+    bool b1Valid = blockReg.IsBlockValid(1);
+    bool b2Valid = blockReg.IsBlockValid(2);
+
+    const auto& b2Def = blockReg.GetBlock(2);
+    bool b2LoadedCorrectly = (b2Def.stringId == "fairworld:legacy_orphan" && b2Def.scientificMaterialId == 77777);
+
+    uint8_t queryId = blockReg.GetBlockIdByString("fairworld:legacy_orphan");
+    bool queryMatches = (queryId == 2);
+
+    auto report = blockReg.ValidateScientificReferences(sciReg, "TestDIAG05_Bootstrap");
+
+    bool warningCorrect = (report.warnings.size() == 1 &&
+                           report.warnings[0].blockId == 2 &&
+                           report.warnings[0].unresolvedScientificId == 77777);
+
+    if (b0Valid && b1Valid && b2Valid && b2LoadedCorrectly && queryMatches && warningCorrect) {
+        r.passed = true;
+        r.observedDesc = "Caricamento e integrita' registry preservati: LoadFromJson true, blocco 2 accessibile e valido, warning non bloccante emesso";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Fallimento: asset legacy orfano non caricato o stato registry compromesso";
     }
     return r;
 }

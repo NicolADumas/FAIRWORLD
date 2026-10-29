@@ -607,4 +607,45 @@ SimBlockDef& BlockRegistry::GetBlockMutable(uint8_t id) {
     return m_fallbackBlock;
 }
 
+BlockRegistryValidationReport BlockRegistry::ValidateScientificReferences(
+    const ScientificMaterialRegistry& sciRegistry,
+    const std::string& context
+) const {
+    BlockRegistryValidationReport report;
+
+    for (size_t i = 0; i < m_blocks.size(); ++i) {
+        uint8_t id = static_cast<uint8_t>(i);
+        if (!IsBlockValid(id)) {
+            continue;
+        }
+
+        const auto& def = m_blocks[id];
+        report.totalBlocksChecked++;
+
+        if (def.scientificMaterialId == 0) {
+            // ID 0: nessuna associazione, valido.
+            report.unassociatedBlocks++;
+        } else if (sciRegistry.HasMaterial(def.scientificMaterialId)) {
+            // ID esistente: valido.
+            report.validAssociations++;
+        } else {
+            // ID non nullo e inesistente: diagnostica WARNING.
+            BlockScientificReferenceDiagnostic diag;
+            diag.blockId = def.id;
+            diag.stringId = def.stringId;
+            diag.displayName = def.displayName;
+            diag.unresolvedScientificId = def.scientificMaterialId;
+            diag.context = context;
+            diag.message = "[WARNING][" + context + "] Block ID " + std::to_string(def.id) +
+                           " (" + def.stringId + " - \"" + def.displayName + "\") references unresolved ScientificMaterialID " +
+                           std::to_string(def.scientificMaterialId) + ". Legacy asset preserved unmutated.";
+
+            std::cerr << diag.message << std::endl;
+            report.warnings.push_back(std::move(diag));
+        }
+    }
+
+    return report;
+}
+
 } // namespace fw

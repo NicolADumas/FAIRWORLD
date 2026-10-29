@@ -134,6 +134,25 @@ public:
 
     // EXT-19: Rollback atomico completo su fallimento di validazione in RegisterMaterial
     static ScientificRegistryTestResult TestEXT19_RegisterMaterialAtomicRollbackOnValidationError();
+
+    // =========================================================================
+    // MA-03.2E.2A: TEST DIAGNOSTICA RIFERIMENTI INCROCIATI (DIAG-01 .. DIAG-05)
+    // =========================================================================
+
+    // DIAG-01: Riferimento scientifico ID 0 valido (nessuna associazione)
+    static ScientificRegistryTestResult TestDIAG01_UnassociatedBlockIdZeroIsValid();
+
+    // DIAG-02: Riferimento scientifico a materiale esistente valido
+    static ScientificRegistryTestResult TestDIAG02_ExistingScientificMaterialIdIsValid();
+
+    // DIAG-03: Riferimento scientifico orfano genera diagnostica di WARNING non bloccante
+    static ScientificRegistryTestResult TestDIAG03_OrphanScientificMaterialIdGeneratesWarning();
+
+    // DIAG-04: Invarianza e assenza di mutazione degli asset dopo la diagnostica
+    static ScientificRegistryTestResult TestDIAG04_NoAssetMutationOnValidation();
+
+    // DIAG-05: Comportamento di caricamento e integrita' registry invariati con asset orfani
+    static ScientificRegistryTestResult TestDIAG05_LoadingBehaviorUnchangedWithOrphans();
 };
 
 } // namespace fw

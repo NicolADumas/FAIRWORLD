@@ -237,6 +237,9 @@ int main(int argc, char* argv[]) {
 
     scientificMaterialRegistry.Initialize();
     scientificMaterialRegistry.LoadFromJson("assets/definitions/scientific_materials.json");
+
+    // MA-03.2E.2A: Cross-Registry Scientific Reference Diagnostics (Read-Only)
+    blockRegistry.ValidateScientificReferences(scientificMaterialRegistry, "Bootstrap");
     
     fw::CacheManager cacheManager;
     cacheManager.Initialize(&context);
