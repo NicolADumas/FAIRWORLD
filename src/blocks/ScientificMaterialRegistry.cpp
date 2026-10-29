@@ -970,8 +970,6 @@ void ScientificMaterialRegistry::Initialize() {
     }
     m_activeSnapshot = snapshot;
     RegisterStandardMaterials();
-    m_activeSnapshot->materials = m_materials;
-    m_activeSnapshot->canonicalToIdMap = m_canonicalToIdMap;
 }
 
 void ScientificMaterialRegistry::Clear() {
@@ -996,74 +994,111 @@ bool ScientificMaterialRegistry::RegisterMaterial(const ScientificMaterialDef& d
         return false;
     }
 
-    ScientificMaterialDef materialToRegister = def;
-    if (m_activeSnapshot && !materialToRegister.extendedProperties.Empty()) {
-        std::vector<ExtendedPropertyEntry> rebuilt;
-        bool modified = false;
-        for (auto entry : materialToRegister.extendedProperties.GetEntries()) {
-            if (entry.propertyIndex == INVALID_PROPERTY_KEY_INDEX && !entry.propertyUri.empty()) {
-                auto it = m_activeSnapshot->propertyUriToIndex.find(entry.propertyUri);
-                if (it != m_activeSnapshot->propertyUriToIndex.end()) {
-                    entry.propertyIndex = it->second;
-                    modified = true;
-                }
-            }
-            rebuilt.push_back(entry);
-        }
-        if (modified) {
-            materialToRegister.extendedProperties.SetEntries(std::move(rebuilt));
+    // 1. Predisposizione stato candidato isolato (Copy-On-Write)
+    auto candidateMaterials = m_materials;
+    auto candidateCanonicalMap = m_canonicalToIdMap;
+
+    auto candidateSnapshot = std::make_shared<RegistrySnapshot>();
+    candidateSnapshot->snapshotId = m_activeSnapshot ? (m_activeSnapshot->snapshotId + 1) : 1;
+    if (m_activeSnapshot) {
+        candidateSnapshot->propertyDefinitions = m_activeSnapshot->propertyDefinitions;
+        candidateSnapshot->propertyUriToIndex = m_activeSnapshot->propertyUriToIndex;
+    } else {
+        candidateSnapshot->propertyDefinitions = CreateCanonicalPropertyDefinitions();
+        for (size_t i = 0; i < candidateSnapshot->propertyDefinitions.size(); ++i) {
+            candidateSnapshot->propertyUriToIndex[candidateSnapshot->propertyDefinitions[i].uri] = static_cast<PropertyKeyIndex>(i);
         }
     }
 
-    auto itId = m_materials.find(materialToRegister.id);
-    auto itCanon = m_canonicalToIdMap.find(materialToRegister.canonicalId);
+    ScientificMaterialDef materialToRegister = def;
 
-    // Se l'ID o il canonicalId sono gia' presenti nel registry
-    if (itId != m_materials.end() || itCanon != m_canonicalToIdMap.end()) {
-        // Verifica se si tratta dello stesso identico materiale (stesso ID e stesso canonicalId)
-        bool isSameMaterial = (itId != m_materials.end() && itId->second.canonicalId == materialToRegister.canonicalId) &&
-                              (itCanon != m_canonicalToIdMap.end() && itCanon->second == materialToRegister.id);
+    // 2. Risoluzione incondizionata degli indici da dizionario dello snapshot e validazione
+    if (!materialToRegister.extendedProperties.Empty()) {
+        std::unordered_set<ScientificPropertyID> seenUris;
+        std::vector<ExtendedPropertyEntry> rebuilt;
+        rebuilt.reserve(materialToRegister.extendedProperties.Size());
+
+        for (auto entry : materialToRegister.extendedProperties.GetEntries()) {
+            if (entry.propertyUri.empty()) {
+                std::cerr << "[ScientificMaterialRegistry] Entry proprieta' estesa con URI vuoto per '" 
+                          << materialToRegister.canonicalId << "'. Registrazione rifiutata.\n";
+                return false;
+            }
+            if (!seenUris.insert(entry.propertyUri).second) {
+                std::cerr << "[ScientificMaterialRegistry] Proprieta' estesa duplicata '" << entry.propertyUri 
+                          << "' in '" << materialToRegister.canonicalId << "'. Registrazione rifiutata.\n";
+                return false;
+            }
+            auto it = candidateSnapshot->propertyUriToIndex.find(entry.propertyUri);
+            if (it == candidateSnapshot->propertyUriToIndex.end()) {
+                std::cerr << "[ScientificMaterialRegistry] Proprieta' estesa sconosciuta '" << entry.propertyUri 
+                          << "' in '" << materialToRegister.canonicalId << "'. Registrazione rifiutata.\n";
+                return false;
+            }
+            // Non fidarsi di indici gia' valorizzati dal chiamante o da altri snapshot
+            entry.propertyIndex = it->second;
+            rebuilt.push_back(entry);
+        }
+
+        materialToRegister.extendedProperties.SetEntries(std::move(rebuilt));
+
+        // 3. Validazione completa delle proprietà estese prima del commit
+        std::string extErr;
+        if (!ValidateExtendedPropertyStorageInternal(materialToRegister.extendedProperties, 
+                                                     candidateSnapshot->propertyDefinitions, 
+                                                     candidateSnapshot->propertyUriToIndex, 
+                                                     &extErr)) {
+            std::cerr << "[ScientificMaterialRegistry] Validazione proprieta' estese fallita per '" 
+                      << materialToRegister.canonicalId << "': " << extErr << ". Registrazione rifiutata.\n";
+            return false;
+        }
+    }
+
+    // 4. Controllo conflitti di registrazione nello stato candidato
+    auto itId = candidateMaterials.find(materialToRegister.id);
+    auto itCanon = candidateCanonicalMap.find(materialToRegister.canonicalId);
+
+    if (itId != candidateMaterials.end() || itCanon != candidateCanonicalMap.end()) {
+        bool isSameMaterial = (itId != candidateMaterials.end() && itId->second.canonicalId == materialToRegister.canonicalId) &&
+                              (itCanon != candidateCanonicalMap.end() && itCanon->second == materialToRegister.id);
 
         if (isSameMaterial) {
             if (allowUpdate) {
-                // Aggiornamento autoritativo consentito (es. da JSON rispetto a default in-memory)
-                m_materials[materialToRegister.id] = materialToRegister;
-                m_canonicalToIdMap[materialToRegister.canonicalId] = materialToRegister.id;
-                if (m_activeSnapshot) {
-                    m_activeSnapshot->materials[materialToRegister.id] = materialToRegister;
-                    m_activeSnapshot->canonicalToIdMap[materialToRegister.canonicalId] = materialToRegister.id;
-                }
-                return true;
+                candidateMaterials[materialToRegister.id] = materialToRegister;
+                candidateCanonicalMap[materialToRegister.canonicalId] = materialToRegister.id;
             } else {
-                std::cerr << "[ScientificMaterialRegistry] Registrazione duplicata rifiutata: ScientificMaterialID " << materialToRegister.id 
-                          << " ('" << materialToRegister.canonicalId << "') gia' registrato.\n";
+                std::cerr << "[ScientificMaterialRegistry] Registrazione duplicata rifiutata: ScientificMaterialID " 
+                          << materialToRegister.id << " ('" << materialToRegister.canonicalId << "') gia' registrato.\n";
+                return false;
+            }
+        } else {
+            if (itId != candidateMaterials.end() && itId->second.canonicalId != materialToRegister.canonicalId) {
+                std::cerr << "[ScientificMaterialRegistry] Conflitto ID: ScientificMaterialID " << materialToRegister.id 
+                          << " gia' assegnato a '" << itId->second.canonicalId 
+                          << "'. Rifiutata registrazione per '" << materialToRegister.canonicalId << "'.\n";
+                return false;
+            }
+            if (itCanon != candidateCanonicalMap.end() && itCanon->second != materialToRegister.id) {
+                std::cerr << "[ScientificMaterialRegistry] Conflitto canonicalId: '" << materialToRegister.canonicalId 
+                          << "' gia' mappato all'ID " << itCanon->second 
+                          << ". Rifiutata registrazione con ID " << materialToRegister.id << ".\n";
                 return false;
             }
         }
-
-        // Conflitto reale: ID numerico gia' assegnato a un altro canonicalId
-        if (itId != m_materials.end() && itId->second.canonicalId != materialToRegister.canonicalId) {
-            std::cerr << "[ScientificMaterialRegistry] Conflitto ID: ScientificMaterialID " << materialToRegister.id 
-                      << " gia' assegnato a '" << itId->second.canonicalId 
-                      << "'. Rifiutata registrazione per '" << materialToRegister.canonicalId << "'.\n";
-            return false;
-        }
-
-        // Conflitto reale: canonicalId gia' mappato a un altro ID numerico
-        if (itCanon != m_canonicalToIdMap.end() && itCanon->second != materialToRegister.id) {
-            std::cerr << "[ScientificMaterialRegistry] Conflitto canonicalId: '" << materialToRegister.canonicalId 
-                      << "' gia' mappato all'ID " << itCanon->second 
-                      << ". Rifiutata registrazione con ID " << materialToRegister.id << ".\n";
-            return false;
-        }
+    } else {
+        candidateMaterials[materialToRegister.id] = materialToRegister;
+        candidateCanonicalMap[materialToRegister.canonicalId] = materialToRegister.id;
     }
 
-    m_materials[materialToRegister.id] = materialToRegister;
-    m_canonicalToIdMap[materialToRegister.canonicalId] = materialToRegister.id;
-    if (m_activeSnapshot) {
-        m_activeSnapshot->materials[materialToRegister.id] = materialToRegister;
-        m_activeSnapshot->canonicalToIdMap[materialToRegister.canonicalId] = materialToRegister.id;
-    }
+    // 5. COMMIT TRANSAZIONALE ATOMICO (Copy-on-Write)
+    // m_activeSnapshot non viene mutato in-place; gli handle preesistenti restano inalterati
+    candidateSnapshot->materials = candidateMaterials;
+    candidateSnapshot->canonicalToIdMap = candidateCanonicalMap;
+
+    m_materials = std::move(candidateMaterials);
+    m_canonicalToIdMap = std::move(candidateCanonicalMap);
+    m_activeSnapshot = std::move(candidateSnapshot);
+
     return true;
 }
 
@@ -1752,9 +1787,42 @@ QueryResult ScientificMaterialRegistry::QueryExtendedProperty(
         return result;
     }
 
-    const auto* entry = mat->extendedProperties.FindEntryByIndex(propDef->internalIndex);
-    if (!entry) {
-        entry = mat->extendedProperties.FindEntryByUri(propUri);
+    const ExtendedPropertyEntry* entry = nullptr;
+    bool storageIncoherent = false;
+    std::string incoherenceDetail;
+
+    // 1. Ricerca primaria binaria per indice di snapshot
+    const auto* entryByIndex = mat->extendedProperties.FindEntryByIndex(propDef->internalIndex);
+    if (entryByIndex) {
+        if (entryByIndex->propertyUri == propUri) {
+            entry = entryByIndex;
+        } else {
+            // Discrepanza critica: l'entry trovata per indice possiede un URI differente!
+            // Non restituire MAI osservazioni appartenenti a un'altra proprieta'.
+            storageIncoherent = true;
+            incoherenceDetail = "Indice " + std::to_string(propDef->internalIndex) + 
+                                " associato a '" + entryByIndex->propertyUri + "' anziche' a '" + propUri + "'";
+        }
+    }
+
+    // 2. Fallback per URI canonica (solo se non trovato per indice e non in stato incoerente)
+    if (!entry && !storageIncoherent) {
+        const auto* entryByUri = mat->extendedProperties.FindEntryByUri(propUri);
+        if (entryByUri) {
+            if (entryByUri->propertyIndex != INVALID_PROPERTY_KEY_INDEX && entryByUri->propertyIndex != propDef->internalIndex) {
+                storageIncoherent = true;
+                incoherenceDetail = "Proprieta' '" + propUri + "' possiede indice incoerente " + 
+                                    std::to_string(entryByUri->propertyIndex) + " (atteso " + std::to_string(propDef->internalIndex) + ")";
+            } else {
+                entry = entryByUri;
+            }
+        }
+    }
+
+    if (storageIncoherent) {
+        result.outcome = QueryOutcome::PropertyAbsent;
+        result.diagnosticMessage = "Incoerenza interna storage per '" + propUri + "': " + incoherenceDetail + ".";
+        return result;
     }
 
     if (!entry) {

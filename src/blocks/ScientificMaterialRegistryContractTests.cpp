@@ -50,7 +50,7 @@ void RemoveTempFile(const std::string& path) {
 
 std::vector<ScientificRegistryTestResult> ScientificMaterialRegistryContractTests::RunAllTests() {
     std::vector<ScientificRegistryTestResult> results;
-    results.reserve(25);
+    results.reserve(33);
 
     // MA-03.1D: Test isolati di regressione contrattuale (SCI-01 .. SCI-10)
     results.push_back(Test01_LoadV1WithoutTaxonomy());
@@ -82,6 +82,16 @@ std::vector<ScientificRegistryTestResult> ScientificMaterialRegistryContractTest
     results.push_back(TestEXT09_SnapshotAndObservationLifetime());
     results.push_back(TestEXT10_DeterministicSerialization());
     results.push_back(TestEXT11_ProductionCatalogHasNoExtendedProperties());
+
+    // MA-03.2D.3B-FIX04: Test immutabilità snapshot e identità canonica (EXT-12 .. EXT-19)
+    results.push_back(TestEXT12_RejectDifferentUrisSameValidIndex());
+    results.push_back(TestEXT13_RejectUpdateCorrectUriErroneousIndex());
+    results.push_back(TestEXT14_LogicalDuplicatesPrevention());
+    results.push_back(TestEXT15_RegisterMaterialResolvesForeignSnapshotIndices());
+    results.push_back(TestEXT16_QueryRejectsMismatchedUriIndexEntry());
+    results.push_back(TestEXT17_OldSnapshotHandleImmutabilityPostRegister());
+    results.push_back(TestEXT18_ObservationLifetimePreservedInOldSnapshot());
+    results.push_back(TestEXT19_RegisterMaterialAtomicRollbackOnValidationError());
 
     return results;
 }
@@ -2007,6 +2017,379 @@ ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT11_
     } else {
         r.passed = false;
         r.observedDesc = "Trovate osservazioni estese nel catalogo produttivo o conteggio materiali alterato";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-12: Rifiuto di due URI diverse con lo stesso indice valido
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT12_RejectDifferentUrisSameValidIndex() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-12";
+    r.testName = "Rifiuto due URI diverse con stesso indice valido";
+    r.inputDesc = "Tentativo di inserire in ExtendedPropertyStorage due entry con URI distinte ma identico propertyIndex valido";
+    r.expectedDesc = "La seconda operazione viene respinta (return false); lo storage preserva la prima entry senza alterazioni";
+
+    ExtendedPropertyStorage storage;
+    ExtendedPropertyEntry e1;
+    e1.propertyUri = "scientific:prop/isothermal_bulk_modulus";
+    e1.propertyIndex = 0;
+    bool ok1 = storage.AddOrUpdateEntry(e1);
+
+    ExtendedPropertyEntry e2;
+    e2.propertyUri = "scientific:prop/shear_modulus";
+    e2.propertyIndex = 0; // Stesso indice valido di e1!
+    bool ok2 = storage.AddOrUpdateEntry(e2);
+
+    bool sizeOk = (storage.Size() == 1);
+    const auto* found = storage.FindEntryByUri("scientific:prop/isothermal_bulk_modulus");
+    bool firstPreserved = (found != nullptr && found->propertyIndex == 0);
+    bool secondNotFound = (storage.FindEntryByUri("scientific:prop/shear_modulus") == nullptr);
+
+    if (ok1 && !ok2 && sizeOk && firstPreserved && secondNotFound) {
+        r.passed = true;
+        r.observedDesc = "Collisione di indice respinta con successo: URI canonico protetto da hijacking d'indice";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Fallimento nel rifiutare la collisione di indici su URI differenti";
+        r.details = "ok1=" + std::to_string(ok1) + ", ok2=" + std::to_string(ok2) + ", size=" + std::to_string(storage.Size());
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-13: Rifiuto di aggiornamento con URI corretta e indice errato
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT13_RejectUpdateCorrectUriErroneousIndex() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-13";
+    r.testName = "Rifiuto aggiornamento con URI corretta e indice errato";
+    r.inputDesc = "Entry registrata con indice valido 2; tentativo di aggiornamento passando la stessa URI ma indice confliggente 5";
+    r.expectedDesc = "Operazione respinta; l'indice 2 e i dati originali rimangono invariati";
+
+    ExtendedPropertyStorage storage;
+    ExtendedPropertyEntry e1;
+    e1.propertyUri = "scientific:prop/shear_modulus";
+    e1.propertyIndex = 2;
+    storage.AddOrUpdateEntry(e1);
+
+    ExtendedPropertyEntry eUpdate;
+    eUpdate.propertyUri = "scientific:prop/shear_modulus";
+    eUpdate.propertyIndex = 5; // Indice discordante dall'indice originale 2
+    bool okUpdate = storage.AddOrUpdateEntry(eUpdate);
+
+    const auto* current = storage.FindEntryByUri("scientific:prop/shear_modulus");
+    bool indexPreserved = (current != nullptr && current->propertyIndex == 2);
+
+    if (!okUpdate && indexPreserved && storage.Size() == 1) {
+        r.passed = true;
+        r.observedDesc = "Incoerenza indice-URI respinta: entry originale preservata con indice 2";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Aggiornamento incoerente accettato o storage corrotto";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-14: Prevenzione duplicati logici nello storage esteso
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT14_LogicalDuplicatesPrevention() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-14";
+    r.testName = "Prevenzione duplicati logici nello storage esteso";
+    r.inputDesc = "Storage con propA (idx 1) e propB (idx 2); tentativo di AddOrUpdateEntry per propB con indice errato 1";
+    r.expectedDesc = "Operazione respinta; nessuna duplicazione logica di propB; propA intatta";
+
+    ExtendedPropertyStorage storage;
+    ExtendedPropertyEntry eA;
+    eA.propertyUri = "scientific:prop/isothermal_bulk_modulus";
+    eA.propertyIndex = 1;
+    storage.AddOrUpdateEntry(eA);
+
+    ExtendedPropertyEntry eB;
+    eB.propertyUri = "scientific:prop/shear_modulus";
+    eB.propertyIndex = 2;
+    storage.AddOrUpdateEntry(eB);
+
+    // Tentativo di aggiornare shear_modulus con indice 1 (appartenente a bulk modulus)
+    ExtendedPropertyEntry eDup;
+    eDup.propertyUri = "scientific:prop/shear_modulus";
+    eDup.propertyIndex = 1;
+    bool okDup = storage.AddOrUpdateEntry(eDup);
+
+    size_t countA = 0, countB = 0;
+    for (const auto& entry : storage.GetEntries()) {
+        if (entry.propertyUri == "scientific:prop/isothermal_bulk_modulus") countA++;
+        if (entry.propertyUri == "scientific:prop/shear_modulus") countB++;
+    }
+
+    if (!okDup && countA == 1 && countB == 1 && storage.Size() == 2) {
+        r.passed = true;
+        r.observedDesc = "Duplicato logico prevenuto: lo storage mantiene esattamente una voce per URI";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Generato duplicato logico o cancellata voce preesistente";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-15: Normalizzazione indici precompilati in RegisterMaterial
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT15_RegisterMaterialResolvesForeignSnapshotIndices() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-15";
+    r.testName = "Normalizzazione indici precompilati in RegisterMaterial";
+    r.inputDesc = "Registrazione di materiale con entry avente indice arbitrario (999) proveniente da altro snapshot";
+    r.expectedDesc = "RegisterMaterial normalizza incondizionatamente l'indice al valore canonico del dizionario attivo";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    const auto* propDef = reg.GetPropertyDefinition("scientific:prop/shear_modulus");
+    if (!propDef) {
+        r.passed = false;
+        r.observedDesc = "Definizione per shear_modulus non trovata";
+        return r;
+    }
+    PropertyKeyIndex canonicalIdx = propDef->internalIndex; // Deve essere 2
+
+    ScientificMaterialDef def;
+    def.id = 815;
+    def.canonicalId = "fairworld:mat/foreign_index_test";
+    def.displayName = "Foreign Index Material";
+
+    ExtendedPropertyEntry entry;
+    entry.propertyUri = "scientific:prop/shear_modulus";
+    entry.propertyIndex = 999; // Indice estraneo/incoerente!
+    entry.observationCollection.applicability = ApplicabilityState::Applicable;
+    entry.observationCollection.epistemicState = EpistemicState::Known;
+
+    ExtendedMeasurement m;
+    m.valueNature = ValueNature::ExactScalar;
+    m.scalarValue = 3.5e10;
+    m.unit = "Pa";
+    entry.observationCollection.measurements.push_back(m);
+
+    def.extendedProperties.AddOrUpdateEntry(entry);
+
+    bool regOk = reg.RegisterMaterial(def);
+    const auto& registeredMat = reg.GetMaterial(815);
+    const auto* regEntry = registeredMat.extendedProperties.FindEntryByUri("scientific:prop/shear_modulus");
+
+    bool idxNormalized = (regEntry != nullptr && regEntry->propertyIndex == canonicalIdx);
+
+    if (regOk && idxNormalized) {
+        r.passed = true;
+        r.observedDesc = "Indice estraneo 999 normalizzato con successo all'indice canonico " + std::to_string(canonicalIdx);
+    } else {
+        r.passed = false;
+        r.observedDesc = "Mancata normalizzazione dell'indice o fallimento della registrazione";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-16: Sicurezza del resolver contro entry con indice coincidente ma URI discordante
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT16_QueryRejectsMismatchedUriIndexEntry() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-16";
+    r.testName = "Sicurezza resolver su entry con URI discordante da indice";
+    r.inputDesc = "Materiale contenente entry con indice 0 ma URI 'shear_modulus'; query per 'isothermal_bulk_modulus' (che ha indice 0)";
+    r.expectedDesc = "Resolver rifiuta di restituire misure di shear modulus; outcome PropertyAbsent e diagnosi di incoerenza";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    ScientificMaterialDef def;
+    def.id = 816;
+    def.canonicalId = "fairworld:mat/corrupt_storage";
+    def.displayName = "Corrupt Storage Material";
+
+    ExtendedPropertyEntry corruptEntry;
+    corruptEntry.propertyUri = "scientific:prop/shear_modulus";
+    corruptEntry.propertyIndex = 0; // 0 e' isothermal_bulk_modulus nel dizionario canonico!
+    corruptEntry.observationCollection.applicability = ApplicabilityState::Applicable;
+    corruptEntry.observationCollection.epistemicState = EpistemicState::Known;
+
+    ExtendedMeasurement m;
+    m.valueNature = ValueNature::ExactScalar;
+    m.scalarValue = 4.0e10;
+    m.unit = "Pa";
+    corruptEntry.observationCollection.measurements.push_back(m);
+
+    std::vector<ExtendedPropertyEntry> entries = { corruptEntry };
+    def.extendedProperties.SetEntries(std::move(entries));
+
+    // Per testare il resolver isolatamente contro storage corrotto, inseriamo direttamente nello snapshot
+    auto snap = std::const_pointer_cast<RegistrySnapshot>(reg.GetSnapshot());
+    snap->materials[816] = def;
+    snap->canonicalToIdMap[def.canonicalId] = 816;
+
+    QueryResult res = reg.QueryExtendedProperty(816, "scientific:prop/isothermal_bulk_modulus");
+
+    bool noMeasurements = res.matchingMeasurements.empty();
+    bool outcomeAbsent = (res.outcome == QueryOutcome::PropertyAbsent);
+    bool diagHasIncoherence = (res.diagnosticMessage.find("Incoerenza") != std::string::npos ||
+                               res.diagnosticMessage.find("incoerente") != std::string::npos);
+
+    if (outcomeAbsent && noMeasurements && diagHasIncoherence) {
+        r.passed = true;
+        r.observedDesc = "Protezione attiva: misure di shear_modulus non restituite per bulk_modulus; segnalata incoerenza";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Resolver ha restituito misure errate o non ha segnalato incoerenza";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-17: Immutabilità di un vecchio RegistrySnapshotHandle dopo RegisterMaterial
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT17_OldSnapshotHandleImmutabilityPostRegister() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-17";
+    r.testName = "Immutabilità vecchio snapshot dopo RegisterMaterial";
+    r.inputDesc = "Acquisizione RegistrySnapshotHandle con 4 materiali; successiva RegisterMaterial di un 5° materiale";
+    r.expectedDesc = "Il vecchio handle continua ad avere esattamente 4 materiali e GetMaterial(5) ritorna nullptr";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    RegistrySnapshotHandle oldHandle = reg.GetSnapshotHandle();
+    size_t countBefore = oldHandle->materials.size(); // 4
+
+    ScientificMaterialDef newMat;
+    newMat.id = 817;
+    newMat.canonicalId = "fairworld:mat/cow_test";
+    newMat.displayName = "COW Test Material";
+    reg.RegisterMaterial(newMat);
+
+    size_t regCount = reg.GetMaterialCount(); // 5
+    size_t oldHandleCount = oldHandle->materials.size(); // DEVE ESSERE ANCORA 4!
+    const auto* oldLook = oldHandle->GetMaterial(817); // DEVE ESSERE nullptr!
+
+    RegistrySnapshotHandle newHandle = reg.GetSnapshotHandle();
+    size_t newHandleCount = newHandle->materials.size(); // 5
+    const auto* newLook = newHandle->GetMaterial(817); // DEVE ESSERE non-null!
+
+    if (countBefore == 4 && regCount == 5 && oldHandleCount == 4 && oldLook == nullptr &&
+        newHandleCount == 5 && newLook != nullptr) {
+        r.passed = true;
+        r.observedDesc = "Immutabilita' Copy-On-Write garantita: vecchio handle congelato a 4 materiali, nuovo snapshot a 5";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Violazione di immutabilita': vecchio handle mutato in-place dopo registrazione";
+        r.details = "oldHandleCount=" + std::to_string(oldHandleCount) + ", regCount=" + std::to_string(regCount);
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-18: Lifetime delle osservazioni conservate intatte nel vecchio snapshot
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT18_ObservationLifetimePreservedInOldSnapshot() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-18";
+    r.testName = "Lifetime osservazioni conservate nel vecchio snapshot";
+    r.inputDesc = "Materiale con osservazione estesa registrato; acquisizione handle; aggiornamento materiale nel registro con allowUpdate";
+    r.expectedDesc = "Il vecchio handle conserva la versione originale dell'osservazione; il puntatore rimane valido";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    ScientificMaterialDef defV1;
+    defV1.id = 818;
+    defV1.canonicalId = "fairworld:mat/obs_lifetime_test";
+    defV1.displayName = "Obs Lifetime Mat V1";
+
+    ExtendedPropertyEntry entryV1;
+    entryV1.propertyUri = "scientific:prop/p_wave_velocity";
+    entryV1.observationCollection.applicability = ApplicabilityState::Applicable;
+    entryV1.observationCollection.epistemicState = EpistemicState::Known;
+    ExtendedMeasurement mV1;
+    mV1.valueNature = ValueNature::ExactScalar;
+    mV1.scalarValue = 5000.0;
+    mV1.unit = "m/s";
+    entryV1.observationCollection.measurements.push_back(mV1);
+    defV1.extendedProperties.AddOrUpdateEntry(entryV1);
+
+    reg.RegisterMaterial(defV1);
+
+    RegistrySnapshotHandle handleV1 = reg.GetSnapshotHandle();
+    const auto* matInOldSnapshot = handleV1->GetMaterial(818);
+    const auto* entryInOldSnapshot = matInOldSnapshot->extendedProperties.FindEntryByUri("scientific:prop/p_wave_velocity");
+    const ExtendedMeasurement* ptrV1 = &entryInOldSnapshot->observationCollection.measurements[0];
+
+    // Aggiorniamo il materiale con allowUpdate = true e valore diverso (6000 m/s)
+    ScientificMaterialDef defV2 = defV1;
+    defV2.extendedProperties.Clear();
+    ExtendedPropertyEntry entryV2 = entryV1;
+    entryV2.observationCollection.measurements[0].scalarValue = 6000.0;
+    defV2.extendedProperties.AddOrUpdateEntry(entryV2);
+
+    reg.RegisterMaterial(defV2, true);
+
+    RegistrySnapshotHandle handleV2 = reg.GetSnapshotHandle();
+    const auto* matInNewSnapshot = handleV2->GetMaterial(818);
+    const auto* entryInNewSnapshot = matInNewSnapshot->extendedProperties.FindEntryByUri("scientific:prop/p_wave_velocity");
+
+    bool ptrV1StillIntact = (ptrV1 != nullptr && ptrV1->scalarValue.has_value() &&
+                             std::abs(*ptrV1->scalarValue - 5000.0) < 1e-4);
+    bool v2HasNewValue = (entryInNewSnapshot != nullptr &&
+                          !entryInNewSnapshot->observationCollection.measurements.empty() &&
+                          std::abs(*entryInNewSnapshot->observationCollection.measurements[0].scalarValue - 6000.0) < 1e-4);
+
+    if (ptrV1StillIntact && v2HasNewValue && (handleV1.GetSnapshot() != handleV2.GetSnapshot())) {
+        r.passed = true;
+        r.observedDesc = "Lifetime e isolamento perfetti: vecchio puntatore 5000 m/s integro; nuovo snapshot ha 6000 m/s";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Puntatore originale corrotto o mancato isolamento tra snapshot";
+    }
+    return r;
+}
+
+// -----------------------------------------------------------------------------
+// EXT-19: Rollback atomico su fallimento di validazione in RegisterMaterial
+// -----------------------------------------------------------------------------
+ScientificRegistryTestResult ScientificMaterialRegistryContractTests::TestEXT19_RegisterMaterialAtomicRollbackOnValidationError() {
+    ScientificRegistryTestResult r;
+    r.testId = "EXT-19";
+    r.testName = "Rollback atomico su fallimento di validazione in RegisterMaterial";
+    r.inputDesc = "Tentativo di registrare materiale con proprieta' estesa non registrata nel dizionario ('scientific:prop/completely_unknown_uri')";
+    r.expectedDesc = "RegisterMaterial rifiuta l'operazione (false); registro e snapshot attivo rimangono invariati";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    size_t countBefore = reg.GetMaterialCount();
+    auto snapshotBefore = reg.GetSnapshot();
+
+    ScientificMaterialDef badDef;
+    badDef.id = 819;
+    badDef.canonicalId = "fairworld:mat/bad_material";
+    badDef.displayName = "Bad Material";
+
+    ExtendedPropertyEntry badEntry;
+    badEntry.propertyUri = "scientific:prop/completely_unknown_uri";
+    badDef.extendedProperties.AddOrUpdateEntry(badEntry);
+
+    bool regResult = reg.RegisterMaterial(badDef);
+
+    size_t countAfter = reg.GetMaterialCount();
+    auto snapshotAfter = reg.GetSnapshot();
+    bool matAbsent = !reg.HasMaterial(819);
+
+    if (!regResult && countBefore == countAfter && snapshotBefore == snapshotAfter && matAbsent) {
+        r.passed = true;
+        r.observedDesc = "Rollback atomico confermato: nessuna mutazione del registro ne' dello snapshot attivo";
+    } else {
+        r.passed = false;
+        r.observedDesc = "Materiale invalido parzialmente registrato o stato corrotto";
     }
     return r;
 }

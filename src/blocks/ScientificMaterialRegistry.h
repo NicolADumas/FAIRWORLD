@@ -790,23 +790,47 @@ public:
     }
 
     bool AddOrUpdateEntry(const ExtendedPropertyEntry& entry) {
+        if (entry.propertyUri.empty()) {
+            return false;
+        }
+
+        // 1. Cerca entry esistente unicamente tramite l'identita' canonica (propertyUri)
+        auto existingIt = m_entries.end();
         for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
-            bool match = false;
-            if (!entry.propertyUri.empty() && it->propertyUri == entry.propertyUri) {
-                match = true;
-            } else if (entry.propertyIndex != INVALID_PROPERTY_KEY_INDEX && it->propertyIndex == entry.propertyIndex) {
-                match = true;
+            if (it->propertyUri == entry.propertyUri) {
+                existingIt = it;
+                break;
             }
-            if (match) {
-                PropertyKeyIndex preservedIndex = it->propertyIndex;
-                *it = entry;
-                if (it->propertyIndex == INVALID_PROPERTY_KEY_INDEX && preservedIndex != INVALID_PROPERTY_KEY_INDEX) {
-                    it->propertyIndex = preservedIndex;
+        }
+
+        // 2. Controllo di coerenza e prevenzione collisioni sull'indice (se valido)
+        if (entry.propertyIndex != INVALID_PROPERTY_KEY_INDEX) {
+            for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
+                if (it->propertyIndex == entry.propertyIndex && it->propertyUri != entry.propertyUri) {
+                    // Due URI differenti non possono condividere lo stesso indice valido nello storage locale
+                    return false;
                 }
-                SortEntries();
+            }
+            // Rifiuta aggiornamento se la entry possiede gia' un indice valido diverso da quello fornito
+            if (existingIt != m_entries.end() && 
+                existingIt->propertyIndex != INVALID_PROPERTY_KEY_INDEX && 
+                existingIt->propertyIndex != entry.propertyIndex) {
                 return false;
             }
         }
+
+        // 3. Aggiornamento in-place di entry esistente
+        if (existingIt != m_entries.end()) {
+            PropertyKeyIndex finalIndex = (entry.propertyIndex != INVALID_PROPERTY_KEY_INDEX)
+                                          ? entry.propertyIndex
+                                          : existingIt->propertyIndex;
+            existingIt->propertyIndex = finalIndex;
+            existingIt->observationCollection = entry.observationCollection;
+            SortEntries();
+            return true;
+        }
+
+        // 4. Inserimento nuova entry
         m_entries.push_back(entry);
         SortEntries();
         return true;

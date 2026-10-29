@@ -106,6 +106,34 @@ public:
 
     // EXT-11: Verifica che il catalogo produttivo contenga zero osservazioni estese
     static ScientificRegistryTestResult TestEXT11_ProductionCatalogHasNoExtendedProperties();
+
+    // =========================================================================
+    // MA-03.2D.3B-FIX04: TEST IMMUTABILITA' SNAPSHOT E IDENTITA' CANONICA (EXT-12 .. EXT-19)
+    // =========================================================================
+
+    // EXT-12: Rifiuto di due URI diverse con lo stesso indice valido in AddOrUpdateEntry
+    static ScientificRegistryTestResult TestEXT12_RejectDifferentUrisSameValidIndex();
+
+    // EXT-13: Rifiuto di aggiornamento con URI corretta e indice errato
+    static ScientificRegistryTestResult TestEXT13_RejectUpdateCorrectUriErroneousIndex();
+
+    // EXT-14: Prevenzione duplicati logici nello storage esteso
+    static ScientificRegistryTestResult TestEXT14_LogicalDuplicatesPrevention();
+
+    // EXT-15: Normalizzazione incondizionata indici precompilati da snapshot differenti in RegisterMaterial
+    static ScientificRegistryTestResult TestEXT15_RegisterMaterialResolvesForeignSnapshotIndices();
+
+    // EXT-16: Sicurezza del resolver contro entry con indice coincidente ma URI discordante
+    static ScientificRegistryTestResult TestEXT16_QueryRejectsMismatchedUriIndexEntry();
+
+    // EXT-17: Immutabilità effettiva di un vecchio RegistrySnapshotHandle dopo RegisterMaterial
+    static ScientificRegistryTestResult TestEXT17_OldSnapshotHandleImmutabilityPostRegister();
+
+    // EXT-18: Lifetime delle osservazioni conservate intatte nel vecchio snapshot
+    static ScientificRegistryTestResult TestEXT18_ObservationLifetimePreservedInOldSnapshot();
+
+    // EXT-19: Rollback atomico completo su fallimento di validazione in RegisterMaterial
+    static ScientificRegistryTestResult TestEXT19_RegisterMaterialAtomicRollbackOnValidationError();
 };
 
 } // namespace fw
