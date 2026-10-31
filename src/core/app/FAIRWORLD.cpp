@@ -281,44 +281,65 @@ bool FairWorldEngine::Init() {
     m_webView.Init(hwnd);
     
     // --- Sottoscrizione Eventi (Event-Driven Input System) ---
-    EventManager::Get().Subscribe<Event_BlockMined>([this](const Event_BlockMined& e) {
-        // Logica eseguita UNA SOLA VOLTA quando l'evento viene triggerato
-        fw::BlockType brokenType = m_forgeMaster->GetBlock(e.position.x, e.position.y, e.position.z);
-        
-        if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
-            m_forgeMaster->SetBlock(e.position.x, e.position.y, e.position.z, fw::BlockType::Air);
-            
-            // Gestione Drop (Loot)
-            BlockType legacyType = static_cast<BlockType>((uint8_t)brokenType);
-            InventoryItem drop;
-            drop.type = ItemType::Block;
-            drop.blockType = (int)brokenType;
-            drop.count = 1;
-            drop.weightKg = GetBlockMaterial(legacyType).mass;
-            
-            if (!m_player.inventory.AddItem(drop)) {
-                // L'inventario è pieno, spawna l'oggetto fisico a terra
-                DroppedItem di;
-                di.item = drop;
-                // Spawna al centro esatto del blocco
-                di.position = glm::vec3(e.position.x + 0.5f, e.position.y + 0.5f, e.position.z + 0.5f);
-                // Dai un piccolo "pop" casuale verso l'alto
-                float rx = ((rand() % 100) / 100.0f) * 2.0f - 1.0f;
-                float rz = ((rand() % 100) / 100.0f) * 2.0f - 1.0f;
-                di.velocity = glm::vec3(rx * 1.5f, 3.0f, rz * 1.5f);
-                
-                m_droppedItems.push_back(di);
-            }
-            std::cout << "[EVENT] Blocco distrutto in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
-        }
-    });
-
-    EventManager::Get().Subscribe<Event_BlockPlaced>([this](const Event_BlockPlaced& e) {
-        m_forgeMaster->SetBlock(e.position.x, e.position.y, e.position.z, static_cast<fw::BlockType>((uint8_t)e.type));
-        std::cout << "[EVENT] Blocco piazzato in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
-    });
+    RegisterEventSubscriptions();
 
     return true;
+}
+
+void FairWorldEngine::RegisterEventSubscriptions() {
+    if (m_subBlockMined == INVALID_SUBSCRIPTION_ID) {
+        m_subBlockMined = EventManager::Get().Subscribe<Event_BlockMined>([this](const Event_BlockMined& e) {
+            // Logica eseguita UNA SOLA VOLTA quando l'evento viene triggerato
+            if (!m_forgeMaster) return;
+            fw::BlockType brokenType = m_forgeMaster->GetBlock(e.position.x, e.position.y, e.position.z);
+            
+            if (brokenType != fw::BlockType::Air && brokenType != fw::BlockType::OutOfBounds) {
+                m_forgeMaster->SetBlock(e.position.x, e.position.y, e.position.z, fw::BlockType::Air);
+                
+                // Gestione Drop (Loot)
+                BlockType legacyType = static_cast<BlockType>((uint8_t)brokenType);
+                InventoryItem drop;
+                drop.type = ItemType::Block;
+                drop.blockType = (int)brokenType;
+                drop.count = 1;
+                drop.weightKg = GetBlockMaterial(legacyType).mass;
+                
+                if (!m_player.inventory.AddItem(drop)) {
+                    // L'inventario è pieno, spawna l'oggetto fisico a terra
+                    DroppedItem di;
+                    di.item = drop;
+                    // Spawna al centro esatto del blocco
+                    di.position = glm::vec3(e.position.x + 0.5f, e.position.y + 0.5f, e.position.z + 0.5f);
+                    // Dai un piccolo "pop" casuale verso l'alto
+                    float rx = ((rand() % 100) / 100.0f) * 2.0f - 1.0f;
+                    float rz = ((rand() % 100) / 100.0f) * 2.0f - 1.0f;
+                    di.velocity = glm::vec3(rx * 1.5f, 3.0f, rz * 1.5f);
+                    
+                    m_droppedItems.push_back(di);
+                }
+                std::cout << "[EVENT] Blocco distrutto in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
+            }
+        });
+    }
+
+    if (m_subBlockPlaced == INVALID_SUBSCRIPTION_ID) {
+        m_subBlockPlaced = EventManager::Get().Subscribe<Event_BlockPlaced>([this](const Event_BlockPlaced& e) {
+            if (!m_forgeMaster) return;
+            m_forgeMaster->SetBlock(e.position.x, e.position.y, e.position.z, static_cast<fw::BlockType>((uint8_t)e.type));
+            std::cout << "[EVENT] Blocco piazzato in (" << e.position.x << "," << e.position.y << "," << e.position.z << ")\n";
+        });
+    }
+}
+
+void FairWorldEngine::UnregisterEventSubscriptions() {
+    if (m_subBlockMined != INVALID_SUBSCRIPTION_ID) {
+        EventManager::Get().Unsubscribe(m_subBlockMined);
+        m_subBlockMined = INVALID_SUBSCRIPTION_ID;
+    }
+    if (m_subBlockPlaced != INVALID_SUBSCRIPTION_ID) {
+        EventManager::Get().Unsubscribe(m_subBlockPlaced);
+        m_subBlockPlaced = INVALID_SUBSCRIPTION_ID;
+    }
 }
 
 void FairWorldEngine::SetSharedContext(SharedContext* ctx) {
@@ -1884,6 +1905,9 @@ void FairWorldEngine::renderTab_Engine() {
 void FairWorldEngine::Shutdown() {
     if (m_hasShutdown) return;
     m_hasShutdown = true;
+
+    // MEM-07A: Disiscrizione tempestiva dei listener di FairWorldEngine da EventManager
+    UnregisterEventSubscriptions();
 
     if (m_forgeMaster) {
         m_forgeMaster->SaveAllChunks();

@@ -40,6 +40,19 @@ public:
     JPH::TempAllocatorImpl* GetTempAllocator() { return m_tempAllocator; }
     JPH::JobSystemThreadPool* GetJobSystem() { return m_jobSystem; }
 
+    // --- Diagnostica Memoria & Risorse CPU (MEM-06) ---
+    static constexpr size_t METRIC_UNAVAILABLE = static_cast<size_t>(-1);
+
+    size_t GetNumBodies() const;
+    size_t GetNumActiveBodies() const;
+    size_t GetMaxBodies() const;
+
+    size_t GetNumRegisteredConstraints() const;
+    size_t GetMaxContactConstraints() const { return 1024; }
+    size_t GetNumActiveConstraints() const; // In Jolt v5.0.0 non calcolato persistentemente; restituisce METRIC_UNAVAILABLE
+    bool IsActiveConstraintsMetricAvailable() const { return false; }
+    size_t GetTempAllocatorCapacity() const { return 10ULL * 1024ULL * 1024ULL; }
+
 private:
     JPH::PhysicsSystem* m_physicsSystem = nullptr;
     JPH::TempAllocatorImpl* m_tempAllocator = nullptr;

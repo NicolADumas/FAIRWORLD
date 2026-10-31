@@ -395,7 +395,11 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
     opts.defaultProjection = m_activeDraft->baseProjection;
 
     GeometryCompileResult compRes;
-    bool isSculpt = (m_activeDraft->geometrySource == GeometrySource::SculptedMesh || m_activeDraft->sculptMesh.has_value());
+    bool isSculpt = (m_activeDraft->geometrySource == GeometrySource::SculptedMesh);
+    if (!isSculpt && m_activeDraft->sculptMesh.has_value() && !m_activeDraft->sculptMesh->IsEmpty() && m_activeDraft->sculptMesh->GetFaceCount() > 0) {
+        isSculpt = true;
+        m_activeDraft->geometrySource = GeometrySource::SculptedMesh;
+    }
     if (isSculpt) {
         if (!m_activeDraft->sculptMesh.has_value() || m_activeDraft->sculptMesh->IsEmpty() || m_activeDraft->sculptMesh->GetFaceCount() == 0) {
             // Fallimento esplicito: NESSUN fallback silenzioso a primitiva

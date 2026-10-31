@@ -27,6 +27,17 @@ PhysicsLabState::PhysicsLabState(SharedContext* context) : m_context(context) {
 }
 
 PhysicsLabState::~PhysicsLabState() {
+    StopSimulation();
+    if (m_joltSystem && m_floorBodyID != 0) {
+        auto* physSys = m_joltSystem->GetSystem();
+        if (physSys) {
+            auto& bodyInterface = physSys->GetBodyInterface();
+            JPH::BodyID floorID(m_floorBodyID);
+            bodyInterface.RemoveBody(floorID);
+            bodyInterface.DestroyBody(floorID);
+        }
+        m_floorBodyID = 0;
+    }
     if (m_context) {
         if (m_context->forgeWorld == m_labWorld) {
             m_context->forgeWorld = m_originalWorld;
@@ -172,6 +183,7 @@ void PhysicsLabState::StopSimulation() {
     m_simulateMode = false; 
     
     auto* physSys = m_joltSystem->GetSystem();
+    if (!physSys) return;
     auto& bodyInterface = physSys->GetBodyInterface();
     
     for (uint32_t id : m_joltBodies) {

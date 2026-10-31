@@ -327,6 +327,11 @@ std::shared_ptr<const UVIslandRasterMask> GetOrCreateIslandRasterMask(
         return nullptr;
     }
 
+    // Fail-closed se la topologia non e sincronizzata con la sorgente topologica autorevole
+    if (layout.meshTopologyRevision != mesh.GetTopologyRevision()) {
+        return nullptr;
+    }
+
     const UVIsland& island = layout.islands[islandId];
 
     // Verifica validita maschera precedentemente memorizzata (BM-PAINTER-PERF-02)
@@ -334,17 +339,12 @@ std::shared_ptr<const UVIslandRasterMask> GetOrCreateIslandRasterMask(
         island.cachedRasterMask->islandId == islandId &&
         island.cachedRasterMask->width == width &&
         island.cachedRasterMask->height == height &&
-        island.cachedRasterMask->meshTopologyRevision == layout.meshTopologyRevision &&
+        island.cachedRasterMask->meshTopologyRevision == mesh.GetTopologyRevision() &&
         island.cachedRasterMask->meshAttributeRevision == mesh.GetAttributeRevision() &&
         island.cachedRasterMask->atlasRevision == layout.atlasRevision &&
         island.cachedRasterMask->flipV == flipV) 
     {
         return island.cachedRasterMask;
-    }
-
-    // Fail-closed se la topologia non e sincronizzata
-    if (layout.meshTopologyRevision != mesh.GetTopologyRevision()) {
-        return nullptr;
     }
 
     auto mask = std::make_shared<UVIslandRasterMask>();
@@ -500,13 +500,35 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
                                    TexturePaintingService* paintingService, 
                                    uint32_t targetLayerId) {
     if (!paintingService) return false;
+    m_lastPaintBlockedReason.clear();
 
-    // Converte coordinate atlas normalizzate in coordinate raster in pixel
-    uint32_t targetW = m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : paintingService->GetCanvasWidth();
-    uint32_t targetH = m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : paintingService->GetCanvasHeight();
+    // Fail-closed immediato: verifica contro la sorgente topologica autorevole prima di qualsiasi mutazione
+    if (m_layout.meshTopologyRevision != m_mesh.GetTopologyRevision()) {
+        m_lastPaintBlockedReason = "Surface Paint: Revisione topologica incompatibile. Richiesto aggiornamento del layout UV.";
+        return false;
+    }
+
+    UVIslandID targetIsland = FindIslandAtUV(atlasUV);
+    if (targetIsland == INVALID_UVISLAND_ID) {
+        m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia sotto il cursore. Seleziona una faccia o usa Atlas Paint.";
+        return false;
+    }
+    if (!m_selectedIslands.empty() && m_selectedIslands.find(targetIsland) == m_selectedIslands.end()) {
+        m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalla superficie selezionata. Pittura bloccata.";
+        return false;
+    }
+
+    // BM-P02: Utilizza autoritativamente le dimensioni reali del canvas del paintingService
+    uint32_t targetW = paintingService->GetCanvasWidth();
+    uint32_t targetH = paintingService->GetCanvasHeight();
+    if (targetW == 0) targetW = (m_layout.atlasTargetWidth > 0 ? m_layout.atlasTargetWidth : 512);
+    if (targetH == 0) targetH = (m_layout.atlasTargetHeight > 0 ? m_layout.atlasTargetHeight : 512);
+
     glm::vec2 pixelCoords = UVAtlasPacker::AtlasToPixel(atlasUV, targetW, targetH);
+    pixelCoords.x = std::clamp(pixelCoords.x, 0.0f, static_cast<float>(targetW - 1));
+    pixelCoords.y = std::clamp(pixelCoords.y, 0.0f, static_cast<float>(targetH - 1));
 
-    // Risolve il layer ID effettivo (se 0 o non specificato, adotta il primo livello disponibile)
+    // Risolve il layer ID effettivo esclusivamente post-validazione (nessuna mutazione di layer se respinto)
     uint32_t layerId = targetLayerId;
     if (layerId == 0 && paintingService->GetLayerCount() > 0) {
         layerId = paintingService->GetLayers()[0].layerId;
@@ -514,16 +536,11 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
         layerId = paintingService->AddLayer("Paint Layer 1");
     }
 
-    UVIslandID targetIsland = FindIslandAtUV(atlasUV);
-    if (targetIsland == INVALID_UVISLAND_ID) {
-        return false;
-    }
-    if (!m_selectedIslands.empty() && m_selectedIslands.find(targetIsland) == m_selectedIslands.end()) {
-        return false;
-    }
-
     // BM-PAINTER-PERF-02: Fast O(1) mask lookup replaces per-pixel geometric face scans
     auto mask = GetOrCreateIslandRasterMask(m_mesh, m_layout, targetIsland, targetW, targetH, false);
+    if (!mask) {
+        return false;
+    }
     paintingService->SetStrokeClipMask(mask);
 
     if (!paintingService->BeginStroke(layerId, false)) {
@@ -533,6 +550,7 @@ bool UVEditorDocument::PaintAtUV2D(const glm::vec2& atlasUV,
 
     paintingService->ApplyDab(pixelCoords, brush);
     paintingService->EndStroke();
+    paintingService->SetStrokeClipMask(nullptr);
     return true;
 }
 
@@ -553,14 +571,18 @@ bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV,
         ValidateSelection();
 
         // GATE D: SURFACE PAINT AUTO-BINDING & LOCK
-        // 1. Risoluzione della superficie/isola target (auto-binding se non selezionata)
         if (m_selectedIslands.empty() && m_selectedFaces.empty()) {
-            UVIslandID autoHit = FindIslandAtUV(atlasUV);
-            if (autoHit != INVALID_UVISLAND_ID) {
-                SelectIsland(autoHit, false);
-                targetIsland = autoHit;
+            if (m_autoSelectFaceOnPaint) {
+                UVIslandID autoHit = FindIslandAtUV(atlasUV);
+                if (autoHit != INVALID_UVISLAND_ID) {
+                    SelectIsland(autoHit, false);
+                    targetIsland = autoHit;
+                } else {
+                    m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia sotto il cursore. Seleziona una faccia o usa Atlas Paint.";
+                    return false;
+                }
             } else {
-                m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia sotto il cursore. Seleziona una faccia o usa Atlas Paint.";
+                m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia selezionata. Seleziona una faccia o usa Atlas Paint.";
                 return false;
             }
         } else {
@@ -573,11 +595,15 @@ bool UVEditorDocument::BeginStroke2D(const glm::vec2& atlasUV,
             }
 
             if (targetIsland == INVALID_UVISLAND_ID) {
-                // Auto-switch alla nuova isola cliccata per rendere la pittura intuitiva
-                UVIslandID hitOther = FindIslandAtUV(atlasUV);
-                if (hitOther != INVALID_UVISLAND_ID) {
-                    SelectIsland(hitOther, false);
-                    targetIsland = hitOther;
+                if (m_autoSelectFaceOnPaint) {
+                    UVIslandID hitOther = FindIslandAtUV(atlasUV);
+                    if (hitOther != INVALID_UVISLAND_ID) {
+                        SelectIsland(hitOther, false);
+                        targetIsland = hitOther;
+                    } else {
+                        m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalla superficie selezionata. Pittura bloccata.";
+                        return false;
+                    }
                 } else {
                     m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalla superficie selezionata. Pittura bloccata.";
                     return false;
@@ -730,12 +756,18 @@ bool UVEditorDocument::ApplyStamp2D(const glm::vec2& atlasUV,
         ValidateSelection();
 
         if (m_selectedIslands.empty() && m_selectedFaces.empty()) {
-            UVIslandID autoHit = FindIslandAtUV(atlasUV);
-            if (autoHit != INVALID_UVISLAND_ID) {
-                SelectIsland(autoHit, false);
-                targetIsland = autoHit;
+            if (m_autoSelectFaceOnPaint) {
+                UVIslandID autoHit = FindIslandAtUV(atlasUV);
+                if (autoHit != INVALID_UVISLAND_ID) {
+                    SelectIsland(autoHit, false);
+                    targetIsland = autoHit;
+                } else {
+                    m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia sotto il cursore. Seleziona una faccia o usa Atlas Paint.";
+                    std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=2D Mode=SurfacePaint SelectedIslands=0 Rejection='" << m_lastPaintBlockedReason << "'\n";
+                    return false;
+                }
             } else {
-                m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia sotto il cursore. Seleziona una faccia o usa Atlas Paint.";
+                m_lastPaintBlockedReason = "Surface Paint: Nessuna superficie/faccia selezionata. Seleziona una faccia o usa Atlas Paint.";
                 std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=2D Mode=SurfacePaint SelectedIslands=0 Rejection='" << m_lastPaintBlockedReason << "'\n";
                 return false;
             }
@@ -748,10 +780,16 @@ bool UVEditorDocument::ApplyStamp2D(const glm::vec2& atlasUV,
             }
 
             if (targetIsland == INVALID_UVISLAND_ID) {
-                UVIslandID hitOther = FindIslandAtUV(atlasUV);
-                if (hitOther != INVALID_UVISLAND_ID) {
-                    SelectIsland(hitOther, false);
-                    targetIsland = hitOther;
+                if (m_autoSelectFaceOnPaint) {
+                    UVIslandID hitOther = FindIslandAtUV(atlasUV);
+                    if (hitOther != INVALID_UVISLAND_ID) {
+                        SelectIsland(hitOther, false);
+                        targetIsland = hitOther;
+                    } else {
+                        m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalla superficie selezionata. Stamp bloccato.";
+                        std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=2D Mode=SurfacePaint UV=(" << atlasUV.x << "," << atlasUV.y << ") Rejection='" << m_lastPaintBlockedReason << "'\n";
+                        return false;
+                    }
                 } else {
                     m_lastPaintBlockedReason = "Surface Paint: Il click e' fuori dalla superficie selezionata. Stamp bloccato.";
                     std::cout << "[STAMP-DIAG-02] TARGET: Valid=false Path=2D Mode=SurfacePaint UV=(" << atlasUV.x << "," << atlasUV.y << ") Rejection='" << m_lastPaintBlockedReason << "'\n";

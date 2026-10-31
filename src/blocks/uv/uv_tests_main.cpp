@@ -12,7 +12,7 @@
 
 #include "TestRunContext.h"
 
-// --- FG-01R SUITES (151 tests) ---
+// --- FG-01R SUITES (168 tests) ---
 #include "blocks/uv/PrimitiveUVContractTests.h"
 #include "blocks/uv/GeneralUVContractTests.h"
 #include "blocks/uv/AtlasUVContractTests.h"
@@ -103,7 +103,7 @@ std::vector<SuiteDescriptor> buildSuiteRegistry() {
     std::vector<SuiteDescriptor> registry;
     registry.reserve(20);
 
-    // 1. FG-01R (151 tests)
+    // 1. FG-01R (168 tests)
     registry.push_back({"UVP", "Primitive & Parametric UV", 15,
         makeSuiteRunner("UVP", []() { return fw::PrimitiveUVContractTests::RunAllTests(); }),
         generateIds("UVP", 15)});
@@ -116,9 +116,14 @@ std::vector<SuiteDescriptor> buildSuiteRegistry() {
         makeSuiteRunner("UVK", []() { return fw::AtlasUVContractTests::RunAllTests(); }),
         generateIds("UVK", 18)});
 
-    registry.push_back({"UVE", "2D UV Editor Backend", 18,
+    registry.push_back({"UVE", "2D UV Editor Backend", 35,
         makeSuiteRunner("UVE", []() { return fw::UVEditorContractTests::RunAllTests(); }),
-        generateIds("UVE", 18)});
+        {
+            "UVE-1", "UVE-2", "UVE-3", "UVE-4", "UVE-5", "UVE-6", "UVE-7", "UVE-8", "UVE-9", "UVE-10",
+            "UVE-11", "UVE-12", "UVE-13", "UVE-14", "UVE-15", "UVE-16", "UVE-17", "UVE-18", "UVE-FAILCLOSED",
+            "UVE-19", "UVE-20", "UVE-21", "UVE-22", "UVE-23", "UVE-33", "UVE-34", "UVE-35", "UVE-36",
+            "UVE-37", "UVE-38", "UVE-39", "UVE-40", "UVE-41", "UVE-42", "UVE-43"
+        }});
 
     registry.push_back({"UVR", "Texture Reprojection", 20,
         makeSuiteRunner("UVR", []() { return fw::TextureReprojectionContractTests::RunAllTests(); }),
@@ -194,10 +199,10 @@ void printUsage(const char* progName) {
               << "  --suite <CODE>[,<CODE>...]  Execute only specified suite(s) (e.g. --suite PNT or --suite DEP,MIG)\n"
               << "  --test <TEST_ID>            Execute specific test ID within its suite (e.g. --test PNT-03)\n"
               << "  --list-suites               List all 20 registered suites with nominal counts and exit\n"
-              << "  --list-tests                List all 269 nominal tests grouped by suite and exit\n"
+              << "  --list-tests                List all 286 nominal tests grouped by suite and exit\n"
               << "  --help, -h                  Display this help message and exit\n\n"
               << "Notes:\n"
-              << "  If no options are provided, a FULL CERTIFICATION run of all 20 suites (269 tests)\n"
+              << "  If no options are provided, a FULL CERTIFICATION run of all 20 suites (286 tests)\n"
               << "  is performed in topological dependency order without recursive re-execution.\n";
 }
 
@@ -205,6 +210,11 @@ void printUsage(const char* progName) {
 
 int main(int argc, char* argv[]) {
     const auto registry = buildSuiteRegistry();
+    constexpr size_t EXPECTED_BASELINE = 286;
+    size_t totalCatalogExpected = 0;
+    for (const auto& s : registry) {
+        totalCatalogExpected += s.expectedCount;
+    }
 
     bool listSuitesRequested = false;
     bool listTestsRequested = false;
@@ -246,7 +256,7 @@ int main(int argc, char* argv[]) {
     // Handle --list-suites
     if (listSuitesRequested) {
         std::cout << "====================================================================================\n";
-        std::cout << "  FAIRWORLD CONSOLIDATED TEST SUITES CATALOG (20 SUITES | 269 TESTS NOMINAL)\n";
+        std::cout << "  FAIRWORLD CONSOLIDATED TEST SUITES CATALOG (20 SUITES | 286 TESTS NOMINAL)\n";
         std::cout << "====================================================================================\n";
         size_t totalExpected = 0;
         for (size_t i = 0; i < registry.size(); ++i) {
@@ -265,7 +275,7 @@ int main(int argc, char* argv[]) {
     // Handle --list-tests
     if (listTestsRequested) {
         std::cout << "====================================================================================\n";
-        std::cout << "  FAIRWORLD CONSOLIDATED TEST CASES CATALOG (269 NOMINAL TESTS)\n";
+        std::cout << "  FAIRWORLD CONSOLIDATED TEST CASES CATALOG (286 NOMINAL TESTS)\n";
         std::cout << "====================================================================================\n";
         size_t globalIndex = 0;
         for (const auto& s : registry) {
@@ -278,7 +288,7 @@ int main(int argc, char* argv[]) {
             }
         }
         std::cout << "\n====================================================================================\n";
-        std::cout << "  TOTAL REGISTERED TESTS: " << globalIndex << " / 269\n";
+        std::cout << "  TOTAL REGISTERED TESTS: " << globalIndex << " / 286\n";
         std::cout << "====================================================================================\n";
         return 0;
     }
@@ -342,7 +352,9 @@ int main(int argc, char* argv[]) {
         // Full run of all 20 suites
         executionSuites = registry;
         isPartialRun = false;
-        runFilterDescription = "FULL CERTIFICATION (ALL 20 SUITES | 269 TESTS)";
+        std::ostringstream ss;
+        ss << "FULL CERTIFICATION (ALL " << registry.size() << " SUITES | " << totalCatalogExpected << " TESTS)";
+        runFilterDescription = ss.str();
     }
 
     // Execution Banner
@@ -352,7 +364,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  MODE: PARTIAL DIAGNOSTIC RUN | " << runFilterDescription << "\n";
     } else {
         std::cout << "  FAIRWORLD CONSOLIDATED HEADLESS ENGINEERING TEST RUNNER (BUILD-RECOVERY-04A)\n";
-        std::cout << "  MODE: FULL CERTIFICATION | 20 SUITES | BASELINE CONSOLIDATA: 269 TESTS\n";
+        std::cout << "  MODE: FULL CERTIFICATION | " << registry.size() << " SUITES | BASELINE CONSOLIDATA: " << totalCatalogExpected << " TESTS\n";
     }
     std::cout << "====================================================================================\n" << std::flush;
 
@@ -363,6 +375,8 @@ int main(int argc, char* argv[]) {
     int totalPassed = 0;
     int totalFailed = 0;
     int totalSkipped = 0;
+    int totalDuplicates = 0;
+    std::set<std::string> seenTestIds;
     size_t suiteInvocations = 0;
 
     auto globalStartTime = std::chrono::steady_clock::now();
@@ -402,6 +416,14 @@ int main(int argc, char* argv[]) {
 
         for (const auto& r : results) {
             bool matchesFilter = requestedTestId.empty() || (toUpper(r.testId) == requestedTestId);
+
+            if (matchesFilter) {
+                std::string tidUpper = toUpper(r.testId);
+                if (!seenTestIds.insert(tidUpper).second) {
+                    totalDuplicates++;
+                    std::cout << "  [DUP]  " << r.testId << " | " << r.testName << " -> Duplicate test ID detected!\n" << std::flush;
+                }
+            }
 
             if (r.passed) {
                 suitePassed++;
@@ -463,24 +485,33 @@ int main(int argc, char* argv[]) {
         std::cout << "  FAILED:             " << totalFailed << "\n";
         std::cout << "  SKIPPED:            " << totalSkipped << "\n";
         std::cout << "  TOTAL TIME:         " << std::fixed << std::setprecision(2) << totalDurationSec << " s\n";
-        std::cout << "  STATUS:             " << ((totalFailed == 0 && totalDiscovered > 0) ? "PASS (DIAGNOSTIC)" : "FAIL / INCOMPLETE") << "\n";
-        std::cout << "  NOTE:               Partial execution cannot certify the 269 baseline.\n";
+        std::cout << "  STATUS:             " << ((totalFailed == 0 && totalDuplicates == 0 && totalDiscovered > 0) ? "PASS (DIAGNOSTIC)" : "FAIL / INCOMPLETE") << "\n";
+        std::cout << "  NOTE:               Partial execution cannot certify the " << totalCatalogExpected << " baseline.\n";
         std::cout << "====================================================================================\n" << std::flush;
 
-        return (totalFailed == 0 && totalDiscovered > 0) ? 0 : 1;
+        return (totalFailed == 0 && totalDuplicates == 0 && totalDiscovered > 0) ? 0 : 1;
     } else {
         std::cout << "  FAIRWORLD HEADLESS ENGINEERING FULL CERTIFICATION SUMMARY\n";
         std::cout << "====================================================================================\n";
         std::cout << "  MODE:               FULL CERTIFICATION\n";
-        std::cout << "  SUITES EXECUTED:    " << suiteInvocations << " / 20 (Single Invocation Contract Verified)\n";
-        std::cout << "  DISCOVERED:         " << totalDiscovered << " / 269\n";
+        std::cout << "  SUITES EXECUTED:    " << suiteInvocations << " / " << registry.size() << " (Single Invocation Contract Verified)\n";
+        std::cout << "  DISCOVERED:         " << totalDiscovered << " / " << totalCatalogExpected << "\n";
         std::cout << "  PASSED:             " << totalPassed << "\n";
         std::cout << "  FAILED:             " << totalFailed << "\n";
         std::cout << "  SKIPPED:            " << totalSkipped << "\n";
+        if (totalDuplicates > 0) {
+            std::cout << "  DUPLICATES:         " << totalDuplicates << "\n";
+        }
         std::cout << "  TOTAL TIME:         " << std::fixed << std::setprecision(2) << totalDurationSec << " s\n";
-        std::cout << "  OVERALL:            " << ((totalFailed == 0 && totalDiscovered == 269) ? "SUCCESS (PASS)" : "FAILURE / INCOMPLETE") << "\n";
+        bool certificationPassed = (totalFailed == 0 && 
+                                    totalSkipped == 0 && 
+                                    totalDuplicates == 0 && 
+                                    totalDiscovered == static_cast<int>(totalCatalogExpected) && 
+                                    totalCatalogExpected == EXPECTED_BASELINE &&
+                                    suiteInvocations == registry.size());
+        std::cout << "  OVERALL:            " << (certificationPassed ? "SUCCESS (PASS)" : "FAILURE / INCOMPLETE") << "\n";
         std::cout << "====================================================================================\n" << std::flush;
 
-        return (totalFailed == 0 && totalDiscovered == 269) ? 0 : 1;
+        return certificationPassed ? 0 : 1;
     }
 }

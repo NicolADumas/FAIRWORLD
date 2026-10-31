@@ -97,8 +97,10 @@ struct GeneralUVResult {
 // =============================================================================
 
 struct UVZeroWorkCache {
+    const void* lastEvaluatedMeshAddress = nullptr;
     uint64_t lastEvaluatedTopologyRevision = 0;
     uint64_t lastEvaluatedGeometryRevision = 0;
+    uint64_t lastEvaluatedAttributeRevision = 0;
     uint64_t seamConfigFingerprint = 0;
     UVLayout cachedLayout;
     bool isValid = false;

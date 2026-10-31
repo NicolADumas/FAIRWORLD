@@ -60,17 +60,61 @@ public:
     }
 };
 
+using SubscriptionId = uint64_t;
+constexpr SubscriptionId INVALID_SUBSCRIPTION_ID = 0;
+
 // Singleton EventManager
 class EventManager {
 private:
-    std::unordered_map<std::type_index, std::vector<std::unique_ptr<IEventListener>>> listeners;
-    std::shared_mutex listenersMutex;
+    struct ListenerEntry {
+        SubscriptionId id = INVALID_SUBSCRIPTION_ID;
+        std::unique_ptr<IEventListener> listener;
+        bool isRemoved = false;
+    };
+
+    struct DispatchScope {
+        size_t& depth;
+        EventManager& mgr;
+        DispatchScope(size_t& d, EventManager& m) : depth(d), mgr(m) { ++depth; }
+        ~DispatchScope() {
+            --depth;
+            if (depth == 0) {
+                mgr.CompactAllListeners();
+            }
+        }
+    };
+
+    std::unordered_map<std::type_index, std::vector<ListenerEntry>> listeners;
+    std::unordered_map<SubscriptionId, std::type_index> subscriptionTypeMap;
+    mutable std::recursive_mutex listenersMutex;
+    SubscriptionId nextSubscriptionId = 1;
+    size_t dispatchDepth = 0;
 
     std::vector<std::function<void()>> eventQueue;
     std::mutex queueMutex;
 
     EventManager() = default;
     ~EventManager() = default;
+
+    void CompactListenersForType(std::vector<ListenerEntry>& vec) {
+        vec.erase(
+            std::remove_if(vec.begin(), vec.end(), [](const ListenerEntry& entry) {
+                return entry.isRemoved;
+            }),
+            vec.end()
+        );
+    }
+
+    void CompactAllListeners() {
+        for (auto it = listeners.begin(); it != listeners.end();) {
+            CompactListenersForType(it->second);
+            if (it->second.empty()) {
+                it = listeners.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
 public:
     static EventManager& Get() {
@@ -82,25 +126,82 @@ public:
     EventManager& operator=(const EventManager&) = delete;
 
     template<typename EventType>
-    void Subscribe(std::function<void(const EventType&)> callback) {
-        std::unique_lock<std::shared_mutex> lock(listenersMutex);
-        listeners[typeid(EventType)].push_back(std::make_unique<EventListener<EventType>>(callback));
+    SubscriptionId Subscribe(std::function<void(const EventType&)> callback) {
+        if (!callback) return INVALID_SUBSCRIPTION_ID;
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        SubscriptionId id = nextSubscriptionId++;
+        if (nextSubscriptionId == INVALID_SUBSCRIPTION_ID) {
+            nextSubscriptionId = 1;
+        }
+        std::type_index typeIdx = typeid(EventType);
+        listeners[typeIdx].push_back(ListenerEntry{
+            id,
+            std::make_unique<EventListener<EventType>>(std::move(callback)),
+            false
+        });
+        subscriptionTypeMap.insert_or_assign(id, typeIdx);
+        return id;
+    }
+
+    bool Unsubscribe(SubscriptionId id) {
+        if (id == INVALID_SUBSCRIPTION_ID) return false;
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        auto itType = subscriptionTypeMap.find(id);
+        if (itType == subscriptionTypeMap.end()) {
+            return false;
+        }
+        std::type_index typeIdx = itType->second;
+        subscriptionTypeMap.erase(itType);
+
+        auto itList = listeners.find(typeIdx);
+        if (itList != listeners.end()) {
+            for (auto& entry : itList->second) {
+                if (entry.id == id) {
+                    entry.isRemoved = true;
+                    break;
+                }
+            }
+            if (dispatchDepth == 0) {
+                CompactListenersForType(itList->second);
+                if (itList->second.empty()) {
+                    listeners.erase(itList);
+                }
+            }
+        }
+        return true;
     }
 
     template<typename EventType>
     void UnsubscribeAll() {
-        std::unique_lock<std::shared_mutex> lock(listenersMutex);
-        listeners.erase(typeid(EventType));
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        std::type_index typeIdx = typeid(EventType);
+        auto itList = listeners.find(typeIdx);
+        if (itList != listeners.end()) {
+            for (auto& entry : itList->second) {
+                entry.isRemoved = true;
+                subscriptionTypeMap.erase(entry.id);
+            }
+            if (dispatchDepth == 0) {
+                listeners.erase(itList);
+            }
+        }
     }
 
-    // Dispatch Immediato (Sincrono)
+    // Dispatch Immediato (Sincrono, re-entrancy safe e thread-safe)
     template<typename EventType>
     void Dispatch(const EventType& e) {
-        std::shared_lock<std::shared_mutex> lock(listenersMutex);
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
         auto it = listeners.find(typeid(EventType));
-        if (it != listeners.end()) {
-            for (auto& listener : it->second) {
-                listener->Execute(&e);
+        if (it == listeners.end() || it->second.empty()) {
+            return;
+        }
+
+        DispatchScope scope(dispatchDepth, *this);
+        auto& vec = it->second;
+        size_t count = vec.size();
+        for (size_t i = 0; i < count; ++i) {
+            if (!vec[i].isRemoved && vec[i].listener) {
+                vec[i].listener->Execute(&e);
             }
         }
     }
@@ -120,9 +221,6 @@ public:
         {
             std::lock_guard<std::mutex> lock(queueMutex);
             if (eventQueue.empty()) return;
-            
-            // Spostiamo la coda attuale in una locale per permettere l'aggiunta 
-            // di nuovi eventi durante il processing senza finire in deadlock
             currentQueue = std::move(eventQueue);
             eventQueue.clear();
         }
@@ -130,5 +228,48 @@ public:
         for (auto& task : currentQueue) {
             task();
         }
+    }
+
+    // Reset totale (per test o riavvio)
+    void Clear() {
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        listeners.clear();
+        subscriptionTypeMap.clear();
+        dispatchDepth = 0;
+        std::lock_guard<std::mutex> qLock(queueMutex);
+        eventQueue.clear();
+    }
+
+    bool IsSubscribed(SubscriptionId id) const {
+        if (id == INVALID_SUBSCRIPTION_ID) return false;
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        return subscriptionTypeMap.find(id) != subscriptionTypeMap.end();
+    }
+
+    size_t GetTotalListenerCount() const {
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        size_t total = 0;
+        for (const auto& pair : listeners) {
+            for (const auto& entry : pair.second) {
+                if (!entry.isRemoved) {
+                    total++;
+                }
+            }
+        }
+        return total;
+    }
+
+    template<typename EventType>
+    size_t GetListenerCount() const {
+        std::lock_guard<std::recursive_mutex> lock(listenersMutex);
+        auto it = listeners.find(typeid(EventType));
+        if (it == listeners.end()) return 0;
+        size_t count = 0;
+        for (const auto& entry : it->second) {
+            if (!entry.isRemoved) {
+                count++;
+            }
+        }
+        return count;
     }
 };

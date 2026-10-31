@@ -29,6 +29,8 @@
 #include "CacheManager.h"
 #include "LifecycleFreezeGate.h"
 #include "JobSystem.h"
+#include "core/memory/MemorySystem.h"
+#include "core/memory/RuntimeMemoryDiagnostics.h"
 #include "world/terrain/validation/TerrainValidation.h"
 
 // De-commenta questa riga (o definiscila nelle configurazioni di build) per eseguire la suite di test
@@ -164,6 +166,14 @@ int main(int argc, char* argv[]) {
             stressMode = fw::LifecycleStressMode::CpuLoad;
         } else if (std::string(argv[i]) == "--lifecycle-stress-dma") {
             stressMode = fw::LifecycleStressMode::DmaLoad;
+        } else if (std::string(argv[i]) == "--memory-diagnostics") {
+            fw::memory::InitializeGlobalMemory();
+            std::cout << "[MEM-06] Esecuzione suite diagnostica runtime richiesta da CLI...\n";
+            auto results = fw::diagnostics::RuntimeMemoryDiagnosticsSuite::RunAllScenarios(100);
+            size_t fails = 0;
+            for (const auto& r : results) if (!r.passed) fails++;
+            std::cout << "[MEM-06] Diagnostica completata: " << (results.size() - fails) << "/" << results.size() << " scenari PASS.\n";
+            return fails == 0 ? 0 : 1;
         }
     }
     // ─────────────────────────────────────────────────────────
@@ -172,6 +182,7 @@ int main(int argc, char* argv[]) {
     std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE   \n";
     std::cout << "==========================================\n\n";
 
+    fw::memory::InitializeGlobalMemory();
     fw::JoltPhysicsSystem::InitializeGlobals();
 
     StartAIServer();
@@ -248,6 +259,8 @@ int main(int argc, char* argv[]) {
     projectManager.LoadProject("saves/map/world_map.json", &blockRegistry);
     
     context.deviceManager = &deviceManager;
+    context.asyncInput = deviceManager.GetAsyncInput();
+    deviceManager.BindContext(&context);
     context.timeManager = &timeManager;
     context.diagnosticsManager = &diagnosticsManager;
     context.blockRegistry = &blockRegistry;
@@ -373,9 +386,27 @@ while (context.engine->IsRunning()) {
     }
     // ───────────────────────────────────────────────────────────
 
+    // MEM-07A: Svuotamento esplicito dello StateManager e distruzione degli stati attivi
+    // PRIMA dello spegnimento dell'engine e dei sottosistemi globali (Jolt, Vulkan, memoria).
+    std::cout << "[SYSTEM] Svuotamento StateManager e distruzione stati attivi...\n";
+    stateManager.Clear();
+
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";
     engine.Shutdown();
     StopAIServer();
     fw::JoltPhysicsSystem::ShutdownGlobals();
+
+    // MEM-04: Diagnostica e verifica dello stato dell'allocatore globale
+    if (fw::memory::CanSafelyShutdownGlobalMemory()) {
+        fw::memory::ShutdownGlobalMemory(false);
+        std::cout << "[SYSTEM] Memoria globale rilasciata con successo (0 allocazioni attive).\n";
+    } else {
+        std::cout << "[SYSTEM] Memoria globale mantenuta residente (" 
+                  << fw::memory::GetLiveAllocationCount() 
+                  << " allocazioni attive, " 
+                  << fw::memory::GetLiveAllocatedBytes() 
+                  << " bytes) per garantire terminazione CRT esente da Use-After-Free.\n";
+    }
+
     return 0;
 }

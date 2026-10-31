@@ -1,12 +1,13 @@
 #pragma once
 #include "InputTypes.h"
+#include "AsyncInput.h"
 
 struct SharedContext;
 
 class DeviceManager {
 public:
     DeviceManager() = default;
-    ~DeviceManager() = default;
+    ~DeviceManager();
 
     // Disabilitiamo le copie (Strict Memory Safety)
     DeviceManager(const DeviceManager&) = delete;
@@ -14,6 +15,14 @@ public:
 
     // Aggiorna tutti i dispositivi hardware
     void Update(SharedContext* context);
+
+    // Binding e distacco RAII di SharedContext
+    void BindContext(SharedContext* context);
+    void DetachContext();
+
+    // Accesso RAII ad AsyncInput (MEM-03: centralizzato in DeviceManager)
+    fw::AsyncInput* GetAsyncInput() noexcept { return &m_asyncInput; }
+    const fw::AsyncInput* GetAsyncInput() const noexcept { return &m_asyncInput; }
 
     // Getters per l'input
     InputState& GetInput() { return m_currentInput; }
@@ -76,6 +85,10 @@ private:
 
     // Stato precedente per azioni "Just Pressed"
     bool m_jumpWasDown = false;
+
+    // MEM-03: AsyncInput centralizzato con RAII ownership
+    fw::AsyncInput m_asyncInput;
+    SharedContext* m_boundContext = nullptr;
 };
 
 namespace fw {

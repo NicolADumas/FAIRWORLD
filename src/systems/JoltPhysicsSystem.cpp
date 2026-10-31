@@ -101,4 +101,27 @@ void JoltPhysicsSystem::Update(entt::registry& registry, SharedContext* context,
     // Lab uses its own stepping mechanism for fine control.
 }
 
+size_t JoltPhysicsSystem::GetNumBodies() const {
+    return m_physicsSystem ? m_physicsSystem->GetNumBodies() : 0;
+}
+
+size_t JoltPhysicsSystem::GetNumActiveBodies() const {
+    return m_physicsSystem ? m_physicsSystem->GetNumActiveBodies(JPH::EBodyType::RigidBody) : 0;
+}
+
+size_t JoltPhysicsSystem::GetMaxBodies() const {
+    return m_physicsSystem ? m_physicsSystem->GetMaxBodies() : 0;
+}
+
+size_t JoltPhysicsSystem::GetNumRegisteredConstraints() const {
+    return m_physicsSystem ? m_physicsSystem->GetConstraints().size() : 0;
+}
+
+size_t JoltPhysicsSystem::GetNumActiveConstraints() const {
+    // In JoltPhysics v5.0.0 i vincoli attivi sono determinati dinamicamente per isola durante
+    // lo step di simulazione e non conservati in un contatore persistente interrogabile.
+    // Non presentiamo GetNumRegisteredConstraints() come equivalente: esponiamo METRIC_UNAVAILABLE.
+    return METRIC_UNAVAILABLE;
+}
+
 } // namespace fw

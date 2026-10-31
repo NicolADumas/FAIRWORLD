@@ -143,6 +143,7 @@
         "normalMapUri": "",
         "ormMapUri": "",
         "roughness": 1.0,
+        "scientificMaterialId": 0,
         "textureFingerprint": 0
     },
     "manifest": {

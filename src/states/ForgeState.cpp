@@ -39,8 +39,8 @@ bool ForgeState::Init() {
         m_context->jobSystem = new fw::JobSystem();
         m_context->jobSystem->Initialize();
     }
-    if (!m_context->asyncInput) {
-        m_context->asyncInput = new fw::AsyncInput();
+    if (!m_context->asyncInput && m_context->deviceManager) {
+        m_context->asyncInput = m_context->deviceManager->GetAsyncInput();
     }
     
     if (!m_context->vramAllocator) {
@@ -62,7 +62,8 @@ bool ForgeState::Init() {
     
     if (!m_context->dmaManager) {
         m_context->dmaManager = new fw::VulkanDmaManager();
-        if (auto* rm = m_context->engine->GetRenderManager()) {
+        if (m_context->engine) {
+            if (auto* rm = m_context->engine->GetRenderManager()) {
                 m_context->dmaManager->Initialize(
                     rm->GetDevice(),
                     rm->GetTransferQueue(),
@@ -74,14 +75,19 @@ bool ForgeState::Init() {
                     VK_NULL_HANDLE,
                     rm->GetQueueMutex()
                 );
+            }
         }
     }
     
     std::cout << "[ForgeState] Inizializzazione ECS per Arcball-Cam...\n";
     // Togliamo il GameMode::Dev per sbloccare il mouse
-    m_context->engine->SetGameMode(GameMode::Play);
+    if (m_context->engine) {
+        m_context->engine->SetGameMode(GameMode::Play);
+    }
     // Ma chiediamo a DeviceManager un cursore libero
-    m_context->deviceManager->requireFreeCursor = true;
+    if (m_context->deviceManager) {
+        m_context->deviceManager->requireFreeCursor = true;
+    }
     
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "ForgeCamera");
@@ -98,6 +104,16 @@ bool ForgeState::Init() {
     std::cout << "[ForgeState] (ForgeWorld è ora globale e persistente in SharedContext)\n";
     
     // Assicuriamoci che il mondo sia pulito da altri stati (es. PlayState)
+    if (m_context) {
+        if (!m_context->forgeWorld) {
+            if (m_context->engine && m_context->engine->GetForgeMaster()) {
+                m_context->forgeWorld = m_context->engine->GetForgeMaster();
+            } else if (m_context->gameWorld) {
+                m_context->forgeWorld = m_context->gameWorld;
+            }
+        }
+    }
+
     if (m_context && m_context->forgeWorld) {
         m_context->forgeWorld->InitializePhysics();
         // La Forge usa la sua directory separata — le sculture non sovrascrivono mai il mondo di gioco!
@@ -109,12 +125,14 @@ bool ForgeState::Init() {
     m_assetBrowser.Initialize();
 
     // Grid Mesh Setup
-    auto gridMesh = fw::MeshGenerators::MakeGridBox(16, 16, 16, 0.05f);
-    m_context->forgeWorld->EnqueueDeferredMesh("WorkspaceGrid", {0.0f, 0.0f, 0.0f}, std::move(gridMesh));
+    if (m_context && m_context->forgeWorld) {
+        auto gridMesh = fw::MeshGenerators::MakeGridBox(16, 16, 16, 0.05f);
+        m_context->forgeWorld->EnqueueDeferredMesh("WorkspaceGrid", {0.0f, 0.0f, 0.0f}, std::move(gridMesh));
 
-    m_lastPreviewIndex = m_selectedColorIndex;
-    auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(m_selectedColorIndex, m_context);
-    m_context->forgeWorld->EnqueueDeferredMesh("PreviewSphere", { 8.0f, 0.0f, 8.0f }, std::move(previewMesh));
+        m_lastPreviewIndex = m_selectedColorIndex;
+        auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(m_selectedColorIndex, m_context);
+        m_context->forgeWorld->EnqueueDeferredMesh("PreviewSphere", { 8.0f, 0.0f, 8.0f }, std::move(previewMesh));
+    }
     
     // --- CARICAMENTO NOMI BLOCCHI DA JSON ---
     std::ifstream file("assets/definitions/blocks.json");

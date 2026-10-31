@@ -493,16 +493,16 @@ std::vector<MeshBridgeContractTestResult> MeshBridgeContractTests::RunAllTests()
 
         if (TestRunContext::Instance().IsActive()) {
             static const std::vector<std::pair<std::string, size_t>> deps = {
-                {"UVP", 15}, {"UVG", 18}, {"UVK", 18}, {"UVE", 18},
+                {"UVP", 15}, {"UVG", 18}, {"UVK", 18}, {"UVE", 35},
                 {"UVR", 20}, {"UVI", 10}, {"TOP", 36}
             };
             auto eval = TestRunContext::Instance().EvaluateRegressionGate(deps);
             preDiscovered = static_cast<int>(eval.totalDiscovered);
             prePassed = static_cast<int>(eval.totalPassed);
             preFailed = static_cast<int>(eval.totalFailed);
-            passed = eval.allDependenciesPassed && (preDiscovered == 135) && (prePassed == 135) && (preFailed == 0);
+            passed = eval.allDependenciesPassed && (preDiscovered == 152) && (prePassed == 152) && (preFailed == 0);
             obs = eval.observedSummary;
-            det = passed ? "Scudo di regressione perfetto: tutti i 135 test preesistenti superati."
+            det = passed ? "Scudo di regressione perfetto: tutti i 152 test preesistenti superati."
                          : eval.failureDetails;
         } else {
             auto accumulate = [&](auto testResults) {
@@ -521,17 +521,17 @@ std::vector<MeshBridgeContractTestResult> MeshBridgeContractTests::RunAllTests()
             accumulate(UVFactoryIntegrationTests::RunAllTests());
             accumulate(CompiledTopologyTests::RunAllTests());
 
-            passed = (preDiscovered == 135) && (prePassed == 135) && (preFailed == 0);
+            passed = (preDiscovered == 152) && (prePassed == 152) && (preFailed == 0);
             obs = "Discovered: " + std::to_string(preDiscovered) +
                   ", Passed: " + std::to_string(prePassed) +
                   ", Failed: " + std::to_string(preFailed);
-            det = passed ? "Scudo di regressione perfetto: tutti i 135 test preesistenti superati."
+            det = passed ? "Scudo di regressione perfetto: tutti i 152 test preesistenti superati."
                          : "Rilevata regressione su uno o piu test preesistenti.";
         }
 
-        addResult("MBR-10", "Pre-existing 135 Tests Regression Shield",
-                  "Esecuzione consolidata suites UVP(15), UVG(18), UVK(18), UVE(18), UVR(20), UVI(10), TOP(36)",
-                  "135/135 test preesistenti PASS, 0 FAIL, 0 regressioni",
+        addResult("MBR-10", "Pre-existing 152 Tests Regression Shield",
+                  "Esecuzione consolidata suites UVP(15), UVG(18), UVK(18), UVE(35), UVR(20), UVI(10), TOP(36)",
+                  "152/152 test preesistenti PASS, 0 FAIL, 0 regressioni",
                   obs, passed, det);
     }
 

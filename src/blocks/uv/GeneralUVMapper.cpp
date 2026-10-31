@@ -55,8 +55,10 @@ GeneralUVResult GeneralUVMapper::UnwrapMesh(EditableMesh& mesh, const GeneralUVO
     // 1. Controllo Zero-Work Revision Driven (BM-UV3.8)
     uint64_t currentFp = ComputeSeamConfigFingerprint(options);
     if (options.enableZeroWorkCache && m_cache.isValid) {
-        if (m_cache.lastEvaluatedTopologyRevision == mesh.GetTopologyRevision() &&
+        if (m_cache.lastEvaluatedMeshAddress == &mesh &&
+            m_cache.lastEvaluatedTopologyRevision == mesh.GetTopologyRevision() &&
             m_cache.lastEvaluatedGeometryRevision == mesh.GetGeometryRevision() &&
+            m_cache.lastEvaluatedAttributeRevision == mesh.GetAttributeRevision() &&
             m_cache.seamConfigFingerprint == currentFp) {
             result.layout = m_cache.cachedLayout;
             result.zeroWorkCacheHit = true;
@@ -117,8 +119,10 @@ GeneralUVResult GeneralUVMapper::UnwrapMesh(EditableMesh& mesh, const GeneralUVO
     PrimitiveUVMapper::ValidateGeneratedUV(mesh, layout, result.validation);
 
     // 7. Aggiornamento della cache Zero-Work
+    m_cache.lastEvaluatedMeshAddress = &mesh;
     m_cache.lastEvaluatedTopologyRevision = mesh.GetTopologyRevision();
     m_cache.lastEvaluatedGeometryRevision = mesh.GetGeometryRevision();
+    m_cache.lastEvaluatedAttributeRevision = mesh.GetAttributeRevision();
     m_cache.seamConfigFingerprint = currentFp;
     m_cache.cachedLayout = layout;
     m_cache.isValid = true;

@@ -17,6 +17,7 @@
 #include "PhysicsEngine.h"
 #include "DroppedItem.h"
 #include "DeskarmWebView.h"
+#include "EventManager.h"
 
 
 enum class GameMode { Dev, Play, Hub, PhysicsLab, Map, BlockMaker, ChunkEditor, PlanetMapper, SolarSystem };
@@ -95,6 +96,11 @@ public:
     void ForceGameState(GameState state) { transitionTo(state); }
     bool IsInventoryOpen() const { return m_isInventoryOpen; }
     void SetInventoryOpen(bool open) { m_isInventoryOpen = open; }
+    fw::GameWorld* GetForgeMaster() const { return m_forgeMaster.get(); }
+    SubscriptionId GetSubBlockMined() const { return m_subBlockMined; }
+    SubscriptionId GetSubBlockPlaced() const { return m_subBlockPlaced; }
+    void RegisterEventSubscriptions();
+    void UnregisterEventSubscriptions();
 
 private:
     std::string GetSlotName(int slotIndex);
@@ -128,6 +134,8 @@ private:
     World  m_world; // Deprecated
     std::unique_ptr<fw::GameWorld> m_forgeMaster;
     std::unique_ptr<fw::TimeManager> m_timeManager;
+    SubscriptionId m_subBlockMined = INVALID_SUBSCRIPTION_ID;
+    SubscriptionId m_subBlockPlaced = INVALID_SUBSCRIPTION_ID;
 
     // Input mouse
     bool m_firstMouse = true;

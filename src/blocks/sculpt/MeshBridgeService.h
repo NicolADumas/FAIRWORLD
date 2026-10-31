@@ -67,7 +67,7 @@ public:
     static ShapeDefinition CreateShapeDefinitionFromMesh(const EditableMesh& mesh, const GeometryCompileResult& compiled);
     static bool ReconstructMeshFromPackage(const RawAssetPackage& package, EditableMesh& outMesh, std::string* outError = nullptr);
 
-    // --- Validazione e Integration Contract Suite (BRG-1 .. BRG-10) ---
+    // --- Validazione e Integration Contract Suite (BRG-1 .. BRG-11) ---
     static std::vector<BridgeTestResult> RunContractTests();
 };
 

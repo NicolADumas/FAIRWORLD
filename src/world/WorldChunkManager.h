@@ -33,6 +33,14 @@ public:
         return entt::null;
     }
 
+    /**
+     * @brief Restituisce il numero di chunk voxel attualmente registrati e attivi in memoria.
+     * Operazione const read-only, noexcept, O(1), senza allocazioni e senza alterare il lifecycle.
+     */
+    [[nodiscard]] size_t GetLoadedChunkCount() const noexcept {
+        return m_activeChunks.size();
+    }
+
     void Clear() {
         m_activeChunks.clear();
     }

@@ -28,7 +28,9 @@ bool HubState::Init() {
     if (m_context && m_context->runtimeManager) {
         m_context->runtimeManager->RequireFeaturesAsync(fw::RuntimeFeature::None);
     }
-    m_context->deviceManager->InitDefaultBindings();
+    if (m_context && m_context->deviceManager) {
+        m_context->deviceManager->InitDefaultBindings();
+    }
     return true;
 }
 

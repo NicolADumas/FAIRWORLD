@@ -138,11 +138,11 @@ std::vector<SuiteDescriptor> buildRegistry() {
         makeRunner("HIS", []() { return fw::MeshHistoryService::RunHistoryContractTests(); })
     });
 
-    // 8. BRG: MeshBridgeService (Factory Draft & Packaging Sync) (10 tests)
+    // 8. BRG: MeshBridgeService (Factory Draft & Packaging Sync) (11 tests)
     reg.push_back({
         "BRG",
         "MeshBridgeService (Factory Draft & Packaging Sync)",
-        10,
+        11,
         makeRunner("BRG", []() { return fw::MeshBridgeService::RunContractTests(); })
     });
 
@@ -157,7 +157,7 @@ void printHelp(const char* prog) {
               << "  --test <TEST_ID>            Run only specific test ID (e.g. --test SEL-11)\n"
               << "  --list-suites               List all registered sculpt suites with expected test counts\n"
               << "  --help, -h                  Display this help message and exit\n\n"
-              << "Registered Suites (8 suites, 94 tests total):\n"
+              << "Registered Suites (8 suites, 95 tests total):\n"
               << "  SM   (10 tests) - EditableMesh Core & Generational DCEL Topology\n"
               << "  SEL  (20 tests) - MeshSelectionService & Topological Selection (BM-S1 SEL-1..20)\n"
               << "  MOD  (10 tests) - MeshModelingService (Extrude, Inset, Bevel, Transforms)\n"

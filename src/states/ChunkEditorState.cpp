@@ -27,11 +27,12 @@ ChunkEditorState::ChunkEditorState(SharedContext* context) : AppBaseState(contex
 
 ChunkEditorState::~ChunkEditorState() {
     if (m_context) {
+        fw::GameWorld* masterWorld = (m_context->engine ? m_context->engine->GetForgeMaster() : m_context->gameWorld);
         if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-            m_context->forgeWorld = nullptr;
+            m_context->forgeWorld = masterWorld;
         }
         if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
-            m_context->activeRegistry = nullptr;
+            m_context->activeRegistry = masterWorld ? &masterWorld->GetRegistry() : nullptr;
         }
     }
     m_previewWorld.reset();

@@ -27,6 +27,14 @@ public:
     void Update(float dt) override;
     void Render() override;
 
+    void StartSimulation();
+    void StopSimulation();
+    bool IsSimulating() const { return m_simulateMode; }
+    size_t GetJoltBodyCount() const { return m_joltBodies.size(); }
+    uint32_t GetFloorBodyID() const { return m_floorBodyID; }
+    fw::JoltPhysicsSystem* GetJoltPhysicsSystem() const { return m_joltSystem; }
+    void GenerateBipedSkeleton();
+
 private:
     SharedContext* m_context;
     fw::Skeleton m_skeleton;
@@ -82,10 +90,6 @@ private:
     // Colori per giunto (color picker)
     std::unordered_map<int, glm::vec4> m_jointColors;
 
-    // Funzioni di supporto
-    void StartSimulation();
-    void StopSimulation();
-    
     fw::GameWorld* m_labWorld = nullptr;
     fw::JoltPhysicsSystem* m_joltSystem = nullptr;
     entt::entity m_playerEntity = entt::null;
@@ -108,7 +112,6 @@ private:
     bool m_isPlaying = false;
 
     // Generatori Scheletro
-    void GenerateBipedSkeleton();
     void GenerateCentipedeSkeleton(int segments);
     void GenerateSnakeSkeleton(int segments);
     void GenerateSpiderSkeleton();

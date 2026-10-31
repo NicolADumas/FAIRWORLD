@@ -150,6 +150,10 @@ public:
     UVIslandID GetActiveStrokeIslandId() const { return m_strokeIslandId; }
     const std::string& GetLastPaintBlockedReason() const { return m_lastPaintBlockedReason; }
 
+    // --- Face Selection Lock & Auto-Binding Configuration ---
+    void SetAutoSelectFaceOnPaint(bool enable) { m_autoSelectFaceOnPaint = enable; }
+    bool GetAutoSelectFaceOnPaint() const { return m_autoSelectFaceOnPaint; }
+
     // --- 2D Stamp Tool Integration (BM-PAINT-STAMP-03) ---
     bool ApplyStamp2D(const glm::vec2& atlasUV, 
                       const StampDefinition& stamp, 
@@ -180,6 +184,7 @@ private:
     glm::vec2 m_prevStrokeUV{0.0f};
     UVIslandID m_strokeIslandId = INVALID_UVISLAND_ID;
     std::string m_lastPaintBlockedReason;
+    bool m_autoSelectFaceOnPaint = false;
 
     std::vector<UVEditSnapshot> m_undoStack;
     std::vector<UVEditSnapshot> m_redoStack;

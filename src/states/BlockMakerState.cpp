@@ -389,11 +389,17 @@ BlockMakerState::BlockMakerState(SharedContext* context) : m_context(context) {
 BlockMakerState::~BlockMakerState() {
     std::cout << "[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...\n";
     if (m_context) {
-        if (m_previewWorld && m_context->forgeWorld == m_previewWorld.get()) {
-            m_context->forgeWorld = m_context->gameWorld;
-        }
-        if (m_previewWorld && m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
-            m_context->activeRegistry = m_context->gameWorld ? &m_context->gameWorld->GetRegistry() : nullptr;
+        fw::GameWorld* masterWorld = (m_context->engine ? m_context->engine->GetForgeMaster() : nullptr);
+        if (m_previewWorld) {
+            if (m_context->gameWorld == m_previewWorld.get()) {
+                m_context->gameWorld = masterWorld;
+            }
+            if (m_context->forgeWorld == m_previewWorld.get()) {
+                m_context->forgeWorld = masterWorld ? masterWorld : (m_context->gameWorld != m_previewWorld.get() ? m_context->gameWorld : nullptr);
+            }
+            if (m_context->activeRegistry == &m_previewWorld->GetRegistry()) {
+                m_context->activeRegistry = m_context->forgeWorld ? &m_context->forgeWorld->GetRegistry() : nullptr;
+            }
         }
         m_context->isBlockMakerMode = false;
         if (m_context->engine && m_context->engine->GetRenderManager()) {
@@ -4618,8 +4624,8 @@ bool BlockMakerState::Init() {
         m_context->jobSystem = new fw::JobSystem();
         m_context->jobSystem->Initialize();
     }
-    if (!m_context->asyncInput) {
-        m_context->asyncInput = new fw::AsyncInput();
+    if (!m_context->asyncInput && m_context->deviceManager) {
+        m_context->asyncInput = m_context->deviceManager->GetAsyncInput();
     }
     if (!m_context->vramAllocator) {
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
@@ -4638,12 +4644,14 @@ bool BlockMakerState::Init() {
     }
     if (!m_context->dmaManager) {
         m_context->dmaManager = new fw::VulkanDmaManager();
-        if (auto* rm = m_context->engine->GetRenderManager()) {
-            m_context->dmaManager->Initialize(
-                rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
-                rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
-                rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex()
-            );
+        if (m_context->engine) {
+            if (auto* rm = m_context->engine->GetRenderManager()) {
+                m_context->dmaManager->Initialize(
+                    rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
+                    rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
+                    rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex()
+                );
+            }
         }
     }
 
@@ -6592,7 +6600,7 @@ void BlockMakerState::DrawFactorySculptControls() {
         }
     }
 
-    if (ImGui::TreeNodeEx("Audit Suite BM-S9 (BRG-1 .. BRG-10)##BridgeTestSuiteTree", ImGuiTreeNodeFlags_None)) {
+    if (ImGui::TreeNodeEx("Audit Suite BM-S9 (BRG-1 .. BRG-11)##BridgeTestSuiteTree", ImGuiTreeNodeFlags_None)) {
         if (ImGui::Button("Esegui Audit Bridge BM-S9 (Re-Run)##RerunBridgeTests", ImVec2(260, 24))) {
             RunBridgeValidationTests(true);
         }

@@ -516,7 +516,7 @@ private:
     bool m_historyTestsExecuted = false;
     void RunHistoryValidationTests(bool isManualTrigger = false);
 
-    // --- BM-S9 GeometryCompiler Bridge Validation Suite (BRG-1 .. BRG-10) ---
+    // --- BM-S9 GeometryCompiler Bridge Validation Suite (BRG-1 .. BRG-11) ---
     std::vector<fw::BridgeTestResult> m_bridgeTestResults;
     bool m_bridgeTestsExecuted = false;
     void RunBridgeValidationTests(bool isManualTrigger = false);

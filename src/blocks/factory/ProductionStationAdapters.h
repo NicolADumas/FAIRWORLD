@@ -167,6 +167,7 @@ public:
 
         m_lastRevision = context.draft.manifest.revision;
         m_status = StationStatus::Completed;
+        context.draft.geometrySource = GeometrySource::SculptedMesh;
         context.draft.completedStationsMask |= (1u << static_cast<uint8_t>(ProductionStationID::Sculpt));
         return true;
     }
@@ -408,9 +409,12 @@ public:
         context.draft.uvLayout = mapRes.layout;
         context.draft.uvRevision = mapRes.layout.uvRevision;
 
-        // BM-UV-PAINTER MG03: Conserva sempre la mesh autoritativa un-wrapped nel draft
-        // in modo che BlockMaker, Painter e Viewport 3D campionino la stessa topologia UV coerente.
-        context.draft.sculptMesh = workMesh;
+        // BM-UV-PAINTER MG03: Conserva la mesh autoritativa un-wrapped nel draft
+        // solo se il draft è effettivamente una sculpted mesh.
+        // Per le primitive, la geometria autoritativa è ShapeDefinition, non sculptMesh.
+        if (isSculpted) {
+            context.draft.sculptMesh = workMesh;
+        }
 
         if (mapRes.topologyClassification == TopologySupportClassification::RequiresRepair) {
             m_diagnostic.warnings.push_back("Mesh topologicamente problematica: richiede riparazione manifold.");
@@ -1037,7 +1041,13 @@ public:
         opts.defaultProjection = context.draft.baseProjection;
 
         GeometryCompileResult compRes;
-        if (context.draft.geometrySource == GeometrySource::SculptedMesh) {
+        bool isSculpt = (context.draft.geometrySource == GeometrySource::SculptedMesh);
+        if (!isSculpt && context.draft.sculptMesh.has_value() && !context.draft.sculptMesh->IsEmpty() && context.draft.sculptMesh->GetFaceCount() > 0) {
+            isSculpt = true;
+            context.draft.geometrySource = GeometrySource::SculptedMesh;
+        }
+
+        if (isSculpt) {
             if (!context.draft.sculptMesh.has_value() || context.draft.sculptMesh->IsEmpty() || context.draft.sculptMesh->GetFaceCount() == 0) {
                 m_diagnostic.errors.push_back("Geometria Sculpt non valida o assente nel draft.");
                 m_status = StationStatus::Failed;

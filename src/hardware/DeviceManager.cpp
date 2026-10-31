@@ -308,8 +308,40 @@ namespace fw {
     }
 }
 
+DeviceManager::~DeviceManager() {
+    DetachContext();
+}
+
+void DeviceManager::BindContext(SharedContext* context) {
+    if (m_boundContext && m_boundContext != context) {
+        DetachContext();
+    }
+    m_boundContext = context;
+    if (context) {
+        if (!context->asyncInput) {
+            context->asyncInput = &m_asyncInput;
+        }
+        if (!context->deviceManager) {
+            context->deviceManager = this;
+        }
+    }
+}
+
+void DeviceManager::DetachContext() {
+    if (m_boundContext) {
+        if (m_boundContext->asyncInput == &m_asyncInput) {
+            m_boundContext->asyncInput = nullptr;
+        }
+        if (m_boundContext->deviceManager == this) {
+            m_boundContext->deviceManager = nullptr;
+        }
+        m_boundContext = nullptr;
+    }
+}
+
 void DeviceManager::Update(SharedContext* context) {
     if (!context) return;
+    BindContext(context);
     using namespace entt::literals;
 
     // 0. --- CACHE STATO TASTIERA (Zero Latenza per IsActionActive) ---

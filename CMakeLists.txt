@@ -13,6 +13,9 @@ if(MSVC)
     set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /MAP")
 endif()
 
+# Abilitazione del testing CTest (Gate CTEST-01)
+enable_testing()
+
 # Direzioniamo gli output di compilazione nella cartella 'bin'
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/modules)
@@ -50,6 +53,13 @@ list(REMOVE_ITEM CORE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/blocks/uv/uv_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/sculpt/sculpt_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/scientific_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/core/app/event_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/world/noise/noise_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/hardware/async_input_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/core/memory/memory_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/core/app/gameplay_stress_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/core/memory/diagnostics_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/core/app/lifecycle_tests_main.cpp"
 )
 file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
 
@@ -91,7 +101,7 @@ target_include_directories(nlohmann_json INTERFACE ${CMAKE_SOURCE_DIR}/third_par
 add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
 
 # Linkiamo Vulkan, Jolt, nlohmann_json e librerie OS al Core
-target_link_libraries(FairworldCore PUBLIC Vulkan::Vulkan Jolt Shell32 nlohmann_json::nlohmann_json)
+target_link_libraries(FairworldCore PUBLIC Vulkan::Vulkan Jolt Shell32 Psapi nlohmann_json::nlohmann_json)
 target_link_libraries(FairworldCore PUBLIC ${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll.lib)
 target_link_libraries(FairworldCore PUBLIC ${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/lib/openxr_loader.lib)
 
@@ -181,6 +191,123 @@ add_custom_command(TARGET FairworldScientificTests POST_BUILD
         "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
         $<TARGET_FILE_DIR:FairworldScientificTests>
 )
+
+# --- 7. TEST RUNNER HEADLESS EVENT SUBSCRIPTIONS (FairworldEventTests - MEM-01) ---
+add_executable(FairworldEventTests src/core/app/event_tests_main.cpp)
+target_link_libraries(FairworldEventTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldEventTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldEventTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldEventTests>
+)
+
+# --- 8. TEST RUNNER HEADLESS NOISE RULE OF FIVE (FairworldNoiseTests - MEM-02) ---
+add_executable(FairworldNoiseTests src/world/noise/noise_tests_main.cpp)
+target_link_libraries(FairworldNoiseTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldNoiseTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldNoiseTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldNoiseTests>
+)
+
+# --- 9. TEST RUNNER HEADLESS ASYNC INPUT LIFECYCLE (FairworldAsyncInputTests - MEM-03) ---
+add_executable(FairworldAsyncInputTests src/hardware/async_input_tests_main.cpp)
+target_link_libraries(FairworldAsyncInputTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldAsyncInputTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldAsyncInputTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldAsyncInputTests>
+)
+
+# --- 10. TEST RUNNER HEADLESS GLOBAL MEMORY ALLOCATOR (FairworldMemoryTests - MEM-04) ---
+add_executable(FairworldMemoryTests src/core/memory/memory_tests_main.cpp)
+target_link_libraries(FairworldMemoryTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldMemoryTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldMemoryTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldMemoryTests>
+)
+
+# --- 11. TEST RUNNER HEADLESS GAMEPLAY LIFECYCLE STRESS (FairworldGameplayStressTests - MEM-05) ---
+add_executable(FairworldGameplayStressTests src/core/app/gameplay_stress_tests_main.cpp)
+target_link_libraries(FairworldGameplayStressTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldGameplayStressTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldGameplayStressTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldGameplayStressTests>
+)
+
+# --- 12. RUNTIME MEMORY DIAGNOSTICS & LEAK VERIFICATION (FairworldDiagnostics - MEM-06) ---
+add_executable(FairworldDiagnostics src/core/memory/diagnostics_main.cpp)
+target_link_libraries(FairworldDiagnostics PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldDiagnostics POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldDiagnostics>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldDiagnostics>
+)
+
+# --- 13. LIFECYCLE & OWNERSHIP REMEDIATION TESTS (FairworldLifecycleTests - MEM-07A) ---
+add_executable(FairworldLifecycleTests src/core/app/lifecycle_tests_main.cpp)
+target_link_libraries(FairworldLifecycleTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldLifecycleTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldLifecycleTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldLifecycleTests>
+)
+
+# ==============================================================================
+# 14. REGISTRAZIONE SUITE CTEST (Gate CTEST-01: Discovery e Standalone Runners)
+# ==============================================================================
+add_test(NAME FairworldUVTests COMMAND $<TARGET_FILE:FairworldUVTests>)
+set_tests_properties(FairworldUVTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldSculptTests COMMAND $<TARGET_FILE:FairworldSculptTests>)
+set_tests_properties(FairworldSculptTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldScientificTests COMMAND $<TARGET_FILE:FairworldScientificTests>)
+set_tests_properties(FairworldScientificTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldEventTests COMMAND $<TARGET_FILE:FairworldEventTests>)
+set_tests_properties(FairworldEventTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldNoiseTests COMMAND $<TARGET_FILE:FairworldNoiseTests>)
+set_tests_properties(FairworldNoiseTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldAsyncInputTests COMMAND $<TARGET_FILE:FairworldAsyncInputTests>)
+set_tests_properties(FairworldAsyncInputTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldMemoryTests COMMAND $<TARGET_FILE:FairworldMemoryTests>)
+set_tests_properties(FairworldMemoryTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldGameplayStressTests COMMAND $<TARGET_FILE:FairworldGameplayStressTests>)
+set_tests_properties(FairworldGameplayStressTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldDiagnostics COMMAND $<TARGET_FILE:FairworldDiagnostics>)
+set_tests_properties(FairworldDiagnostics PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldLifecycleTests COMMAND $<TARGET_FILE:FairworldLifecycleTests>)
+set_tests_properties(FairworldLifecycleTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 
 # --- 3. I MODULI DINAMICI (Hot-Reloading) ---

@@ -346,12 +346,12 @@ bool MeshBridgeService::ReconstructMeshFromPackage(const RawAssetPackage& packag
 }
 
 // =============================================================================
-// SUITE DI TEST DETERMINISTICA BM-S9 (BRG-1 .. BRG-10)
+// SUITE DI TEST DETERMINISTICA BM-S9 (BRG-1 .. BRG-11)
 // =============================================================================
 
 std::vector<BridgeTestResult> MeshBridgeService::RunContractTests() {
     std::vector<BridgeTestResult> results;
-    results.reserve(10);
+    results.reserve(11);
 
     // -------------------------------------------------------------------------
     // BRG-1: Shape -> Sculpt: Conversione deterministica a EditableMesh
@@ -686,6 +686,52 @@ std::vector<BridgeTestResult> MeshBridgeService::RunContractTests() {
         tr.observedDesc = "Draft B intatto: " + std::string(bUnchanged ? "true" : "false");
         tr.passed = bUnchanged;
         tr.details = bUnchanged ? "Isolamento multi-asset completamente garantito." : "Leakage di mutazione tra draft!";
+        results.push_back(tr);
+    }
+
+    // -------------------------------------------------------------------------
+    // BRG-11: Dual Geometry Source Path Validation (Primitive vs SculptedMesh)
+    // -------------------------------------------------------------------------
+    {
+        BridgeTestResult tr;
+        tr.testId = "BRG-11";
+        tr.testName = "Dual Geometry Source Path Validation";
+        tr.inputDesc = "BuildPackage su Draft A (Primitiva pura) vs Draft B (SculptedMesh)";
+        tr.expectedDesc = "Draft A -> Primitive (sculptTopologyJson vuoto); Draft B -> SculptedMesh (sculptTopologyJson popolato)";
+
+        // 1. Percorso Primitiva: Draft senza sculptMesh
+        FactoryOrchestrator orchPrim;
+        orchPrim.OpenDraft("fairworld:test_primitive_asset", "Primitive Asset");
+        auto* draftPrim = orchPrim.GetCurrentDraft();
+        draftPrim->completedStationsMask = 0x1F;
+        auto pkgPrimOpt = orchPrim.BuildPackage(nullptr, nullptr, nullptr);
+
+        bool primValid = pkgPrimOpt.has_value() &&
+                         pkgPrimOpt->geometrySource == GeometrySource::Primitive &&
+                         pkgPrimOpt->sculptTopologyJson.empty() &&
+                         !pkgPrimOpt->geometry.vertices.empty();
+
+        // 2. Percorso Sculpt: Draft con sculptMesh esplicita
+        FactoryOrchestrator orchSculpt;
+        orchSculpt.OpenDraft("fairworld:test_sculpt_asset", "Sculpt Asset");
+        auto* draftSculpt = orchSculpt.GetCurrentDraft();
+        draftSculpt->sculptMesh = EditableMesh::CreateCube(1.0f);
+        draftSculpt->completedStationsMask = 0x1F;
+        auto pkgSculptOpt = orchSculpt.BuildPackage(nullptr, nullptr, nullptr);
+
+        bool sculptValid = pkgSculptOpt.has_value() &&
+                          pkgSculptOpt->geometrySource == GeometrySource::SculptedMesh &&
+                          !pkgSculptOpt->sculptTopologyJson.empty() &&
+                          !pkgSculptOpt->geometry.vertices.empty();
+
+        bool passed = primValid && sculptValid;
+        tr.observedDesc = "PrimSource=" + std::string(pkgPrimOpt ? (pkgPrimOpt->geometrySource == GeometrySource::Primitive ? "Primitive" : "Sculpt") : "None") +
+                          ", PrimJsonLen=" + std::to_string(pkgPrimOpt ? pkgPrimOpt->sculptTopologyJson.size() : 0) +
+                          ", SculptSource=" + std::string(pkgSculptOpt ? (pkgSculptOpt->geometrySource == GeometrySource::SculptedMesh ? "SculptedMesh" : "Primitive") : "None") +
+                          ", SculptJsonLen=" + std::to_string(pkgSculptOpt ? pkgSculptOpt->sculptTopologyJson.size() : 0);
+        tr.passed = passed;
+        tr.details = passed ? "Entrambi i percorsi Primitive e SculptedMesh verificati con successo."
+                            : "Disallineamento nella distinzione dei percorsi Primitive vs SculptedMesh.";
         results.push_back(tr);
     }
 

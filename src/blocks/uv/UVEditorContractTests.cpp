@@ -571,10 +571,12 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
         UVEditorDocument doc(mesh, layout);
 
         TexturePaintingService painter;
-        painter.InitializeCanvas(512, 512);
+        painter.InitializeCanvas(512, 512, glm::vec4(0.0f));
 
         // Isola 3 e' il triangolo sinistro (col 0, row 1), Isola 1 e' il quad centrale (col 1, row 0).
-        // Esegui una pennellata centrata sull'isola triangolare con raggio ampio
+        // Seleziona esplicitamente l'isola 3 per vincolare la pittura alla sola faccia autorizzata
+        doc.SelectIsland(3, false);
+
         const auto& isl3 = layout.islands[3];
         glm::vec2 triCenterUV = glm::vec2(isl3.atlasTransform.z + isl3.atlasTransform.x * 0.25f,
                                           isl3.atlasTransform.w + isl3.atlasTransform.y * 0.75f);
@@ -716,6 +718,7 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
 
         glm::vec2 pUV = glm::vec2(layout.islands[0].atlasTransform.z + 0.05f,
                                   layout.islands[0].atlasTransform.w + 0.05f);
+        doc.SelectIsland(0, false);
         doc.BeginStroke2D(pUV, brush, &painter, 1, CanvasPaintMode::SurfacePaint);
         doc.EndStroke2D(&painter);
 
@@ -743,11 +746,13 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
     {
         TexturePaintingService painter14;
         TexturePaintingService painter15;
-        painter14.InitializeCanvas(512, 512);
-        painter15.InitializeCanvas(512, 512);
+        painter14.InitializeCanvas(512, 512, glm::vec4(0.0f));
+        painter15.InitializeCanvas(512, 512, glm::vec4(0.0f));
 
-        uint32_t l14 = painter14.AddLayer("Block14_Layer");
-        uint32_t l15 = painter15.AddLayer("Block15_Layer");
+        uint32_t l14 = painter14.GetLayers()[0].layerId;
+        uint32_t l15 = painter15.GetLayers()[0].layerId;
+        painter14.GetLayer(l14)->name = "Block14_Layer";
+        painter15.GetLayer(l15)->name = "Block15_Layer";
 
         PaintBrush brush;
         brush.radiusPixels = 10.0f;
@@ -1330,11 +1335,13 @@ std::vector<UVEditorTestResult> UVEditorContractTests::RunAllTests() {
     {
         TexturePaintingService painter14;
         TexturePaintingService painter15;
-        painter14.InitializeCanvas(512, 512);
-        painter15.InitializeCanvas(512, 512);
+        painter14.InitializeCanvas(512, 512, glm::vec4(0.0f));
+        painter15.InitializeCanvas(512, 512, glm::vec4(0.0f));
 
-        uint32_t l14 = painter14.AddLayer("Block14_Wedge");
-        uint32_t l15 = painter15.AddLayer("Block15_Other");
+        uint32_t l14 = painter14.GetLayers()[0].layerId;
+        uint32_t l15 = painter15.GetLayers()[0].layerId;
+        painter14.GetLayer(l14)->name = "Block14_Wedge";
+        painter15.GetLayer(l15)->name = "Block15_Other";
 
         PaintBrush brush;
         brush.radiusPixels = 12.0f;

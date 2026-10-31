@@ -64,21 +64,74 @@ void GameWorld::InitializePhysics() {
             frameSize, basePtr + persistentSize + poolSize
         );
         
-        std::cout << "[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.\n";
+        static bool s_firstArenaLogged = false;
+        if (!s_firstArenaLogged) {
+            std::cout << "[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.\n";
+            s_firstArenaLogged = true;
+        }
     }
 }
 
+size_t GameWorld::GetPersistentUsedBytes() const {
+    return m_persistentAllocator ? m_persistentAllocator->GetUsed() : 0;
+}
+
+size_t GameWorld::GetChunkPoolUsedBytes() const {
+    return m_chunkPoolAllocator ? m_chunkPoolAllocator->GetUsed() : 0;
+}
+
+size_t GameWorld::GetFrameStackUsedBytes() const {
+    return m_frameAllocator ? m_frameAllocator->GetUsed() : 0;
+}
+
 GameWorld::~GameWorld() {
+    // MEM07-F05: Segnala cancellazione immediata di tutti i job in volo (m_cancelToken rimane true!)
     if (m_cancelToken) {
         *m_cancelToken = true;
     }
-    ClearWorld(false);
-    EventManager::Get().UnsubscribeAll<Event_BlockUpdated>();
+    // Rilascia risorse VRAM, mesh e registry senza ricreare entità singleton o riallocare memoria
+    TeardownResources();
+
+    if (m_blockUpdatedSubId != INVALID_SUBSCRIPTION_ID) {
+        EventManager::Get().Unsubscribe(m_blockUpdatedSubId);
+        m_blockUpdatedSubId = INVALID_SUBSCRIPTION_ID;
+    }
+    if (m_context) {
+        if (m_context->gameWorld == this) {
+            m_context->gameWorld = nullptr;
+        }
+        if (m_context->forgeWorld == this) {
+            m_context->forgeWorld = nullptr;
+        }
+        if (m_context->activeRegistry == &m_registry) {
+            m_context->activeRegistry = nullptr;
+        }
+    }
     if (m_masterMemoryBlock) {
         free(m_masterMemoryBlock);
         m_masterMemoryBlock = nullptr;
     }
-    std::cout << "[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.\n";
+    static bool s_firstDestructionLogged = false;
+    if (!s_firstDestructionLogged) {
+        std::cout << "[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.\n";
+        s_firstDestructionLogged = true;
+    }
+}
+
+void GameWorld::InitPlanetSingleton() {
+    if (!m_registry.valid(m_planetEntity)) {
+        m_planetEntity = m_registry.create();
+    }
+    m_registry.emplace_or_replace<PlanetTag>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetTimeComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetAstronomyComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetGeometryComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetEnvironmentComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetAtmosphereComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetClimateComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetOceanComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetGeologyComponent>(m_planetEntity);
+    m_registry.emplace_or_replace<PlanetEcologyComponent>(m_planetEntity);
 }
 
 void GameWorld::Initialize(SharedContext* context) {
@@ -92,26 +145,18 @@ void GameWorld::Initialize(SharedContext* context) {
 
         // Registrazione per i fluidi (Event-Driven) - solo per il mondo di gioco reale
         if (!m_context->isMapBuilderMode) {
-            EventManager::Get().Subscribe<Event_BlockUpdated>([this](const Event_BlockUpdated& e) {
+            if (m_blockUpdatedSubId != INVALID_SUBSCRIPTION_ID) {
+                EventManager::Get().Unsubscribe(m_blockUpdatedSubId);
+                m_blockUpdatedSubId = INVALID_SUBSCRIPTION_ID;
+            }
+            m_blockUpdatedSubId = EventManager::Get().Subscribe<Event_BlockUpdated>([this](const Event_BlockUpdated& e) {
                 this->ProcessFluidUpdate(e.position.x, e.position.y, e.position.z);
             });
         }
     }
     
     // Inizializzazione Entità Pianeta Centrale (Singleton ECS)
-    m_planetEntity = m_registry.create();
-    m_registry.emplace<PlanetTag>(m_planetEntity);
-    m_registry.emplace<PlanetTimeComponent>(m_planetEntity);
-    m_registry.emplace<PlanetAstronomyComponent>(m_planetEntity);
-    m_registry.emplace<PlanetGeometryComponent>(m_planetEntity);
-    m_registry.emplace<PlanetEnvironmentComponent>(m_planetEntity);
-    
-    // Nuovi Layer della Simulazione Globale
-    m_registry.emplace<PlanetAtmosphereComponent>(m_planetEntity);
-    m_registry.emplace<PlanetClimateComponent>(m_planetEntity);
-    m_registry.emplace<PlanetOceanComponent>(m_planetEntity);
-    m_registry.emplace<PlanetGeologyComponent>(m_planetEntity);
-    m_registry.emplace<PlanetEcologyComponent>(m_planetEntity);
+    InitPlanetSingleton();
 }
 
 void GameWorld::CancelJobs() {
@@ -120,18 +165,9 @@ void GameWorld::CancelJobs() {
     }
 }
 
-void GameWorld::ClearWorld(bool saveToDisk) {
-    if (saveToDisk) {
-        SaveAllChunks();
-    }
-    
+void GameWorld::TeardownResources() {
     if (m_context && m_context->jobSystem) {
         m_context->jobSystem->WaitAll();
-    }
-    
-    // B5.4D3.1P2: Reset the cancellation token so that subsequent async meshing jobs are not aborted immediately
-    if (m_cancelToken) {
-        *m_cancelToken = false;
     }
     
     {
@@ -155,23 +191,27 @@ void GameWorld::ClearWorld(bool saveToDisk) {
     }
     
     m_registry.clear();
+    m_planetEntity = entt::null;
     m_chunkManager.Clear();
     m_forgeBlocks.clear();
     
     if (m_frameAllocator) m_frameAllocator->Reset();
+}
+
+void GameWorld::ClearWorld(bool saveToDisk) {
+    if (saveToDisk) {
+        SaveAllChunks();
+    }
     
-    // Re-inizializza l'entità singleton del pianeta dopo il clear
-    m_planetEntity = m_registry.create();
-    m_registry.emplace<PlanetTag>(m_planetEntity);
-    m_registry.emplace<PlanetTimeComponent>(m_planetEntity);
-    m_registry.emplace<PlanetAstronomyComponent>(m_planetEntity);
-    m_registry.emplace<PlanetGeometryComponent>(m_planetEntity);
-    m_registry.emplace<PlanetEnvironmentComponent>(m_planetEntity);
-    m_registry.emplace<PlanetAtmosphereComponent>(m_planetEntity);
-    m_registry.emplace<PlanetClimateComponent>(m_planetEntity);
-    m_registry.emplace<PlanetOceanComponent>(m_planetEntity);
-    m_registry.emplace<PlanetGeologyComponent>(m_planetEntity);
-    m_registry.emplace<PlanetEcologyComponent>(m_planetEntity);
+    TeardownResources();
+    
+    // B5.4D3.1P2: Reset the cancellation token so that subsequent async meshing jobs are not aborted immediately
+    if (m_cancelToken) {
+        *m_cancelToken = false;
+    }
+    
+    // Re-inizializza l'entità singleton del pianeta per il ciclo di vita riutilizzabile
+    InitPlanetSingleton();
 }
 
 void GameWorld::Update(float dt) {

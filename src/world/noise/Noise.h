@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <memory>
 
 namespace fw {
 
@@ -27,6 +28,14 @@ public:
     Noise(int seed = 1337);
     ~Noise();
 
+    // Rule of Five (MEM-02: Strict ownership semantics & memory safety)
+    Noise(const Noise& other);
+    Noise& operator=(const Noise& other);
+    Noise(Noise&& other) noexcept;
+    Noise& operator=(Noise&& other) noexcept;
+
+    bool IsValid() const;
+
     void SetSeed(int seed);
     void SetNoiseType(NoiseType type);
     
@@ -49,7 +58,7 @@ public:
 
 private:
     class FastNoiseLiteImpl;
-    FastNoiseLiteImpl* m_impl;
+    std::unique_ptr<FastNoiseLiteImpl> m_impl;
 };
 
 } // namespace fw

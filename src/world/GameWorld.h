@@ -9,6 +9,7 @@
 #include "WorldChunkManager.h"
 #include "WorldStructureManager.h"
 #include "MeshGenerators.h"
+#include "EventManager.h"
 #include <memory>
 #include <string>
 #include <mutex>
@@ -61,7 +62,9 @@ public:
 
     void ClearWorld(bool saveToDisk = false);
     void CancelJobs();
+    void TeardownResources();
     void Update(float dt);
+    std::shared_ptr<std::atomic<bool>> GetCancelToken() const { return m_cancelToken; }
     
 #ifdef _MSC_VER
     __declspec(noinline) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position);
@@ -85,6 +88,7 @@ public:
     void DestroyEntity(entt::entity e);
 
     entt::registry& GetRegistry() { return m_registry; }
+    const entt::registry& GetRegistry() const { return m_registry; }
     
     // Ritorna l'entità centrale del Pianeta (Singleton Entity)
     entt::entity GetPlanetEntity() const { return m_planetEntity; }
@@ -120,8 +124,24 @@ public:
     class BlockRegistry* GetBlockRegistry() const;
     class MaterialRegistry* GetMaterialRegistry() const;
     struct SharedContext* GetContext() const { return m_context; }
+    SubscriptionId GetBlockUpdatedSubscriptionId() const { return m_blockUpdatedSubId; }
+
+    // --- Diagnostica Memoria & Risorse CPU (MEM-06) ---
+    size_t GetMasterBlockSizeBytes() const { return m_masterMemoryBlock ? (128ULL * 1024ULL * 1024ULL) : 0; }
+    size_t GetPersistentUsedBytes() const;
+    size_t GetChunkPoolUsedBytes() const;
+    size_t GetFrameStackUsedBytes() const;
+    size_t GetLiveEntityCount() const {
+        const auto* storage = m_registry.storage<entt::entity>();
+        return storage ? storage->free_list() : 0;
+    }
+    size_t GetLoadedChunkCount() const { return m_chunkManager.GetLoadedChunkCount(); }
+    bool HasMasterMemoryBlock() const { return m_masterMemoryBlock != nullptr; }
 
 private:
+    void InitPlanetSingleton();
+
+    SubscriptionId m_blockUpdatedSubId = INVALID_SUBSCRIPTION_ID;
     entt::registry m_registry;
     entt::entity m_planetEntity = entt::null;
     
