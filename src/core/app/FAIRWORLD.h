@@ -60,7 +60,7 @@ public:
     FairWorldEngine();
     ~FairWorldEngine();
 
-    bool Init();
+    bool Init(bool enableVr = false);
     void Run();
     void Shutdown();
     void SetRenderCallback(std::function<void()> callback);
@@ -69,6 +69,9 @@ public:
     GameState GetCurrentState() const { return m_current; }
     bool IsRunning() const { return m_isRunning; }
     void PollHardwareEvents();
+    bool IsMinimized() const;
+    void WaitEventsTimeout(uint32_t timeoutMs);
+    WindowManager* GetWindowManager() const { return m_windowManager.get(); }
 
     bool isWorldRunning() const;
     bool isEditorOpen() const;

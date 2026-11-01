@@ -9,8 +9,8 @@ add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
 
 # Linker Flags per abilitare ottimizzazioni in Release
 if(MSVC)
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG /MAP")
-    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /MAP")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
+    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG")
 endif()
 
 # Abilitazione del testing CTest (Gate CTEST-01)
@@ -60,6 +60,8 @@ list(REMOVE_ITEM CORE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/core/app/gameplay_stress_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/core/memory/diagnostics_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/core/app/lifecycle_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/blocks/appearance_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/blocks/custom_scientific_tests_main.cpp"
 )
 file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
 
@@ -107,7 +109,8 @@ target_link_libraries(FairworldCore PUBLIC ${CMAKE_SOURCE_DIR}/packages/OpenXR.L
 
 # Ottimizzazioni specifiche per il compilatore (MSVC vs GCC/Clang)
 if(MSVC)
-    target_compile_options(FairworldCore PRIVATE $<$<CONFIG:Release>:/O2> /fp:fast /wd4819 /wd4244)
+    # OPT-05A: Compilazione parallela controllata intra-progetto (/MP4 per bilanciamento CPU/RAM e prevenzione contese PDB)
+    target_compile_options(FairworldCore PRIVATE /MP4 $<$<CONFIG:Release>:/O2> /fp:fast /wd4819 /wd4244)
 else()
     target_compile_options(FairworldCore PRIVATE $<$<CONFIG:Release>:-O3> -ffast-math -pthread)
 endif()
@@ -276,8 +279,32 @@ add_custom_command(TARGET FairworldLifecycleTests POST_BUILD
         $<TARGET_FILE_DIR:FairworldLifecycleTests>
 )
 
+# --- 14. TEST RUNNER MATERIAL APPEARANCE CONTRACT (FairworldAppearanceTests - MA-02A) ---
+add_executable(FairworldAppearanceTests src/blocks/appearance_tests_main.cpp)
+target_link_libraries(FairworldAppearanceTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldAppearanceTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldAppearanceTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldAppearanceTests>
+)
+
+# --- 15. TEST RUNNER CUSTOM SCIENTIFIC MATERIAL CONTRACT (FairworldCustomScientificTests - MA-03.3) ---
+add_executable(FairworldCustomScientificTests src/blocks/custom_scientific_tests_main.cpp)
+target_link_libraries(FairworldCustomScientificTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldCustomScientificTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldCustomScientificTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldCustomScientificTests>
+)
+
 # ==============================================================================
-# 14. REGISTRAZIONE SUITE CTEST (Gate CTEST-01: Discovery e Standalone Runners)
+# 16. REGISTRAZIONE SUITE CTEST (Gate CTEST-01: Discovery e Standalone Runners)
 # ==============================================================================
 add_test(NAME FairworldUVTests COMMAND $<TARGET_FILE:FairworldUVTests>)
 set_tests_properties(FairworldUVTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -308,6 +335,12 @@ set_tests_properties(FairworldDiagnostics PROPERTIES WORKING_DIRECTORY "${CMAKE_
 
 add_test(NAME FairworldLifecycleTests COMMAND $<TARGET_FILE:FairworldLifecycleTests>)
 set_tests_properties(FairworldLifecycleTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldAppearanceTests COMMAND $<TARGET_FILE:FairworldAppearanceTests>)
+set_tests_properties(FairworldAppearanceTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldCustomScientificTests COMMAND $<TARGET_FILE:FairworldCustomScientificTests>)
+set_tests_properties(FairworldCustomScientificTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 
 # --- 3. I MODULI DINAMICI (Hot-Reloading) ---

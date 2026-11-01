@@ -33,10 +33,17 @@ LRESULT CALLBACK WindowManager::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         case WM_TIMER:
             return 0;
         case WM_SIZE:
-            if (wParam != SIZE_MINIMIZED && wm) {
-                wm->SetResizeFlag();
-                // NON renderizzare durante WM_SIZE per evitare freeze del Swapchain
+            if (wm) {
+                if (wParam == SIZE_MINIMIZED) {
+                    wm->m_isMinimized = true;
+                } else {
+                    wm->m_isMinimized = false;
+                    wm->SetResizeFlag();
+                }
             }
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(hwnd);
             return 0;
         case WM_DESTROY:
             PostQuitMessage(0);
@@ -94,4 +101,9 @@ void WindowManager::Shutdown() {
         DestroyWindow(m_hwnd);
         m_hwnd = nullptr;
     }
+}
+
+void WindowManager::WaitEventsTimeout(uint32_t timeoutMs) {
+    if (timeoutMs == 0) return;
+    ::MsgWaitForMultipleObjectsEx(0, nullptr, static_cast<DWORD>(timeoutMs), QS_ALLINPUT, MWMO_INPUTAVAILABLE);
 }

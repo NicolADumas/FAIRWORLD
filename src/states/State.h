@@ -22,5 +22,8 @@ public:
     virtual void OnResume() {}
     virtual void OnExit() {}
     
+    // OPT-02.1: Activity-Aware capability query (true per stati 3D/fisica/animati, false per stati statici/Hub)
+    virtual bool RequiresContinuousUpdate() const { return true; }
+
     virtual entt::registry* GetRegistry() { return nullptr; }
 };

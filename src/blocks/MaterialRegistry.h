@@ -28,6 +28,7 @@ struct BlockPropertiesGPU {
 
 struct PBRMaterialDef {
     uint8_t target_block_id = 0; // Maps back to the SimBlockDef id
+    uint32_t appearanceId = 0;   // MA-02A: Material Appearance reference (0 = legacy/inherit)
     std::string albedoPath = "";
     std::string normalPath = "";
     std::string ormPath = "";

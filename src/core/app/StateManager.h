@@ -144,6 +144,15 @@ public:
         return !m_stateStack.empty();
     }
 
+    bool HasPendingTransitions() const {
+        return !m_pendingActions.empty();
+    }
+
+    bool RequiresContinuousUpdate() const {
+        if (m_stateStack.empty()) return false;
+        return m_stateStack.back()->RequiresContinuousUpdate();
+    }
+
     entt::registry* GetActiveRegistry() const {
         if (!m_stateStack.empty()) return m_stateStack.back()->GetRegistry();
         return nullptr;

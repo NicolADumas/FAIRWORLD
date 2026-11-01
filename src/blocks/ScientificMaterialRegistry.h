@@ -20,6 +20,32 @@ namespace fw {
 
 using ScientificMaterialID = uint32_t;
 inline constexpr ScientificMaterialID INVALID_SCIENTIFIC_MATERIAL_ID = 0;
+inline constexpr ScientificMaterialID CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE = 1000;
+
+// =============================================================================
+// MA-03.3: MATERIAL LIFECYCLE STATE & AUTHORING
+// =============================================================================
+
+enum class MaterialLifecycleState : uint8_t {
+    Draft = 0,       // In lavorazione in Material Atlas (non ancora finalizzato/pubblicato)
+    Published = 1,   // Pubblicato formalmente nel catalogo scientifico
+    Deprecated = 2   // Ritirato formalmente dal catalogo attivo, ma mantenuto per compatibilità con asset storici
+};
+
+inline const char* MaterialLifecycleStateToString(MaterialLifecycleState s) {
+    switch (s) {
+        case MaterialLifecycleState::Draft:      return "Draft";
+        case MaterialLifecycleState::Published:  return "Published";
+        case MaterialLifecycleState::Deprecated: return "Deprecated";
+        default:                                 return "Published";
+    }
+}
+
+inline MaterialLifecycleState StringToMaterialLifecycleState(const std::string& str) {
+    if (str == "Draft") return MaterialLifecycleState::Draft;
+    if (str == "Deprecated") return MaterialLifecycleState::Deprecated;
+    return MaterialLifecycleState::Published;
+}
 
 enum class PropertyState : uint8_t {
     Known = 0,
@@ -977,6 +1003,11 @@ struct ScientificMaterialDef {
     // MA-03.2D: Storage delle Proprietà Scientifiche Estese (Sorted Flat Vector)
     ExtendedPropertyStorage extendedProperties;
 
+    // MA-03.3: Lifecycle e disponibilità per authoring
+    MaterialLifecycleState lifecycleState = MaterialLifecycleState::Published;
+    bool enabledInBlockMaker = true;
+    bool isCustom = false;
+
     bool IsValid() const {
         return id != INVALID_SCIENTIFIC_MATERIAL_ID && !canonicalId.empty();
     }
@@ -1192,6 +1223,46 @@ public:
     size_t GetMaterialCount() const { return m_materials.size(); }
 
     void Clear();
+
+    // =========================================================================
+    // MA-03.3: SCIENTIFIC MATERIAL AUTHORING FOUNDATION (Custom Materials Backend)
+    // =========================================================================
+
+    // Assegnazione stabile del prossimo identificativo numerico per materiali custom (>= 1000).
+    // Implementa il contratto max(ID) + 1 calcolato sull'insieme dei materiali registrati
+    // (preservando Draft, Published e Deprecated). Gli ID allocati sono non-riutilizzabili
+    // per tutta la durata del catalogo.
+    // NOTA CONTRATTUALE PERSISTENZA: Trattandosi di un'architettura file-based pura senza
+    // database centrale o autorita' remota distribuita, la perdita completa del file catalogo
+    // comporta anche la perdita dello storico degli ID allocati, salvo ripristino da backup.
+    ScientificMaterialID AllocateNextCustomMaterialId() const;
+
+    // Validazione preventiva di una singola definizione materiale
+    bool ValidateMaterialDefinition(const ScientificMaterialDef& def, std::string* outError = nullptr) const;
+
+    // Validazione sintattica del formato URI canonico (es. namespace:mat/slug)
+    static bool ValidateCanonicalIdFormat(const std::string& canonicalId, std::string* outError = nullptr);
+
+    // Gestione ciclo di vita: pubblicazione e deprecazione transazionale (nessuna perdita di referenze)
+    bool PublishMaterial(ScientificMaterialID id, std::string* outError = nullptr);
+    bool DeprecateMaterial(ScientificMaterialID id, std::string* outError = nullptr);
+
+    // Gestione disponibilità Block Maker
+    bool SetEnabledInBlockMaker(ScientificMaterialID id, bool enabled, std::string* outError = nullptr);
+
+    // Filtro specializzato per la selezione in Block Maker (Published && enabledInBlockMaker)
+    // Include sempre currentSelection (se valido) per evitare falsi avvisi orfani su asset preesistenti
+    std::vector<const ScientificMaterialDef*> GetSelectableMaterials(ScientificMaterialID currentSelection = 0) const;
+
+    // Query per stato di ciclo di vita
+    std::vector<ScientificMaterialID> GetMaterialsByLifecycle(MaterialLifecycleState state) const;
+
+    // Persistenza separata catalogo custom (con controlli di collisione e rollback atomico).
+    // Su Windows implementa sostituzione sicura con ReplaceFileW / MoveFileExW senza eliminazione
+    // preventiva della destinazione (process-crash consistency). Non garantisce durabilita' contro
+    // interruzioni di alimentazione (power-loss) non supportate dall'hardware sottostante.
+    bool LoadCustomMaterialsFromJson(const std::string& filepath, std::string* outError = nullptr);
+    bool SaveCustomMaterialsToJson(const std::string& filepath, std::string* outError = nullptr) const;
 
 private:
     void RegisterStandardMaterials();

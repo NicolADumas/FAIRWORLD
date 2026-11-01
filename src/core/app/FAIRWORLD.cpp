@@ -159,22 +159,32 @@ void FairWorldEngine::transitionTo(GameState next) {
     
     // Logica di entrata nello stato
     if (m_current == GameState::WEB_BROWSER) {
+        // OPT-04: Inizializzazione Lazy di WebView2 al primo utilizzo effettivo
+        if (!m_webView.IsReady() && !m_webView.IsInitializing()) {
+            if (m_windowManager) {
+                m_webView.EnsureInitialized(m_windowManager->GetWindowHandle());
+            }
+        }
         m_webView.SetVisible(true);
         m_cursorLocked = false;
         
-        // Alla prima apertura del browser, assicuriamoci di mostrare una pagina (es. Google se è la prima volta)
-        if (!m_webView.IsVisible()) {
+        // Alla prima apertura del browser, assicuriamoci di mostrare una pagina (es. Google)
+        if (!m_webView.IsVisible() || !m_webView.IsReady()) {
             m_webView.Navigate(L"https://www.google.com");
         }
     }
 }
 
 bool FairWorldEngine::isWorldRunning() const {
+    if (m_gameMode == GameMode::Hub) {
+        return false;
+    }
     switch (m_current) {
         case GameState::LOADING:
+            return false;
         case GameState::MAIN_MENU:
         case GameState::PAUSE_MENU:
-            return false;
+            return (m_gameMode == GameMode::Play || m_gameMode == GameMode::PhysicsLab || m_gameMode == GameMode::Dev);
         default:
             return true;
     }
@@ -202,7 +212,7 @@ FairWorldEngine::~FairWorldEngine() {
     Shutdown();
 }
 
-bool FairWorldEngine::Init() {
+bool FairWorldEngine::Init(bool enableVr) {
     std::cout << "==========================================\n";
     std::cout << "    FAIRWORLD ENGINE - INIZIALIZZAZIONE   \n";
     std::cout << "==========================================\n\n";
@@ -215,19 +225,21 @@ bool FairWorldEngine::Init() {
     HWND hwnd = m_windowManager->GetWindowHandle();
     HINSTANCE hinstance = GetModuleHandle(nullptr);
 
-    std::cout << "[SYSTEM] Tentativo di connessione al visore VR..." << std::endl;
-    // 1. Inizializza OpenXR
-    if (m_xrManager->Init()) {
-        m_isVrMode = true;
-        std::cout << "[SYSTEM] Visore VR trovato! Avvio in MODALITA' VR." << std::endl;
-        // Inizializza Vulkan per la VR
-        if (!m_renderManager->Init(m_isVrMode, m_xrManager.get(), hwnd, hinstance)) return false;
-        // m_xrManager->CreateSession(m_renderManager->GetVulkanInstance(), m_renderManager->GetVulkanDevice()); // COMMENTATO FINCHE' IL DEVICE NON E' PRONTO
+    // OPT-04: Probing OpenXR differito: eseguito solo se esplicitamente richiesto
+    if (enableVr) {
+        std::cout << "[SYSTEM] Richiesta modalita' VR. Tentativo di connessione al visore OpenXR..." << std::endl;
+        if (m_xrManager->Init()) {
+            m_isVrMode = true;
+            std::cout << "[SYSTEM] Visore VR trovato! Avvio in MODALITA' VR." << std::endl;
+            if (!m_renderManager->Init(m_isVrMode, m_xrManager.get(), hwnd, hinstance)) return false;
+        } else {
+            std::cout << "[SYSTEM] Visore VR non trovato. Fallback in MODALITA' DESKTOP (Schermo piatto)." << std::endl;
+            m_isVrMode = false;
+            if (!m_renderManager->Init(m_isVrMode, nullptr, hwnd, hinstance)) return false;
+        }
     } else {
-        std::cout << "[SYSTEM] Visore VR non trovato. Fallback in MODALITA' DESKTOP (Schermo piatto)." << std::endl;
+        std::cout << "[SYSTEM] Avvio in MODALITA' DESKTOP (Probing OpenXR disabilitato per avvio rapido)." << std::endl;
         m_isVrMode = false;
-        
-        // Inizializza Vulkan per lo schermo piatto
         if (!m_renderManager->Init(m_isVrMode, nullptr, hwnd, hinstance)) return false;
     }
 
@@ -276,9 +288,8 @@ bool FairWorldEngine::Init() {
     monthSkipper.weightKg = 0.5f; // 500g
     m_player.inventory.AddItem(monthSkipper);
     
-    // Inizializza WebView2 per GUI DESKARM
-    std::cout << "[SYSTEM] Inizializzazione WebView2 in corso..." << std::endl;
-    m_webView.Init(hwnd);
+    // OPT-04: Inizializzazione WebView2 differita (lazy) al primo utilizzo effettivo (GameState::WEB_BROWSER)
+    // Non viene più eseguita durante l'avvio ordinario dell'Hub.
     
     // --- Sottoscrizione Eventi (Event-Driven Input System) ---
     RegisterEventSubscriptions();
@@ -369,6 +380,23 @@ void FairWorldEngine::PollHardwareEvents() {
         if (!m_windowManager->PollEvents()) {
             m_isRunning = false;
         }
+    }
+}
+
+bool FairWorldEngine::IsMinimized() const {
+    if (m_windowManager && !m_isVrMode) {
+        return m_windowManager->IsMinimized();
+    }
+    return false;
+}
+
+void FairWorldEngine::WaitEventsTimeout(uint32_t timeoutMs) {
+    if (m_isVrMode || !m_windowManager) {
+        if (timeoutMs > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+        }
+    } else {
+        m_windowManager->WaitEventsTimeout(timeoutMs);
     }
 }
 
@@ -1637,6 +1665,13 @@ void FairWorldEngine::Render() {
 
         // --- BROWSER WEB INTEGRATO (WebView2) ---
         if (m_current == GameState::WEB_BROWSER) {
+            // OPT-04 (Item 7): Garantisce inizializzazione per tutti i percorsi di accesso al browser
+            if (m_webView.GetStatus() == WebViewStatus::Uninitialized && m_windowManager) {
+                m_webView.EnsureInitialized(m_windowManager->GetWindowHandle());
+                m_webView.SetVisible(true);
+                m_webView.Navigate(L"https://www.google.com");
+            }
+
             ImVec2 size = ImGui::GetMainViewport()->Size;
             float winW = size.x * 0.90f;
             float winH = size.y * 0.90f;
@@ -1645,29 +1680,39 @@ void FairWorldEngine::Render() {
 
             bool keepOpen = true;
             if (ImGui::Begin("Browser Web Integrato - Premi 'H' per chiudere", &keepOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
-                
-                // --- BARRA DEGLI INDIRIZZI ---
-                static char urlBuffer[512] = "https://www.google.com";
-                ImGui::SetNextItemWidth(winW - 100.0f);
-                if (ImGui::InputText("##URLBar", urlBuffer, sizeof(urlBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    std::string urlStr(urlBuffer);
-                    std::wstring wUrl(urlStr.begin(), urlStr.end());
-                    m_webView.Navigate(wUrl);
+                if (m_webView.IsInitializing()) {
+                    ImGui::SetCursorPosY(winH * 0.45f);
+                    ImGui::SetCursorPosX(winW * 0.35f);
+                    ImGui::TextColored(ImVec4(0.2f, 0.7f, 1.0f, 1.0f), "Inizializzazione motore Edge WebView2 in corso...");
+                } else if (m_webView.HasFailed()) {
+                    ImGui::SetCursorPosY(winH * 0.45f);
+                    ImGui::SetCursorPosX(winW * 0.25f);
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), 
+                        "Impossibile inizializzare WebView2. Assicurarsi che Microsoft Edge WebView2 Runtime sia installato.");
+                } else {
+                    // --- BARRA DEGLI INDIRIZZI ---
+                    static char urlBuffer[512] = "https://www.google.com";
+                    ImGui::SetNextItemWidth(winW - 100.0f);
+                    if (ImGui::InputText("##URLBar", urlBuffer, sizeof(urlBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                        std::string urlStr(urlBuffer);
+                        std::wstring wUrl(urlStr.begin(), urlStr.end());
+                        m_webView.Navigate(wUrl);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Vai", ImVec2(70, 0))) {
+                        std::string urlStr(urlBuffer);
+                        std::wstring wUrl(urlStr.begin(), urlStr.end());
+                        m_webView.Navigate(wUrl);
+                    }
+                    ImGui::Separator();
+                    
+                    // Calcola le coordinate assolute sullo schermo dello spazio per i contenuti HTML
+                    ImVec2 contentPos = ImGui::GetCursorScreenPos();
+                    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+                    
+                    // Comunica al wrapper C++ di Edge di sovrapporsi esattamente qui
+                    m_webView.Resize((int)contentPos.x, (int)contentPos.y, (int)contentSize.x, (int)contentSize.y);
                 }
-                ImGui::SameLine();
-                if (ImGui::Button("Vai", ImVec2(70, 0))) {
-                    std::string urlStr(urlBuffer);
-                    std::wstring wUrl(urlStr.begin(), urlStr.end());
-                    m_webView.Navigate(wUrl);
-                }
-                ImGui::Separator();
-                
-                // Calcola le coordinate assolute sullo schermo dello spazio per i contenuti HTML
-                ImVec2 contentPos = ImGui::GetCursorScreenPos();
-                ImVec2 contentSize = ImGui::GetContentRegionAvail();
-                
-                // Comunica al wrapper C++ di Edge di sovrapporsi esattamente qui
-                m_webView.Resize((int)contentPos.x, (int)contentPos.y, (int)contentSize.x, (int)contentSize.y);
             }
             ImGui::End();
             
@@ -1718,7 +1763,9 @@ void FairWorldEngine::EndUIFrame() {
         ImGui::Render();
         
         glm::vec3 skyColor = {0.2f, 0.4f, 0.8f}; // Fallback sky color
-        if (m_forgeMaster && m_forgeMaster->GetRegistry().valid(m_forgeMaster->GetPlanetEntity())) {
+        if (m_gameMode == GameMode::Hub) {
+            skyColor = {0.90f, 0.90f, 0.95f}; // Background chiaro uniforme per Hub Wii-style
+        } else if (m_forgeMaster && m_forgeMaster->GetRegistry().valid(m_forgeMaster->GetPlanetEntity())) {
             auto& reg = m_forgeMaster->GetRegistry();
             auto entity = m_forgeMaster->GetPlanetEntity();
             if (reg.all_of<fw::PlanetAtmosphereComponent>(entity)) {
@@ -1938,6 +1985,8 @@ void FairWorldEngine::Shutdown() {
     // Legge RuntimeShutdownResult: nessun nullptr == PASS implicito.
     fw::LifecycleFreezeGate::RunRuntimeGate(m_sharedContext);
     // ─────────────────────────────────────────────────────────
+
+    m_webView.Shutdown();
 
     if (m_isVrMode) {
         m_xrManager->Shutdown();

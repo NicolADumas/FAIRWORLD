@@ -1524,57 +1524,66 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     } else {
         if (context && context->stateManager && context->stateManager->GetCurrentState()) {
             GameMode mode = context->engine->GetGameMode();
-            float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
-            glm::mat4 projMatrix = context->activeCameraView.projectionMatrix;
-            if (projMatrix == glm::mat4(0.0f)) {
-                projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
-            }
 
-            if (mode == GameMode::BlockMaker && m_blockMakerRenderer) {
-                m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
-                m_blockMakerRenderer->SetPainterDescriptorSets(!m_blockMakerDescriptorSets.empty() ? &m_blockMakerDescriptorSets : nullptr);
-                m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_blockMakerRenderer->SetCurrentFrame(m_currentFrame);
-                m_blockMakerRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::Map && m_mapRenderer) {
-                m_mapRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_mapRenderer->SetCurrentFrame(m_currentFrame);
-                m_mapRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::ChunkEditor && m_chunkEditorRenderer) {
-                m_chunkEditorRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_chunkEditorRenderer->SetCurrentFrame(m_currentFrame);
-                m_chunkEditorRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::PlanetMapper && m_planetMapperRenderer) {
-                m_planetMapperRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_planetMapperRenderer->SetCurrentFrame(m_currentFrame);
-                m_planetMapperRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::SolarSystem && m_solarSystemRenderer) {
-                m_solarSystemRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_solarSystemRenderer->SetCurrentFrame(m_currentFrame);
-                m_solarSystemRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::Dev && m_forgeRenderer) {
-                m_forgeRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_forgeRenderer->SetCurrentFrame(m_currentFrame);
-                m_forgeRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::PhysicsLab && m_physicsLabRenderer) {
-                m_physicsLabRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_physicsLabRenderer->SetCurrentFrame(m_currentFrame);
-                m_physicsLabRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
-            }
-            else if (mode == GameMode::Play && m_playRenderer) {
-                m_playRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
-                m_playRenderer->SetCurrentFrame(m_currentFrame);
-                RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
-                m_playRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+            // OPT-03: Hub Rendering Fast Path.
+            // Nessuna geometria 3D, nessuno sky pass, nessun UBO upload, nessun culling ECS.
+            // Il render pass effettua il clear del framebuffer (colore/depth) e ImGui disegna direttamente l'interfaccia.
+            if (mode == GameMode::Hub) {
+                // Fast path: nessun comando 3D registrato nel command buffer
             }
             else {
-                RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+                float aspect = (float)m_core->GetSwapchainExtent().width / (float)m_core->GetSwapchainExtent().height;
+                glm::mat4 projMatrix = context->activeCameraView.projectionMatrix;
+                if (projMatrix == glm::mat4(0.0f)) {
+                    projMatrix = glm::perspective(glm::radians(m_fov), aspect, 0.1f, 1000.0f);
+                }
+
+                if (mode == GameMode::BlockMaker && m_blockMakerRenderer) {
+                    m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+                    m_blockMakerRenderer->SetPainterDescriptorSets(!m_blockMakerDescriptorSets.empty() ? &m_blockMakerDescriptorSets : nullptr);
+                    m_blockMakerRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_blockMakerRenderer->SetCurrentFrame(m_currentFrame);
+                    m_blockMakerRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::Map && m_mapRenderer) {
+                    m_mapRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_mapRenderer->SetCurrentFrame(m_currentFrame);
+                    m_mapRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::ChunkEditor && m_chunkEditorRenderer) {
+                    m_chunkEditorRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_chunkEditorRenderer->SetCurrentFrame(m_currentFrame);
+                    m_chunkEditorRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::PlanetMapper && m_planetMapperRenderer) {
+                    m_planetMapperRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_planetMapperRenderer->SetCurrentFrame(m_currentFrame);
+                    m_planetMapperRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::SolarSystem && m_solarSystemRenderer) {
+                    m_solarSystemRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_solarSystemRenderer->SetCurrentFrame(m_currentFrame);
+                    m_solarSystemRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::Dev && m_forgeRenderer) {
+                    m_forgeRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_forgeRenderer->SetCurrentFrame(m_currentFrame);
+                    m_forgeRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::PhysicsLab && m_physicsLabRenderer) {
+                    m_physicsLabRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_physicsLabRenderer->SetCurrentFrame(m_currentFrame);
+                    m_physicsLabRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else if (mode == GameMode::Play && m_playRenderer) {
+                    m_playRenderer->SetSwapchainExtent(m_core->GetSwapchainExtent());
+                    m_playRenderer->SetCurrentFrame(m_currentFrame);
+                    RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+                    m_playRenderer->Draw(m_commandBuffers[m_currentFrame], context, viewMatrix, projMatrix);
+                }
+                else {
+                    RenderFairworld(m_commandBuffers[m_currentFrame], viewMatrix, skyColor, context, assets, mobManager, player);
+                }
             }
         }
     }

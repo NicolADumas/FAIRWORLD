@@ -52,6 +52,7 @@ struct SimBlockDef {
     std::string displayName = "Unknown Block";
     uint32_t scientificMaterialId = 0; // Scientific Material Core ID (0 = None/Custom)
     ScientificPropertyOverrides scientificOverrides; // MA-02.3: Per-asset scientific property overrides
+    uint32_t appearanceId = 0; // MA-02A: Material Appearance reference (0 = legacy resolve from blockId)
 
     // Physics Contract (Per-Asset Independent Definition)
     BlockPhysicsDef physics;

@@ -146,6 +146,7 @@ bool BlockRegistry::LoadFromJson(const std::string& filepath) {
             def.stringId = jBlock.value("stringId", defaultStrId);
             def.displayName = jBlock.value("displayName", defaultDispName);
             def.scientificMaterialId = jBlock.value("scientificMaterialId", 0u);
+            def.appearanceId = jBlock.value("appearanceId", 0u);
             if (jBlock.contains("scientific") && jBlock["scientific"].is_object()) {
                 const auto& js = jBlock["scientific"];
                 def.scientificMaterialId = js.value("materialId", def.scientificMaterialId);
@@ -230,6 +231,7 @@ bool BlockRegistry::SaveToJson(const std::string& filepath) {
         jBlock["stringId"] = def.stringId;
         jBlock["displayName"] = def.displayName;
         jBlock["scientificMaterialId"] = def.scientificMaterialId;
+        jBlock["appearanceId"] = def.appearanceId;
         if (def.scientificMaterialId != 0 || !def.scientificOverrides.Empty()) {
             json jSci;
             jSci["materialId"] = def.scientificMaterialId;

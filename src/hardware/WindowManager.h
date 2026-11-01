@@ -18,6 +18,9 @@ public:
     void ResetResizeFlag() { m_framebufferResized = false; }
     void SetResizeFlag() { m_framebufferResized = true; }
 
+    bool IsMinimized() const { return m_isMinimized || (m_hwnd && ::IsIconic(m_hwnd)); }
+    void WaitEventsTimeout(uint32_t timeoutMs);
+
     void SetRenderCallback(std::function<void()> callback) { m_renderCallback = callback; }
     void InvokeRenderCallback() { if (m_renderCallback) m_renderCallback(); }
 
@@ -25,6 +28,7 @@ private:
     HWND m_hwnd;
     HINSTANCE m_hInstance;
     bool m_framebufferResized = false;
+    bool m_isMinimized = false;
     std::function<void()> m_renderCallback;
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 };

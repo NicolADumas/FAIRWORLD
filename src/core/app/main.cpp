@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "FAIRWORLD.h"
 #include <iostream>
+#include <iomanip>
 #include <windows.h>
 #include <chrono>
 #include <thread>
@@ -29,12 +30,13 @@
 #include "CacheManager.h"
 #include "LifecycleFreezeGate.h"
 #include "JobSystem.h"
+#include "RuntimeManager.h"
 #include "core/memory/MemorySystem.h"
 #include "core/memory/RuntimeMemoryDiagnostics.h"
 #include "world/terrain/validation/TerrainValidation.h"
 
-// De-commenta questa riga (o definiscila nelle configurazioni di build) per eseguire la suite di test
-#define FAIRWORLD_VALIDATE_TERRAIN 1
+// OPT-01: L'esecuzione automatica di TerrainValidation all'avvio e' disabilitata
+// per garantire avvio rapido in Debug e Release. Eseguibile su richiesta con CLI: --validate-terrain
 
 HANDLE hServerProcess = NULL;
 
@@ -156,8 +158,12 @@ static void RunLifecycleStressHarness(SharedContext& context,
 }
 
 int main(int argc, char* argv[]) {
-    // ── CLI Parsing (Step C4.7) ──────────────────────────────
+    auto mainEntranceTime = std::chrono::steady_clock::now();
+
+    // ── CLI Parsing (Step C4.7, OPT-01 & OPT-04) ──────────────
     fw::LifecycleStressMode stressMode = fw::LifecycleStressMode::None;
+    bool validateTerrain = false;
+    bool enableVr = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--lifecycle-stress") {
             stressMode = fw::LifecycleStressMode::FullRuntimeLoad;
@@ -166,6 +172,12 @@ int main(int argc, char* argv[]) {
             stressMode = fw::LifecycleStressMode::CpuLoad;
         } else if (std::string(argv[i]) == "--lifecycle-stress-dma") {
             stressMode = fw::LifecycleStressMode::DmaLoad;
+        } else if (std::string(argv[i]) == "--validate-terrain") {
+            validateTerrain = true;
+            std::cout << "[TERRAIN] Opzione esplicita --validate-terrain attivata da CLI.\n";
+        } else if (std::string(argv[i]) == "--vr") {
+            enableVr = true;
+            std::cout << "[VR] Opzione esplicita --vr attivata da CLI.\n";
         } else if (std::string(argv[i]) == "--memory-diagnostics") {
             fw::memory::InitializeGlobalMemory();
             std::cout << "[MEM-06] Esecuzione suite diagnostica runtime richiesta da CLI...\n";
@@ -209,13 +221,19 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    auto engineBootstrapTime = std::chrono::steady_clock::now();
+
     // 1. Inizializza il VERO motore grafico (Incapsulato come Servitore)
     FairWorldEngine engine;
-    if (!engine.Init()) {
+    if (!engine.Init(enableVr)) {
         std::cerr << "\n[ERROR] Errore critico durante l'inizializzazione grafica." << std::endl;
         StopAIServer();
         return -1;
     }
+
+    auto windowInitPoint = std::chrono::steady_clock::now();
+    double windowInitMs = std::chrono::duration<double, std::milli>(windowInitPoint - mainEntranceTime).count();
+    std::cout << "[PERF] Ingresso in main -> prima finestra creata: " << std::fixed << std::setprecision(2) << windowInitMs << " ms\n";
 
     // 2. Istanzia Context e StateManager
     SharedContext context;
@@ -239,9 +257,20 @@ int main(int argc, char* argv[]) {
     blockRegistry.Initialize();
     blockRegistry.LoadFromJson("assets/definitions/blocks.json");
     
-#ifdef FAIRWORLD_VALIDATE_TERRAIN
-    fw::TerrainValidation::RunAll();
-#endif
+    if (validateTerrain) {
+        std::cout << "\n[TERRAIN] Esecuzione suite di validazione del terreno (--validate-terrain)...\n";
+        auto tvStart = std::chrono::steady_clock::now();
+        bool terrainPass = fw::TerrainValidation::RunAll();
+        auto tvEnd = std::chrono::steady_clock::now();
+        double tvMs = std::chrono::duration<double, std::milli>(tvEnd - tvStart).count();
+        std::cout << "[TERRAIN] Esito validazione: " << (terrainPass ? "PASS (100% OK)" : "FAIL") 
+                  << " | Durata: " << std::fixed << std::setprecision(2) << tvMs << " ms\n\n";
+        if (!terrainPass) {
+            std::cerr << "[TERRAIN][ERROR] Validazione del terreno fallita. Interruzione con codice di uscita 1.\n";
+            StopAIServer();
+            return 1;
+        }
+    }
     
     materialRegistry.Initialize();
     materialRegistry.LoadFromJson("assets/definitions/materials.json");
@@ -279,35 +308,43 @@ int main(int argc, char* argv[]) {
         context.targetGameJsonPath = "saves/map/world_map.json"; // Forza caricamento mappa generata
         stateManager.ChangeState(std::make_unique<PlayState>(&context));
         engine.SetGameMode(GameMode::Play);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato PlayState...\n";
     } else if (choice == 2) {
         stateManager.ChangeState(std::make_unique<ForgeState>(&context));
         engine.SetGameMode(GameMode::Dev);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato ForgeState...\n";
     } else if (choice == 3) {
         stateManager.ChangeState(std::make_unique<PhysicsLabState>(&context));
         engine.SetGameMode(GameMode::PhysicsLab);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato PhysicsLabState...\n";
     } else if (choice == 4) {
         stateManager.ChangeState(std::make_unique<ChunkEditorState>(&context));
         engine.SetGameMode(GameMode::ChunkEditor);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato ChunkEditorState...\n";
     } else if (choice == 5) {
         stateManager.ChangeState(std::make_unique<PlanetMapperState>(&context));
         engine.SetGameMode(GameMode::PlanetMapper);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato PlanetMapperState...\n";
     } else if (choice == 6) {
         stateManager.ChangeState(std::make_unique<BlockMakerState>(&context));
         engine.SetGameMode(GameMode::BlockMaker);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato BlockMakerState...\n";
     } else if (choice == 7) {
         stateManager.ChangeState(std::make_unique<SolarSystemState>(&context));
         engine.SetGameMode(GameMode::SolarSystem);
+        engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato SolarSystemState...\n";
     } else {
         // Fallback default: HUB (Scelta 0 o non valida)
         stateManager.ChangeState(std::make_unique<HubState>(&context));
         engine.SetGameMode(GameMode::Hub);
+        engine.ForceGameState(GameState::MAIN_MENU);
         std::cout << "[SYSTEM] Avviato HubState...\n";
     }
 
@@ -317,6 +354,12 @@ int main(int argc, char* argv[]) {
 auto lastTime = std::chrono::high_resolution_clock::now();
 const float FIXED_DT = 1.0f / 60.0f; // 60 updates per second
 float accumulator = 0.0f;
+
+// OPT-02.1: Tracciamento benchmark periodico
+auto benchWindowStart = std::chrono::steady_clock::now();
+uint64_t benchLoopIterations = 0;
+uint64_t benchRenderedFrames = 0;
+uint64_t benchFixedUpdates = 0;
 
 context.engine->SetRenderCallback([&]() {
     // Questo callback viene chiamato dal WindowManager durante il resize (WM_TIMER)
@@ -328,13 +371,25 @@ context.engine->SetRenderCallback([&]() {
 
 
 while (context.engine->IsRunning()) {
-    // Poll hardware (window or VR)
-    context.engine->PollHardwareEvents();
+    benchLoopIterations++;
 
-    // Update hardware bus
+    // 1. Poll hardware (window or VR)
+    context.engine->PollHardwareEvents();
+    if (!context.engine->IsRunning()) break;
+
+    // 2. Update hardware bus
     deviceManager.Update(&context);
 
-    // Calculate frame time
+    // 3. OPT-02.1 (Attività 4): Elabora immediatamente eventuali transizioni pendenti
+    // senza attendere la scadenza del fixed update
+    if (stateManager.HasPendingTransitions()) {
+        stateManager.ProcessTransitions();
+        if (!stateManager.IsRunning()) {
+            break;
+        }
+    }
+
+    // 4. Calculate frame time
     auto currentTime = std::chrono::high_resolution_clock::now();
     float frameTime = std::chrono::duration<float>(currentTime - lastTime).count();
     lastTime = currentTime;
@@ -342,35 +397,109 @@ while (context.engine->IsRunning()) {
     if (frameTime > 0.25f) frameTime = 0.25f;
     accumulator += frameTime;
 
-    // Fixed‑timestep updates
+    // 5. Fixed‑timestep updates
     while (accumulator >= FIXED_DT) {
-        // Process state transitions
-        stateManager.ProcessTransitions();
-        if (!stateManager.IsRunning()) {
-            // Exit main loop cleanly
-            accumulator = 0.0f;
-            break;
+        if (stateManager.HasPendingTransitions()) {
+            stateManager.ProcessTransitions();
+            if (!stateManager.IsRunning()) {
+                accumulator = 0.0f;
+                break;
+            }
         }
-        // Update game logic with fixed dt
         stateManager.Update(FIXED_DT);
+        benchFixedUpdates++;
         accumulator -= FIXED_DT;
     }
 
-    // Calcola l'alpha per l'interpolazione del render:
-    // quanta frazione del FIXED_DT è già 'avanzata' nel tempo rimanente.
-    context.interpolationAlpha = accumulator / FIXED_DT;
+    if (!context.engine->IsRunning()) break;
 
-    // Rendering (V-Sync limits the rate)
-    context.engine->BeginUIFrame();
-    stateManager.Render();
-    context.engine->EndUIFrame();
-    
-    // Telemetria (Diagnostics)
-    fw::FrameMetrics metrics;
-    metrics.frameTimeMs   = frameTime * 1000.0f;
-    metrics.physicsTimeMs = 0.0f;   // TODO: tracciare fisica
-    metrics.entityCountF  = 0.0f;   // TODO: contare entità reali dal registry
-    diagnosticsManager.PushFrame(metrics);
+    // 6. OPT-02.1 (Attività 5): Gestione Minimizzazione e Rendering
+    bool isMinimized = context.engine->IsMinimized();
+
+    if (!isMinimized) {
+        // Calcola l'alpha per l'interpolazione del render:
+        // quanta frazione del FIXED_DT è già 'avanzata' nel tempo rimanente.
+        context.interpolationAlpha = accumulator / FIXED_DT;
+
+        // Rendering (V-Sync limits the rate)
+        context.engine->BeginUIFrame();
+        stateManager.Render();
+        context.engine->EndUIFrame();
+        benchRenderedFrames++;
+        
+        static bool s_firstInteractiveUILogged = false;
+        if (!s_firstInteractiveUILogged) {
+            auto firstUIPoint = std::chrono::steady_clock::now();
+            double totalStartupMs = std::chrono::duration<double, std::milli>(firstUIPoint - mainEntranceTime).count();
+            double bootstrapMs = std::chrono::duration<double, std::milli>(firstUIPoint - engineBootstrapTime).count();
+            std::cout << "[PERF] Ingresso in main -> primo frame presentato:     " << std::fixed << std::setprecision(2) << totalStartupMs << " ms\n";
+            std::cout << "[PERF] Ingresso in main -> prima interazione effettiva: " << std::fixed << std::setprecision(2) << totalStartupMs << " ms\n";
+            std::cout << "       (Bootstrap motore netto: " << std::fixed << std::setprecision(2) << bootstrapMs << " ms)\n";
+            s_firstInteractiveUILogged = true;
+        }
+
+        // Telemetria (Diagnostics)
+        fw::FrameMetrics metrics;
+        metrics.frameTimeMs   = frameTime * 1000.0f;
+        metrics.physicsTimeMs = 0.0f;   // TODO: tracciare fisica
+        metrics.entityCountF  = 0.0f;   // TODO: contare entità reali dal registry
+        diagnosticsManager.PushFrame(metrics);
+    }
+
+    // 7. OPT-02.1: Log benchmark periodico ogni 5 secondi
+    auto benchNow = std::chrono::steady_clock::now();
+    double benchElapsed = std::chrono::duration<double>(benchNow - benchWindowStart).count();
+    if (benchElapsed >= 5.0) {
+        double iterPerSec = static_cast<double>(benchLoopIterations) / benchElapsed;
+        double fps = static_cast<double>(benchRenderedFrames) / benchElapsed;
+        double fixedPerSec = static_cast<double>(benchFixedUpdates) / benchElapsed;
+        std::cout << "[LOOP-BENCHMARK] Mode: " 
+                  << (context.engine->GetGameMode() == GameMode::Hub ? "HUB" : "3D_SCENE")
+                  << " | Iters/s: " << std::fixed << std::setprecision(1) << iterPerSec
+                  << " | FPS: " << std::fixed << std::setprecision(1) << fps
+                  << " | FixedTicks/s: " << std::fixed << std::setprecision(1) << fixedPerSec
+                  << " | Minimized: " << (isMinimized ? "YES" : "NO")
+                  << "\n";
+        benchWindowStart = benchNow;
+        benchLoopIterations = 0;
+        benchRenderedFrames = 0;
+        benchFixedUpdates = 0;
+    }
+
+    // 8. OPT-02.1: Activity-Aware Hardened Limited Wait
+    // Attività 1: Rilevazione multi-sorgente dell'attività (Engine, GameMode, State attivo)
+    bool isSimulationActive = context.engine->isWorldRunning()
+                           || (context.engine->GetGameMode() != GameMode::Hub)
+                           || stateManager.RequiresContinuousUpdate();
+
+    // Attività 2: Distinzione tra lavoro dei worker in background e lavoro che richiede il main thread
+    bool hasWorkerJobs = (context.jobSystem && (context.jobSystem->GetPendingJobCount() > 0 || context.jobSystem->GetActiveWorkerCount() > 0))
+                      || (context.runtimeManager && !context.runtimeManager->IsReady());
+
+    if (isMinimized) {
+        // Attività 5: Finestra a icona: sopprimi rendering per prevenire busy-spin al 100% CPU.
+        // Se vi sono simulazioni attive o worker in volo, attesa breve (5ms); altrimenti riposo a 50ms.
+        DWORD waitMs = (isSimulationActive || hasWorkerJobs) ? 5 : 50;
+        context.engine->WaitEventsTimeout(waitMs);
+    } else if (!isSimulationActive && accumulator < FIXED_DT) {
+        // Attività 2 & 3: Hub o editor statico (nessuna simulazione attiva).
+        // Gestione del tempo residuo con supporto sub-millisecondo:
+        float remainingSeconds = FIXED_DT - accumulator;
+        if (remainingSeconds >= 0.0015f) {
+            DWORD waitMs = static_cast<DWORD>(std::round(remainingSeconds * 1000.0f));
+            if (waitMs > 16) waitMs = 16;
+            // Se i worker thread stanno elaborando calcoli asincroni, limitiamo l'attesa a 5ms
+            // per evitare busy-spin del main thread e contemporaneamente garantire rapida sincronizzazione
+            if (hasWorkerJobs && waitMs > 5) waitMs = 5;
+            if (waitMs > 0) {
+                context.engine->WaitEventsTimeout(waitMs);
+            }
+        } else if (remainingSeconds > 0.0f) {
+            // Attività 3: Tempo residuo positivo ma < 1.5 ms.
+            // Cede il quanto CPU residuo tramite SwitchToThread() senza introdurre ritardi sistematici kernel
+            ::SwitchToThread();
+        }
+    }
 }
 
     std::cout << "[SYSTEM] Main loop terminato.\n";

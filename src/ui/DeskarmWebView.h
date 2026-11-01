@@ -4,8 +4,17 @@
 #include <wrl.h>
 #include <WebView2.h>
 #include <string>
+#include <memory>
+#include <atomic>
 
 using namespace Microsoft::WRL;
+
+enum class WebViewStatus {
+    Uninitialized,
+    Initializing,
+    Ready,
+    Failed
+};
 
 class DeskarmWebView {
 private:
@@ -13,18 +22,21 @@ private:
     ComPtr<ICoreWebView2Controller> webViewController;
     ComPtr<ICoreWebView2> webView;
     
-    HWND m_parentHwnd;
-    bool m_isVisible;
-    bool m_isInitialized;
+    HWND m_parentHwnd = nullptr;
+    bool m_isVisible = false;
+    WebViewStatus m_status = WebViewStatus::Uninitialized;
     
     std::wstring m_pendingUrl;
+    std::shared_ptr<std::atomic<bool>> m_lifetimeToken;
 
 public:
     DeskarmWebView();
     ~DeskarmWebView();
 
-    // Inizializza il browser attaccandolo all'HWND del gioco
+    // Lazy init: inizializza solo se Uninitialized; evita duplicate call e gestisce gli stati
     void Init(HWND parentHwnd);
+    void EnsureInitialized(HWND parentHwnd);
+    void Shutdown();
     
     // Naviga a un URL (es. http://localhost:8000)
     void Navigate(const std::wstring& url);
@@ -36,5 +48,9 @@ public:
     void SetVisible(bool visible);
     
     bool IsVisible() const { return m_isVisible; }
-    bool IsInitialized() const { return m_isInitialized; }
+    bool IsInitialized() const { return m_status == WebViewStatus::Ready; }
+    WebViewStatus GetStatus() const { return m_status; }
+    bool IsReady() const { return m_status == WebViewStatus::Ready; }
+    bool IsInitializing() const { return m_status == WebViewStatus::Initializing; }
+    bool HasFailed() const { return m_status == WebViewStatus::Failed; }
 };

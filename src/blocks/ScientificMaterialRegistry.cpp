@@ -4,6 +4,17 @@
 #include <algorithm>
 #include <unordered_set>
 #include <cmath>
+#include <filesystem>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace fw {
 
@@ -382,8 +393,14 @@ void to_json(json& j, const ScientificMaterialDef& m) {
         {"specificHeatCapacity", m.specificHeatCapacity},
         {"thermalConductivity", m.thermalConductivity},
         {"thermalExpansion", m.thermalExpansion},
-        {"meltingPoint", m.meltingPoint}
+        {"meltingPoint", m.meltingPoint},
+        {"lifecycleState", MaterialLifecycleStateToString(m.lifecycleState)},
+        {"enabledInBlockMaker", m.enabledInBlockMaker}
     };
+
+    if (m.isCustom) {
+        j["isCustom"] = true;
+    }
 
     if (!m.tags.empty()) {
         j["tags"] = m.tags;
@@ -435,6 +452,14 @@ void from_json(const json& j, ScientificMaterialDef& m) {
     m.chemicalFormula = j.value("chemicalFormula", "");
     m.classification = j.value("classification", "");
     m.description = j.value("description", "");
+
+    if (j.contains("lifecycleState")) {
+        m.lifecycleState = StringToMaterialLifecycleState(j["lifecycleState"].get<std::string>());
+    } else {
+        m.lifecycleState = MaterialLifecycleState::Published;
+    }
+    m.enabledInBlockMaker = j.value("enabledInBlockMaker", true);
+    m.isCustom = j.value("isCustom", false);
 
     if (j.contains("kind")) {
         m.kind = StringToScientificKind(j["kind"].get<std::string>());
@@ -1170,6 +1195,117 @@ ScientificQuantity ScientificMaterialRegistry::ResolveProperty(
     return ScientificQuantity::Unknown(GetCanonicalUnitForProperty(propertyName));
 }
 
+static bool ValidateScientificCompositionInternal(
+    const ScientificComposition& composition,
+    ScientificMaterialID ownerId,
+    const std::string& ownerCanonicalId,
+    std::string* outError
+) {
+    if (composition.IsEmpty() && composition.completeness == CompositionCompleteness::Unknown) {
+        return true;
+    }
+
+    std::unordered_set<std::string> seenCompKeys;
+    double sumMin = 0.0;
+    double sumMax = 0.0;
+    bool hasRange = false;
+    size_t knownCount = 0;
+    size_t totalCount = composition.components.size();
+
+    for (const auto& comp : composition.components) {
+        if (comp.canonicalId.empty() && comp.displayName.empty() && comp.materialId == INVALID_SCIENTIFIC_MATERIAL_ID) {
+            if (outError) *outError = "Componente privo di identificatore nella composizione di '" + ownerCanonicalId + "'.";
+            return false;
+        }
+
+        // Autoriferimento compositivo
+        if (comp.materialId == ownerId || (!comp.canonicalId.empty() && !ownerCanonicalId.empty() && comp.canonicalId == ownerCanonicalId)) {
+            if (outError) *outError = "Composizione ciclica: il materiale '" + ownerCanonicalId + "' include se stesso come componente.";
+            return false;
+        }
+
+        // Controllo duplicati componenti
+        std::string compKey = comp.canonicalId.empty() ? comp.displayName : comp.canonicalId;
+        if (!seenCompKeys.insert(compKey).second) {
+            if (outError) *outError = "Componente duplicato '" + compKey + "' nella composizione di '" + ownerCanonicalId + "'.";
+            return false;
+        }
+
+        // Regola: non sommare frazioni di basi differenti. Verifica coerenza base
+        if (comp.quantity.IsKnown()) {
+            if (comp.quantity.basis != composition.defaultBasis) {
+                if (outError) *outError = "Base frazionaria del componente '" + compKey + "' ('" + 
+                                          FractionBasisToString(comp.quantity.basis) + "') discordante dalla defaultBasis ('" + 
+                                          FractionBasisToString(composition.defaultBasis) + "') in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+        }
+
+        // Validazione quantità componente secondo QuantityKind
+        if (comp.quantity.kind == QuantityKind::Exact) {
+            if (!std::isfinite(comp.quantity.exact)) {
+                if (outError) *outError = "Frazione Exact non finita (NaN/Inf) per componente '" + compKey + "' in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+            if (comp.quantity.exact < 0.0 || comp.quantity.exact > 1.0 + 1e-6) {
+                if (outError) *outError = "Frazione Exact fuori intervallo [0, 1] (" + std::to_string(comp.quantity.exact) + ") per componente '" + compKey + "' in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+            sumMin += comp.quantity.exact;
+            sumMax += comp.quantity.exact;
+            knownCount++;
+        } else if (comp.quantity.kind == QuantityKind::Range) {
+            if (!std::isfinite(comp.quantity.min) || !std::isfinite(comp.quantity.max)) {
+                if (outError) *outError = "Intervallo frazionario Range non finito per componente '" + compKey + "' in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+            if (comp.quantity.min < 0.0 || comp.quantity.max > 1.0 + 1e-6 || comp.quantity.min > comp.quantity.max) {
+                if (outError) *outError = "Intervallo frazionario Range non valido [" + std::to_string(comp.quantity.min) + ", " + std::to_string(comp.quantity.max) + "] per componente '" + compKey + "' in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+            sumMin += comp.quantity.min;
+            sumMax += comp.quantity.max;
+            hasRange = true;
+            knownCount++;
+        }
+        // Se QuantityKind::Unknown: Unknown non equivale mai a zero e non altera sumMin/sumMax
+    }
+
+    // Regola per composizioni parziali
+    if (composition.completeness == CompositionCompleteness::Partial) {
+        if (sumMin > 1.0 + 1e-4) {
+            if (outError) *outError = "Composizione Partial: somma dei minimi delle frazioni note supera 1.0 (" + std::to_string(sumMin) + ") in '" + ownerCanonicalId + "'.";
+            return false;
+        }
+    }
+
+    // Regola per composizioni nominalmente complete
+    if (composition.completeness == CompositionCompleteness::NominallyComplete) {
+        if (totalCount == 0) {
+            if (outError) *outError = "Composizione dichiarata NominallyComplete ma priva di componenti in '" + ownerCanonicalId + "'.";
+            return false;
+        }
+        if (knownCount != totalCount) {
+            if (outError) *outError = "Composizione NominallyComplete contiene componenti con quantita' Unknown in '" + ownerCanonicalId + "'. Tutti i componenti devono essere noti.";
+            return false;
+        }
+        constexpr double TOLERANCE = 1e-3;
+        if (!hasRange) {
+            if (std::abs(sumMin - 1.0) > TOLERANCE) {
+                if (outError) *outError = "Composizione NominallyComplete non somma a 1 entro tolleranza (somma: " + std::to_string(sumMin) + ") in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+        } else {
+            if (sumMin > 1.0 + TOLERANCE || sumMax < 1.0 - TOLERANCE) {
+                if (outError) *outError = "Composizione NominallyComplete con Range non compatibile con 1.0 (intervallo somme: [" + std::to_string(sumMin) + ", " + std::to_string(sumMax) + "]) in '" + ownerCanonicalId + "'.";
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 static bool ValidateCatalogData(
     const std::unordered_map<ScientificMaterialID, ScientificMaterialDef>& materials,
     const std::unordered_map<std::string, ScientificMaterialID>& canonicalToIdMap,
@@ -1255,19 +1391,7 @@ static bool ValidateCatalogData(
 
         // B. Validazione Composizione
         if (!mat.composition.IsEmpty() || mat.composition.completeness != CompositionCompleteness::Unknown) {
-            std::unordered_set<std::string> seenCompKeys;
-            double sumMin = 0.0;
-            double sumMax = 0.0;
-            bool hasRange = false;
-            size_t knownCount = 0;
-            size_t totalCount = mat.composition.components.size();
-
             for (const auto& comp : mat.composition.components) {
-                if (comp.canonicalId.empty() && comp.displayName.empty() && comp.materialId == INVALID_SCIENTIFIC_MATERIAL_ID) {
-                    if (outError) *outError = "Componente privo di identificatore nella composizione di '" + mat.canonicalId + "'.";
-                    return false;
-                }
-
                 if (comp.materialId != INVALID_SCIENTIFIC_MATERIAL_ID && !hasMatId(comp.materialId)) {
                     if (outError) *outError = "Componente nella composizione di '" + mat.canonicalId + 
                                               "' fa riferimento a materialId inesistente: " + std::to_string(comp.materialId);
@@ -1279,92 +1403,11 @@ static bool ValidateCatalogData(
                                               "' fa riferimento a materiale canonico inesistente: '" + comp.canonicalId + "'";
                     return false;
                 }
-
-                // Autoriferimento compositivo
-                if (comp.materialId == mat.id || (!comp.canonicalId.empty() && comp.canonicalId == mat.canonicalId)) {
-                    if (outError) *outError = "Composizione ciclica: il materiale '" + mat.canonicalId + "' include se stesso come componente.";
-                    return false;
-                }
-
-                // Controllo duplicati componenti
-                std::string compKey = comp.canonicalId.empty() ? comp.displayName : comp.canonicalId;
-                if (!seenCompKeys.insert(compKey).second) {
-                    if (outError) *outError = "Componente duplicato '" + compKey + "' nella composizione di '" + mat.canonicalId + "'.";
-                    return false;
-                }
-
-                // Regola: non sommare frazioni di basi differenti. Verifica coerenza base
-                if (comp.quantity.IsKnown()) {
-                    if (comp.quantity.basis != mat.composition.defaultBasis) {
-                        if (outError) *outError = "Base frazionaria del componente '" + compKey + "' ('" + 
-                                                  FractionBasisToString(comp.quantity.basis) + "') discordante dalla defaultBasis ('" + 
-                                                  FractionBasisToString(mat.composition.defaultBasis) + "') in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                }
-
-                // Validazione quantità componente secondo QuantityKind
-                if (comp.quantity.kind == QuantityKind::Exact) {
-                    if (!std::isfinite(comp.quantity.exact)) {
-                        if (outError) *outError = "Frazione Exact non finita (NaN/Inf) per componente '" + compKey + "' in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                    if (comp.quantity.exact < 0.0 || comp.quantity.exact > 1.0 + 1e-6) {
-                        if (outError) *outError = "Frazione Exact fuori intervallo [0, 1] (" + std::to_string(comp.quantity.exact) + ") per componente '" + compKey + "' in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                    sumMin += comp.quantity.exact;
-                    sumMax += comp.quantity.exact;
-                    knownCount++;
-                } else if (comp.quantity.kind == QuantityKind::Range) {
-                    if (!std::isfinite(comp.quantity.min) || !std::isfinite(comp.quantity.max)) {
-                        if (outError) *outError = "Intervallo frazionario Range non finito per componente '" + compKey + "' in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                    if (comp.quantity.min < 0.0 || comp.quantity.max > 1.0 + 1e-6 || comp.quantity.min > comp.quantity.max) {
-                        if (outError) *outError = "Intervallo frazionario Range non valido [" + std::to_string(comp.quantity.min) + ", " + std::to_string(comp.quantity.max) + "] per componente '" + compKey + "' in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                    sumMin += comp.quantity.min;
-                    sumMax += comp.quantity.max;
-                    hasRange = true;
-                    knownCount++;
-                }
-                // Se QuantityKind::Unknown: Unknown non equivale mai a zero e non altera sumMin/sumMax
             }
 
-            // Regola per composizioni parziali
-            if (mat.composition.completeness == CompositionCompleteness::Partial) {
-                if (sumMin > 1.0 + 1e-4) {
-                    if (outError) *outError = "Composizione Partial: somma dei minimi delle frazioni note supera 1.0 (" + std::to_string(sumMin) + ") in '" + mat.canonicalId + "'.";
-                    return false;
-                }
+            if (!ValidateScientificCompositionInternal(mat.composition, mat.id, mat.canonicalId, outError)) {
+                return false;
             }
-
-            // Regola per composizioni nominalmente complete
-            if (mat.composition.completeness == CompositionCompleteness::NominallyComplete) {
-                if (totalCount == 0) {
-                    if (outError) *outError = "Composizione dichiarata NominallyComplete ma priva di componenti in '" + mat.canonicalId + "'.";
-                    return false;
-                }
-                if (knownCount != totalCount) {
-                    if (outError) *outError = "Composizione NominallyComplete contiene componenti con quantita' Unknown in '" + mat.canonicalId + "'. Tutti i componenti devono essere noti.";
-                    return false;
-                }
-                constexpr double TOLERANCE = 1e-3;
-                if (!hasRange) {
-                    if (std::abs(sumMin - 1.0) > TOLERANCE) {
-                        if (outError) *outError = "Composizione NominallyComplete non somma a 1 entro tolleranza (somma: " + std::to_string(sumMin) + ") in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                } else {
-                    if (sumMin > 1.0 + TOLERANCE || sumMax < 1.0 - TOLERANCE) {
-                        if (outError) *outError = "Composizione NominallyComplete con Range non compatibile con 1.0 (intervallo somme: [" + std::to_string(sumMin) + ", " + std::to_string(sumMax) + "]) in '" + mat.canonicalId + "'.";
-                        return false;
-                    }
-                }
-            }
-            // Se CompositionCompleteness::Unknown, non si deduce vuota né completa
         }
     }
 
@@ -2109,6 +2152,477 @@ void ScientificMaterialRegistry::RegisterStandardMaterials() {
         m.meltingPoint = ScientificQuantity::Known(1811.0, "K", DataQuality::SyntheticStandard, "Pure Fe melting point (1538 C)");
         RegisterMaterial(m);
     }
+}
+
+// =============================================================================
+// MA-03.3: SCIENTIFIC MATERIAL AUTHORING FOUNDATION (Custom Materials Backend)
+// =============================================================================
+
+// Assegnazione stabile: max(ID) + 1 calcolato su tutti i materiali custom (Draft, Published, Deprecated).
+// Trattandosi di un'architettura file-based pura senza database centrale o autorita' esterna, la
+// rimozione completa del file catalogo comporta inevitabilmente la ripartenza dello storico ID da 1000.
+ScientificMaterialID ScientificMaterialRegistry::AllocateNextCustomMaterialId() const {
+    ScientificMaterialID maxId = CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE - 1;
+    for (const auto& [id, def] : m_materials) {
+        if (id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE && id > maxId) {
+            maxId = id;
+        }
+    }
+    return maxId + 1;
+}
+
+bool ScientificMaterialRegistry::ValidateCanonicalIdFormat(const std::string& canonicalId, std::string* outError) {
+    if (canonicalId.empty()) {
+        if (outError) *outError = "canonicalId non puo' essere vuoto.";
+        return false;
+    }
+    auto colonPos = canonicalId.find(':');
+    if (colonPos == std::string::npos || colonPos == 0 || colonPos == canonicalId.length() - 1) {
+        if (outError) *outError = "canonicalId deve contenere un namespace separato da ':' (es. 'fairworld:mat/...').";
+        return false;
+    }
+    for (char c : canonicalId) {
+        if (c <= ' ' || c == '\\' || c == '"' || c == '\'' || c == '?' || c == '#') {
+            if (outError) *outError = "canonicalId contiene caratteri non validi (spazi o caratteri di controllo).";
+            return false;
+        }
+    }
+    std::string path = canonicalId.substr(colonPos + 1);
+    if (path.rfind("mat/", 0) != 0) {
+        if (outError) *outError = "canonicalId deve iniziare con il prefisso 'mat/' dopo il namespace (es. 'custom:mat/titanium').";
+        return false;
+    }
+    if (path.length() <= 4) {
+        if (outError) *outError = "canonicalId deve specificare un identificativo dopo 'mat/'.";
+        return false;
+    }
+    return true;
+}
+
+bool ScientificMaterialRegistry::ValidateMaterialDefinition(const ScientificMaterialDef& def, std::string* outError) const {
+    if (def.id == INVALID_SCIENTIFIC_MATERIAL_ID) {
+        if (outError) *outError = "ScientificMaterialID non puo' essere 0 (INVALID_SCIENTIFIC_MATERIAL_ID).";
+        return false;
+    }
+    if (!ValidateCanonicalIdFormat(def.canonicalId, outError)) {
+        return false;
+    }
+    if (def.displayName.empty()) {
+        if (outError) *outError = "displayName non puo' essere vuoto.";
+        return false;
+    }
+
+    std::string qErr;
+    if (!ValidateScientificQuantity("density", def.density, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (def.density.state != PropertyState::Unknown && def.density.state != PropertyState::NotApplicable) {
+        if (def.density.value < 0.0) {
+            if (outError) *outError = "La densita' non puo' essere negativa.";
+            return false;
+        }
+    }
+
+    if (!ValidateScientificQuantity("porosity", def.porosity, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (def.porosity.state != PropertyState::Unknown && def.porosity.state != PropertyState::NotApplicable) {
+        if (def.porosity.value < 0.0 || def.porosity.value > 1.0) {
+            if (outError) *outError = "La porosita' deve essere compresa nell'intervallo [0.0, 1.0].";
+            return false;
+        }
+    }
+
+    if (!ValidateScientificQuantity("compressiveStrength", def.compressiveStrength, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (!ValidateScientificQuantity("tensileStrength", def.tensileStrength, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (!ValidateScientificQuantity("elasticModulus", def.elasticModulus, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (!ValidateScientificQuantity("staticFriction", def.staticFriction, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (def.staticFriction.state != PropertyState::Unknown && def.staticFriction.state != PropertyState::NotApplicable) {
+        if (def.staticFriction.value < 0.0) {
+            if (outError) *outError = "L'attrito statico non puo' essere negativo.";
+            return false;
+        }
+    }
+
+    if (!ValidateScientificQuantity("dynamicFriction", def.dynamicFriction, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (def.dynamicFriction.state != PropertyState::Unknown && def.dynamicFriction.state != PropertyState::NotApplicable) {
+        if (def.dynamicFriction.value < 0.0) {
+            if (outError) *outError = "L'attrito dinamico non puo' essere negativo.";
+            return false;
+        }
+    }
+
+    if (!ValidateScientificQuantity("restitution", def.restitution, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (def.restitution.state != PropertyState::Unknown && def.restitution.state != PropertyState::NotApplicable) {
+        if (def.restitution.value < 0.0 || def.restitution.value > 1.0) {
+            if (outError) *outError = "Il coefficiente di restituzione deve essere compreso nell'intervallo [0.0, 1.0].";
+            return false;
+        }
+    }
+
+    if (!ValidateScientificQuantity("specificHeatCapacity", def.specificHeatCapacity, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (!ValidateScientificQuantity("thermalConductivity", def.thermalConductivity, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (!ValidateScientificQuantity("thermalExpansion", def.thermalExpansion, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (!ValidateScientificQuantity("meltingPoint", def.meltingPoint, &qErr)) {
+        if (outError) *outError = qErr;
+        return false;
+    }
+    if (def.meltingPoint.state != PropertyState::Unknown && def.meltingPoint.state != PropertyState::NotApplicable) {
+        if (def.meltingPoint.value < 0.0) {
+            if (outError) *outError = "Il punto di fusione (Kelvin) non puo' essere negativo.";
+            return false;
+        }
+    }
+
+    // Composizione
+    if (!ValidateScientificCompositionInternal(def.composition, def.id, def.canonicalId, outError)) {
+        return false;
+    }
+
+    // Relazioni
+    for (const auto& rel : def.relations) {
+        if (rel.targetId == def.id || (!rel.targetCanonicalId.empty() && rel.targetCanonicalId == def.canonicalId)) {
+            if (outError) *outError = "Autociclo relazionale: un materiale non puo' avere una relazione con se stesso.";
+            return false;
+        }
+    }
+
+    // Proprietà estese
+    if (!def.extendedProperties.Empty() && m_activeSnapshot) {
+        std::string extErr;
+        if (!ValidateExtendedPropertyStorageInternal(def.extendedProperties, 
+                                                     m_activeSnapshot->propertyDefinitions, 
+                                                     m_activeSnapshot->propertyUriToIndex, 
+                                                     &extErr)) {
+            if (outError) *outError = "Validazione proprieta' estese fallita: " + extErr;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ScientificMaterialRegistry::PublishMaterial(ScientificMaterialID id, std::string* outError) {
+    auto it = m_materials.find(id);
+    if (it == m_materials.end()) {
+        if (outError) *outError = "Materiale ID " + std::to_string(id) + " non trovato nel registro.";
+        return false;
+    }
+    ScientificMaterialDef updatedDef = it->second;
+    if (updatedDef.lifecycleState == MaterialLifecycleState::Published) {
+        return true;
+    }
+    if (updatedDef.lifecycleState == MaterialLifecycleState::Deprecated) {
+        if (outError) *outError = "Impossibile pubblicare un materiale gia' contrassegnato Deprecated.";
+        return false;
+    }
+    if (!ValidateMaterialDefinition(updatedDef, outError)) {
+        return false;
+    }
+    updatedDef.lifecycleState = MaterialLifecycleState::Published;
+    return RegisterMaterial(updatedDef, true);
+}
+
+bool ScientificMaterialRegistry::DeprecateMaterial(ScientificMaterialID id, std::string* outError) {
+    auto it = m_materials.find(id);
+    if (it == m_materials.end()) {
+        if (outError) *outError = "Materiale ID " + std::to_string(id) + " non trovato nel registro.";
+        return false;
+    }
+    ScientificMaterialDef updatedDef = it->second;
+    if (updatedDef.lifecycleState == MaterialLifecycleState::Deprecated) {
+        return true;
+    }
+    updatedDef.lifecycleState = MaterialLifecycleState::Deprecated;
+    return RegisterMaterial(updatedDef, true);
+}
+
+bool ScientificMaterialRegistry::SetEnabledInBlockMaker(ScientificMaterialID id, bool enabled, std::string* outError) {
+    auto it = m_materials.find(id);
+    if (it == m_materials.end()) {
+        if (outError) *outError = "Materiale ID " + std::to_string(id) + " non trovato nel registro.";
+        return false;
+    }
+    ScientificMaterialDef updatedDef = it->second;
+    updatedDef.enabledInBlockMaker = enabled;
+    return RegisterMaterial(updatedDef, true);
+}
+
+std::vector<const ScientificMaterialDef*> ScientificMaterialRegistry::GetSelectableMaterials(ScientificMaterialID currentSelection) const {
+    std::vector<const ScientificMaterialDef*> result;
+    result.reserve(m_materials.size());
+
+    for (const auto& [id, def] : m_materials) {
+        if (def.lifecycleState == MaterialLifecycleState::Published && def.enabledInBlockMaker) {
+            result.push_back(&def);
+        } else if (id == currentSelection && currentSelection != 0) {
+            result.push_back(&def);
+        }
+    }
+
+    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) {
+        return a->id < b->id;
+    });
+
+    return result;
+}
+
+std::vector<ScientificMaterialID> ScientificMaterialRegistry::GetMaterialsByLifecycle(MaterialLifecycleState state) const {
+    std::vector<ScientificMaterialID> result;
+    for (const auto& [id, def] : m_materials) {
+        if (def.lifecycleState == state) {
+            result.push_back(id);
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& filepath, std::string* outError) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        if (outError) *outError = "Impossibile aprire il file custom per lettura: " + filepath;
+        return false;
+    }
+
+    json j;
+    try {
+        file >> j;
+    } catch (const std::exception& e) {
+        if (outError) *outError = std::string("Errore di parsing JSON nel file custom: ") + e.what();
+        return false;
+    }
+
+    int schemaVersion = j.value("schemaVersion", 0);
+    if (schemaVersion < 2 || schemaVersion > 3) {
+        if (outError) *outError = "schemaVersion non supportata nel file custom: " + std::to_string(schemaVersion);
+        return false;
+    }
+
+    if (!j.contains("materials") || !j["materials"].is_array()) {
+        if (outError) *outError = "Array 'materials' mancante o non valido nel file custom.";
+        return false;
+    }
+
+    auto candidateMaterials = m_materials;
+    auto candidateCanonicalMap = m_canonicalToIdMap;
+    auto candidateSnapshot = std::make_shared<RegistrySnapshot>();
+    candidateSnapshot->snapshotId = m_activeSnapshot ? (m_activeSnapshot->snapshotId + 1) : 1;
+    if (m_activeSnapshot) {
+        candidateSnapshot->propertyDefinitions = m_activeSnapshot->propertyDefinitions;
+        candidateSnapshot->propertyUriToIndex = m_activeSnapshot->propertyUriToIndex;
+    } else {
+        candidateSnapshot->propertyDefinitions = CreateCanonicalPropertyDefinitions();
+        for (size_t i = 0; i < candidateSnapshot->propertyDefinitions.size(); ++i) {
+            candidateSnapshot->propertyUriToIndex[candidateSnapshot->propertyDefinitions[i].uri] = static_cast<PropertyKeyIndex>(i);
+        }
+    }
+
+    std::unordered_set<ScientificMaterialID> jsonSeenIds;
+    std::unordered_set<std::string> jsonSeenCanonicals;
+
+    for (const auto& jMat : j["materials"]) {
+        ScientificMaterialDef def;
+        try {
+            from_json(jMat, def);
+        } catch (const std::exception& e) {
+            if (outError) *outError = std::string("Errore deserializzazione materiale custom: ") + e.what();
+            return false;
+        }
+        def.isCustom = true;
+
+        if (def.id < CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+            if (outError) *outError = "Collisione range ID: materiale custom '" + def.canonicalId + 
+                                      "' ha ID " + std::to_string(def.id) + " che ricade nel range standard (< 1000).";
+            return false;
+        }
+
+        if (!jsonSeenIds.insert(def.id).second) {
+            if (outError) *outError = "ID duplicato nel file custom: " + std::to_string(def.id);
+            return false;
+        }
+        if (!jsonSeenCanonicals.insert(def.canonicalId).second) {
+            if (outError) *outError = "canonicalId duplicato nel file custom: " + def.canonicalId;
+            return false;
+        }
+
+        std::string valErr;
+        if (!ValidateMaterialDefinition(def, &valErr)) {
+            if (outError) *outError = "Validazione fallita per materiale custom '" + def.canonicalId + "': " + valErr;
+            return false;
+        }
+
+        auto itId = candidateMaterials.find(def.id);
+        auto itCanon = candidateCanonicalMap.find(def.canonicalId);
+
+        if (itId != candidateMaterials.end() || itCanon != candidateCanonicalMap.end()) {
+            bool isSameMaterial = (itId != candidateMaterials.end() && itId->second.canonicalId == def.canonicalId) &&
+                                  (itCanon != candidateCanonicalMap.end() && itCanon->second == def.id);
+            if (!isSameMaterial) {
+                if (itId != candidateMaterials.end() && itId->second.canonicalId != def.canonicalId) {
+                    if (outError) *outError = "Collisione ID: ID " + std::to_string(def.id) + 
+                                              " gia' occupato da '" + itId->second.canonicalId + "'";
+                    return false;
+                }
+                if (itCanon != candidateCanonicalMap.end() && itCanon->second != def.id) {
+                    if (outError) *outError = "Collisione canonicalId: '" + def.canonicalId + 
+                                              "' gia' associato a ID " + std::to_string(itCanon->second);
+                    return false;
+                }
+            }
+        }
+
+        candidateMaterials[def.id] = def;
+        candidateCanonicalMap[def.canonicalId] = def.id;
+    }
+
+    std::string catErr;
+    if (!ValidateCatalogData(candidateMaterials, candidateCanonicalMap, &catErr)) {
+        if (outError) *outError = "Validazione catalogo fallita: " + catErr;
+        return false;
+    }
+
+    candidateSnapshot->materials = candidateMaterials;
+    candidateSnapshot->canonicalToIdMap = candidateCanonicalMap;
+
+    m_materials = std::move(candidateMaterials);
+    m_canonicalToIdMap = std::move(candidateCanonicalMap);
+    m_activeSnapshot = std::move(candidateSnapshot);
+
+    return true;
+}
+
+bool ScientificMaterialRegistry::SaveCustomMaterialsToJson(const std::string& filepath, std::string* outError) const {
+    std::vector<ScientificMaterialID> customIds;
+    for (const auto& [id, def] : m_materials) {
+        if (def.isCustom || id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+            customIds.push_back(id);
+        }
+    }
+    std::sort(customIds.begin(), customIds.end());
+
+    json j;
+    j["schemaVersion"] = 3;
+    json jMats = json::array();
+    for (ScientificMaterialID id : customIds) {
+        const auto& def = m_materials.at(id);
+        json jDef;
+        to_json(jDef, def);
+        jMats.push_back(jDef);
+    }
+    j["materials"] = jMats;
+
+    std::filesystem::path targetPath(filepath);
+    if (targetPath.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(targetPath.parent_path(), ec);
+    }
+
+    std::filesystem::path tempPath = targetPath;
+    tempPath += ".tmp";
+    {
+        std::ofstream file(tempPath);
+        if (!file.is_open()) {
+            if (outError) *outError = "Impossibile aprire file temporaneo per scrittura: " + tempPath.string();
+            return false;
+        }
+        file << j.dump(4);
+        file.flush();
+        if (file.fail()) {
+            if (outError) *outError = "Errore durante la scrittura su file temporaneo: " + tempPath.string();
+            file.close();
+            std::error_code ec;
+            std::filesystem::remove(tempPath, ec);
+            return false;
+        }
+        file.close();
+    }
+
+#if defined(_WIN32)
+    std::wstring wtarget = targetPath.wstring();
+    std::wstring wtemp = tempPath.wstring();
+
+    std::error_code ec;
+    bool targetExists = std::filesystem::exists(targetPath, ec);
+
+    bool replaced = false;
+    DWORD lastError = 0;
+
+    if (targetExists) {
+        // Sostituzione sicura in-place tramite ReplaceFileW senza eliminazione preventiva del target.
+        // Se la sostituzione fallisce (es. file locked o sharing violation), il file target originale
+        // rimane valido, leggibile e completamente inalterato.
+        if (::ReplaceFileW(wtarget.c_str(), wtemp.c_str(), nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr)) {
+            replaced = true;
+        } else {
+            lastError = ::GetLastError();
+            // Se il target e' scomparso concorrentemente, fallback a MoveFileExW
+            if (lastError == ERROR_FILE_NOT_FOUND) {
+                if (::MoveFileExW(wtemp.c_str(), wtarget.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
+                    replaced = true;
+                } else {
+                    lastError = ::GetLastError();
+                }
+            }
+        }
+    } else {
+        // Prima creazione del catalogo (target inesistente)
+        if (::MoveFileExW(wtemp.c_str(), wtarget.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
+            replaced = true;
+        } else {
+            lastError = ::GetLastError();
+        }
+    }
+
+    if (!replaced) {
+        if (outError) {
+            *outError = "Sostituzione sicura del catalogo custom fallita (Win32 error: " + std::to_string(lastError) + ")";
+        }
+        std::error_code rmEc;
+        std::filesystem::remove(tempPath, rmEc);
+        return false;
+    }
+#else
+    std::error_code ec;
+    std::filesystem::rename(tempPath, targetPath, ec);
+    if (ec) {
+        if (outError) *outError = "Sostituzione atomica del file custom fallita: " + ec.message();
+        std::error_code rmEc;
+        std::filesystem::remove(tempPath, rmEc);
+        return false;
+    }
+#endif
+
+    return true;
 }
 
 } // namespace fw
