@@ -143,6 +143,12 @@ public:
         const std::string& dependencyRootDir = ""
     ) const;
 
+    // Diagnostica non distruttiva dei riferimenti ai materiali scientifici (P0.3B2)
+    PackageScientificDiagnosticReport ValidateScientificReferences(
+        const RawAssetPackage& package,
+        const ScientificMaterialRegistry& sciReg
+    ) const;
+
     // Pubblicazione transazionale con garanzia di atomicità in-memory (commit o rollback totale)
     AssetPublishTransactionResult PublishPackageTransactional(
         RawAssetPackage& package,

@@ -1,0 +1,128 @@
+{
+    "catalogGeneration": 6,
+    "customIdHighWaterMark": 1001,
+    "materials": [
+        {
+            "aggregationState": "Solid",
+            "canonicalId": "fairworld:mat/titanium_carbide",
+            "chemicalFormula": "TiC",
+            "classification": "",
+            "compressiveStrength": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "Pa",
+                "value": 0.0
+            },
+            "density": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Known",
+                "temperatureKelvin": 293.15,
+                "unit": "kg/m^3",
+                "value": 4930.0
+            },
+            "description": "",
+            "displayName": "Titanium Carbide",
+            "dynamicFriction": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "",
+                "value": 0.0
+            },
+            "elasticModulus": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "Pa",
+                "value": 0.0
+            },
+            "enabledInBlockMaker": true,
+            "id": 1000,
+            "isCustom": true,
+            "kind": "Compound",
+            "lifecycleState": "Published",
+            "meltingPoint": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Known",
+                "temperatureKelvin": 293.15,
+                "unit": "K",
+                "value": 3433.15
+            },
+            "porosity": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "",
+                "value": 0.0
+            },
+            "restitution": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "",
+                "value": 0.0
+            },
+            "specificHeatCapacity": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Known",
+                "temperatureKelvin": 293.15,
+                "unit": "J/(kg*K)",
+                "value": 710.0
+            },
+            "staticFriction": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "",
+                "value": 0.0
+            },
+            "tensileStrength": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "Pa",
+                "value": 0.0
+            },
+            "thermalConductivity": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Known",
+                "temperatureKelvin": 293.15,
+                "unit": "W/(m*K)",
+                "value": 33.0
+            },
+            "thermalExpansion": {
+                "pressurePascal": 101325.0,
+                "quality": "Estimated",
+                "source": "",
+                "state": "Unknown",
+                "temperatureKelvin": 293.15,
+                "unit": "1/K",
+                "value": 0.0
+            }
+        }
+    ],
+    "schemaVersion": 3
+}

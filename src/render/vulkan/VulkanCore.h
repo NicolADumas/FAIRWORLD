@@ -49,6 +49,16 @@ public:
     SwapchainConfig BuildSwapchainConfig(void* hwnd) const;
     bool InitSwapchain(const SwapchainConfig& config);
     void DestroySwapchain();
+    void DestroyDeviceOnly() {
+        if (m_device != VK_NULL_HANDLE) {
+            vkDestroyDevice(m_device, nullptr);
+            m_device = VK_NULL_HANDLE;
+        }
+        if (m_surface != VK_NULL_HANDLE) {
+            vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+            m_surface = VK_NULL_HANDLE;
+        }
+    }
 
     // Getters per l'Ape Regina (RenderManager)
     VkInstance GetInstance() const { return m_instance; }
@@ -95,6 +105,7 @@ private:
 #else
     const bool enableValidationLayers = true;
 #endif
+    VkDebugUtilsMessengerEXT m_debugMessenger{ VK_NULL_HANDLE };
     const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
     bool CheckValidationLayerSupport();

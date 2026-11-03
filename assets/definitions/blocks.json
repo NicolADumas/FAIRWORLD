@@ -1,6 +1,7 @@
 {
     "blocks": [
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": false,
             "density": 1000.0,
@@ -40,6 +41,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -79,6 +81,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -118,6 +121,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -157,6 +161,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -196,6 +201,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -235,6 +241,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": false,
             "density": 1000.0,
@@ -268,12 +275,16 @@
                 0.0
             ],
             "restitution": 0.0,
-            "scientificMaterialId": 0,
+            "scientific": {
+                "materialId": 1
+            },
+            "scientificMaterialId": 1,
             "stringId": "fairworld:Water",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": false,
             "density": 1000.0,
@@ -313,6 +324,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -352,6 +364,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -391,6 +404,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -430,6 +444,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -469,6 +484,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -508,6 +524,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -547,6 +564,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -586,6 +604,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -625,6 +644,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -664,6 +684,7 @@
             "thermal_resistance": 1.0
         },
         {
+            "appearanceId": 0,
             "bounciness": 0.0,
             "collisionEnabled": true,
             "density": 1000.0,
@@ -702,6 +723,49 @@
             },
             "scientificMaterialId": 2,
             "stringId": "fairworld:granito",
+            "thermal_capacity": 1.0,
+            "thermal_resistance": 1.0
+        },
+        {
+            "appearanceId": 0,
+            "bounciness": 0.0,
+            "collisionEnabled": true,
+            "density": 1000.0,
+            "displayName": "carburo di titanio ",
+            "friction": 0.6000000238418579,
+            "id": 18,
+            "isSolid": true,
+            "isTransparent": false,
+            "lightEmissionLevel": 0.0,
+            "localPosition": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localRotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "localScale": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "mass": 1.0,
+            "massMode": 0,
+            "motionType": 0,
+            "pivotOffset": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "restitution": 0.0,
+            "scientific": {
+                "materialId": 1000
+            },
+            "scientificMaterialId": 1000,
+            "stringId": "fairworld:carburotitanio",
             "thermal_capacity": 1.0,
             "thermal_resistance": 1.0
         }

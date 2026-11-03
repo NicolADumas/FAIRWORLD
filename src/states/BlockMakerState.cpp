@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "BlockMakerState.h"
 #include "SharedContext.h"
+#include "RuntimeManager.h"
 #include "StateManager.h"
 #include "HubState.h"
 #include "FAIRWORLD.h"
@@ -12,6 +13,7 @@
 #include "Components.h"
 #include "BlockRegistry.h"
 #include "blocks/ScientificMaterialRegistry.h"
+#include "blocks/MaterialAuthoringWorkflow.h"
 #include "DeviceManager.h"
 #include <shellapi.h>  // ShellExecuteA - apre cartelle/file con l'OS
 #include "MaterialRegistry.h"
@@ -408,6 +410,11 @@ BlockMakerState::~BlockMakerState() {
         if (m_context->jobSystem) {
             m_context->jobSystem->Shutdown();
             m_context->jobSystem->Initialize();
+        }
+        if (m_context->runtimeManager) {
+            m_context->runtimeManager->ReleaseFeature(fw::RuntimeFeature::GlobalVRAM);
+            m_context->runtimeManager->ReleaseFeature(fw::RuntimeFeature::JobSystem);
+            m_context->runtimeManager->ReleaseFeature(fw::RuntimeFeature::PBRTextures);
         }
     }
     std::cout << "[BlockMakerState] Distrutto.\n";
@@ -4620,6 +4627,18 @@ bool BlockMakerState::Init() {
     std::cout << "[BM-R1][INIT] Ingresso in BlockMakerState::Init()...\n";
     std::cout << "[BlockMakerState] Inizializzazione...\n";
 
+    // BM-FIX-PBR-01: Garanzia attivazione feature runtime via RuntimeManager ufficiale prima di SyncMaterialGpuCache
+    if (m_context && m_context->runtimeManager) {
+        m_context->runtimeManager->AcquireFeature(fw::RuntimeFeature::GlobalVRAM);
+        m_context->runtimeManager->AcquireFeature(fw::RuntimeFeature::JobSystem);
+        m_context->runtimeManager->AcquireFeature(fw::RuntimeFeature::PBRTextures);
+        m_context->runtimeManager->RequireFeaturesSync(
+            fw::RuntimeFeature::GlobalVRAM | 
+            fw::RuntimeFeature::JobSystem | 
+            fw::RuntimeFeature::PBRTextures
+        );
+    }
+
     if (!m_context->jobSystem) {
         m_context->jobSystem = new fw::JobSystem();
         m_context->jobSystem->Initialize();
@@ -6723,15 +6742,9 @@ void BlockMakerState::DrawScientificMaterialUI(fw::SimBlockDef& def, bool& isDir
             ImGui::SetItemDefaultFocus();
         }
 
-        // Opzioni dal Registry (ordinate stabilmente per ID numerico)
-        std::vector<const fw::ScientificMaterialDef*> sortedMats;
-        sortedMats.reserve(sciReg->GetAllMaterials().size());
-        for (const auto& [matId, matDef] : sciReg->GetAllMaterials()) {
-            sortedMats.push_back(&matDef);
-        }
-        std::sort(sortedMats.begin(), sortedMats.end(), [](const auto* a, const auto* b) {
-            return a->id < b->id;
-        });
+        // Opzioni dal Registry (tramite snapshot immutabile protetto P0.2A)
+        auto snap = sciReg->GetSnapshotHandle();
+        auto sortedMats = snap.IsValid() ? snap->GetSelectableMaterials(def.scientificMaterialId) : std::vector<const fw::ScientificMaterialDef*>{};
 
         for (const auto* matDef : sortedMats) {
             bool isSelected = (def.scientificMaterialId == matDef->id);
@@ -7916,6 +7929,125 @@ void BlockMakerState::DrawFactorySurfaceUVControls(fw::PBRMaterialDef& mat, bool
                 drawSurfTexField("ORM Superficie", surf.textures.ormMapPath, "orm");
                 drawSurfTexField("Emissive Superficie", surf.textures.emissiveMapPath, "emissive");
             }
+
+            // =================================================================
+            // STEP 1: SCIENTIFIC SURFACE BINDING CONTROLS (P0.3C3)
+            // =================================================================
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "MATERIALE SCIENTIFICO DELLA PARTE (UNIFORME)");
+            ImGui::TextWrapped("Ogni parte possiede un unico materiale scientifico autoritativo. Le superfici definiscono esclusivamente l'aspetto visivo PBR e la mappatura UV.");
+
+            // Risoluzione ID scientifico radice dell'asset
+            uint32_t rootSciId = 0;
+            if (m_factoryOrchestrator.IsDraftOpen()) {
+                auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+                if (draft) {
+                    rootSciId = draft->scientificMaterialId;
+                }
+            } else if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(static_cast<uint8_t>(m_selectedBlockId))) {
+                rootSciId = m_context->blockRegistry->GetBlock(static_cast<uint8_t>(m_selectedBlockId)).scientificMaterialId;
+            }
+
+            auto* sciReg = m_context ? m_context->scientificMaterialRegistry : nullptr;
+
+            ImGui::Text("Materiale Fisico della Parte: ");
+            ImGui::SameLine();
+            if (rootSciId == 0) {
+                ImGui::TextDisabled("Nessuno / Personalizzato (ID 0)");
+            } else if (sciReg && sciReg->HasMaterial(rootSciId)) {
+                const auto& rMat = sciReg->GetMaterial(rootSciId);
+                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "[%u] %s (%s)", rMat.id, rMat.displayName.c_str(), rMat.canonicalId.c_str());
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[%u] Riferimento Orfano", rootSciId);
+            }
+
+            ImGui::TextDisabled("(Per modificare il materiale fisico dell'intera parte, utilizzare la scheda 'Materiale / Fisica').");
+        }
+
+        // =====================================================================
+        // STEP 3: DIAGNOSTICA PROPRIETÀ SCIENTIFICHE EFFETTIVE DELLA SUPERFICIE
+        // =====================================================================
+        uint32_t rootSciIdDiag = 0;
+        if (m_factoryOrchestrator.IsDraftOpen()) {
+            auto* draft = m_factoryOrchestrator.GetCurrentDraft();
+            if (draft) {
+                rootSciIdDiag = draft->scientificMaterialId;
+            }
+        } else if (m_context && m_context->blockRegistry && m_context->blockRegistry->IsBlockValid(static_cast<uint8_t>(m_selectedBlockId))) {
+            rootSciIdDiag = m_context->blockRegistry->GetBlock(static_cast<uint8_t>(m_selectedBlockId)).scientificMaterialId;
+        }
+
+        auto* sciRegDiag = m_context ? m_context->scientificMaterialRegistry : nullptr;
+        fw::SurfaceScientificResolution res = fw::ResolveSurfaceScientificBinding(curSurfId, mat.surfaces, rootSciIdDiag, sciRegDiag);
+
+        ImGui::Spacing();
+        if (ImGui::TreeNodeEx("Diagnostica Proprieta' Scientifiche Effettive (Superficie)##SurfSciDiag", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // 1. Materiale Risolto
+            ImGui::Text("Materiale Risolto:  ");
+            ImGui::SameLine();
+            if (res.resolvedId == 0) {
+                ImGui::TextDisabled("Nessuno / Non associato");
+            } else if (res.isOrphan) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[%u] Riferimento Orfano (Non presente nel registro)", res.resolvedId);
+            } else if (sciRegDiag && sciRegDiag->HasMaterial(res.resolvedId)) {
+                const auto& mDef = sciRegDiag->GetMaterial(res.resolvedId);
+                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "[%u] %s (%s)", mDef.id, mDef.displayName.c_str(), mDef.canonicalId.c_str());
+            }
+
+            // 2. Origine del Binding
+            ImGui::Text("Origine Binding:    ");
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Materiale Fisico Globale Parte (ID %u)", rootSciIdDiag);
+
+            // 3. Proprietà Scientifiche Effettive (Densità, Conducibilità Termica, Temperatura di Fusione)
+            if (res.resolvedId == 0) {
+                ImGui::TextDisabled("Densita':                Non disponibile (Nessun materiale scientifico)");
+                ImGui::TextDisabled("Conducibilita' Termica:  Non disponibile (Nessun materiale scientifico)");
+                ImGui::TextDisabled("Temperatura di Fusione: Non disponibile (Nessun materiale scientifico)");
+            } else if (res.isOrphan) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Densita':                Non disponibile (Riferimento orfano ID %u)", res.resolvedId);
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Conducibilita' Termica:  Non disponibile (Riferimento orfano ID %u)", res.resolvedId);
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Temperatura di Fusione: Non disponibile (Riferimento orfano ID %u)", res.resolvedId);
+            } else if (sciRegDiag && sciRegDiag->HasMaterial(res.resolvedId)) {
+                const auto& mDef = sciRegDiag->GetMaterial(res.resolvedId);
+
+                // Densità
+                ImGui::Text("Densita':                ");
+                ImGui::SameLine();
+                if (mDef.density.state == fw::PropertyState::Known) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%.2f %s", mDef.density.value, mDef.density.unit.c_str());
+                } else if (mDef.density.state == fw::PropertyState::NotApplicable) {
+                    ImGui::TextDisabled("Non applicabile");
+                } else {
+                    ImGui::TextDisabled("Non disponibile / Sconosciuta");
+                }
+
+                // Conducibilità Termica
+                ImGui::Text("Conducibilita' Termica:  ");
+                ImGui::SameLine();
+                if (mDef.thermalConductivity.state == fw::PropertyState::Known) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%.3f %s", mDef.thermalConductivity.value, mDef.thermalConductivity.unit.c_str());
+                } else if (mDef.thermalConductivity.state == fw::PropertyState::NotApplicable) {
+                    ImGui::TextDisabled("Non applicabile");
+                } else {
+                    ImGui::TextDisabled("Non disponibile / Sconosciuta");
+                }
+
+                // Temperatura di Fusione (Celsius-first, Kelvin in parentesi)
+                ImGui::Text("Temperatura di Fusione: ");
+                ImGui::SameLine();
+                if (mDef.meltingPoint.state == fw::PropertyState::Known) {
+                    double tk = mDef.meltingPoint.value;
+                    double tc = fw::MaterialAuthoringWorkflow::CelsiusFromKelvin(tk);
+                    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "%.2f °C (%.2f K)", tc, tk);
+                } else if (mDef.meltingPoint.state == fw::PropertyState::NotApplicable) {
+                    ImGui::TextDisabled("Non applicabile");
+                } else {
+                    ImGui::TextDisabled("Non disponibile / Sconosciuta");
+                }
+            }
+            ImGui::TreePop();
         }
         ImGui::TreePop();
     }
@@ -8358,6 +8490,9 @@ void BlockMakerState::DrawInspectorContents() {
                     ImGui::Spacing();
                     ImGui::Separator();
                     DrawGeneralGraphicsUI(mat, isDirty);
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    DrawFactorySurfaceUVControls(mat, isDirty);
                     if (isDirty) {
                         SynchronizeDraftToPreview();
                     }
@@ -11072,12 +11207,13 @@ void BlockMakerState::DrawStudioRightInspector() {
 
     // --- SEZIONE PROPRIETA MATERIALE CONDIVISE ---
     if (m_context && m_context->materialRegistry) {
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PROPRIETA MATERIALE");
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PROPRIETA MATERIALE & SUPERFICI");
         auto& mat = m_context->materialRegistry->GetMaterialMutable(m_selectedBlockId);
         bool matDirty = false;
         if (ImGui::SliderFloat("Roughness##StudioRough", &mat.roughnessFallback, 0.0f, 1.0f, "%.2f")) matDirty = true;
         if (ImGui::SliderFloat("Metallic##StudioMetal", &mat.metallicFallback, 0.0f, 1.0f, "%.2f")) matDirty = true;
         if (ImGui::SliderFloat("Emissive##StudioEmiss", &mat.emissiveStrength, 0.0f, 5.0f, "%.2f")) matDirty = true;
+        DrawFactorySurfaceUVControls(mat, matDirty);
         if (matDirty) {
             SynchronizeDraftToPreview();
         }

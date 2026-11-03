@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cstring> // per memcpy
 #include "VulkanResourceTracker.h"
+#include "vulkan/VulkanForensicAudit.h"
 
 #include <vulkan/vulkan.h>
 
@@ -18,8 +19,7 @@ VulkanDmaManager::~VulkanDmaManager() {
 
     if (m_device != VK_NULL_HANDLE && m_transferTimeline != VK_NULL_HANDLE) {
         std::cout << "\n[DMA]\nDestroy timeline semaphore\n";
-        vkDestroySemaphore(m_device, m_transferTimeline, nullptr);
-        fw::VulkanResourceTracker::Get().TrackDestroy(m_transferTimeline);
+        fw::forensic::InterceptDestroySemaphore("VulkanDmaManager::~VulkanDmaManager", m_device, m_transferTimeline, nullptr);
         std::cout << "Timeline semaphore destroyed\n";
         m_transferTimeline = VK_NULL_HANDLE;
     }
@@ -51,7 +51,7 @@ void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkComm
     createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     createInfo.pNext = &timelineCreateInfo;
 
-    if (vkCreateSemaphore(m_device, &createInfo, nullptr, &m_transferTimeline) != VK_SUCCESS) {
+    if (fw::forensic::InterceptCreateSemaphore("VulkanDmaManager::Initialize", "DMATransferTimeline", "VulkanDmaManager", m_device, &createInfo, nullptr, &m_transferTimeline) != VK_SUCCESS) {
         std::cerr << "[Vulkan DMA] Errore: Impossibile creare Timeline Semaphore!\n";
     } else {
         std::cout << "[Vulkan DMA] Transfer Timeline Semaphore creato e inizializzato a 0.\n";

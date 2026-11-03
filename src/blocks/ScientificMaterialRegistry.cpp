@@ -5,6 +5,9 @@
 #include <unordered_set>
 #include <cmath>
 #include <filesystem>
+#include <chrono>
+#include <atomic>
+#include <cctype>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -19,6 +22,53 @@
 namespace fw {
 
 using json = nlohmann::json;
+
+namespace {
+
+struct DestinationLockInfo {
+    std::recursive_mutex destMutex;
+    std::atomic<uint64_t> lastSavedInstanceId{0};
+    std::atomic<uint64_t> lastSavedRevision{0};
+    std::atomic<ScientificMaterialID> lastSavedHwm{0};
+    std::atomic<uint64_t> catalogGeneration{0};
+};
+
+class FileDestinationLockManager {
+public:
+    static std::shared_ptr<DestinationLockInfo> GetLockInfo(const std::filesystem::path& path) {
+        std::error_code ec;
+        std::filesystem::path norm = std::filesystem::weakly_canonical(path, ec);
+        if (ec) {
+            norm = path.lexically_normal();
+        }
+        std::string key = norm.string();
+#if defined(_WIN32)
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+#endif
+        std::lock_guard<std::mutex> lock(s_mapMutex);
+        auto it = s_lockMap.find(key);
+        if (it != s_lockMap.end()) {
+            return it->second;
+        }
+        auto info = std::make_shared<DestinationLockInfo>();
+        s_lockMap[key] = info;
+        return info;
+    }
+
+private:
+    static inline std::mutex s_mapMutex;
+    static inline std::unordered_map<std::string, std::shared_ptr<DestinationLockInfo>> s_lockMap;
+};
+
+static inline std::atomic<uint64_t> s_nextRegistryInstanceId{1};
+
+static inline std::atomic<ScientificMaterialRegistry::PersistenceFaultMode> s_persistenceFaultMode{
+    ScientificMaterialRegistry::PersistenceFaultMode::None
+};
+
+} // anonymous namespace
 
 // =============================================================================
 // JSON SERIALIZATION HELPERS
@@ -459,6 +509,9 @@ void from_json(const json& j, ScientificMaterialDef& m) {
         m.lifecycleState = MaterialLifecycleState::Published;
     }
     m.enabledInBlockMaker = j.value("enabledInBlockMaker", true);
+    if (m.lifecycleState == MaterialLifecycleState::Deprecated) {
+        m.enabledInBlockMaker = false;
+    }
     m.isCustom = j.value("isCustom", false);
 
     if (j.contains("kind")) {
@@ -527,6 +580,50 @@ void from_json(const json& j, ScientificMaterialDef& m) {
     if (j.contains("extendedProperties") && j["extendedProperties"].is_array()) {
         from_json(j["extendedProperties"], m.extendedProperties);
     }
+}
+
+bool operator==(const ScientificMaterialDef& a, const ScientificMaterialDef& b) {
+    if (a.id != b.id ||
+        a.canonicalId != b.canonicalId ||
+        a.displayName != b.displayName ||
+        a.chemicalFormula != b.chemicalFormula ||
+        a.classification != b.classification ||
+        a.description != b.description ||
+        a.kind != b.kind ||
+        a.aggregationState != b.aggregationState ||
+        a.lifecycleState != b.lifecycleState ||
+        a.enabledInBlockMaker != b.enabledInBlockMaker ||
+        a.isCustom != b.isCustom ||
+        a.tags != b.tags ||
+        a.relations != b.relations ||
+        !(a.composition == b.composition) ||
+        !(a.density == b.density) ||
+        !(a.porosity == b.porosity) ||
+        !(a.compressiveStrength == b.compressiveStrength) ||
+        !(a.tensileStrength == b.tensileStrength) ||
+        !(a.elasticModulus == b.elasticModulus) ||
+        !(a.staticFriction == b.staticFriction) ||
+        !(a.dynamicFriction == b.dynamicFriction) ||
+        !(a.restitution == b.restitution) ||
+        !(a.specificHeatCapacity == b.specificHeatCapacity) ||
+        !(a.thermalConductivity == b.thermalConductivity) ||
+        !(a.thermalExpansion == b.thermalExpansion) ||
+        !(a.meltingPoint == b.meltingPoint)) {
+        return false;
+    }
+    if (a.responseCurves.size() != b.responseCurves.size() ||
+        a.tensors.size() != b.tensors.size() ||
+        a.extendedProperties.Size() != b.extendedProperties.Size()) {
+        return false;
+    }
+    json ja, jb;
+    to_json(ja, a);
+    to_json(jb, b);
+    return ja == jb;
+}
+
+bool operator!=(const ScientificMaterialDef& a, const ScientificMaterialDef& b) {
+    return !(a == b);
 }
 
 // =============================================================================
@@ -971,6 +1068,8 @@ static bool ValidateExtendedPropertyStorageInternal(
 // =============================================================================
 
 ScientificMaterialRegistry::ScientificMaterialRegistry() {
+    m_revision = 0;
+    m_instanceId = s_nextRegistryInstanceId.fetch_add(1, std::memory_order_relaxed);
     m_fallbackMaterial.id = INVALID_SCIENTIFIC_MATERIAL_ID;
     m_fallbackMaterial.canonicalId = "fairworld:mat/unknown";
     m_fallbackMaterial.displayName = "Unknown Material";
@@ -978,6 +1077,7 @@ ScientificMaterialRegistry::ScientificMaterialRegistry() {
 
     auto snapshot = std::make_shared<RegistrySnapshot>();
     snapshot->snapshotId = 1;
+    snapshot->revision = m_revision;
     snapshot->propertyDefinitions = CreateCanonicalPropertyDefinitions();
     for (size_t i = 0; i < snapshot->propertyDefinitions.size(); ++i) {
         snapshot->propertyUriToIndex[snapshot->propertyDefinitions[i].uri] = static_cast<PropertyKeyIndex>(i);
@@ -986,30 +1086,51 @@ ScientificMaterialRegistry::ScientificMaterialRegistry() {
 }
 
 void ScientificMaterialRegistry::Initialize() {
-    Clear();
-    auto snapshot = std::make_shared<RegistrySnapshot>();
-    snapshot->snapshotId = 1;
-    snapshot->propertyDefinitions = CreateCanonicalPropertyDefinitions();
-    for (size_t i = 0; i < snapshot->propertyDefinitions.size(); ++i) {
-        snapshot->propertyUriToIndex[snapshot->propertyDefinitions[i].uri] = static_cast<PropertyKeyIndex>(i);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    ClearLocked();
+    if (!m_activeSnapshot) {
+        auto snapshot = std::make_shared<RegistrySnapshot>();
+        snapshot->snapshotId = 1;
+        snapshot->revision = m_revision;
+        snapshot->propertyDefinitions = CreateCanonicalPropertyDefinitions();
+        for (size_t i = 0; i < snapshot->propertyDefinitions.size(); ++i) {
+            snapshot->propertyUriToIndex[snapshot->propertyDefinitions[i].uri] = static_cast<PropertyKeyIndex>(i);
+        }
+        m_activeSnapshot = snapshot;
     }
-    m_activeSnapshot = snapshot;
-    RegisterStandardMaterials();
+    RegisterStandardMaterialsLocked();
 }
 
 void ScientificMaterialRegistry::Clear() {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    ClearLocked();
+}
+
+void ScientificMaterialRegistry::ClearLocked() {
+    if (m_materials.empty()) {
+        return;
+    }
     m_materials.clear();
     m_canonicalToIdMap.clear();
+    m_revision++;
     if (m_activeSnapshot) {
         auto snapshot = std::make_shared<RegistrySnapshot>();
         snapshot->snapshotId = m_activeSnapshot->snapshotId + 1;
+        snapshot->revision = m_revision;
         snapshot->propertyDefinitions = m_activeSnapshot->propertyDefinitions;
         snapshot->propertyUriToIndex = m_activeSnapshot->propertyUriToIndex;
         m_activeSnapshot = snapshot;
     }
+    // NOTA CONTRATTUALE P0.2C: m_customIdHighWaterMark NON viene resettato da Clear().
+    // Gli identificatori gia' allocati rimangono non-riutilizzabili nella stessa storia.
 }
 
 bool ScientificMaterialRegistry::RegisterMaterial(const ScientificMaterialDef& def, bool allowUpdate) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    return RegisterMaterialLocked(def, allowUpdate);
+}
+
+bool ScientificMaterialRegistry::RegisterMaterialLocked(const ScientificMaterialDef& def, bool allowUpdate) {
     if (def.id == INVALID_SCIENTIFIC_MATERIAL_ID) {
         std::cerr << "[ScientificMaterialRegistry] Errore: tentativo di registrare ID 0 invalido!\n";
         return false;
@@ -1089,6 +1210,11 @@ bool ScientificMaterialRegistry::RegisterMaterial(const ScientificMaterialDef& d
 
         if (isSameMaterial) {
             if (allowUpdate) {
+                if (itId->second == materialToRegister) {
+                    // Operazione idempotente: la definizione esistente è identica
+                    // Nessun incremento di revisione e nessuna emissione di nuovo snapshot
+                    return true;
+                }
                 candidateMaterials[materialToRegister.id] = materialToRegister;
                 candidateCanonicalMap[materialToRegister.canonicalId] = materialToRegister.id;
             } else {
@@ -1117,6 +1243,9 @@ bool ScientificMaterialRegistry::RegisterMaterial(const ScientificMaterialDef& d
 
     // 5. COMMIT TRANSAZIONALE ATOMICO (Copy-on-Write)
     // m_activeSnapshot non viene mutato in-place; gli handle preesistenti restano inalterati
+    m_revision++;
+    candidateSnapshot->revision = m_revision;
+    candidateSnapshot->snapshotId = m_activeSnapshot ? (m_activeSnapshot->snapshotId + 1) : 1;
     candidateSnapshot->materials = candidateMaterials;
     candidateSnapshot->canonicalToIdMap = candidateCanonicalMap;
 
@@ -1124,44 +1253,78 @@ bool ScientificMaterialRegistry::RegisterMaterial(const ScientificMaterialDef& d
     m_canonicalToIdMap = std::move(candidateCanonicalMap);
     m_activeSnapshot = std::move(candidateSnapshot);
 
+    // Avanzamento monotonicamente sicuro dell'high-water mark per custom ID
+    if (materialToRegister.id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+        if (materialToRegister.id >= m_customIdHighWaterMark) {
+            m_customIdHighWaterMark = (materialToRegister.id < std::numeric_limits<ScientificMaterialID>::max())
+                ? (materialToRegister.id + 1)
+                : std::numeric_limits<ScientificMaterialID>::max();
+        }
+    }
+
     return true;
 }
 
 bool ScientificMaterialRegistry::HasMaterial(ScientificMaterialID id) const {
     if (id == INVALID_SCIENTIFIC_MATERIAL_ID) return false;
-    return m_materials.find(id) != m_materials.end();
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_activeSnapshot ? (m_activeSnapshot->GetMaterial(id) != nullptr) : false;
 }
 
 bool ScientificMaterialRegistry::HasMaterial(const std::string& canonicalId) const {
     if (canonicalId.empty()) return false;
-    return m_canonicalToIdMap.find(canonicalId) != m_canonicalToIdMap.end();
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_activeSnapshot ? (m_activeSnapshot->GetMaterial(canonicalId) != nullptr) : false;
 }
 
-const ScientificMaterialDef& ScientificMaterialRegistry::GetMaterial(ScientificMaterialID id) const {
+ScientificMaterialDef ScientificMaterialRegistry::GetMaterial(ScientificMaterialID id) const {
     if (id == INVALID_SCIENTIFIC_MATERIAL_ID) return m_fallbackMaterial;
-    auto it = m_materials.find(id);
-    if (it != m_materials.end()) {
-        return it->second;
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    if (m_activeSnapshot) {
+        const auto* mat = m_activeSnapshot->GetMaterial(id);
+        if (mat) return *mat;
     }
-    // Gestione esplicita ID non risolti: ritorna fallback sicuro senza crash
     return m_fallbackMaterial;
 }
 
-const ScientificMaterialDef& ScientificMaterialRegistry::GetMaterial(const std::string& canonicalId) const {
+ScientificMaterialDef ScientificMaterialRegistry::GetMaterial(const std::string& canonicalId) const {
     if (canonicalId.empty()) return m_fallbackMaterial;
-    auto it = m_canonicalToIdMap.find(canonicalId);
-    if (it != m_canonicalToIdMap.end()) {
-        return GetMaterial(it->second);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    if (m_activeSnapshot) {
+        const auto* mat = m_activeSnapshot->GetMaterial(canonicalId);
+        if (mat) return *mat;
     }
     return m_fallbackMaterial;
 }
 
 ScientificMaterialID ScientificMaterialRegistry::GetMaterialIdByCanonical(const std::string& canonicalId) const {
-    auto it = m_canonicalToIdMap.find(canonicalId);
-    if (it != m_canonicalToIdMap.end()) {
-        return it->second;
+    if (canonicalId.empty()) return INVALID_SCIENTIFIC_MATERIAL_ID;
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    if (m_activeSnapshot) {
+        const auto* mat = m_activeSnapshot->GetMaterial(canonicalId);
+        if (mat) return mat->id;
     }
     return INVALID_SCIENTIFIC_MATERIAL_ID;
+}
+
+std::unordered_map<ScientificMaterialID, ScientificMaterialDef> ScientificMaterialRegistry::GetAllMaterials() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_activeSnapshot ? m_activeSnapshot->materials : std::unordered_map<ScientificMaterialID, ScientificMaterialDef>{};
+}
+
+size_t ScientificMaterialRegistry::GetMaterialCount() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_activeSnapshot ? m_activeSnapshot->materials.size() : 0;
+}
+
+uint64_t ScientificMaterialRegistry::GetRevision() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_revision;
+}
+
+uint64_t ScientificMaterialRegistry::GetLoadedCatalogGeneration() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_loadedCatalogGeneration;
 }
 
 ScientificQuantity ScientificMaterialRegistry::ResolveProperty(
@@ -1174,21 +1337,26 @@ ScientificQuantity ScientificMaterialRegistry::ResolveProperty(
         return *ov;
     }
 
-    // 2. Risoluzione tramite ereditarieta' dal materiale scientifico di base
-    if (baseId != INVALID_SCIENTIFIC_MATERIAL_ID && HasMaterial(baseId)) {
-        const auto& mat = GetMaterial(baseId);
-        if (propertyName == ScientificPropertyNames::Density) return mat.density;
-        if (propertyName == ScientificPropertyNames::Porosity) return mat.porosity;
-        if (propertyName == ScientificPropertyNames::CompressiveStrength) return mat.compressiveStrength;
-        if (propertyName == ScientificPropertyNames::TensileStrength) return mat.tensileStrength;
-        if (propertyName == ScientificPropertyNames::ElasticModulus) return mat.elasticModulus;
-        if (propertyName == ScientificPropertyNames::StaticFriction) return mat.staticFriction;
-        if (propertyName == ScientificPropertyNames::DynamicFriction) return mat.dynamicFriction;
-        if (propertyName == ScientificPropertyNames::Restitution) return mat.restitution;
-        if (propertyName == ScientificPropertyNames::SpecificHeatCapacity) return mat.specificHeatCapacity;
-        if (propertyName == ScientificPropertyNames::ThermalConductivity) return mat.thermalConductivity;
-        if (propertyName == ScientificPropertyNames::ThermalExpansion) return mat.thermalExpansion;
-        if (propertyName == ScientificPropertyNames::MeltingPoint) return mat.meltingPoint;
+    // 2. Risoluzione tramite ereditarieta' dallo snapshot attivo (lock-free su handle immutabile)
+    if (baseId != INVALID_SCIENTIFIC_MATERIAL_ID) {
+        auto snap = GetSnapshotHandle();
+        if (snap.IsValid()) {
+            const auto* mat = snap->GetMaterial(baseId);
+            if (mat) {
+                if (propertyName == ScientificPropertyNames::Density) return mat->density;
+                if (propertyName == ScientificPropertyNames::Porosity) return mat->porosity;
+                if (propertyName == ScientificPropertyNames::CompressiveStrength) return mat->compressiveStrength;
+                if (propertyName == ScientificPropertyNames::TensileStrength) return mat->tensileStrength;
+                if (propertyName == ScientificPropertyNames::ElasticModulus) return mat->elasticModulus;
+                if (propertyName == ScientificPropertyNames::StaticFriction) return mat->staticFriction;
+                if (propertyName == ScientificPropertyNames::DynamicFriction) return mat->dynamicFriction;
+                if (propertyName == ScientificPropertyNames::Restitution) return mat->restitution;
+                if (propertyName == ScientificPropertyNames::SpecificHeatCapacity) return mat->specificHeatCapacity;
+                if (propertyName == ScientificPropertyNames::ThermalConductivity) return mat->thermalConductivity;
+                if (propertyName == ScientificPropertyNames::ThermalExpansion) return mat->thermalExpansion;
+                if (propertyName == ScientificPropertyNames::MeltingPoint) return mat->meltingPoint;
+            }
+        }
     }
 
     // 3. Proprieta' non trovata ne' ereditabile: ritorna Unknown con unita' SI canonica
@@ -1523,7 +1691,9 @@ static bool ValidateCatalogData(
 }
 
 bool ScientificMaterialRegistry::ValidateCatalog(std::string* outError) const {
-    return ValidateCatalogData(m_materials, m_canonicalToIdMap, outError);
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return true;
+    return ValidateCatalogData(snap->GetAllMaterials(), snap->canonicalToIdMap, outError);
 }
 
 bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {
@@ -1531,8 +1701,11 @@ bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {
     if (!file.is_open()) {
         std::cerr << "[ScientificMaterialRegistry] File non trovato: " << filepath 
                   << ". Attivato fallback esplicito: utilizzati materiali scientifici standard.\n";
-        if (m_materials.empty()) {
-            RegisterStandardMaterials();
+        {
+            std::unique_lock<std::shared_mutex> lock(m_mutex);
+            if (m_materials.empty()) {
+                RegisterStandardMaterialsLocked();
+            }
         }
         return false;
     }
@@ -1543,8 +1716,11 @@ bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {
     } catch (const std::exception& e) {
         std::cerr << "[ScientificMaterialRegistry] Errore parsing JSON in " << filepath << ": " << e.what() 
                   << ". Mantenute definizioni esistenti.\n";
-        if (m_materials.empty()) {
-            RegisterStandardMaterials();
+        {
+            std::unique_lock<std::shared_mutex> lock(m_mutex);
+            if (m_materials.empty()) {
+                RegisterStandardMaterialsLocked();
+            }
         }
         return false;
     }
@@ -1562,6 +1738,7 @@ bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {
     }
 
     // Caricamento transazionale: isolamento in stato temporaneo candidate
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     auto candidateMaterials = m_materials;
     auto candidateCanonicalMap = m_canonicalToIdMap;
 
@@ -1712,11 +1889,29 @@ bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {
     }
 
     // COMMIT TRANSAZIONALE ATOMICO: solo a validazione completamente superata
+    m_revision++;
+    candidateSnapshot->revision = m_revision;
+    candidateSnapshot->snapshotId = m_activeSnapshot ? (m_activeSnapshot->snapshotId + 1) : 1;
     m_materials = std::move(candidateMaterials);
     m_canonicalToIdMap = std::move(candidateCanonicalMap);
     candidateSnapshot->materials = m_materials;
     candidateSnapshot->canonicalToIdMap = m_canonicalToIdMap;
     m_activeSnapshot = std::move(candidateSnapshot);
+
+    ScientificMaterialID jsonHwm = j.value("customIdHighWaterMark", static_cast<ScientificMaterialID>(0));
+    if (jsonHwm > m_customIdHighWaterMark) {
+        m_customIdHighWaterMark = jsonHwm;
+    }
+
+    for (const auto& [id, def] : m_materials) {
+        if (id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE && id >= m_customIdHighWaterMark) {
+            m_customIdHighWaterMark = (id < std::numeric_limits<ScientificMaterialID>::max())
+                ? (id + 1)
+                : std::numeric_limits<ScientificMaterialID>::max();
+        }
+    }
+
+    m_loadedCatalogGeneration = j.value("catalogGeneration", static_cast<uint64_t>(0));
 
     std::cout << "[ScientificMaterialRegistry] Caricati " << loadedCount 
               << " materiali scientifici da " << filepath 
@@ -1726,81 +1921,93 @@ bool ScientificMaterialRegistry::LoadFromJson(const std::string& filepath) {
 
 bool ScientificMaterialRegistry::SaveToJson(const std::string& filepath) const {
     json j;
-    bool hasAnyExtended = false;
-    for (const auto& pair : m_materials) {
-        if (!pair.second.extendedProperties.Empty()) {
-            hasAnyExtended = true;
-            break;
+    uint64_t saveRev = 0;
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        bool hasAnyExtended = false;
+        for (const auto& pair : m_materials) {
+            if (!pair.second.extendedProperties.Empty()) {
+                hasAnyExtended = true;
+                break;
+            }
         }
-    }
-    j["schemaVersion"] = hasAnyExtended ? 3 : 2;
+        j["schemaVersion"] = hasAnyExtended ? 3 : 2;
+        j["customIdHighWaterMark"] = m_customIdHighWaterMark;
 
-    if (hasAnyExtended && m_activeSnapshot && !m_activeSnapshot->propertyDefinitions.empty()) {
-        json jDefs = json::array();
-        for (const auto& d : m_activeSnapshot->propertyDefinitions) {
-            json jd;
-            to_json(jd, d);
-            jDefs.push_back(jd);
+        if (hasAnyExtended && m_activeSnapshot && !m_activeSnapshot->propertyDefinitions.empty()) {
+            json jDefs = json::array();
+            for (const auto& d : m_activeSnapshot->propertyDefinitions) {
+                json jd;
+                to_json(jd, d);
+                jDefs.push_back(jd);
+            }
+            j["propertyDefinitions"] = jDefs;
         }
-        j["propertyDefinitions"] = jDefs;
-    }
 
-    json jMaterials = json::array();
+        json jMaterials = json::array();
 
-    // Ordina per ScientificMaterialID crescente per garantire persistenza deterministica
-    std::vector<ScientificMaterialID> sortedIds;
-    sortedIds.reserve(m_materials.size());
-    for (const auto& pair : m_materials) sortedIds.push_back(pair.first);
-    std::sort(sortedIds.begin(), sortedIds.end());
+        // Ordina per ScientificMaterialID crescente per garantire persistenza deterministica
+        std::vector<ScientificMaterialID> sortedIds;
+        sortedIds.reserve(m_materials.size());
+        for (const auto& pair : m_materials) sortedIds.push_back(pair.first);
+        std::sort(sortedIds.begin(), sortedIds.end());
 
-    for (ScientificMaterialID id : sortedIds) {
-        const auto& def = m_materials.at(id);
-        json jMat;
-        to_json(jMat, def);
-        jMaterials.push_back(jMat);
-    }
+        for (ScientificMaterialID id : sortedIds) {
+            const auto& def = m_materials.at(id);
+            json jMat;
+            to_json(jMat, def);
+            jMaterials.push_back(jMat);
+        }
 
-    j["materials"] = jMaterials;
+        j["materials"] = jMaterials;
+        saveRev = m_revision;
+    } // Rilascio lock prima di file I/O
 
-    std::ofstream file(filepath);
-    if (!file.is_open()) {
-        std::cerr << "[ScientificMaterialRegistry] Impossibile aprire file per scrittura: " << filepath << "\n";
+    uint64_t committedGen = 0;
+    if (!AtomicWriteAndReplaceJson(filepath, j, saveRev, nullptr, m_instanceId, m_loadedCatalogGeneration, false, &committedGen)) {
         return false;
     }
-
-    file << j.dump(4);
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_loadedCatalogGeneration = committedGen;
+    }
     return true;
 }
 
 RegistrySnapshotHandle ScientificMaterialRegistry::GetSnapshotHandle() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     return RegistrySnapshotHandle(m_activeSnapshot);
 }
 
 std::shared_ptr<const RegistrySnapshot> ScientificMaterialRegistry::GetSnapshot() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     return m_activeSnapshot;
 }
 
 const ScientificPropertyDefinition* ScientificMaterialRegistry::GetPropertyDefinition(const ScientificPropertyID& propUri) const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (!m_activeSnapshot) return nullptr;
     return m_activeSnapshot->GetPropertyDef(propUri);
 }
 
 std::vector<ScientificPropertyID> ScientificMaterialRegistry::GetRegisteredPropertyUris() const {
-    if (!m_activeSnapshot) return {};
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return {};
     std::vector<ScientificPropertyID> uris;
-    uris.reserve(m_activeSnapshot->propertyDefinitions.size());
-    for (const auto& def : m_activeSnapshot->propertyDefinitions) {
+    uris.reserve(snap->propertyDefinitions.size());
+    for (const auto& def : snap->propertyDefinitions) {
         uris.push_back(def.uri);
     }
     return uris;
 }
 
 bool ScientificMaterialRegistry::ValidateExtendedProperties(const ExtendedPropertyStorage& storage, std::string* outError) const {
-    if (!m_activeSnapshot) {
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) {
         if (outError) *outError = "Active snapshot non disponibile.";
         return false;
     }
-    return ValidateExtendedPropertyStorageInternal(storage, m_activeSnapshot->propertyDefinitions, m_activeSnapshot->propertyUriToIndex, outError);
+    return ValidateExtendedPropertyStorageInternal(storage, snap->propertyDefinitions, snap->propertyUriToIndex, outError);
 }
 
 QueryResult ScientificMaterialRegistry::QueryExtendedProperty(
@@ -1808,22 +2015,23 @@ QueryResult ScientificMaterialRegistry::QueryExtendedProperty(
     const ScientificPropertyID& propUri, 
     const QueryPredicate& predicate
 ) const {
+    auto snap = GetSnapshotHandle();
     QueryResult result;
     result.outcome = QueryOutcome::PropertyAbsent;
 
-    if (!m_activeSnapshot) {
+    if (!snap.IsValid()) {
         result.diagnosticMessage = "Active snapshot non disponibile.";
         return result;
     }
 
-    const auto* propDef = m_activeSnapshot->GetPropertyDef(propUri);
+    const auto* propDef = snap->GetPropertyDef(propUri);
     if (!propDef) {
         result.outcome = QueryOutcome::PropertyAbsent;
         result.diagnosticMessage = "Proprieta' '" + propUri + "' non registrata nel dizionario.";
         return result;
     }
 
-    const auto* mat = m_activeSnapshot->GetMaterial(matId);
+    const auto* mat = snap->GetMaterial(matId);
     if (!mat) {
         result.outcome = QueryOutcome::PropertyAbsent;
         result.diagnosticMessage = "Materiale ID " + std::to_string(matId) + " non trovato nello snapshot.";
@@ -2017,8 +2225,10 @@ QueryResult ScientificMaterialRegistry::QueryExtendedProperty(
 }
 
 std::vector<ScientificMaterialID> ScientificMaterialRegistry::GetMaterialsByKind(ScientificKind kind) const {
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return {};
     std::vector<ScientificMaterialID> result;
-    for (const auto& [id, mat] : m_materials) {
+    for (const auto& [id, mat] : snap->GetAllMaterials()) {
         if (mat.kind == kind) {
             result.push_back(id);
         }
@@ -2028,8 +2238,10 @@ std::vector<ScientificMaterialID> ScientificMaterialRegistry::GetMaterialsByKind
 }
 
 std::vector<ScientificMaterialID> ScientificMaterialRegistry::GetMaterialsByAggregationState(AggregationState state) const {
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return {};
     std::vector<ScientificMaterialID> result;
-    for (const auto& [id, mat] : m_materials) {
+    for (const auto& [id, mat] : snap->GetAllMaterials()) {
         if (mat.aggregationState == state) {
             result.push_back(id);
         }
@@ -2039,14 +2251,21 @@ std::vector<ScientificMaterialID> ScientificMaterialRegistry::GetMaterialsByAggr
 }
 
 std::vector<ScientificRelation> ScientificMaterialRegistry::GetRelationsForMaterial(ScientificMaterialID id) const {
-    auto it = m_materials.find(id);
-    if (it != m_materials.end()) {
-        return it->second.relations;
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return {};
+    const auto* mat = snap->GetMaterial(id);
+    if (mat) {
+        return mat->relations;
     }
     return {};
 }
 
 void ScientificMaterialRegistry::RegisterStandardMaterials() {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    RegisterStandardMaterialsLocked();
+}
+
+void ScientificMaterialRegistry::RegisterStandardMaterialsLocked() {
     // 1. Acqua Pura (Liquid Standard)
     {
         ScientificMaterialDef m;
@@ -2072,7 +2291,7 @@ void ScientificMaterialRegistry::RegisterStandardMaterials() {
         m.thermalConductivity = ScientificQuantity::Known(0.598, "W/(m*K)", DataQuality::SyntheticStandard, "CRC Handbook 97th");
         m.thermalExpansion = ScientificQuantity::Known(2.07e-4, "1/K", DataQuality::Experimental, "Volumetric at 20 C");
         m.meltingPoint = ScientificQuantity::Known(273.15, "K", DataQuality::SyntheticStandard, "ITS-90");
-        RegisterMaterial(m);
+        RegisterMaterialLocked(m, false);
     }
 
     // 2. Granito (Plutonic Igneous Rock)
@@ -2098,7 +2317,7 @@ void ScientificMaterialRegistry::RegisterStandardMaterials() {
         m.thermalConductivity = ScientificQuantity::Known(2.8, "W/(m*K)", DataQuality::PeerReviewed, "Robertson 1988");
         m.thermalExpansion = ScientificQuantity::Known(8.0e-6, "1/K", DataQuality::Experimental, "Linear thermal coefficient");
         m.meltingPoint = ScientificQuantity::Known(1488.15, "K", DataQuality::PeerReviewed, "Liquidus temperature (~1215 C)");
-        RegisterMaterial(m);
+        RegisterMaterialLocked(m, false);
     }
 
     // 3. Basalto (Volcanic Mafic Rock)
@@ -2124,7 +2343,7 @@ void ScientificMaterialRegistry::RegisterStandardMaterials() {
         m.thermalConductivity = ScientificQuantity::Known(2.1, "W/(m*K)", DataQuality::PeerReviewed, "Clauser & Huenges 1995");
         m.thermalExpansion = ScientificQuantity::Known(6.5e-6, "1/K", DataQuality::Experimental, "Linear expansion coefficient");
         m.meltingPoint = ScientificQuantity::Known(1473.15, "K", DataQuality::PeerReviewed, "Liquidus temperature (~1200 C)");
-        RegisterMaterial(m);
+        RegisterMaterialLocked(m, false);
     }
 
     // 4. Ferro Puro / Acciaio Standard (Metallic Element/Alloy)
@@ -2150,25 +2369,45 @@ void ScientificMaterialRegistry::RegisterStandardMaterials() {
         m.thermalConductivity = ScientificQuantity::Known(80.0, "W/(m*K)", DataQuality::SyntheticStandard, "NIST 298K");
         m.thermalExpansion = ScientificQuantity::Known(1.18e-5, "1/K", DataQuality::SyntheticStandard, "Linear coefficient");
         m.meltingPoint = ScientificQuantity::Known(1811.0, "K", DataQuality::SyntheticStandard, "Pure Fe melting point (1538 C)");
-        RegisterMaterial(m);
+        RegisterMaterialLocked(m, false);
     }
 }
 
 // =============================================================================
-// MA-03.3: SCIENTIFIC MATERIAL AUTHORING FOUNDATION (Custom Materials Backend)
+// MA-03.3 & P0.2C: SCIENTIFIC MATERIAL AUTHORING FOUNDATION & STABLE CUSTOM IDS
 // =============================================================================
 
-// Assegnazione stabile: max(ID) + 1 calcolato su tutti i materiali custom (Draft, Published, Deprecated).
-// Trattandosi di un'architettura file-based pura senza database centrale o autorita' esterna, la
-// rimozione completa del file catalogo comporta inevitabilmente la ripartenza dello storico ID da 1000.
-ScientificMaterialID ScientificMaterialRegistry::AllocateNextCustomMaterialId() const {
-    ScientificMaterialID maxId = CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE - 1;
-    for (const auto& [id, def] : m_materials) {
-        if (id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE && id > maxId) {
-            maxId = id;
-        }
+ScientificMaterialID ScientificMaterialRegistry::PeekNextCustomMaterialId() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    if (m_customIdHighWaterMark == std::numeric_limits<ScientificMaterialID>::max()) {
+        return INVALID_SCIENTIFIC_MATERIAL_ID;
     }
-    return maxId + 1;
+    return m_customIdHighWaterMark;
+}
+
+ScientificMaterialID ScientificMaterialRegistry::AllocateNextCustomMaterialId() const {
+    return PeekNextCustomMaterialId();
+}
+
+ScientificMaterialID ScientificMaterialRegistry::ReserveNextCustomMaterialId() {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    if (m_customIdHighWaterMark == std::numeric_limits<ScientificMaterialID>::max()) {
+        std::cerr << "[ScientificMaterialRegistry] Errore: Overflow dell'intervallo identificatori custom (uint32_t esausto)!\n";
+        return INVALID_SCIENTIFIC_MATERIAL_ID;
+    }
+    ScientificMaterialID reserved = m_customIdHighWaterMark;
+    m_customIdHighWaterMark++;
+    return reserved;
+}
+
+ScientificMaterialID ScientificMaterialRegistry::GetCustomIdHighWaterMark() const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_customIdHighWaterMark;
+}
+
+void ScientificMaterialRegistry::SetCustomIdHighWaterMarkForTesting(ScientificMaterialID hwm) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_customIdHighWaterMark = hwm;
 }
 
 bool ScientificMaterialRegistry::ValidateCanonicalIdFormat(const std::string& canonicalId, std::string* outError) {
@@ -2200,6 +2439,11 @@ bool ScientificMaterialRegistry::ValidateCanonicalIdFormat(const std::string& ca
 }
 
 bool ScientificMaterialRegistry::ValidateMaterialDefinition(const ScientificMaterialDef& def, std::string* outError) const {
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return ValidateMaterialDefinitionLocked(def, outError);
+}
+
+bool ScientificMaterialRegistry::ValidateMaterialDefinitionLocked(const ScientificMaterialDef& def, std::string* outError) const {
     if (def.id == INVALID_SCIENTIFIC_MATERIAL_ID) {
         if (outError) *outError = "ScientificMaterialID non puo' essere 0 (INVALID_SCIENTIFIC_MATERIAL_ID).";
         return false;
@@ -2332,6 +2576,11 @@ bool ScientificMaterialRegistry::ValidateMaterialDefinition(const ScientificMate
 }
 
 bool ScientificMaterialRegistry::PublishMaterial(ScientificMaterialID id, std::string* outError) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    return PublishMaterialLocked(id, outError);
+}
+
+bool ScientificMaterialRegistry::PublishMaterialLocked(ScientificMaterialID id, std::string* outError) {
     auto it = m_materials.find(id);
     if (it == m_materials.end()) {
         if (outError) *outError = "Materiale ID " + std::to_string(id) + " non trovato nel registro.";
@@ -2345,14 +2594,19 @@ bool ScientificMaterialRegistry::PublishMaterial(ScientificMaterialID id, std::s
         if (outError) *outError = "Impossibile pubblicare un materiale gia' contrassegnato Deprecated.";
         return false;
     }
-    if (!ValidateMaterialDefinition(updatedDef, outError)) {
+    if (!ValidateMaterialDefinitionLocked(updatedDef, outError)) {
         return false;
     }
     updatedDef.lifecycleState = MaterialLifecycleState::Published;
-    return RegisterMaterial(updatedDef, true);
+    return RegisterMaterialLocked(updatedDef, true);
 }
 
 bool ScientificMaterialRegistry::DeprecateMaterial(ScientificMaterialID id, std::string* outError) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    return DeprecateMaterialLocked(id, outError);
+}
+
+bool ScientificMaterialRegistry::DeprecateMaterialLocked(ScientificMaterialID id, std::string* outError) {
     auto it = m_materials.find(id);
     if (it == m_materials.end()) {
         if (outError) *outError = "Materiale ID " + std::to_string(id) + " non trovato nel registro.";
@@ -2360,45 +2614,68 @@ bool ScientificMaterialRegistry::DeprecateMaterial(ScientificMaterialID id, std:
     }
     ScientificMaterialDef updatedDef = it->second;
     if (updatedDef.lifecycleState == MaterialLifecycleState::Deprecated) {
+        if (updatedDef.enabledInBlockMaker) {
+            updatedDef.enabledInBlockMaker = false;
+            return RegisterMaterialLocked(updatedDef, true);
+        }
         return true;
     }
     updatedDef.lifecycleState = MaterialLifecycleState::Deprecated;
-    return RegisterMaterial(updatedDef, true);
+    updatedDef.enabledInBlockMaker = false;
+    return RegisterMaterialLocked(updatedDef, true);
 }
 
 bool ScientificMaterialRegistry::SetEnabledInBlockMaker(ScientificMaterialID id, bool enabled, std::string* outError) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    return SetEnabledInBlockMakerLocked(id, enabled, outError);
+}
+
+bool ScientificMaterialRegistry::SetEnabledInBlockMakerLocked(ScientificMaterialID id, bool enabled, std::string* outError) {
     auto it = m_materials.find(id);
     if (it == m_materials.end()) {
         if (outError) *outError = "Materiale ID " + std::to_string(id) + " non trovato nel registro.";
         return false;
     }
+    if (it->second.lifecycleState == MaterialLifecycleState::Deprecated && enabled) {
+        if (outError) *outError = "Impossibile abilitare in Block Maker un materiale contrassegnato Deprecated.";
+        return false;
+    }
+    if (it->second.enabledInBlockMaker == enabled) {
+        return true; // Operazione idempotente: stato già conforme
+    }
     ScientificMaterialDef updatedDef = it->second;
     updatedDef.enabledInBlockMaker = enabled;
-    return RegisterMaterial(updatedDef, true);
+    return RegisterMaterialLocked(updatedDef, true);
 }
 
-std::vector<const ScientificMaterialDef*> ScientificMaterialRegistry::GetSelectableMaterials(ScientificMaterialID currentSelection) const {
-    std::vector<const ScientificMaterialDef*> result;
-    result.reserve(m_materials.size());
+std::vector<ScientificMaterialDef> ScientificMaterialRegistry::GetSelectableMaterialCopies(ScientificMaterialID currentSelection) const {
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return {};
 
-    for (const auto& [id, def] : m_materials) {
+    std::vector<ScientificMaterialDef> result;
+    result.reserve(snap->materials.size());
+
+    for (const auto& [id, def] : snap->materials) {
         if (def.lifecycleState == MaterialLifecycleState::Published && def.enabledInBlockMaker) {
-            result.push_back(&def);
+            result.push_back(def);
         } else if (id == currentSelection && currentSelection != 0) {
-            result.push_back(&def);
+            result.push_back(def);
         }
     }
 
-    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) {
-        return a->id < b->id;
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        return a.id < b.id;
     });
 
     return result;
 }
 
 std::vector<ScientificMaterialID> ScientificMaterialRegistry::GetMaterialsByLifecycle(MaterialLifecycleState state) const {
+    auto snap = GetSnapshotHandle();
+    if (!snap.IsValid()) return {};
+
     std::vector<ScientificMaterialID> result;
-    for (const auto& [id, def] : m_materials) {
+    for (const auto& [id, def] : snap->materials) {
         if (def.lifecycleState == state) {
             result.push_back(id);
         }
@@ -2433,6 +2710,9 @@ bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& 
         return false;
     }
 
+    ScientificMaterialID fileHwm = j.value("customIdHighWaterMark", static_cast<ScientificMaterialID>(0));
+
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     auto candidateMaterials = m_materials;
     auto candidateCanonicalMap = m_canonicalToIdMap;
     auto candidateSnapshot = std::make_shared<RegistrySnapshot>();
@@ -2449,6 +2729,7 @@ bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& 
 
     std::unordered_set<ScientificMaterialID> jsonSeenIds;
     std::unordered_set<std::string> jsonSeenCanonicals;
+    ScientificMaterialID maxCustomIdInLoaded = 0;
 
     for (const auto& jMat : j["materials"]) {
         ScientificMaterialDef def;
@@ -2466,6 +2747,10 @@ bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& 
             return false;
         }
 
+        if (def.id > maxCustomIdInLoaded) {
+            maxCustomIdInLoaded = def.id;
+        }
+
         if (!jsonSeenIds.insert(def.id).second) {
             if (outError) *outError = "ID duplicato nel file custom: " + std::to_string(def.id);
             return false;
@@ -2476,7 +2761,7 @@ bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& 
         }
 
         std::string valErr;
-        if (!ValidateMaterialDefinition(def, &valErr)) {
+        if (!ValidateMaterialDefinitionLocked(def, &valErr)) {
             if (outError) *outError = "Validazione fallita per materiale custom '" + def.canonicalId + "': " + valErr;
             return false;
         }
@@ -2511,6 +2796,10 @@ bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& 
         return false;
     }
 
+    // COMMIT TRANSAZIONALE ATOMICO
+    m_revision++;
+    candidateSnapshot->revision = m_revision;
+    candidateSnapshot->snapshotId = m_activeSnapshot ? (m_activeSnapshot->snapshotId + 1) : 1;
     candidateSnapshot->materials = candidateMaterials;
     candidateSnapshot->canonicalToIdMap = candidateCanonicalMap;
 
@@ -2518,74 +2807,185 @@ bool ScientificMaterialRegistry::LoadCustomMaterialsFromJson(const std::string& 
     m_canonicalToIdMap = std::move(candidateCanonicalMap);
     m_activeSnapshot = std::move(candidateSnapshot);
 
+    // Aggiornamento high-water mark deterministico
+    ScientificMaterialID targetHwm = std::max(m_customIdHighWaterMark, fileHwm);
+    if (maxCustomIdInLoaded >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+        if (maxCustomIdInLoaded < std::numeric_limits<ScientificMaterialID>::max()) {
+            targetHwm = std::max(targetHwm, maxCustomIdInLoaded + 1);
+        } else {
+            targetHwm = std::numeric_limits<ScientificMaterialID>::max();
+        }
+    }
+    targetHwm = std::max(targetHwm, static_cast<ScientificMaterialID>(CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE));
+    m_customIdHighWaterMark = targetHwm;
+    m_loadedCatalogGeneration = j.value("catalogGeneration", static_cast<uint64_t>(0));
+
     return true;
 }
 
-bool ScientificMaterialRegistry::SaveCustomMaterialsToJson(const std::string& filepath, std::string* outError) const {
-    std::vector<ScientificMaterialID> customIds;
-    for (const auto& [id, def] : m_materials) {
-        if (def.isCustom || id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
-            customIds.push_back(id);
+void ScientificMaterialRegistry::SetPersistenceFaultInjectionForTesting(PersistenceFaultMode mode) {
+    s_persistenceFaultMode.store(mode, std::memory_order_release);
+}
+
+bool ScientificMaterialRegistry::AtomicWriteAndReplaceJson(
+    const std::filesystem::path& targetPath,
+    const nlohmann::json& j,
+    uint64_t saveRevision,
+    std::string* outError,
+    uint64_t registryInstanceId,
+    uint64_t expectedGeneration,
+    bool forceOverwrite,
+    uint64_t* outCommittedGeneration
+) {
+    auto lockInfo = FileDestinationLockManager::GetLockInfo(targetPath);
+    std::unique_lock<std::recursive_mutex> destLock(lockInfo->destMutex);
+
+    uint64_t lastSavedInst = lockInfo->lastSavedInstanceId.load(std::memory_order_acquire);
+    uint64_t lastSavedRev = lockInfo->lastSavedRevision.load(std::memory_order_acquire);
+
+    // Controlla obsolescenza revisione:
+    // Se proviene dalla stessa istanza (o se instanceId == 0 per chiamate dirette di test),
+    // respinge il salvataggio se la revisione candidata è inferiore a quella già persistita.
+    bool checkStale = (registryInstanceId == 0) || (lastSavedInst != 0 && lastSavedInst == registryInstanceId);
+    if (checkStale && saveRevision > 0 && lastSavedRev > 0 && saveRevision < lastSavedRev) {
+        if (outError) {
+            *outError = "Salvataggio rifiutato: il file di destinazione contiene gia' una revisione piu' recente (" +
+                        std::to_string(lastSavedRev) + ") rispetto allo snapshot candidato (" +
+                        std::to_string(saveRevision) + ").";
+        }
+        return false;
+    }
+
+    std::error_code ec;
+
+    // Concorrenza tra cataloghi distinti: rilevamento generazione esistente
+    uint64_t existingGen = lockInfo->catalogGeneration.load(std::memory_order_acquire);
+    if (existingGen == 0 && std::filesystem::exists(targetPath, ec)) {
+        std::ifstream f(targetPath);
+        if (f.is_open()) {
+            try {
+                json diskJ;
+                f >> diskJ;
+                existingGen = diskJ.value("catalogGeneration", static_cast<uint64_t>(0));
+            } catch (...) {}
+        }
+        if (existingGen > 0) {
+            lockInfo->catalogGeneration.store(existingGen, std::memory_order_release);
         }
     }
-    std::sort(customIds.begin(), customIds.end());
 
-    json j;
-    j["schemaVersion"] = 3;
-    json jMats = json::array();
-    for (ScientificMaterialID id : customIds) {
-        const auto& def = m_materials.at(id);
-        json jDef;
-        to_json(jDef, def);
-        jMats.push_back(jDef);
-    }
-    j["materials"] = jMats;
+    // Protezione Lost Update:
+    // Se un'altra istanza o processo ha consolidato una generazione più recente su disco
+    // rispetto a quella caricata da questa istanza, e non si tratta di sostituzione intenzionale:
+    bool isDifferentSource = (lastSavedInst != 0 && registryInstanceId != 0 && lastSavedInst != registryInstanceId);
+    bool hasNewerGenerationOnDisk = (existingGen > 0 && expectedGeneration > 0 && existingGen > expectedGeneration);
 
-    std::filesystem::path targetPath(filepath);
-    if (targetPath.has_parent_path()) {
-        std::error_code ec;
-        std::filesystem::create_directories(targetPath.parent_path(), ec);
+    if (!forceOverwrite && (isDifferentSource || lastSavedInst == 0) && hasNewerGenerationOnDisk) {
+        if (outError) {
+            *outError = "Conflitto di concorrenza su catalogo: il file su disco e' stato modificato da un'altra istanza "
+                        "(generazione su disco: " + std::to_string(existingGen) + 
+                        ", generazione attesa: " + std::to_string(expectedGeneration) + 
+                        "). Ricaricare il catalogo prima di salvare oppure specificare la sostituzione intenzionale (forceOverwrite).";
+        }
+        return false;
     }
 
-    std::filesystem::path tempPath = targetPath;
-    tempPath += ".tmp";
+    ScientificMaterialID existingHwm = lockInfo->lastSavedHwm.load(std::memory_order_acquire);
+    if (existingHwm == 0 && std::filesystem::exists(targetPath, ec)) {
+        existingHwm = ReadDurableCustomIdHighWaterMark(targetPath.string(), nullptr);
+        if (existingHwm != INVALID_SCIENTIFIC_MATERIAL_ID) {
+            lockInfo->lastSavedHwm.store(existingHwm, std::memory_order_release);
+        }
+    }
+
+    nlohmann::json payload = j;
+    if (payload.contains("customIdHighWaterMark")) {
+        ScientificMaterialID payloadHwm = payload.value("customIdHighWaterMark", static_cast<ScientificMaterialID>(0));
+        if (existingHwm != INVALID_SCIENTIFIC_MATERIAL_ID && existingHwm > payloadHwm) {
+            // Invariante contrattuale P0.2D: Nessun commit può ridurre l'HWM già consolidato su disco
+            payload["customIdHighWaterMark"] = existingHwm;
+        }
+    }
+
+    // Avanzamento monotono della generazione catalogo
+    uint64_t nextGen = std::max(existingGen, expectedGeneration) + 1;
+    payload["catalogGeneration"] = nextGen;
+
+    std::filesystem::path parentDir = targetPath.parent_path();
+    if (parentDir.empty()) {
+        parentDir = ".";
+    }
+    std::error_code dirEc;
+    std::filesystem::create_directories(parentDir, dirEc);
+
+    static std::atomic<uint64_t> s_seqCounter{1};
+    uint64_t seq = s_seqCounter.fetch_add(1, std::memory_order_relaxed);
+    uint64_t ts = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+#if defined(_WIN32)
+    uint32_t pid = static_cast<uint32_t>(::GetCurrentProcessId());
+#else
+    uint32_t pid = 0;
+#endif
+    std::string tempFileName = targetPath.stem().string() + ".tmp." +
+                               std::to_string(pid) + "_" +
+                               std::to_string(seq) + "_" +
+                               std::to_string(ts) +
+                               targetPath.extension().string();
+    std::filesystem::path tempPath = parentDir / tempFileName;
+
+    auto fault = s_persistenceFaultMode.load(std::memory_order_acquire);
+    if (fault == PersistenceFaultMode::FailTempFileWrite) {
+        if (outError) *outError = "Simulazione fallimento scrittura file temporaneo (Fault Injection).";
+        return false;
+    }
+
     {
-        std::ofstream file(tempPath);
+        std::ofstream file(tempPath, std::ios::out | std::ios::trunc);
         if (!file.is_open()) {
             if (outError) *outError = "Impossibile aprire file temporaneo per scrittura: " + tempPath.string();
             return false;
         }
-        file << j.dump(4);
+        file << payload.dump(4);
         file.flush();
         if (file.fail()) {
             if (outError) *outError = "Errore durante la scrittura su file temporaneo: " + tempPath.string();
             file.close();
-            std::error_code ec;
-            std::filesystem::remove(tempPath, ec);
+            std::error_code rmEc;
+            std::filesystem::remove(tempPath, rmEc);
             return false;
         }
         file.close();
     }
 
 #if defined(_WIN32)
+    HANDLE hTemp = ::CreateFileW(tempPath.wstring().c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (hTemp != INVALID_HANDLE_VALUE) {
+        ::FlushFileBuffers(hTemp);
+        ::CloseHandle(hTemp);
+    }
+#endif
+
+    if (fault == PersistenceFaultMode::FailAtomicReplace) {
+        std::error_code rmEc;
+        std::filesystem::remove(tempPath, rmEc);
+        if (outError) *outError = "Simulazione fallimento sostituzione atomica (Fault Injection).";
+        return false;
+    }
+
+#if defined(_WIN32)
     std::wstring wtarget = targetPath.wstring();
     std::wstring wtemp = tempPath.wstring();
 
-    std::error_code ec;
     bool targetExists = std::filesystem::exists(targetPath, ec);
 
     bool replaced = false;
     DWORD lastError = 0;
 
     if (targetExists) {
-        // Sostituzione sicura in-place tramite ReplaceFileW senza eliminazione preventiva del target.
-        // Se la sostituzione fallisce (es. file locked o sharing violation), il file target originale
-        // rimane valido, leggibile e completamente inalterato.
         if (::ReplaceFileW(wtarget.c_str(), wtemp.c_str(), nullptr, REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr)) {
             replaced = true;
         } else {
             lastError = ::GetLastError();
-            // Se il target e' scomparso concorrentemente, fallback a MoveFileExW
             if (lastError == ERROR_FILE_NOT_FOUND) {
                 if (::MoveFileExW(wtemp.c_str(), wtarget.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
                     replaced = true;
@@ -2595,7 +2995,6 @@ bool ScientificMaterialRegistry::SaveCustomMaterialsToJson(const std::string& fi
             }
         }
     } else {
-        // Prima creazione del catalogo (target inesistente)
         if (::MoveFileExW(wtemp.c_str(), wtarget.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
             replaced = true;
         } else {
@@ -2605,24 +3004,216 @@ bool ScientificMaterialRegistry::SaveCustomMaterialsToJson(const std::string& fi
 
     if (!replaced) {
         if (outError) {
-            *outError = "Sostituzione sicura del catalogo custom fallita (Win32 error: " + std::to_string(lastError) + ")";
+            *outError = "Sostituzione sicura del file fallita (Win32 error: " + std::to_string(lastError) + ")";
         }
         std::error_code rmEc;
         std::filesystem::remove(tempPath, rmEc);
         return false;
     }
 #else
-    std::error_code ec;
     std::filesystem::rename(tempPath, targetPath, ec);
     if (ec) {
-        if (outError) *outError = "Sostituzione atomica del file custom fallita: " + ec.message();
+        if (outError) *outError = "Sostituzione atomica del file fallita: " + ec.message();
         std::error_code rmEc;
         std::filesystem::remove(tempPath, rmEc);
         return false;
     }
 #endif
 
+    if (saveRevision > 0) {
+        if (registryInstanceId != 0) {
+            lockInfo->lastSavedInstanceId.store(registryInstanceId, std::memory_order_release);
+        }
+        uint64_t cur = lockInfo->lastSavedRevision.load(std::memory_order_relaxed);
+        while (saveRevision > cur && !lockInfo->lastSavedRevision.compare_exchange_weak(cur, saveRevision, std::memory_order_release, std::memory_order_relaxed)) {}
+    }
+
+    if (payload.contains("customIdHighWaterMark")) {
+        ScientificMaterialID finalHwm = payload.value("customIdHighWaterMark", static_cast<ScientificMaterialID>(0));
+        if (finalHwm > 0) {
+            ScientificMaterialID curHwm = lockInfo->lastSavedHwm.load(std::memory_order_relaxed);
+            while (finalHwm > curHwm && !lockInfo->lastSavedHwm.compare_exchange_weak(curHwm, finalHwm, std::memory_order_release, std::memory_order_relaxed)) {}
+        }
+    }
+
+    lockInfo->catalogGeneration.store(nextGen, std::memory_order_release);
+    if (outCommittedGeneration) {
+        *outCommittedGeneration = nextGen;
+    }
+
     return true;
 }
 
+bool ScientificMaterialRegistry::SaveCustomMaterialsToJson(
+    const std::string& filepath, 
+    std::string* outError,
+    bool forceOverwrite
+) const {
+    json j;
+    uint64_t saveRev = 0;
+    uint64_t expectedGen = 0;
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        std::vector<ScientificMaterialID> customIds;
+        for (const auto& [id, def] : m_materials) {
+            if (def.isCustom || id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+                customIds.push_back(id);
+            }
+        }
+        std::sort(customIds.begin(), customIds.end());
+
+        j["schemaVersion"] = 3;
+        j["customIdHighWaterMark"] = m_customIdHighWaterMark;
+        json jMats = json::array();
+        for (ScientificMaterialID id : customIds) {
+            const auto& def = m_materials.at(id);
+            json jDef;
+            to_json(jDef, def);
+            jMats.push_back(jDef);
+        }
+        j["materials"] = jMats;
+        saveRev = m_revision;
+        expectedGen = m_loadedCatalogGeneration;
+    } // Rilascio lock prima del disk I/O
+
+    uint64_t committedGen = 0;
+    if (!AtomicWriteAndReplaceJson(filepath, j, saveRev, outError, m_instanceId, expectedGen, forceOverwrite, &committedGen)) {
+        return false;
+    }
+
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_loadedCatalogGeneration = committedGen;
+    }
+    return true;
+}
+
+ScientificMaterialID ScientificMaterialRegistry::ReserveDurableCustomMaterialId(
+    const std::string& catalogFilepath, 
+    std::string* outError
+) {
+    // Lock preventivo di destinazione: serializza prenotazioni simultanee
+    auto lockInfo = FileDestinationLockManager::GetLockInfo(catalogFilepath);
+    std::unique_lock<std::recursive_mutex> destLock(lockInfo->destMutex);
+
+    ScientificMaterialID candidateId = INVALID_SCIENTIFIC_MATERIAL_ID;
+    ScientificMaterialID prevHwm = 0;
+    json j;
+    uint64_t saveRev = 0;
+    uint64_t expectedGen = 0;
+
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        if (m_customIdHighWaterMark == std::numeric_limits<ScientificMaterialID>::max()) {
+            if (outError) *outError = "Overflow identificatori custom: uint32_t esausto.";
+            return INVALID_SCIENTIFIC_MATERIAL_ID;
+        }
+
+        prevHwm = m_customIdHighWaterMark;
+        candidateId = m_customIdHighWaterMark;
+        m_customIdHighWaterMark++;
+        saveRev = m_revision;
+        expectedGen = m_loadedCatalogGeneration;
+
+        std::vector<ScientificMaterialID> customIds;
+        for (const auto& [id, def] : m_materials) {
+            if (def.isCustom || id >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+                customIds.push_back(id);
+            }
+        }
+        std::sort(customIds.begin(), customIds.end());
+
+        j["schemaVersion"] = 3;
+        j["customIdHighWaterMark"] = m_customIdHighWaterMark;
+        json jMats = json::array();
+        for (ScientificMaterialID id : customIds) {
+            const auto& def = m_materials.at(id);
+            json jDef;
+            to_json(jDef, def);
+            jMats.push_back(jDef);
+        }
+        j["materials"] = jMats;
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists(catalogFilepath, ec) && j["materials"].empty()) {
+        std::ifstream inFile(catalogFilepath);
+        if (inFile.is_open()) {
+            try {
+                json existingJson;
+                inFile >> existingJson;
+                if (existingJson.contains("materials") && existingJson["materials"].is_array() && !existingJson["materials"].empty()) {
+                    j["materials"] = existingJson["materials"];
+                }
+            } catch (...) {}
+        }
+    }
+
+    uint64_t committedGen = 0;
+    if (!AtomicWriteAndReplaceJson(catalogFilepath, j, saveRev, outError, m_instanceId, expectedGen, false, &committedGen)) {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        if (m_customIdHighWaterMark == prevHwm + 1) {
+            m_customIdHighWaterMark = prevHwm;
+        }
+        return INVALID_SCIENTIFIC_MATERIAL_ID;
+    }
+
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_loadedCatalogGeneration = committedGen;
+    }
+
+    return candidateId;
+}
+
+
+ScientificMaterialID ScientificMaterialRegistry::ReadDurableCustomIdHighWaterMark(
+    const std::string& catalogFilepath, 
+    std::string* outError
+) {
+    std::ifstream file(catalogFilepath);
+    if (!file.is_open()) {
+        if (outError) *outError = "Impossibile aprire il file catalogo: " + catalogFilepath;
+        return INVALID_SCIENTIFIC_MATERIAL_ID;
+    }
+    json j;
+    try {
+        file >> j;
+    } catch (const std::exception& e) {
+        if (outError) *outError = std::string("Errore di parsing JSON: ") + e.what();
+        return INVALID_SCIENTIFIC_MATERIAL_ID;
+    }
+
+    ScientificMaterialID hwm = j.value("customIdHighWaterMark", static_cast<ScientificMaterialID>(0));
+    if (hwm < CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE && j.contains("materials") && j["materials"].is_array()) {
+        ScientificMaterialID maxId = 0;
+        for (const auto& jm : j["materials"]) {
+            ScientificMaterialID id = jm.value("id", static_cast<ScientificMaterialID>(0));
+            if (id > maxId) maxId = id;
+        }
+        if (maxId >= CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+            hwm = maxId + 1;
+        } else {
+            hwm = CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE;
+        }
+    }
+    return hwm;
+}
+
+bool ScientificMaterialRegistry::IsCustomIdConfirmedDurable(
+    ScientificMaterialID id, 
+    const std::string& catalogFilepath, 
+    std::string* outError
+) {
+    if (id < CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+        return false;
+    }
+    ScientificMaterialID durableHwm = ReadDurableCustomIdHighWaterMark(catalogFilepath, outError);
+    if (durableHwm == INVALID_SCIENTIFIC_MATERIAL_ID) {
+        return false;
+    }
+    return id < durableHwm;
+}
+
 } // namespace fw
+

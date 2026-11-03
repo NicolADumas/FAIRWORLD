@@ -1,5 +1,7 @@
 #include "PaintContractTests.h"
 #include "TexturePaintingService.h"
+#include "blocks/uv/UVLayout.h"
+#include <memory>
 #include <iostream>
 #include <sstream>
 #include <cmath>
@@ -389,6 +391,100 @@ std::vector<PaintTestResult> PaintContractTests::RunContractTests() {
                            ", Struct=" + (structureOk ? "OK" : "ERR") + 
                            ", FingerprintMatch=" + (hashOriginal == hashRestored ? "EXACT" : "DIFF");
         res.details = passed ? "PASS: Roundtrip JSON deterministico, completo e privo di dipendenze esterne" : "FAIL: Discrepanza serializzazione";
+        results.push_back(res);
+    }
+
+    // =========================================================================
+    // PT-11: Diagnostica Runtime UV-PAINT e Isolamento Maschera Raster (STEP A1)
+    // =========================================================================
+    {
+        PaintTestResult res;
+        res.testId = "PT-11";
+        res.testName = "PT-11 — Diagnostica Runtime UV-PAINT e Isolamento Maschera";
+        res.inputDesc = "Verifica diagnostica EndStroke con maschera raster, senza maschera (unclipped) e stroke a zero modifiche";
+        res.expectedDesc = "InsideChanged=TotalChanged, OutsideChanged=0, texel fuori maschera invariati";
+
+        TexturePaintingService service;
+        service.InitializeCanvas(64, 64, glm::vec4(0.0f));
+        uint32_t lid = service.GetLayers()[0].layerId;
+
+        // 1. Maschera raster confinata alla regione [10..30] x [10..30]
+        auto mask = std::make_shared<UVIslandRasterMask>();
+        mask->width = 64;
+        mask->height = 64;
+        mask->pixels.assign(64 * 64, 0);
+        for (int y = 10; y <= 30; ++y) {
+            for (int x = 10; x <= 30; ++x) {
+                mask->pixels[y * 64 + x] = 1;
+            }
+        }
+
+        // Cattura snapshot prima dello stroke con maschera
+        ImageBitmap preMaskSnapshot = service.GetLayer(lid)->pixelBuffer;
+
+        service.SetStrokeClipMask(mask);
+        TexturePaintingService::EnableUVPaintDiagnostic(true);
+        service.BeginStroke(lid);
+
+        PaintBrush brush;
+        brush.radiusPixels = 15.0f; // Raggio ampio che eccede i confini [10..30]
+        brush.color = glm::vec4(1.0f, 0.5f, 0.0f, 1.0f);
+        service.ApplyDab(glm::vec2(20.0f, 20.0f), brush);
+        service.EndStroke();
+
+        auto diagWithMask = TexturePaintingService::GetLastUVPaintDiagResult();
+        bool maskDiagOk = (diagWithMask.insideChanged > 0) && 
+                          (diagWithMask.outsideChanged == 0) && 
+                          (diagWithMask.insideChanged == diagWithMask.totalChanged);
+
+        // Verifica che i pixel ESTERNI alla maschera siano rigorosamente invariati nel buffer
+        const ImageBitmap& postMaskBuffer = service.GetLayer(lid)->pixelBuffer;
+        bool outsidePixelsUntouched = (mask != nullptr);
+        if (mask) {
+            for (int y = 0; y < 64 && outsidePixelsUntouched; ++y) {
+                for (int x = 0; x < 64 && outsidePixelsUntouched; ++x) {
+                    if (!mask->IsInside(x, y)) {
+                        if (postMaskBuffer.GetPixel(x, y) != preMaskSnapshot.GetPixel(x, y)) {
+                            outsidePixelsUntouched = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Stroke senza maschera (unclipped / AtlasPaint)
+        service.SetStrokeClipMask(nullptr);
+        TexturePaintingService::EnableUVPaintDiagnostic(true);
+        service.BeginStroke(lid);
+        brush.radiusPixels = 4.0f;
+        service.ApplyDab(glm::vec2(50.0f, 50.0f), brush);
+        service.EndStroke();
+
+        auto diagUnclipped = TexturePaintingService::GetLastUVPaintDiagResult();
+        bool unclippedOk = (diagUnclipped.insideChanged > 0) && 
+                           (diagUnclipped.outsideChanged == 0) &&
+                           (diagUnclipped.insideChanged == diagUnclipped.totalChanged);
+
+        // 3. Stroke a zero modifiche (raggio nullo)
+        TexturePaintingService::EnableUVPaintDiagnostic(true);
+        service.BeginStroke(lid);
+        PaintBrush zeroBrush;
+        zeroBrush.radiusPixels = 0.0f;
+        service.ApplyDab(glm::vec2(10.0f, 10.0f), zeroBrush);
+        service.EndStroke();
+
+        auto diagZero = TexturePaintingService::GetLastUVPaintDiagResult();
+        bool zeroOk = (diagZero.totalChanged == 0) && 
+                      (diagZero.insideChanged == 0) && 
+                      (diagZero.outsideChanged == 0);
+
+        bool passed = maskDiagOk && outsidePixelsUntouched && unclippedOk && zeroOk;
+        res.passed = passed;
+        res.observedDesc = "MaskDiagOk=" + std::string(maskDiagOk ? "YES" : "NO") + 
+                           ", OutsideUntouched=" + (outsidePixelsUntouched ? "YES" : "NO") + 
+                           ", UnclippedOk=" + (unclippedOk ? "YES" : "NO") + 
+                           ", ZeroOk=" + (zeroOk ? "YES" : "NO");
+        res.details = passed ? "PASS: Diagnostica e isolamento pixel con maschera raster rigorosamente conformi" : "FAIL: Anomalia diagnostica o leak fuori maschera";
         results.push_back(res);
     }
 

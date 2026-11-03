@@ -62,6 +62,8 @@ list(REMOVE_ITEM CORE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/core/app/lifecycle_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/appearance_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/custom_scientific_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/blocks/binding_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/blocks/authoring_tests_main.cpp"
 )
 file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
 
@@ -303,6 +305,30 @@ add_custom_command(TARGET FairworldCustomScientificTests POST_BUILD
         $<TARGET_FILE_DIR:FairworldCustomScientificTests>
 )
 
+# --- 16. TEST RUNNER SCIENTIFIC BINDING CONTRACT (FairworldBindingTests - P0.3B1) ---
+add_executable(FairworldBindingTests src/blocks/binding_tests_main.cpp)
+target_link_libraries(FairworldBindingTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldBindingTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldBindingTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldBindingTests>
+)
+
+# --- 17. TEST RUNNER MATERIAL AUTHORING CONTRACT (FairworldAuthoringTests - P0.3C1) ---
+add_executable(FairworldAuthoringTests src/blocks/authoring_tests_main.cpp)
+target_link_libraries(FairworldAuthoringTests PRIVATE FairworldCore)
+add_custom_command(TARGET FairworldAuthoringTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll"
+        $<TARGET_FILE_DIR:FairworldAuthoringTests>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+        "${CMAKE_SOURCE_DIR}/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll"
+        $<TARGET_FILE_DIR:FairworldAuthoringTests>
+)
+
 # ==============================================================================
 # 16. REGISTRAZIONE SUITE CTEST (Gate CTEST-01: Discovery e Standalone Runners)
 # ==============================================================================
@@ -341,6 +367,12 @@ set_tests_properties(FairworldAppearanceTests PROPERTIES WORKING_DIRECTORY "${CM
 
 add_test(NAME FairworldCustomScientificTests COMMAND $<TARGET_FILE:FairworldCustomScientificTests>)
 set_tests_properties(FairworldCustomScientificTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldBindingTests COMMAND $<TARGET_FILE:FairworldBindingTests>)
+set_tests_properties(FairworldBindingTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldAuthoringTests COMMAND $<TARGET_FILE:FairworldAuthoringTests>)
+set_tests_properties(FairworldAuthoringTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 
 # --- 3. I MODULI DINAMICI (Hot-Reloading) ---

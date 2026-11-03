@@ -217,6 +217,13 @@ RawAssetValidation AssetPackagingService::ValidatePackage(
     return report;
 }
 
+PackageScientificDiagnosticReport AssetPackagingService::ValidateScientificReferences(
+    const RawAssetPackage& package,
+    const ScientificMaterialRegistry& sciReg
+) const {
+    return AuditScientificMaterialBindings(package.scientificMaterialId, package.surfaces, &sciReg);
+}
+
 AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional(
     RawAssetPackage& package,
     BlockRegistry& bReg,
@@ -428,6 +435,7 @@ AssetPublishTransactionResult AssetPackagingService::PublishPackageTransactional
     matDef.normalPath = package.normalMapUri;
     matDef.ormPath = package.ormMapUri;
     matDef.behaviors = package.behaviors;
+    matDef.surfaces = package.surfaces; // P0.3B2: Persist canonical surface overrides in runtime MaterialRegistry
     matDef.revision++;
 
     if (m_testFaultInjection == PublishFaultInjectionPoint::FailAfterMaterialMutation) {

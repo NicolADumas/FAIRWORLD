@@ -14,12 +14,35 @@ namespace fw {
 
 TexturePacker::TexturePacker(int targetResolution) : m_targetResolution(targetResolution) {}
 
-PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>& materials) {
+PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>& materials, const std::atomic<bool>* cancelRequested) {
     PackedTextureData result;
     result.layerCount = (int)materials.size();
     result.width = m_targetResolution;
     result.height = m_targetResolution;
     result.channels = 4;
+
+    auto checkCancel = [&](const char* phase) -> bool {
+        if (cancelRequested && cancelRequested->load(std::memory_order_relaxed)) {
+            result.isCancelled = true;
+            result.cancellationPhase = phase;
+            result.albedoData.clear();
+            result.albedoData.shrink_to_fit();
+            result.normalData.clear();
+            result.normalData.shrink_to_fit();
+            result.ormData.clear();
+            result.ormData.shrink_to_fit();
+            result.layerCount = 0;
+            result.totalBytesPerArray = 0;
+            std::cout << "[TexturePacker] [Cooperative Cancel] Cancellazione intercettata nella fase: "
+                      << phase << ". Rilascio immediato risorse parziali.\n";
+            return true;
+        }
+        return false;
+    };
+
+    if (checkCancel("Fase 1: Pre-Cache / Check iniziale")) {
+        return result;
+    }
     
     std::string cacheFile = "assets/texture_cache.bin";
     std::string materialsFile = "assets/definitions/materials.json";
@@ -47,16 +70,39 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
             std::cout << "[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...\n";
             size_t layerBytes = m_targetResolution * m_targetResolution * 4;
             result.totalBytesPerArray = layerBytes * materials.size();
+
+            if (checkCancel("Fase 2A: Cache valida, pre-allocazione vettori")) {
+                fclose(fCache);
+                return result;
+            }
             
             result.albedoData.resize(result.totalBytesPerArray);
             result.normalData.resize(result.totalBytesPerArray);
             result.ormData.resize(result.totalBytesPerArray);
-            
+
+            if (checkCancel("Fase 2B: Cache valida, pre-lettura Albedo")) {
+                fclose(fCache);
+                return result;
+            }
             fread(result.albedoData.data(), 1, result.totalBytesPerArray, fCache);
+
+            if (checkCancel("Fase 2C: Cache valida, post-Albedo / pre-Normal")) {
+                fclose(fCache);
+                return result;
+            }
             fread(result.normalData.data(), 1, result.totalBytesPerArray, fCache);
+
+            if (checkCancel("Fase 2D: Cache valida, post-Normal / pre-ORM")) {
+                fclose(fCache);
+                return result;
+            }
             fread(result.ormData.data(), 1, result.totalBytesPerArray, fCache);
             
             fclose(fCache);
+
+            if (checkCancel("Fase 2E: Cache valida, pre-padding layer")) {
+                return result;
+            }
             
             // Pad array to 256 layers to avoid out-of-bounds reads during memcpy in RenderManager
             size_t requiredSize = result.totalBytesPerArray;
@@ -64,19 +110,32 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
             std::vector<uint8_t> fallbackNormal = { 128, 128, 255, 255 }; 
             std::vector<uint8_t> fallbackOrm = { 255, 128, 0, 255 };      
             if (result.albedoData.size() < requiredSize) {
-                while (result.albedoData.size() < requiredSize) LoadAndAppendTexture("", result.albedoData, defaultAlbedo);
+                while (result.albedoData.size() < requiredSize) {
+                    if (checkCancel("Fase 2F: Cache padding Albedo")) return result;
+                    LoadAndAppendTexture("", result.albedoData, defaultAlbedo);
+                }
             }
             if (result.normalData.size() < requiredSize) {
-                while (result.normalData.size() < requiredSize) LoadAndAppendTexture("", result.normalData, fallbackNormal);
+                while (result.normalData.size() < requiredSize) {
+                    if (checkCancel("Fase 2G: Cache padding Normal")) return result;
+                    LoadAndAppendTexture("", result.normalData, fallbackNormal);
+                }
             }
             if (result.ormData.size() < requiredSize) {
-                while (result.ormData.size() < requiredSize) LoadAndAppendTexture("", result.ormData, fallbackOrm);
+                while (result.ormData.size() < requiredSize) {
+                    if (checkCancel("Fase 2H: Cache padding ORM")) return result;
+                    LoadAndAppendTexture("", result.ormData, fallbackOrm);
+                }
             }
             return result;
         }
         fclose(fCache);
     }
     
+    if (checkCancel("Fase 3A: Pre-allocazione per packing da zero")) {
+        return result;
+    }
+
     size_t layerBytes = m_targetResolution * m_targetResolution * 4;
     result.totalBytesPerArray = layerBytes * materials.size();
     
@@ -86,11 +145,16 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
     result.normalData.reserve(result.totalBytesPerArray);
     result.ormData.reserve(result.totalBytesPerArray);
     
-    // Fallback statici per Normal e ORM
+    // Fallback statici per Albedo (Magenta per layer mancanti), Normal e ORM
+    std::vector<uint8_t> defaultAlbedo = { 255, 0, 255, 255 };    // Magenta for missing
     std::vector<uint8_t> fallbackNormal = { 128, 128, 255, 255 }; // Flat normal
     std::vector<uint8_t> fallbackOrm = { 255, 128, 0, 255 };      // AO=255, Rough=128, Metal=0
 
     for (const auto& mat : materials) {
+        if (checkCancel("Fase 3B: Iterazione materiali (packing da zero)")) {
+            return result;
+        }
+
         if (!mat.albedoPath.empty() || !mat.normalPath.empty() || !mat.ormPath.empty()) {
             std::cout << "[TexturePacker] Imballaggio avvenuto per materiale [" << (int)mat.target_block_id << "]\n";
         }
@@ -104,6 +168,10 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
         LoadAndAppendTexture(mat.albedoPath, result.albedoData, fallbackAlbedo);
         LoadAndAppendTexture(mat.normalPath, result.normalData, fallbackNormal);
         LoadAndAppendTexture(mat.ormPath, result.ormData, fallbackOrm);
+    }
+
+    if (checkCancel("Fase 3C: Pre-scrittura cache binaria")) {
+        return result;
     }
     
     // SAVE CACHE BINARIA
@@ -124,19 +192,20 @@ PackedTextureData TexturePacker::PackMaterials(const std::vector<PBRMaterialDef>
     // Pad array to 256 layers to avoid out-of-bounds reads during memcpy in RenderManager
     size_t requiredSize = result.totalBytesPerArray;
     if (result.albedoData.size() < requiredSize) {
-        // Fallback for remaining layers
-        std::vector<uint8_t> defaultAlbedo = { 255, 0, 255, 255 }; // Magenta for missing
         while (result.albedoData.size() < requiredSize) {
+            if (checkCancel("Fase 3D: Padding Albedo")) return result;
             LoadAndAppendTexture("", result.albedoData, defaultAlbedo);
         }
     }
     if (result.normalData.size() < requiredSize) {
         while (result.normalData.size() < requiredSize) {
+            if (checkCancel("Fase 3E: Padding Normal")) return result;
             LoadAndAppendTexture("", result.normalData, fallbackNormal);
         }
     }
     if (result.ormData.size() < requiredSize) {
         while (result.ormData.size() < requiredSize) {
+            if (checkCancel("Fase 3F: Padding ORM")) return result;
             LoadAndAppendTexture("", result.ormData, fallbackOrm);
         }
     }

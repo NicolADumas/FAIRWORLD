@@ -232,6 +232,15 @@ bool TexturePaintingService::InvertLayerMask(uint32_t layerId) {
 // BM-UV-DEBUG-04: Diagnostica runtime isolamento pixel pre/post stroke
 static bool s_uvPaintDiagActive = true; // Impostare a true per eseguire la diagnostica sul prossimo stroke (one-shot)
 static PixelClipCallback s_activeClipCallback = nullptr;
+static TexturePaintingService::UVPaintDiagResult s_lastUVPaintDiagResult{};
+
+void TexturePaintingService::EnableUVPaintDiagnostic(bool enable) {
+    s_uvPaintDiagActive = enable;
+}
+
+TexturePaintingService::UVPaintDiagResult TexturePaintingService::GetLastUVPaintDiagResult() {
+    return s_lastUVPaintDiagResult;
+}
 
 bool TexturePaintingService::BeginStroke(uint32_t layerId, bool targetMask) {
     s_activeClipCallback = nullptr;
@@ -335,11 +344,8 @@ void TexturePaintingService::ApplyDabInternal(PaintLayer& layer, glm::vec2 cente
 
             if (distSq <= rSq) {
                 // BM-PAINTER-PERF-02: Lookup diretto O(1) nella maschera raster cached
-                if (maskPtr) {
-                    if (rowOffset + static_cast<size_t>(x) >= maskPtr->pixels.size() || 
-                        maskPtr->pixels[rowOffset + static_cast<size_t>(x)] == 0) {
-                        continue;
-                    }
+                if (maskPtr && !maskPtr->IsInside(x, y)) {
+                    continue;
                 }
                 if (clipCb && !clipCb(x, y)) continue;
 
@@ -398,10 +404,13 @@ PaintDirtyRect TexturePaintingService::EndStroke() {
         const uint8_t* pCur = curBuf.GetData();
         size_t bpp = curBuf.GetBytesPerPixel();
 
+        const UVIslandRasterMask* maskPtr = m_activeClipMask.get();
+
         if (pPre && pCur && bpp > 0) {
             for (uint32_t y = 0; y < h; ++y) {
+                size_t rowOffset = static_cast<size_t>(y) * w;
                 for (uint32_t x = 0; x < w; ++x) {
-                    size_t pixelOffset = (static_cast<size_t>(y) * w + x) * bpp;
+                    size_t pixelOffset = (rowOffset + x) * bpp;
                     bool modified = false;
                     for (size_t b = 0; b < bpp; ++b) {
                         if (pPre[pixelOffset + b] != pCur[pixelOffset + b]) {
@@ -412,7 +421,17 @@ PaintDirtyRect TexturePaintingService::EndStroke() {
 
                     if (modified) {
                         totalChanged++;
-                        bool inside = s_activeClipCallback ? s_activeClipCallback(static_cast<int32_t>(x), static_cast<int32_t>(y)) : false;
+                        bool inside = false;
+                        if (maskPtr) {
+                            inside = maskPtr->IsInside(static_cast<int32_t>(x), static_cast<int32_t>(y));
+                        } else if (s_activeClipCallback) {
+                            inside = s_activeClipCallback(static_cast<int32_t>(x), static_cast<int32_t>(y));
+                        } else {
+                            // Se nessuna maschera né clip callback è attivo (es. AtlasPaint unclipped),
+                            // tutti i pixel modificati all'interno dell'estensione del canvas sono "inside".
+                            inside = true;
+                        }
+
                         if (inside) {
                             insideChanged++;
                         } else {
@@ -423,7 +442,15 @@ PaintDirtyRect TexturePaintingService::EndStroke() {
             }
         }
 
-        std::cout << "[UV-PAINT-DIAG] InsideChanged=" << insideChanged 
+        s_lastUVPaintDiagResult.insideChanged = insideChanged;
+        s_lastUVPaintDiagResult.outsideChanged = outsideChanged;
+        s_lastUVPaintDiagResult.totalChanged = totalChanged;
+
+        std::cout << "[UV-PAINT-DIAG] MaskPresence=" << (maskPtr != nullptr ? "YES" : "NO")
+                  << " MaskDim=(" << (maskPtr ? maskPtr->width : 0) << "x" << (maskPtr ? maskPtr->height : 0) << ")"
+                  << " CanvasDim=(" << w << "x" << h << ")"
+                  << " MaskIsland=" << (maskPtr ? (maskPtr->islandId != INVALID_UVISLAND_ID ? std::to_string(maskPtr->islandId) : "NONE") : "NONE")
+                  << " InsideChanged=" << insideChanged 
                   << " OutsideChanged=" << outsideChanged 
                   << " TotalChanged=" << totalChanged << "\n" << std::flush;
 

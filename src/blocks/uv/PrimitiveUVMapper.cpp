@@ -1053,6 +1053,21 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateCylindricalMapping(EditableMes
         outLayout.islands.push_back(islInner);
     }
 
+    // BM-UV-CYL-01: Configurazione esplicita delle trasformazioni atlasTransform coerenti con i corner UV
+    if (hasInnerWall) {
+        outLayout.islands[0].atlasTransform = glm::vec4(1.0f, 0.35f, 0.0f, 0.65f); // Outer Mantle
+        outLayout.islands[1].atlasTransform = glm::vec4(0.5f, 0.35f, 0.0f, 0.0f);  // Top Cap (+Y)
+        outLayout.islands[2].atlasTransform = glm::vec4(0.5f, 0.35f, 0.5f, 0.0f);  // Bottom Cap (-Y)
+        outLayout.islands[3].atlasTransform = glm::vec4(1.0f, 0.30f, 0.0f, 0.35f); // Inner Mantle
+    } else {
+        outLayout.islands[0].atlasTransform = glm::vec4(1.0f, 0.65f, 0.0f, 0.35f); // Outer Mantle
+        outLayout.islands[1].atlasTransform = glm::vec4(0.5f, 0.35f, 0.0f, 0.0f);  // Top Cap (+Y)
+        outLayout.islands[2].atlasTransform = glm::vec4(0.5f, 0.35f, 0.5f, 0.0f);  // Bottom Cap (-Y)
+    }
+    for (auto& isl : outLayout.islands) {
+        isl.localUVBounds = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
     AABB bounds = mesh.ComputeAABB();
     float safeH = (height > 1e-4f) ? height : std::max(0.001f, bounds.size().y);
     float safeR = (radius > 1e-4f) ? radius : std::max(0.001f, bounds.size().x * 0.5f);
@@ -1132,18 +1147,11 @@ PrimitiveMappingResult PrimitiveUVMapper::GenerateCylindricalMapping(EditableMes
             CorrectSeamWrapQuad(localUVs[0], localUVs[1], localUVs[2], localUVs[3]);
         }
 
-        // Distribuzione nell'atlas
-        // Mantello superiore [0, 1] x [0.35, 1.0], Tappi inferiori [0, 0.5] e [0.5, 1.0] x [0, 0.35]
-        float uOff = 0.0f, vOff = 0.0f, uSc = 1.0f, vSc = 0.65f;
-        if (islandIdx == 1) { // Top Cap
-            uOff = 0.0f; vOff = 0.0f; uSc = 0.5f; vSc = 0.35f;
-        } else if (islandIdx == 2) { // Bottom Cap
-            uOff = 0.5f; vOff = 0.0f; uSc = 0.5f; vSc = 0.35f;
-        } else if (islandIdx == 3) { // Inner Mantle
-            uOff = 0.0f; vOff = 0.35f; uSc = 1.0f; vSc = 0.30f;
-        } else { // Outer Mantle
-            uOff = 0.0f; vOff = (hasInnerWall ? 0.65f : 0.35f); uSc = 1.0f; vSc = (hasInnerWall ? 0.35f : 0.65f);
-        }
+        // Distribuzione nell'atlas (coerente al 100% con atlasTransform pre-calcolato)
+        float uSc  = outLayout.islands[islandIdx].atlasTransform.x;
+        float vSc  = outLayout.islands[islandIdx].atlasTransform.y;
+        float uOff = outLayout.islands[islandIdx].atlasTransform.z;
+        float vOff = outLayout.islands[islandIdx].atlasTransform.w;
 
         for (size_t k = 0; k < fHEs.size(); ++k) {
             auto* heMut = mesh.GetHalfEdgeMutable(fHEs[k]);

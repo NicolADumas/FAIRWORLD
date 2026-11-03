@@ -56,6 +56,70 @@ public:
 
     // 11. Sostituzione atomica del catalogo con gestione errori e round-trip Deprecated
     static CustomScientificTestResult Test11_AtomicReplaceFailureAndRecovery();
+
+    // =========================================================================
+    // P0.2A: TEST DI SICUREZZA DEI RIFERIMENTI E LIFETIME SNAPSHOT (CUST-12 .. CUST-16)
+    // =========================================================================
+
+    // 12. Inserimento di nuovi materiali mentre un vecchio snapshot è ancora utilizzato
+    static CustomScientificTestResult Test12_OldSnapshotHandleImmutabilityAcrossInsertion();
+
+    // 13. Aggiornamento in-place di materiale mentre un vecchio snapshot è ancora utilizzato
+    static CustomScientificTestResult Test13_OldSnapshotHandleImmutabilityAcrossInPlaceUpdate();
+
+    // 14. Pubblicazione e deprecazione mentre vecchi snapshot sono ancora utilizzati
+    static CustomScientificTestResult Test14_OldSnapshotHandleImmutabilityAcrossPublicationAndDeprecation();
+
+    // 15. Sostituzione del catalogo (Clear e Load) mentre un vecchio snapshot è ancora utilizzato
+    static CustomScientificTestResult Test15_OldSnapshotHandleImmutabilityAcrossCatalogReplacement();
+
+    // 16. Semantica per valore di GetMaterial: copie immuni da mutazioni e deallocazioni
+    static CustomScientificTestResult Test16_GetMaterialValueSemanticsImmunityToMutations();
+
+    // 17. Semantica per valore di GetAllMaterials e isolamento dello storage tramite snapshot
+    static CustomScientificTestResult Test17_GetAllMaterialsValueSemanticsAndSnapshotIsolation();
+
+    // =========================================================================
+    // P0.2B: REVISIONE MONOTONA DEL REGISTRY E INVALIDAZIONE CACHE (CUST-18 .. CUST-19)
+    // =========================================================================
+
+    // 18. Revisione monotona su mutazioni, idempotenza e conteggio invariato
+    static CustomScientificTestResult Test18_RegistryRevisionMutationAndIdempotenceContracts();
+
+    // 19. Immutabilità revisione snapshot, rollback di persistenza e Clear/Load
+    static CustomScientificTestResult Test19_RegistryRevisionPersistenceRollbackAndSnapshotImmutability();
+
+    // =========================================================================
+    // P0.2C: CONCORRENZA REGISTRY E STABILITÀ ID CUSTOM (CUST-20 .. CUST-22)
+    // =========================================================================
+
+    // 20. Lettori concorrenti durante aggiornamenti, validità snapshot storici e coerenza snapshot
+    static CustomScientificTestResult Test20_ConcurrentReadersDuringUpdatesAndSnapshotConsistency();
+
+    // 21. Scrittori concorrenti con serializzazione, integrità transazionale e zero aggiornamenti persi
+    static CustomScientificTestResult Test21_ConcurrentWritersZeroLostUpdatesAndTransactionalIntegrity();
+
+    // 22. Contratto allocazione ID custom: prenotazione atomica concorrente, non-riciclo, persistenza HWM e overflow
+    static CustomScientificTestResult Test22_CustomIdAllocationContractStabilityAndOverflow();
+
+    // =========================================================================
+    // P0.2D: SCIENTIFIC MATERIAL PERSISTENCE HARDENING (CUST-23 .. CUST-26)
+    // =========================================================================
+
+    // 23. Salvataggi concorrenti sullo stesso percorso: collision-free temp files e serializzazione per destinazione
+    static CustomScientificTestResult Test23_ConcurrentSavesSamePathCollisionFreeAndSerialized();
+
+    // 24. Protezione contro sovrascrittura da snapshot obsoleti e mutazioni concorrenti durante salvataggio
+    static CustomScientificTestResult Test24_StaleSnapshotOverwriteProtectionAndConcurrentMutations();
+
+    // 25. Fault injection deterministica su temp write e atomic replacement con conservazione target e zero residui
+    static CustomScientificTestResult Test25_FaultInjectionAtomicReplaceTargetPreservationAndZeroResidues();
+
+    // 26. Durabilità High-Water Mark: prenotazione durevole, persistenza, recovery al riavvio e compatibilità legacy
+    static CustomScientificTestResult Test26_DurableHighWaterMarkPersistenceCrashRecoveryAndLegacyCompat();
+
+    // 27. Rilevamento modifiche concorrenti tra cataloghi distinti: protezione lost update e sostituzione intenzionale
+    static CustomScientificTestResult Test27_ConcurrentCatalogsLostUpdateProtectionAndIntentionalOverwrite();
 };
 
 } // namespace fw

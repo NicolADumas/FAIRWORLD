@@ -2,7 +2,11 @@
 #include "PrimitiveUVContractTests.h"
 #include "PrimitiveUVMapper.h"
 #include "blocks/sculpt/MeshBridgeService.h"
+#include "blocks/uv/UVEditorDocument.h"
+#include "blocks/texture/SurfacePaintingAdapter.h"
+#include "blocks/texture/TexturePaintingService.h"
 #include "world/GeometryCompiler.h"
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <iomanip>
 #include <cmath>
@@ -131,7 +135,7 @@ std::vector<PrimitiveUVTestResult> PrimitiveUVContractTests::RunAllTests() {
     }
 
     // -------------------------------------------------------------------------
-    // UVP-4: Cylinder
+    // UVP-4: Cylinder & Semantic Island Transforms (Mantle, Caps, HitTest, Persistence)
     // -------------------------------------------------------------------------
     {
         ShapeDefinition defCyl;
@@ -141,21 +145,90 @@ std::vector<PrimitiveUVTestResult> PrimitiveUVContractTests::RunAllTests() {
 
         auto res = mapper.AnalyzeAndMap(mesh, ShapeType::Cylinder, defCyl.parameters);
 
-        bool passed = res.success && 
+        bool basicOk = res.success && 
                       res.layout.islands.size() >= 3 &&
                       res.validation.nanInfCount == 0;
 
-        // Verifica che mantello, top cap e bottom cap siano distinti
-        std::string obs = "Status: " + std::string(GetPrimitiveMappingStatusName(res.status)) +
-                          ", Islands: " + std::to_string(res.layout.islands.size()) +
-                          ", Valid: " + (res.validation.isValid ? "true" : "false");
+        // 1. Verifica trasformazioni atlas esplicite per le 3 isole
+        const auto& islMantle = res.layout.islands[0];
+        const auto& islTop    = res.layout.islands[1];
+        const auto& islBot    = res.layout.islands[2];
 
-        addTest("UVP-4", "Cylinder Continuous Unroll",
-                "Cylinder (radius 0.5, height 2.0)",
-                "SUCCESS, 3 isole (mantello + 2 basi), correzione salto cucitura",
+        bool mantleTransformOk = (std::abs(islMantle.atlasTransform.x - 1.0f) < 1e-4f) &&
+                                 (std::abs(islMantle.atlasTransform.y - 0.65f) < 1e-4f) &&
+                                 (std::abs(islMantle.atlasTransform.z - 0.0f) < 1e-4f) &&
+                                 (std::abs(islMantle.atlasTransform.w - 0.35f) < 1e-4f);
+
+        bool topTransformOk = (std::abs(islTop.atlasTransform.x - 0.5f) < 1e-4f) &&
+                              (std::abs(islTop.atlasTransform.y - 0.35f) < 1e-4f) &&
+                              (std::abs(islTop.atlasTransform.z - 0.0f) < 1e-4f) &&
+                              (std::abs(islTop.atlasTransform.w - 0.0f) < 1e-4f);
+
+        bool botTransformOk = (std::abs(islBot.atlasTransform.x - 0.5f) < 1e-4f) &&
+                              (std::abs(islBot.atlasTransform.y - 0.35f) < 1e-4f) &&
+                              (std::abs(islBot.atlasTransform.z - 0.5f) < 1e-4f) &&
+                              (std::abs(islBot.atlasTransform.w - 0.0f) < 1e-4f);
+
+        // 2. Hit Test 2D con UVEditorDocument
+        UVEditorDocument doc(mesh, res.layout);
+        glm::vec2 ptMantle(0.5f, 0.675f);
+        glm::vec2 ptTop(0.25f, 0.175f);
+        glm::vec2 ptBot(0.75f, 0.175f);
+
+        bool hitMantle2D = doc.IsPointInIsland(ptMantle, 0) && !doc.IsPointInIsland(ptMantle, 1) && !doc.IsPointInIsland(ptMantle, 2);
+        bool hitTop2D    = doc.IsPointInIsland(ptTop, 1) && !doc.IsPointInIsland(ptTop, 0) && !doc.IsPointInIsland(ptTop, 2);
+        bool hitBot2D    = doc.IsPointInIsland(ptBot, 2) && !doc.IsPointInIsland(ptBot, 0) && !doc.IsPointInIsland(ptBot, 1);
+
+        // 3. Hit Test & Painting 3D con SurfacePaintingAdapter
+        SurfacePaintingAdapter adapter;
+        TexturePaintingService painter;
+        painter.InitializeCanvas(512, 512, glm::vec4(0.0f));
+        adapter.SetPaintingService(&painter);
+        adapter.SetUVLayout(&res.layout);
+
+        PaintBrush brush;
+        brush.radiusPixels = 8.0f;
+        brush.color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+
+        // Raycast dall'alto verso il Top Cap
+        bool paint3DTop = adapter.BeginStroke3D(mesh, glm::vec3(0.0f, 2.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), brush);
+        adapter.EndStroke3D();
+
+        // Raycast orizzontale sul mantello (+X verso origine)
+        bool paint3DMantle = adapter.BeginStroke3D(mesh, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f), brush);
+        adapter.EndStroke3D();
+
+        // 4. Salvataggio e ricaricamento del layout UV (JSON round-trip)
+        nlohmann::json layoutJson = res.layout;
+        UVLayout reloadedLayout = layoutJson.get<UVLayout>();
+
+        bool roundtripOk = (reloadedLayout.islands.size() == res.layout.islands.size());
+        if (roundtripOk) {
+            for (size_t i = 0; i < 3; ++i) {
+                if (glm::length(reloadedLayout.islands[i].atlasTransform - res.layout.islands[i].atlasTransform) > 1e-4f) {
+                    roundtripOk = false;
+                    break;
+                }
+            }
+        }
+
+        bool passed = basicOk && mantleTransformOk && topTransformOk && botTransformOk &&
+                      hitMantle2D && hitTop2D && hitBot2D &&
+                      paint3DTop && paint3DMantle && roundtripOk;
+
+        std::string obs = "Mantle=" + std::string(mantleTransformOk ? "OK" : "FAIL") +
+                          ", Top=" + (topTransformOk ? "OK" : "FAIL") +
+                          ", Bot=" + (botTransformOk ? "OK" : "FAIL") +
+                          ", 2DHit=" + (hitMantle2D && hitTop2D && hitBot2D ? "OK" : "FAIL") +
+                          ", 3DPaint=" + (paint3DTop && paint3DMantle ? "OK" : "FAIL") +
+                          ", JsonRoundtrip=" + (roundtripOk ? "OK" : "FAIL");
+
+        addTest("UVP-4", "Cylinder Continuous Unroll & Island Transforms",
+                "Cylinder (radius 0.5, height 2.0): atlasTransform mantello e basi, hit test 2D/3D e roundtrip JSON",
+                "SUCCESS, atlasTransform rigorosamente assegnati, hit test isolati e persistenza bit-exact",
                 obs, passed,
-                passed ? "Cilindro sviluppato con mantello rettangolare continuo e basi separate."
-                       : "Fallimento mappatura Cylinder.");
+                passed ? "Cilindro sviluppato con mantello e basi coerenti, atlasTransform e hit-testing verificati."
+                       : "Fallimento trasformazioni o hit test Cylinder.");
     }
 
     // -------------------------------------------------------------------------

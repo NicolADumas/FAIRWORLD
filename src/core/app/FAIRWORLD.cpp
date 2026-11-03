@@ -1991,8 +1991,8 @@ void FairWorldEngine::Shutdown() {
     if (m_isVrMode) {
         m_xrManager->Shutdown();
     }
-    m_windowManager->Shutdown();
     m_renderManager->Shutdown();
+    m_windowManager->Shutdown();
     // A questo punto i semaphore del RenderManager sono stati distrutti
     // e TrackDestroy e' stato chiamato per ciascuno.
 

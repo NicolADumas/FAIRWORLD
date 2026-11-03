@@ -408,6 +408,9 @@ struct RawAssetPackage {
     float alphaFallback = 1.0f;
     uint32_t behaviors = 0;
 
+    // Superfici semantiche e override scientifici/visivi (BM-UV2 / BM-C2 / P0.3B2)
+    std::vector<SurfaceOverride> surfaces;
+
     bool SaveToFile(const std::string& filepath) const;
     bool LoadFromFile(const std::string& filepath);
 
@@ -1101,6 +1104,15 @@ inline void to_json(nlohmann::json& j, const RawAssetPackage& p) {
         }
         j["scientific"] = jSci;
     }
+    if (!p.surfaces.empty()) {
+        nlohmann::json jSurfaces = nlohmann::json::array();
+        for (const auto& s : p.surfaces) {
+            nlohmann::json js;
+            to_json(js, s);
+            jSurfaces.push_back(js);
+        }
+        j["surfaces"] = jSurfaces;
+    }
 }
 
 inline void from_json(const nlohmann::json& j, RawAssetPackage& p) {
@@ -1193,6 +1205,14 @@ inline void from_json(const nlohmann::json& j, RawAssetPackage& p) {
                 from_json(jf, f);
                 p.geometry.faces.push_back(f);
             }
+        }
+    }
+    if (j.contains("surfaces") && j["surfaces"].is_array()) {
+        p.surfaces.clear();
+        for (const auto& js : j["surfaces"]) {
+            SurfaceOverride s;
+            from_json(js, s);
+            p.surfaces.push_back(s);
         }
     }
     p.validationReport.isValid = !p.geometry.vertices.empty() && !p.manifest.assetId.empty();

@@ -4,6 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <cmath>
+#include <thread>
+#include <atomic>
+#include <set>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -29,7 +32,23 @@ std::vector<CustomScientificTestResult> CustomScientificMaterialContractTests::R
         Test08_PersistentRoundTripAndCatalogReload(),
         Test09_CustomVsStandardSeparationAndRangeCollisionRejection(),
         Test10_PersistenceFailureAtomicRollback(),
-        Test11_AtomicReplaceFailureAndRecovery()
+        Test11_AtomicReplaceFailureAndRecovery(),
+        Test12_OldSnapshotHandleImmutabilityAcrossInsertion(),
+        Test13_OldSnapshotHandleImmutabilityAcrossInPlaceUpdate(),
+        Test14_OldSnapshotHandleImmutabilityAcrossPublicationAndDeprecation(),
+        Test15_OldSnapshotHandleImmutabilityAcrossCatalogReplacement(),
+        Test16_GetMaterialValueSemanticsImmunityToMutations(),
+        Test17_GetAllMaterialsValueSemanticsAndSnapshotIsolation(),
+        Test18_RegistryRevisionMutationAndIdempotenceContracts(),
+        Test19_RegistryRevisionPersistenceRollbackAndSnapshotImmutability(),
+        Test20_ConcurrentReadersDuringUpdatesAndSnapshotConsistency(),
+        Test21_ConcurrentWritersZeroLostUpdatesAndTransactionalIntegrity(),
+        Test22_CustomIdAllocationContractStabilityAndOverflow(),
+        Test23_ConcurrentSavesSamePathCollisionFreeAndSerialized(),
+        Test24_StaleSnapshotOverwriteProtectionAndConcurrentMutations(),
+        Test25_FaultInjectionAtomicReplaceTargetPreservationAndZeroResidues(),
+        Test26_DurableHighWaterMarkPersistenceCrashRecoveryAndLegacyCompat(),
+        Test27_ConcurrentCatalogsLostUpdateProtectionAndIntentionalOverwrite()
     };
 }
 
@@ -468,8 +487,9 @@ CustomScientificTestResult CustomScientificMaterialContractTests::Test06_Indepen
     m1003.enabledInBlockMaker = true;
     reg.RegisterMaterial(m1003);
 
-    // 1. Selezione di default (per nuovi blocchi: currentSelection = 0)
-    auto selectableDef = reg.GetSelectableMaterials(0);
+    // 1. Selezione di default tramite Snapshot immutabile owned (P0.2A)
+    RegistrySnapshotHandle snap = reg.GetSnapshotHandle();
+    auto selectableDef = snap->GetSelectableMaterials(0);
     auto hasId = [&](const std::vector<const ScientificMaterialDef*>& v, ScientificMaterialID id) {
         return std::find_if(v.begin(), v.end(), [id](const auto* m) { return m->id == id; }) != v.end();
     };
@@ -496,7 +516,7 @@ CustomScientificTestResult CustomScientificMaterialContractTests::Test06_Indepen
     }
 
     // 2. Asset storico già salvato con materiale 1002 (Deprecated)
-    auto selectableOld = reg.GetSelectableMaterials(1002);
+    auto selectableOld = snap->GetSelectableMaterials(1002);
     if (!hasId(selectableOld, 1002)) {
         res.passed = false;
         res.observedDesc = "Asset storico con ID 1002 non include il proprio materiale deprecato nella selezione";
@@ -504,10 +524,21 @@ CustomScientificTestResult CustomScientificMaterialContractTests::Test06_Indepen
     }
 
     // 3. Asset storico con materiale 1001 (disabilitato in Block Maker)
-    auto selectableDisabled = reg.GetSelectableMaterials(1001);
+    auto selectableDisabled = snap->GetSelectableMaterials(1001);
     if (!hasId(selectableDisabled, 1001)) {
         res.passed = false;
         res.observedDesc = "Asset storico con ID 1001 non include il proprio materiale nella selezione";
+        return res;
+    }
+
+    // 4. Verifica semantica per valore tramite GetSelectableMaterialCopies
+    auto copiesDef = reg.GetSelectableMaterialCopies(0);
+    auto hasIdCopy = [&](const std::vector<ScientificMaterialDef>& v, ScientificMaterialID id) {
+        return std::find_if(v.begin(), v.end(), [id](const auto& m) { return m.id == id; }) != v.end();
+    };
+    if (!hasIdCopy(copiesDef, 1000) || hasIdCopy(copiesDef, 1001) || hasIdCopy(copiesDef, 1002) || hasIdCopy(copiesDef, 1003)) {
+        res.passed = false;
+        res.observedDesc = "GetSelectableMaterialCopies non riflette i medesimi filtri di selezione";
         return res;
     }
 
@@ -896,9 +927,18 @@ CustomScientificTestResult CustomScientificMaterialContractTests::Test11_AtomicR
         return res;
     }
 
-    if (!reg1.SetEnabledInBlockMaker(1001, false, &err)) {
+    // Verifica contrattuale: la deprecazione disabilita incondizionatamente il materiale in Block Maker
+    if (reg1.GetMaterial(1001).enabledInBlockMaker) {
         res.passed = false;
-        res.observedDesc = "SetEnabledInBlockMaker(1001, false) fallito: " + err;
+        res.observedDesc = "DeprecateMaterial non ha impostato automaticamente enabledInBlockMaker a false";
+        std::filesystem::remove(tempPath, rmEc);
+        return res;
+    }
+
+    // Verifica contrattuale: rifiuto categorico di abilitare un materiale Deprecated in Block Maker
+    if (reg1.SetEnabledInBlockMaker(1001, true, &err)) {
+        res.passed = false;
+        res.observedDesc = "SetEnabledInBlockMaker(1001, true) avrebbe dovuto fallire per un materiale Deprecated";
         std::filesystem::remove(tempPath, rmEc);
         return res;
     }
@@ -957,6 +997,2035 @@ CustomScientificTestResult CustomScientificMaterialContractTests::Test11_AtomicR
 
     res.passed = true;
     res.observedDesc = "Sostituzione sicura atomica verificata: file originale conservato durante lock, salvataggio successivo riuscito, round-trip Deprecated e allocazione ID 1002 conformi";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 12: Inserimento mentre un vecchio snapshot è ancora utilizzato
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test12_OldSnapshotHandleImmutabilityAcrossInsertion() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-12";
+    res.testName = "Immutabilita' snapshot su inserimento nuovo materiale";
+    res.inputDesc = "Snapshot acquisito con materiale 1000; successiva registrazione di materiale 1001";
+    res.expectedDesc = "Il vecchio snapshot mantiene 1000 con puntatore stabile e nullptr su 1001; il nuovo snapshot include entrambi";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/m1000_ins", "Material 1000");
+    reg.RegisterMaterial(m1000);
+
+    RegistrySnapshotHandle oldSnap = reg.GetSnapshotHandle();
+    const ScientificMaterialDef* oldPtr1000 = oldSnap->GetMaterial(1000);
+    size_t countOld = oldSnap->materials.size();
+
+    if (!oldPtr1000 || oldPtr1000->displayName != "Material 1000") {
+        res.passed = false;
+        res.observedDesc = "Materiale 1000 non trovato o non valido nel vecchio snapshot";
+        return res;
+    }
+
+    // Inserimento del secondo materiale
+    auto m1001 = CreateValidBaseCustomDef(1001, "custom:mat/m1001_ins", "Material 1001");
+    if (!reg.RegisterMaterial(m1001)) {
+        res.passed = false;
+        res.observedDesc = "Registrazione materiale 1001 fallita";
+        return res;
+    }
+
+    RegistrySnapshotHandle newSnap = reg.GetSnapshotHandle();
+
+    // Verifiche sul vecchio snapshot
+    if (oldSnap->materials.size() != countOld) {
+        res.passed = false;
+        res.observedDesc = "Dimensione vecchio snapshot alterata dopo inserimento: attesa " + std::to_string(countOld) + ", osservata " + std::to_string(oldSnap->materials.size());
+        return res;
+    }
+    if (oldSnap->GetMaterial(1001) != nullptr) {
+        res.passed = false;
+        res.observedDesc = "Materiale 1001 inaspettatamente visibile nel vecchio snapshot";
+        return res;
+    }
+    // Verifica stabilità puntatore vecchio
+    if (oldPtr1000 != oldSnap->GetMaterial(1000) || oldPtr1000->displayName != "Material 1000") {
+        res.passed = false;
+        res.observedDesc = "Puntatore a materiale 1000 nel vecchio snapshot corrotto o alterato";
+        return res;
+    }
+
+    // Verifiche sul nuovo snapshot
+    if (newSnap->materials.size() != countOld + 1) {
+        res.passed = false;
+        res.observedDesc = "Nuovo snapshot non ha dimensione incrementata di 1";
+        return res;
+    }
+    const ScientificMaterialDef* newPtr1001 = newSnap->GetMaterial(1001);
+    if (!newPtr1001 || newPtr1001->displayName != "Material 1001") {
+        res.passed = false;
+        res.observedDesc = "Materiale 1001 non trovato o corrotto nel nuovo snapshot";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Immutabilita' garantita: vecchio snapshot e puntatori congelati; nuovo snapshot include entrambi i materiali";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 13: Aggiornamento in-place mentre un vecchio snapshot è ancora utilizzato
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test13_OldSnapshotHandleImmutabilityAcrossInPlaceUpdate() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-13";
+    res.testName = "Immutabilita' snapshot su aggiornamento in-place";
+    res.inputDesc = "Snapshot acquisito con materiale 1000 a densita' 4430.0; successivo update in-place a densita' 4500.0";
+    res.expectedDesc = "Il vecchio snapshot conserva la densita' originale 4430.0; il nuovo snapshot riporta 4500.0";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/m1000_upd", "Material 1000 Initial");
+    m1000.density = ScientificQuantity::Known(4430.0, "kg/m^3", DataQuality::PeerReviewed, "Original");
+    reg.RegisterMaterial(m1000);
+
+    RegistrySnapshotHandle oldSnap = reg.GetSnapshotHandle();
+    const ScientificMaterialDef* oldMatPtr = oldSnap->GetMaterial(1000);
+
+    if (!oldMatPtr || oldMatPtr->density.value != 4430.0) {
+        res.passed = false;
+        res.observedDesc = "Materiale 1000 iniziale non valido nello snapshot";
+        return res;
+    }
+
+    // Aggiornamento in-place del materiale
+    auto m1000_updated = m1000;
+    m1000_updated.displayName = "Material 1000 Updated";
+    m1000_updated.density = ScientificQuantity::Known(4500.0, "kg/m^3", DataQuality::PeerReviewed, "Updated");
+    if (!reg.RegisterMaterial(m1000_updated, true)) {
+        res.passed = false;
+        res.observedDesc = "Aggiornamento in-place RegisterMaterial(allowUpdate=true) fallito";
+        return res;
+    }
+
+    RegistrySnapshotHandle newSnap = reg.GetSnapshotHandle();
+    const ScientificMaterialDef* newMatPtr = newSnap->GetMaterial(1000);
+
+    // Il vecchio puntatore deve essere ancora vivo e immutato
+    if (oldMatPtr->density.value != 4430.0 || oldMatPtr->displayName != "Material 1000 Initial") {
+        res.passed = false;
+        res.observedDesc = "Isolamento violato: il vecchio snapshot e' stato mutato in-place!";
+        return res;
+    }
+
+    // Il nuovo snapshot deve avere i nuovi valori
+    if (!newMatPtr || newMatPtr->density.value != 4500.0 || newMatPtr->displayName != "Material 1000 Updated") {
+        res.passed = false;
+        res.observedDesc = "Nuovo snapshot non riflette l'aggiornamento";
+        return res;
+    }
+
+    // I due puntatori devono puntare a due istanze di memoria heap distinte
+    if (oldMatPtr == newMatPtr) {
+        res.passed = false;
+        res.observedDesc = "Vecchio e nuovo snapshot condividono lo stesso puntatore heap!";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Isolamento perfetto: vecchio snapshot preserva densita' 4430.0 e nome iniziale, nuovo snapshot ha 4500.0";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 14: Pubblicazione e deprecazione mentre vecchi snapshot sono ancora utilizzati
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test14_OldSnapshotHandleImmutabilityAcrossPublicationAndDeprecation() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-14";
+    res.testName = "Immutabilita' snapshot su Publish e Deprecate";
+    res.inputDesc = "Materiale 1000 creato in Draft. Snapshot a ciascuna fase: Draft -> Published -> Deprecated";
+    res.expectedDesc = "Ciascuno dei 3 snapshot conserva fedelmente lo stato del ciclo di vita al momento dell'acquisizione";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/m1000_life", "Lifecycle Mat");
+    m1000.lifecycleState = MaterialLifecycleState::Draft;
+    reg.RegisterMaterial(m1000);
+
+    RegistrySnapshotHandle snapDraft = reg.GetSnapshotHandle();
+
+    // Pubblicazione
+    std::string err;
+    if (!reg.PublishMaterial(1000, &err)) {
+        res.passed = false;
+        res.observedDesc = "PublishMaterial fallito: " + err;
+        return res;
+    }
+    RegistrySnapshotHandle snapPublished = reg.GetSnapshotHandle();
+
+    // Deprecazione
+    if (!reg.DeprecateMaterial(1000, &err)) {
+        res.passed = false;
+        res.observedDesc = "DeprecateMaterial fallito: " + err;
+        return res;
+    }
+    RegistrySnapshotHandle snapDeprecated = reg.GetSnapshotHandle();
+
+    // Verifica stati in ciascun snapshot
+    const auto* pDraft = snapDraft->GetMaterial(1000);
+    const auto* pPub = snapPublished->GetMaterial(1000);
+    const auto* pDep = snapDeprecated->GetMaterial(1000);
+
+    if (!pDraft || pDraft->lifecycleState != MaterialLifecycleState::Draft) {
+        res.passed = false;
+        res.observedDesc = "snapDraft non ha conservato lo stato Draft";
+        return res;
+    }
+    if (!pPub || pPub->lifecycleState != MaterialLifecycleState::Published) {
+        res.passed = false;
+        res.observedDesc = "snapPublished non ha conservato lo stato Published";
+        return res;
+    }
+    if (!pDep || pDep->lifecycleState != MaterialLifecycleState::Deprecated) {
+        res.passed = false;
+        res.observedDesc = "snapDeprecated non ha lo stato Deprecated";
+        return res;
+    }
+
+    // Verifica GetSelectableMaterials su ciascun snapshot
+    auto selDraft = snapDraft->GetSelectableMaterials(0);
+    auto selPub = snapPublished->GetSelectableMaterials(0);
+    auto selDep = snapDeprecated->GetSelectableMaterials(0);
+
+    auto hasMat1000 = [](const std::vector<const ScientificMaterialDef*>& v) {
+        return std::find_if(v.begin(), v.end(), [](const auto* m) { return m->id == 1000; }) != v.end();
+    };
+
+    if (hasMat1000(selDraft)) {
+        res.passed = false;
+        res.observedDesc = "selDraft include erroneamente il materiale in stato Draft";
+        return res;
+    }
+    if (!hasMat1000(selPub)) {
+        res.passed = false;
+        res.observedDesc = "selPub non include il materiale in stato Published";
+        return res;
+    }
+    if (hasMat1000(selDep)) {
+        res.passed = false;
+        res.observedDesc = "selDep include erroneamente il materiale in stato Deprecated per nuova selezione";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Tutti e 3 gli snapshot preservano stabilmente il loro stato (Draft, Published, Deprecated) e i relativi filtri";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 15: Sostituzione del catalogo (Clear e Load) mentre un vecchio snapshot è ancora utilizzato
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test15_OldSnapshotHandleImmutabilityAcrossCatalogReplacement() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-15";
+    res.testName = "Immutabilita' snapshot su Clear e LoadCustomMaterialsFromJson";
+    res.inputDesc = "Acquisizione snapshot con materiale 1000; esecuzione di Clear() e successivo caricamento di file";
+    res.expectedDesc = "Il vecchio snapshot rimane valido e accessibile anche dopo che il registry e' stato azzerato e ricaricato";
+
+    std::error_code rmEc;
+    auto tempPath = std::filesystem::temp_directory_path() / "fw_p02a_replace_test.json";
+    std::filesystem::remove(tempPath, rmEc);
+
+    RegistrySnapshotHandle preservedSnap;
+    const ScientificMaterialDef* preservedPtr = nullptr;
+
+    {
+        ScientificMaterialRegistry reg1;
+        reg1.Initialize();
+
+        auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/m1000_rep", "Preserved Material 1000");
+        reg1.RegisterMaterial(m1000);
+
+        preservedSnap = reg1.GetSnapshotHandle();
+        preservedPtr = preservedSnap->GetMaterial(1000);
+
+        // Prepara un file con un materiale 1001
+        ScientificMaterialRegistry regFile;
+        regFile.Initialize();
+        auto m1001 = CreateValidBaseCustomDef(1001, "custom:mat/m1001_rep", "Replacement Material 1001");
+        regFile.RegisterMaterial(m1001);
+        std::string err;
+        if (!regFile.SaveCustomMaterialsToJson(tempPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Salvataggio catalogo di supporto fallito: " + err;
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+
+        // Svuotamento completo del registry
+        reg1.Clear();
+        if (reg1.GetMaterialCount() != 0) {
+            res.passed = false;
+            res.observedDesc = "Clear() non ha azzerato il registry";
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+
+        // Il vecchio snapshot deve essere ancora perfettamente intatto!
+        if (!preservedSnap.IsValid() || !preservedPtr || preservedPtr->displayName != "Preserved Material 1000") {
+            res.passed = false;
+            res.observedDesc = "Clear() ha invalidato o corrotto la memoria del vecchio snapshot!";
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+
+        // Caricamento del nuovo file nel registry svuotato
+        if (!reg1.LoadCustomMaterialsFromJson(tempPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "LoadCustomMaterialsFromJson post-Clear fallito: " + err;
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+
+        // Il registry ora contiene solo 1001 (e standard)
+        if (!reg1.HasMaterial(1001) || reg1.HasMaterial(1000)) {
+            res.passed = false;
+            res.observedDesc = "Registry non sincronizzato correttamente con il file caricato";
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+
+        // Il vecchio snapshot deve ANCORA contenere 1000 e NON contenere 1001!
+        if (preservedSnap->GetMaterial(1000) != preservedPtr || preservedPtr->displayName != "Preserved Material 1000") {
+            res.passed = false;
+            res.observedDesc = "LoadCustomMaterialsFromJson ha corrotto i dati del vecchio snapshot!";
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+        if (preservedSnap->GetMaterial(1001) != nullptr) {
+            res.passed = false;
+            res.observedDesc = "Materiale 1001 inaspettatamente apparso nel vecchio snapshot!";
+            std::filesystem::remove(tempPath, rmEc);
+            return res;
+        }
+    } // reg1 distrutto: preservedSnap sopravvive al suo registry d'origine!
+
+    if (!preservedSnap.IsValid() || preservedPtr->displayName != "Preserved Material 1000") {
+        res.passed = false;
+        res.observedDesc = "Lo snapshot non e' sopravvissuto alla distruzione del registry originario!";
+        std::filesystem::remove(tempPath, rmEc);
+        return res;
+    }
+
+    std::filesystem::remove(tempPath, rmEc);
+    res.passed = true;
+    res.observedDesc = "Snapshot isolato e protetto attraverso Clear(), LoadCustomMaterialsFromJson() e distruzione del registry originario";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 16: Semantica per valore di GetMaterial: copie immuni da mutazioni e deallocazioni
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test16_GetMaterialValueSemanticsImmunityToMutations() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-16";
+    res.testName = "GetMaterial con semantica per valore immune a mutazioni";
+    res.inputDesc = "GetMaterial() memorizzato per valore; registry mutato, esteso e svuotato";
+    res.expectedDesc = "La copia ottenuta conserva i valori originali senza corruzione di memoria; query su ID inesistente ritorna fallback";
+
+    ScientificMaterialDef savedCopy;
+
+    {
+        ScientificMaterialRegistry reg;
+        reg.Initialize();
+
+        auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/m1000_val", "Original Value Copy");
+        m1000.density = ScientificQuantity::Known(4430.0, "kg/m^3", DataQuality::PeerReviewed, "Original");
+        reg.RegisterMaterial(m1000);
+
+        // Copia per valore garantita dal contratto P0.2A
+        savedCopy = reg.GetMaterial(1000);
+
+        // Mutazione in-place del materiale nel registry
+        auto m1000_mutated = m1000;
+        m1000_mutated.displayName = "Mutated In Registry";
+        m1000_mutated.density = ScientificQuantity::Known(9999.0, "kg/m^3", DataQuality::Estimated, "Mutated");
+        reg.RegisterMaterial(m1000_mutated, true);
+
+        // Aggiunta di altri materiali per forzare rehash/riallocazioni
+        for (ScientificMaterialID id = 1001; id <= 1010; ++id) {
+            auto extra = CreateValidBaseCustomDef(id, "custom:mat/extra_" + std::to_string(id), "Extra " + std::to_string(id));
+            reg.RegisterMaterial(extra);
+        }
+
+        // Svuotamento completo
+        reg.Clear();
+
+        // Query su materiale non esistente: deve ritornare fallback valido senza crash
+        ScientificMaterialDef missing = reg.GetMaterial(99999);
+        if (missing.id != INVALID_SCIENTIFIC_MATERIAL_ID) {
+            res.passed = false;
+            res.observedDesc = "GetMaterial per ID inesistente non ha restituito fallback valido";
+            return res;
+        }
+
+        // Binding const auto& estende il lifetime del prvalue
+        const auto& tempBound = reg.GetMaterial(99999);
+        if (tempBound.id != INVALID_SCIENTIFIC_MATERIAL_ID) {
+            res.passed = false;
+            res.observedDesc = "Binding a const auto& di GetMaterial fallito";
+            return res;
+        }
+    } // reg esce dallo scope ed e' distrutto
+
+    // Verifica che savedCopy sia rimasto intatto e valido
+    if (savedCopy.id != 1000 || savedCopy.displayName != "Original Value Copy" || savedCopy.density.value != 4430.0) {
+        res.passed = false;
+        res.observedDesc = "La copia di GetMaterial e' stata alterata o corrotta dalle mutazioni successive!";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Semantica per valore verificata: la copia sopravvive a update in-place, rehash, Clear() e distruzione del registry";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 17: Semantica per valore di GetAllMaterials e isolamento dello storage tramite snapshot
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test17_GetAllMaterialsValueSemanticsAndSnapshotIsolation() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-17";
+    res.testName = "GetAllMaterials semantica a valore e snapshot isolation";
+    res.inputDesc = "GetAllMaterials() memorizzato; registry mutato, esteso e svuotato; verifica snap->GetAllMaterials()";
+    res.expectedDesc = "La mappa per valore rimane intatta e valida post-svuotamento; snap->GetAllMaterials() fornisce accesso zero-copy protetto";
+
+    std::unordered_map<ScientificMaterialID, ScientificMaterialDef> mapCopy;
+    RegistrySnapshotHandle snapshotHandle;
+
+    {
+        ScientificMaterialRegistry reg;
+        reg.Initialize();
+
+        auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/m1000_all", "Map Material 1000");
+        reg.RegisterMaterial(m1000);
+
+        // 1. Acquisizione mappa per valore (nessun riferimento a storage mutabile esposto)
+        mapCopy = reg.GetAllMaterials();
+
+        // 2. Acquisizione snapshot immutabile con ownership esplicita
+        snapshotHandle = reg.GetSnapshotHandle();
+
+        // 3. Mutazione del registro: modifica in-place, aggiunta di altri materiali e Clear()
+        auto m1000_mut = m1000;
+        m1000_mut.displayName = "Map Material 1000 Mutated";
+        reg.RegisterMaterial(m1000_mut, true);
+
+        auto m1001 = CreateValidBaseCustomDef(1001, "custom:mat/m1001_all", "Map Material 1001");
+        reg.RegisterMaterial(m1001);
+
+        reg.Clear();
+        if (reg.GetMaterialCount() != 0) {
+            res.passed = false;
+            res.observedDesc = "Clear() non ha svuotato il registry";
+            return res;
+        }
+    } // reg distrutto
+
+    // Verifica della copia per valore: deve avere esattamente la dimensione originale e il nome iniziale
+    if (mapCopy.find(1000) == mapCopy.end() || mapCopy.at(1000).displayName != "Map Material 1000") {
+        res.passed = false;
+        res.observedDesc = "mapCopy alterata o corrotta dalle mutazioni successive del registry!";
+        return res;
+    }
+    if (mapCopy.find(1001) != mapCopy.end()) {
+        res.passed = false;
+        res.observedDesc = "mapCopy include materiali aggiunti successivamente alla sua acquisizione!";
+        return res;
+    }
+
+    // Verifica dello snapshot protetto: deve avere conservato la versione al momento dell'acquisizione
+    if (!snapshotHandle.IsValid()) {
+        res.passed = false;
+        res.observedDesc = "snapshotHandle non valido dopo distruzione del registry originario";
+        return res;
+    }
+    const auto& snapMaterials = snapshotHandle->GetAllMaterials();
+    if (snapMaterials.find(1000) == snapMaterials.end() || snapMaterials.at(1000).displayName != "Map Material 1000") {
+        res.passed = false;
+        res.observedDesc = "snapshotHandle->GetAllMaterials() non ha preservato la vista immutabile originaria";
+        return res;
+    }
+    if (snapMaterials.find(1001) != snapMaterials.end()) {
+        res.passed = false;
+        res.observedDesc = "snapshotHandle->GetAllMaterials() contaminato da registrazioni successive!";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Semantica sicura certificata: GetAllMaterials() per valore isola completamente lo storage; snap->GetAllMaterials() preserva immutabilita' con zero-copy";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 18: Revisione monotona su mutazioni, idempotenza e conteggio invariato
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test18_RegistryRevisionMutationAndIdempotenceContracts() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-18";
+    res.testName = "Revisione monotona su mutazioni, idempotenza e conteggio invariato";
+    res.inputDesc = "Operazioni di registrazione, aggiornamento in-place, pubblicazione, deprecazione e availability con verifiche di incremento e idempotenza";
+    res.expectedDesc = "La revisione avanza esattamente di 1 per mutazione effettiva e rimane invariata per errori e operazioni idempotenti";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    uint64_t baseRev = reg.GetRevision();
+
+    // 1. Registrazione riuscita di un nuovo materiale custom: revisione deve avanzare esattamente di 1
+    auto def1 = CreateValidBaseCustomDef(1000, "custom:mat/rev_alpha", "Revision Alpha");
+    def1.lifecycleState = MaterialLifecycleState::Draft;
+    if (!reg.RegisterMaterial(def1)) {
+        res.passed = false;
+        res.observedDesc = "Registrazione def1 fallita";
+        return res;
+    }
+    if (reg.GetRevision() != baseRev + 1) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata dopo registrazione riuscita: atteso " + std::to_string(baseRev + 1) + ", osservato " + std::to_string(reg.GetRevision());
+        return res;
+    }
+    uint64_t revAfterReg = reg.GetRevision();
+
+    // 2. Operazione rifiutata: registrazione duplicata con allowUpdate=false non deve avanzare revisione
+    if (reg.RegisterMaterial(def1, false)) {
+        res.passed = false;
+        res.observedDesc = "Registrazione duplicata avrebbe dovuto fallire";
+        return res;
+    }
+    if (reg.GetRevision() != revAfterReg) {
+        res.passed = false;
+        res.observedDesc = "Revisione erroneamente avanzata dopo registrazione rifiutata";
+        return res;
+    }
+
+    // 3. Operazione rifiutata: validazione fallita (es. densità negativa)
+    ScientificMaterialDef badDef = def1;
+    badDef.id = 1001;
+    badDef.canonicalId = "custom:mat/bad_density";
+    badDef.density = ScientificQuantity::Known(-500.0, "kg/m^3");
+    std::string valErr;
+    if (reg.ValidateMaterialDefinition(badDef, &valErr)) {
+        res.passed = false;
+        res.observedDesc = "Validazione avrebbe dovuto fallire per densita' negativa";
+        return res;
+    }
+    if (reg.GetRevision() != revAfterReg) {
+        res.passed = false;
+        res.observedDesc = "Revisione erroneamente mutata dopo validazione fallita";
+        return res;
+    }
+
+    // 4. Operazione idempotente: Update in-place con dati identici (allowUpdate=true) -> nessun incremento
+    if (!reg.RegisterMaterial(def1, true)) {
+        res.passed = false;
+        res.observedDesc = "Update idempotente fallito";
+        return res;
+    }
+    if (reg.GetRevision() != revAfterReg) {
+        res.passed = false;
+        res.observedDesc = "Revisione erroneamente avanzata dopo update idempotente identico: osservato " + std::to_string(reg.GetRevision());
+        return res;
+    }
+
+    // 5. Aggiornamento del materiale con conteggio invariato: modifica semantica (es. descrizione) -> avanza di 1
+    size_t countBeforeUpdate = reg.GetMaterialCount();
+    auto def1Updated = def1;
+    def1Updated.description = "Updated aerospace grade description";
+    if (!reg.RegisterMaterial(def1Updated, true)) {
+        res.passed = false;
+        res.observedDesc = "Aggiornamento in-place fallito";
+        return res;
+    }
+    if (reg.GetMaterialCount() != countBeforeUpdate) {
+        res.passed = false;
+        res.observedDesc = "Conteggio materiali alterato durante update in-place";
+        return res;
+    }
+    if (reg.GetRevision() != revAfterReg + 1) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata dopo update in-place con conteggio invariato: atteso " + std::to_string(revAfterReg + 1) + ", osservato " + std::to_string(reg.GetRevision());
+        return res;
+    }
+    uint64_t revAfterUpdate = reg.GetRevision();
+
+    // 6. Transizione di ciclo di vita: PublishMaterial da Draft a Published -> avanza di 1
+    std::string pubErr;
+    if (!reg.PublishMaterial(1000, &pubErr)) {
+        res.passed = false;
+        res.observedDesc = "PublishMaterial fallito: " + pubErr;
+        return res;
+    }
+    if (reg.GetRevision() != revAfterUpdate + 1) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata dopo PublishMaterial: atteso " + std::to_string(revAfterUpdate + 1) + ", osservato " + std::to_string(reg.GetRevision());
+        return res;
+    }
+    uint64_t revAfterPublish = reg.GetRevision();
+
+    // 7. PublishMaterial idempotente (già Published) -> nessun incremento
+    if (!reg.PublishMaterial(1000, &pubErr)) {
+        res.passed = false;
+        res.observedDesc = "PublishMaterial idempotente fallito: " + pubErr;
+        return res;
+    }
+    if (reg.GetRevision() != revAfterPublish) {
+        res.passed = false;
+        res.observedDesc = "Revisione erroneamente avanzata dopo Publish idempotente";
+        return res;
+    }
+
+    // 8. SetEnabledInBlockMaker: disabilitazione da true a false -> avanza di 1
+    std::string bmErr;
+    if (!reg.SetEnabledInBlockMaker(1000, false, &bmErr)) {
+        res.passed = false;
+        res.observedDesc = "SetEnabledInBlockMaker(false) fallito: " + bmErr;
+        return res;
+    }
+    if (reg.GetRevision() != revAfterPublish + 1) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata dopo SetEnabledInBlockMaker(false)";
+        return res;
+    }
+    uint64_t revAfterDisable = reg.GetRevision();
+
+    // 9. SetEnabledInBlockMaker idempotente (già false) -> nessun incremento
+    if (!reg.SetEnabledInBlockMaker(1000, false, &bmErr)) {
+        res.passed = false;
+        res.observedDesc = "SetEnabledInBlockMaker(false) idempotente fallito: " + bmErr;
+        return res;
+    }
+    if (reg.GetRevision() != revAfterDisable) {
+        res.passed = false;
+        res.observedDesc = "Revisione erroneamente avanzata dopo SetEnabledInBlockMaker idempotente";
+        return res;
+    }
+
+    // 10. DeprecateMaterial: transizione a Deprecated -> avanza di 1
+    std::string depErr;
+    if (!reg.DeprecateMaterial(1000, &depErr)) {
+        res.passed = false;
+        res.observedDesc = "DeprecateMaterial fallito: " + depErr;
+        return res;
+    }
+    if (reg.GetRevision() != revAfterDisable + 1) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata dopo DeprecateMaterial";
+        return res;
+    }
+    uint64_t revAfterDeprecate = reg.GetRevision();
+
+    // 11. DeprecateMaterial idempotente (già Deprecated) -> nessun incremento
+    if (!reg.DeprecateMaterial(1000, &depErr)) {
+        res.passed = false;
+        res.observedDesc = "DeprecateMaterial idempotente fallito: " + depErr;
+        return res;
+    }
+    if (reg.GetRevision() != revAfterDeprecate) {
+        res.passed = false;
+        res.observedDesc = "Revisione erroneamente avanzata dopo DeprecateMaterial idempotente";
+        return res;
+    }
+
+    // 12. Operazione illegale: tentare di ri-pubblicare un Deprecated deve fallire e non avanzare revisione
+    if (reg.PublishMaterial(1000, &pubErr)) {
+        res.passed = false;
+        res.observedDesc = "PublishMaterial avrebbe dovuto essere rifiutato per materiale Deprecated";
+        return res;
+    }
+    if (reg.GetRevision() != revAfterDeprecate) {
+        res.passed = false;
+        res.observedDesc = "Revisione alterata dopo tentativo illegale di ri-pubblicare Deprecated";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Contratto di revisione su mutazioni, idempotenza, conteggio invariato e operazioni rifiutate validato al 100%";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 19: Immutabilità revisione snapshot, rollback di persistenza e Clear/Load
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test19_RegistryRevisionPersistenceRollbackAndSnapshotImmutability() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-19";
+    res.testName = "Immutabilita' revisione snapshot, rollback di persistenza e Clear/Load";
+    res.inputDesc = "Snapshot multipli, simulazione errori persistenza, rollback, Clear idempotente e caricamento JSON";
+    res.expectedDesc = "Snapshot storici mantengono la propria revisione; rollback non muta revisione; Clear e Load avanzano revisione coerentemente";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    // 1. Acquisizione snapshot 0
+    RegistrySnapshotHandle snap0 = reg.GetSnapshotHandle();
+    uint64_t rev0 = reg.GetRevision();
+    if (!snap0.IsValid() || snap0->revision != rev0) {
+        res.passed = false;
+        res.observedDesc = "Revisione snapshot0 non coincide con revisione del registro";
+        return res;
+    }
+
+    // 2. Registrazione materiale 1000 e acquisizione snapshot 1
+    auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/snap_test_1000", "Snap Test 1000");
+    reg.RegisterMaterial(m1000);
+
+    RegistrySnapshotHandle snap1 = reg.GetSnapshotHandle();
+    uint64_t rev1 = reg.GetRevision();
+
+    if (rev1 <= rev0) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata monotonicamente: rev0=" + std::to_string(rev0) + ", rev1=" + std::to_string(rev1);
+        return res;
+    }
+    if (snap1->revision != rev1) {
+        res.passed = false;
+        res.observedDesc = "snap1->revision (" + std::to_string(snap1->revision) + ") non coincide con rev1 (" + std::to_string(rev1) + ")";
+        return res;
+    }
+
+    // Verifica immutabilità di snap0
+    if (snap0->revision != rev0) {
+        res.passed = false;
+        res.observedDesc = "snap0->revision alterata dopo nuova mutazione: atteso " + std::to_string(rev0) + ", osservato " + std::to_string(snap0->revision);
+        return res;
+    }
+    if (snap0->GetMaterial(1000) != nullptr) {
+        res.passed = false;
+        res.observedDesc = "snap0 contiene erroneamente materiale 1000 registrato successivamente";
+        return res;
+    }
+
+    // 3. Rollback di persistenza: verifica che errori di scrittura non alterino revisione, snapshot, memoria o file originale
+    std::error_code ec;
+    auto tempOriginalFile = std::filesystem::temp_directory_path() / "fairworld_cust19_original.json";
+    std::filesystem::remove(tempOriginalFile, ec);
+
+    std::string saveErr;
+    if (!reg.SaveCustomMaterialsToJson(tempOriginalFile.string(), &saveErr)) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio preliminare catalogo valido fallito: " + saveErr;
+        return res;
+    }
+
+    uint64_t revBeforeSaveFail = reg.GetRevision();
+    auto snapBeforeSaveFail = reg.GetSnapshotHandle();
+    size_t countBeforeSaveFail = reg.GetMaterialCount();
+
+    // 3a. Conflitto filesystem controllato: un componente del percorso è un file ordinario anziché una directory
+    auto blockingFile = std::filesystem::temp_directory_path() / "fairworld_cust19_not_a_dir.tmp";
+    std::filesystem::remove(blockingFile, ec);
+    {
+        std::ofstream bf(blockingFile);
+        bf << "blocking regular file";
+    }
+
+    auto conflictingSavePath = blockingFile / "sub" / "unwritable_catalog.json";
+    std::filesystem::path conflictingTempPath = conflictingSavePath.string() + ".tmp";
+
+    bool saveRes = reg.SaveCustomMaterialsToJson(conflictingSavePath.string(), &saveErr);
+
+    // Pulizia del file bloccante
+    std::filesystem::remove(blockingFile, ec);
+
+    if (saveRes) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio con percorso in conflitto (componente file ordinario) avrebbe dovuto fallire";
+        std::filesystem::remove(tempOriginalFile, ec);
+        return res;
+    }
+    if (reg.GetRevision() != revBeforeSaveFail) {
+        res.passed = false;
+        res.observedDesc = "Revisione alterata a seguito di fallimento di salvataggio (conflitto directory)";
+        std::filesystem::remove(tempOriginalFile, ec);
+        return res;
+    }
+    if (reg.GetSnapshotHandle()->revision != revBeforeSaveFail) {
+        res.passed = false;
+        res.observedDesc = "Snapshot attivo alterato a seguito di fallimento di salvataggio (conflitto directory)";
+        std::filesystem::remove(tempOriginalFile, ec);
+        return res;
+    }
+    if (reg.GetMaterialCount() != countBeforeSaveFail) {
+        res.passed = false;
+        res.observedDesc = "Conteggio materiali in memoria alterato dopo fallimento di salvataggio";
+        std::filesystem::remove(tempOriginalFile, ec);
+        return res;
+    }
+    if (std::filesystem::exists(conflictingTempPath, ec)) {
+        res.passed = false;
+        res.observedDesc = "File temporaneo residuo (.tmp) presente dopo fallimento salvataggio";
+        std::filesystem::remove(conflictingTempPath, ec);
+        std::filesystem::remove(tempOriginalFile, ec);
+        return res;
+    }
+
+#if defined(_WIN32)
+    // 3b. Fallimento atomico di sostituzione su file originale esistente bloccato in condivisione esclusiva
+    HANDLE hLock = ::CreateFileW(
+        tempOriginalFile.wstring().c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+    if (hLock != INVALID_HANDLE_VALUE) {
+        std::filesystem::path lockedTempPath = tempOriginalFile.string() + ".tmp";
+        bool lockedSaveRes = reg.SaveCustomMaterialsToJson(tempOriginalFile.string(), &saveErr);
+        ::CloseHandle(hLock);
+
+        if (lockedSaveRes) {
+            res.passed = false;
+            res.observedDesc = "Salvataggio su file originale bloccato avrebbe dovuto fallire";
+            std::filesystem::remove(tempOriginalFile, ec);
+            return res;
+        }
+
+        // Verifica che il file originale sia rimasto valido, leggibile e completamente inalterato
+        ScientificMaterialRegistry regCheck;
+        regCheck.Initialize();
+        if (!regCheck.LoadCustomMaterialsFromJson(tempOriginalFile.string(), &saveErr)) {
+            res.passed = false;
+            res.observedDesc = "File originale non leggibile o corrotto dopo fallimento di ReplaceFileW: " + saveErr;
+            std::filesystem::remove(tempOriginalFile, ec);
+            return res;
+        }
+        if (!regCheck.HasMaterial(1000) || regCheck.GetMaterial(1000).displayName != "Snap Test 1000") {
+            res.passed = false;
+            res.observedDesc = "Contenuto del file originale alterato a seguito di salvataggio fallito";
+            std::filesystem::remove(tempOriginalFile, ec);
+            return res;
+        }
+
+        // Verifica nessun file temporaneo residuo
+        if (std::filesystem::exists(lockedTempPath, ec)) {
+            res.passed = false;
+            res.observedDesc = "File temporaneo (.tmp) residuo presente dopo fallimento ReplaceFileW";
+            std::filesystem::remove(lockedTempPath, ec);
+            std::filesystem::remove(tempOriginalFile, ec);
+            return res;
+        }
+
+        // Verifica invarianza revisione e snapshot del registro
+        if (reg.GetRevision() != revBeforeSaveFail) {
+            res.passed = false;
+            res.observedDesc = "Revisione alterata a seguito di fallimento ReplaceFileW";
+            std::filesystem::remove(tempOriginalFile, ec);
+            return res;
+        }
+        if (reg.GetSnapshotHandle()->revision != revBeforeSaveFail) {
+            res.passed = false;
+            res.observedDesc = "Snapshot attivo alterato a seguito di fallimento ReplaceFileW";
+            std::filesystem::remove(tempOriginalFile, ec);
+            return res;
+        }
+    }
+#endif
+    std::filesystem::remove(tempOriginalFile, ec);
+
+    // 4. Fallimento caricamento (rollback transazionale di Load): file inesistente o corrotto non deve mutare revisione
+    std::string loadErr;
+    uint64_t revBeforeLoadFail = reg.GetRevision();
+    auto nonExistentPath = std::filesystem::temp_directory_path() / "fairworld_cust19_nonexistent_99999.json";
+    std::filesystem::remove(nonExistentPath, ec);
+
+    bool loadRes = reg.LoadCustomMaterialsFromJson(nonExistentPath.string(), &loadErr);
+    if (loadRes) {
+        res.passed = false;
+        res.observedDesc = "LoadCustomMaterialsFromJson su file inesistente avrebbe dovuto fallire";
+        return res;
+    }
+    if (reg.GetRevision() != revBeforeLoadFail) {
+        res.passed = false;
+        res.observedDesc = "Revisione alterata dopo fallimento caricamento JSON su file inesistente";
+        return res;
+    }
+
+    auto corruptPath = std::filesystem::temp_directory_path() / "fairworld_cust19_corrupt.json";
+    {
+        std::ofstream cf(corruptPath);
+        cf << "{ \"schemaVersion\": 3, \"materials\": [ { invalid_json_syntax ";
+    }
+    bool loadCorruptRes = reg.LoadCustomMaterialsFromJson(corruptPath.string(), &loadErr);
+    std::filesystem::remove(corruptPath, ec);
+    if (loadCorruptRes) {
+        res.passed = false;
+        res.observedDesc = "LoadCustomMaterialsFromJson su file JSON corrotto avrebbe dovuto fallire";
+        return res;
+    }
+    if (reg.GetRevision() != revBeforeLoadFail) {
+        res.passed = false;
+        res.observedDesc = "Revisione alterata dopo fallimento caricamento JSON corrotto";
+        return res;
+    }
+
+    // 5. Successo di Save + Load: persistenza round-trip valida avanza la revisione una sola volta
+    auto tempPath = std::filesystem::temp_directory_path() / "fairworld_test_rev_roundtrip.json";
+    std::filesystem::remove(tempPath, ec);
+
+    if (!reg.SaveCustomMaterialsToJson(tempPath.string(), &saveErr)) {
+        res.passed = false;
+        res.observedDesc = "SaveCustomMaterialsToJson fallito: " + saveErr;
+        return res;
+    }
+
+    ScientificMaterialRegistry regTarget;
+    regTarget.Initialize();
+    uint64_t targetRevBefore = regTarget.GetRevision();
+
+    if (!regTarget.LoadCustomMaterialsFromJson(tempPath.string(), &loadErr)) {
+        res.passed = false;
+        res.observedDesc = "LoadCustomMaterialsFromJson fallito: " + loadErr;
+        std::filesystem::remove(tempPath, ec);
+        return res;
+    }
+    std::filesystem::remove(tempPath, ec);
+
+    if (regTarget.GetRevision() != targetRevBefore + 1) {
+        res.passed = false;
+        res.observedDesc = "LoadCustomMaterialsFromJson non ha avanzato la revisione esattamente di 1: atteso " + std::to_string(targetRevBefore + 1) + ", osservato " + std::to_string(regTarget.GetRevision());
+        return res;
+    }
+    if (!regTarget.HasMaterial(1000)) {
+        res.passed = false;
+        res.observedDesc = "regTarget non contiene materiale 1000 ricaricato";
+        return res;
+    }
+
+    // 6. Clear: svuota registro non vuoto -> revisione avanza di 1
+    uint64_t revBeforeClear = regTarget.GetRevision();
+    regTarget.Clear();
+    if (regTarget.GetMaterialCount() != 0) {
+        res.passed = false;
+        res.observedDesc = "Clear non ha svuotato i materiali";
+        return res;
+    }
+    if (regTarget.GetRevision() != revBeforeClear + 1) {
+        res.passed = false;
+        res.observedDesc = "Clear su registro non vuoto non ha avanzato la revisione: atteso " + std::to_string(revBeforeClear + 1) + ", osservato " + std::to_string(regTarget.GetRevision());
+        return res;
+    }
+
+    // 7. Clear idempotente: Clear su registro già vuoto -> revisione NON avanza
+    uint64_t revAfterClear = regTarget.GetRevision();
+    regTarget.Clear();
+    if (regTarget.GetRevision() != revAfterClear) {
+        res.passed = false;
+        res.observedDesc = "Clear idempotente su registro già vuoto ha erroneamente avanzato la revisione";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Immutabilita' revisione snapshot, isolamento rollback e comportamento Clear/Load validati al 100%";
+    return res;
+}
+
+// =============================================================================
+// P0.2C: CONCORRENZA REGISTRY E STABILITÀ ID CUSTOM (CUST-20 .. CUST-22)
+// =============================================================================
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test20_ConcurrentReadersDuringUpdatesAndSnapshotConsistency() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-20";
+    res.testName = "Lettori concorrenti durante aggiornamenti, validita' snapshot storici e coerenza";
+    res.inputDesc = "4 reader thread continui su GetSnapshotHandle() durante mutazioni concorrenti (Register, Update, Publish, Clear) da parte di 1 writer thread";
+    res.expectedDesc = "Snapshot storici validi e immutabili, zero data race, zero puntatori nulli/corrotti, revisione snapshot coerente";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    std::atomic<bool> startFlag{false};
+    std::atomic<bool> stopFlag{false};
+    std::atomic<size_t> totalReadsCompleted{0};
+    std::atomic<bool> readerIntegrityFailed{false};
+    std::string failureDetail;
+    std::mutex failureMutex;
+
+    auto reportFailure = [&](const std::string& msg) {
+        std::lock_guard<std::mutex> lock(failureMutex);
+        if (failureDetail.empty()) {
+            failureDetail = msg;
+        }
+        readerIntegrityFailed = true;
+    };
+
+    // Creazione 4 Reader Thread
+    const size_t READER_THREADS = 4;
+    std::vector<std::thread> readers;
+    readers.reserve(READER_THREADS);
+
+    for (size_t r = 0; r < READER_THREADS; ++r) {
+        readers.emplace_back([&, r]() {
+            while (!startFlag.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+
+            RegistrySnapshotHandle retainedSnapshot;
+
+            while (!stopFlag.load(std::memory_order_relaxed)) {
+                RegistrySnapshotHandle snap = reg.GetSnapshotHandle();
+                if (!snap.IsValid()) {
+                    reportFailure("Reader " + std::to_string(r) + ": Snapshot handle non valido!");
+                    break;
+                }
+
+                // Controllo coerenza interna dello snapshot
+                const auto& materials = snap->GetAllMaterials();
+                const auto& canonMap = snap->canonicalToIdMap;
+                if (materials.size() != canonMap.size()) {
+                    reportFailure("Reader " + std::to_string(r) + ": Discrepanza materiali (" + 
+                                  std::to_string(materials.size()) + ") e mappa canonica (" + 
+                                  std::to_string(canonMap.size()) + ") nello snapshot!");
+                    break;
+                }
+
+                uint64_t snapRev = snap->GetRevision();
+                uint64_t curRegRev = reg.GetRevision();
+                if (snapRev > curRegRev) {
+                    reportFailure("Reader " + std::to_string(r) + ": Revisione snapshot (" + 
+                                  std::to_string(snapRev) + ") maggiore della revisione registry (" + 
+                                  std::to_string(curRegRev) + ")!");
+                    break;
+                }
+
+                for (const auto& [id, mat] : materials) {
+                    const auto* queried = snap->GetMaterial(id);
+                    if (!queried || queried->id != id) {
+                        reportFailure("Reader " + std::to_string(r) + ": Incoerenza GetMaterial per ID " + std::to_string(id));
+                        break;
+                    }
+                    if (queried->canonicalId.empty()) {
+                        reportFailure("Reader " + std::to_string(r) + ": canonicalId vuoto nello snapshot per ID " + std::to_string(id));
+                        break;
+                    }
+                }
+
+                // Conserva uno snapshot storico per verificare che rimanga valido anche dopo Clear/mutazioni
+                if (!retainedSnapshot.IsValid()) {
+                    if (!snap->GetAllMaterials().empty()) {
+                        retainedSnapshot = snap;
+                    }
+                } else {
+                    // Verifica che lo snapshot conservato in precedenza rimanga integro
+                    if (retainedSnapshot->GetAllMaterials().empty() && retainedSnapshot->GetRevision() > 0) {
+                        reportFailure("Reader " + std::to_string(r) + ": Snapshot storico deallocato o corrotto!");
+                        break;
+                    }
+                }
+
+                totalReadsCompleted.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    // Creazione 1 Writer Thread
+    std::thread writer([&]() {
+        while (!startFlag.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+
+        const size_t STRESS_CYCLES = 50;
+        for (size_t cycle = 0; cycle < STRESS_CYCLES; ++cycle) {
+            ScientificMaterialID baseId = static_cast<ScientificMaterialID>(1000 + cycle * 100);
+
+            // Fase 1: Registrazione e pubblicazione concorrente di 40 materiali
+            for (ScientificMaterialID id = baseId; id < baseId + 40; ++id) {
+                ScientificMaterialDef m = CreateValidBaseCustomDef(id, "custom:mat/reader_test_" + std::to_string(id), "Mat Reader Test " + std::to_string(id));
+                reg.RegisterMaterial(m);
+                if (id % 2 == 0) {
+                    reg.PublishMaterial(id);
+                }
+            }
+
+            // Fase 2: In-place update di alcuni materiali
+            for (ScientificMaterialID id = baseId; id < baseId + 20; ++id) {
+                ScientificMaterialDef m = reg.GetMaterial(id);
+                m.density = ScientificQuantity::Known(5000.0 + static_cast<double>(id), "kg/m^3");
+                reg.RegisterMaterial(m, true);
+            }
+
+            // Fase 3: Clear del registro e ripopolamento standard
+            reg.Clear();
+            reg.Initialize();
+
+            // Fase 4: Registrazione successiva di nuovi materiali
+            for (ScientificMaterialID id = baseId + 40; id < baseId + 60; ++id) {
+                ScientificMaterialDef m = CreateValidBaseCustomDef(id, "custom:mat/reader_postclear_" + std::to_string(id), "Mat PostClear " + std::to_string(id));
+                reg.RegisterMaterial(m);
+            }
+        }
+
+        stopFlag.store(true, std::memory_order_release);
+    });
+
+    // Avvio simultaneo
+    startFlag.store(true, std::memory_order_release);
+
+    writer.join();
+    for (auto& t : readers) {
+        t.join();
+    }
+
+    if (readerIntegrityFailed.load()) {
+        res.passed = false;
+        res.observedDesc = failureDetail;
+        return res;
+    }
+
+    if (totalReadsCompleted.load() < 50) {
+        res.passed = false;
+        res.observedDesc = "Troppo poche letture completate dai reader concorrenti: " + std::to_string(totalReadsCompleted.load());
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Validati lettori concorrenti su 50 cicli stress: completate " + std::to_string(totalReadsCompleted.load()) + 
+                       " letture coerenti, zero data race, snapshot storici integri.";
+    return res;
+}
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test21_ConcurrentWritersZeroLostUpdatesAndTransactionalIntegrity() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-21";
+    res.testName = "Scrittori concorrenti con serializzazione, integrita' transazionale e zero aggiornamenti persi";
+    res.inputDesc = "6 thread scrittori registrano concorrentemente 25 materiali custom ciascuno (150 totali) con ID e canonical distinti";
+    res.expectedDesc = "Tutti i 150 materiali registrati con successo, nessun aggiornamento perso, conteggio totale 4 standard + 150 = 154";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    const size_t WRITER_THREADS = 6;
+    const size_t MATERIALS_PER_THREAD = 25;
+    const size_t TOTAL_CUSTOM = WRITER_THREADS * MATERIALS_PER_THREAD;
+
+    std::atomic<bool> startFlag{false};
+    std::atomic<size_t> registrationFailures{0};
+    std::vector<std::thread> writers;
+    writers.reserve(WRITER_THREADS);
+
+    for (size_t t = 0; t < WRITER_THREADS; ++t) {
+        writers.emplace_back([&, t]() {
+            while (!startFlag.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+
+            for (size_t i = 0; i < MATERIALS_PER_THREAD; ++i) {
+                ScientificMaterialID id = static_cast<ScientificMaterialID>(1000 + (t * MATERIALS_PER_THREAD) + i);
+                std::string canon = "custom:mat/writer_t" + std::to_string(t) + "_m" + std::to_string(i);
+                std::string name = "Writer Material T" + std::to_string(t) + " M" + std::to_string(i);
+
+                ScientificMaterialDef m = CreateValidBaseCustomDef(id, canon, name);
+                if (!reg.RegisterMaterial(m, false)) {
+                    registrationFailures.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        });
+    }
+
+    // Avvio simultaneo di tutti gli scrittori per massimizzare la contesa
+    startFlag.store(true, std::memory_order_release);
+
+    for (auto& t : writers) {
+        t.join();
+    }
+
+    if (registrationFailures.load() > 0) {
+        res.passed = false;
+        res.observedDesc = "Rilevati " + std::to_string(registrationFailures.load()) + " fallimenti di registrazione tra scrittori concorrenti";
+        return res;
+    }
+
+    // Verifica che tutti i 150 materiali siano presenti
+    if (reg.GetMaterialCount() != 4 + TOTAL_CUSTOM) {
+        res.passed = false;
+        res.observedDesc = "Conteggio materiali errato: atteso " + std::to_string(4 + TOTAL_CUSTOM) + 
+                           ", osservato " + std::to_string(reg.GetMaterialCount());
+        return res;
+    }
+
+    for (size_t t = 0; t < WRITER_THREADS; ++t) {
+        for (size_t i = 0; i < MATERIALS_PER_THREAD; ++i) {
+            ScientificMaterialID expectedId = static_cast<ScientificMaterialID>(1000 + (t * MATERIALS_PER_THREAD) + i);
+            std::string expectedCanon = "custom:mat/writer_t" + std::to_string(t) + "_m" + std::to_string(i);
+
+            if (!reg.HasMaterial(expectedId)) {
+                res.passed = false;
+                res.observedDesc = "Materiale atteso ID " + std::to_string(expectedId) + " non trovato nel registry (aggiornamento perso!)";
+                return res;
+            }
+            if (!reg.HasMaterial(expectedCanon)) {
+                res.passed = false;
+                res.observedDesc = "Materiale canonico atteso '" + expectedCanon + "' non trovato nel registry";
+                return res;
+            }
+            if (reg.GetMaterialIdByCanonical(expectedCanon) != expectedId) {
+                res.passed = false;
+                res.observedDesc = "Mappatura canonica errata per '" + expectedCanon + "'";
+                return res;
+            }
+        }
+    }
+
+    res.passed = true;
+    res.observedDesc = "Serializzazione scrittori concorrenti verificata: 150/150 materiali registrati con successo, zero conflitti, zero aggiornamenti persi.";
+    return res;
+}
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test22_CustomIdAllocationContractStabilityAndOverflow() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-22";
+    res.testName = "Contratto allocazione ID custom: prenotazione atomica concorrente, non-riciclo, persistenza HWM e overflow";
+    res.inputDesc = "Prenotazioni concorrenti (6x50=300), consultazione Peek non mutante, persistenza HWM dopo Clear, caricamento catalogo ridotto e simulazione overflow";
+    res.expectedDesc = "300 ID univoci senza duplicati, Peek invariante, mancato riutilizzo ID dopo Clear e cataloghi ridotti, rifiuto overflow uint32_t";
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    // 1. Prenotazioni concorrenti atomiche
+    const size_t THREADS = 6;
+    const size_t RESERVATIONS_PER_THREAD = 50;
+    const size_t TOTAL_RESERVATIONS = THREADS * RESERVATIONS_PER_THREAD;
+
+    std::atomic<bool> startFlag{false};
+    std::vector<std::vector<ScientificMaterialID>> threadAllocations(THREADS);
+    std::vector<std::thread> workers;
+    workers.reserve(THREADS);
+
+    for (size_t t = 0; t < THREADS; ++t) {
+        workers.emplace_back([&, t]() {
+            threadAllocations[t].reserve(RESERVATIONS_PER_THREAD);
+            while (!startFlag.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+
+            for (size_t i = 0; i < RESERVATIONS_PER_THREAD; ++i) {
+                ScientificMaterialID id = reg.ReserveNextCustomMaterialId();
+                threadAllocations[t].push_back(id);
+            }
+        });
+    }
+
+    startFlag.store(true, std::memory_order_release);
+    for (auto& t : workers) {
+        t.join();
+    }
+
+    std::set<ScientificMaterialID> uniqueAllocations;
+    for (size_t t = 0; t < THREADS; ++t) {
+        for (ScientificMaterialID id : threadAllocations[t]) {
+            if (id < CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE) {
+                res.passed = false;
+                res.observedDesc = "ID custom allocato inferiore alla base 1000: " + std::to_string(id);
+                return res;
+            }
+            if (!uniqueAllocations.insert(id).second) {
+                res.passed = false;
+                res.observedDesc = "Duplicato rilevato nell'allocazione concorrente degli ID: ID " + std::to_string(id);
+                return res;
+            }
+        }
+    }
+
+    if (uniqueAllocations.size() != TOTAL_RESERVATIONS) {
+        res.passed = false;
+        res.observedDesc = "Numero ID allocati incorretto: atteso " + std::to_string(TOTAL_RESERVATIONS) + 
+                           ", osservato " + std::to_string(uniqueAllocations.size());
+        return res;
+    }
+
+    ScientificMaterialID expectedHwmAfterReservations = static_cast<ScientificMaterialID>(CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE + TOTAL_RESERVATIONS);
+    if (reg.GetCustomIdHighWaterMark() != expectedHwmAfterReservations) {
+        res.passed = false;
+        res.observedDesc = "High-water mark errato dopo prenotazioni concorrenti: atteso " + 
+                           std::to_string(expectedHwmAfterReservations) + ", osservato " + std::to_string(reg.GetCustomIdHighWaterMark());
+        return res;
+    }
+
+    // 2. Peek invariante e non mutante
+    ScientificMaterialID peek1 = reg.PeekNextCustomMaterialId();
+    ScientificMaterialID peek2 = reg.AllocateNextCustomMaterialId();
+    if (peek1 != expectedHwmAfterReservations || peek2 != expectedHwmAfterReservations) {
+        res.passed = false;
+        res.observedDesc = "PeekNextCustomMaterialId() non coerente con l'HWM";
+        return res;
+    }
+    if (reg.GetCustomIdHighWaterMark() != expectedHwmAfterReservations) {
+        res.passed = false;
+        res.observedDesc = "Peek ha erroneamente mutato l'high-water mark";
+        return res;
+    }
+
+    // 3. Clear(): mancato riutilizzo degli ID
+    reg.Clear();
+    if (reg.GetCustomIdHighWaterMark() != expectedHwmAfterReservations) {
+        res.passed = false;
+        res.observedDesc = "Clear() ha erroneamente resettato l'high-water mark!";
+        return res;
+    }
+    ScientificMaterialID postClearRes = reg.ReserveNextCustomMaterialId();
+    if (postClearRes != expectedHwmAfterReservations) {
+        res.passed = false;
+        res.observedDesc = "ID riutilizzato dopo Clear(): atteso " + std::to_string(expectedHwmAfterReservations) + 
+                           ", osservato " + std::to_string(postClearRes);
+        return res;
+    }
+    if (reg.GetCustomIdHighWaterMark() != expectedHwmAfterReservations + 1) {
+        res.passed = false;
+        res.observedDesc = "HWM non avanzato correttamente dopo prenotazione post-Clear";
+        return res;
+    }
+
+    // 4. Persistenza dell'high-water mark e mancato riutilizzo dopo caricamento di cataloghi ridotti
+    // Registriamo un materiale con ID postClearRes (1300)
+    ScientificMaterialDef m1 = CreateValidBaseCustomDef(postClearRes, "custom:mat/stable_1", "Stable Material 1");
+    reg.RegisterMaterial(m1);
+
+    // Prenotiamo altri 3 ID (1301, 1302, 1303) simulando ID assegnati a blocchi e poi eliminati
+    reg.ReserveNextCustomMaterialId(); // 1301
+    reg.ReserveNextCustomMaterialId(); // 1302
+    ScientificMaterialID reservedLast = reg.ReserveNextCustomMaterialId(); // 1303
+    // Attuale HWM: 1304
+
+    std::error_code ec;
+    auto hwmTestPath = std::filesystem::temp_directory_path() / "fairworld_test_hwm_persistence.json";
+    std::filesystem::remove(hwmTestPath, ec);
+
+    std::string saveErr;
+    if (!reg.SaveCustomMaterialsToJson(hwmTestPath.string(), &saveErr)) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio catalogo per test HWM fallito: " + saveErr;
+        return res;
+    }
+
+    // Ricarichiamo il catalogo in una nuova istanza fresca
+    ScientificMaterialRegistry regFresh;
+    regFresh.Initialize();
+    std::string loadErr;
+    if (!regFresh.LoadCustomMaterialsFromJson(hwmTestPath.string(), &loadErr)) {
+        res.passed = false;
+        res.observedDesc = "Caricamento catalogo per test HWM fallito: " + loadErr;
+        std::filesystem::remove(hwmTestPath, ec);
+        return res;
+    }
+    std::filesystem::remove(hwmTestPath, ec);
+
+    // Il catalogo contiene solo il materiale 1300, ma l'HWM salvato e' 1304.
+    // L'istanza ricaricata NON deve riutilizzare 1301, 1302, 1303!
+    if (regFresh.GetCustomIdHighWaterMark() != reservedLast + 1) {
+        res.passed = false;
+        res.observedDesc = "Mancata conservazione dell'high-water mark dopo ricaricamento di catalogo ridotto: atteso " + 
+                           std::to_string(reservedLast + 1) + ", osservato " + std::to_string(regFresh.GetCustomIdHighWaterMark());
+        return res;
+    }
+
+    ScientificMaterialID freshAlloc = regFresh.ReserveNextCustomMaterialId();
+    if (freshAlloc != reservedLast + 1) {
+        res.passed = false;
+        res.observedDesc = "ID cancellato/intermedio (1301..1303) erroneamente riallocato: osservato " + std::to_string(freshAlloc);
+        return res;
+    }
+
+    // 5. Compatibilità retroattiva con cataloghi legacy senza high-water mark esplicito
+    auto legacyTestPath = std::filesystem::temp_directory_path() / "fairworld_test_legacy_hwm.json";
+    std::filesystem::remove(legacyTestPath, ec);
+    {
+        std::ofstream lf(legacyTestPath);
+        lf << "{\n"
+           << "  \"schemaVersion\": 3,\n"
+           << "  \"materials\": [\n"
+           << "    {\n"
+           << "      \"id\": 1050,\n"
+           << "      \"canonicalId\": \"custom:mat/legacy_sample\",\n"
+           << "      \"displayName\": \"Legacy Sample\",\n"
+           << "      \"density\": { \"state\": \"Known\", \"value\": 3000.0, \"unit\": \"kg/m^3\" }\n"
+           << "    }\n"
+           << "  ]\n"
+           << "}\n";
+    }
+
+    ScientificMaterialRegistry regLegacy;
+    regLegacy.Initialize();
+    if (!regLegacy.LoadCustomMaterialsFromJson(legacyTestPath.string(), &loadErr)) {
+        res.passed = false;
+        res.observedDesc = "Caricamento catalogo legacy fallito: " + loadErr;
+        std::filesystem::remove(legacyTestPath, ec);
+        return res;
+    }
+    std::filesystem::remove(legacyTestPath, ec);
+
+    // In assenza di campo HWM nel file legacy, l'HWM deve essere inizializzato a max(1000, 1050 + 1) = 1051
+    if (regLegacy.GetCustomIdHighWaterMark() != 1051) {
+        res.passed = false;
+        res.observedDesc = "Calcolo HWM di fallback per catalogo legacy errato: atteso 1051, osservato " + 
+                           std::to_string(regLegacy.GetCustomIdHighWaterMark());
+        return res;
+    }
+
+    // 6. Overflow e fallimenti di prenotazione
+    ScientificMaterialRegistry regOverflow;
+    regOverflow.Initialize();
+    regOverflow.SetCustomIdHighWaterMarkForTesting(std::numeric_limits<ScientificMaterialID>::max());
+
+    if (regOverflow.PeekNextCustomMaterialId() != INVALID_SCIENTIFIC_MATERIAL_ID) {
+        res.passed = false;
+        res.observedDesc = "PeekNextCustomMaterialId() in condizione di overflow non ha restituito INVALID_SCIENTIFIC_MATERIAL_ID (0)";
+        return res;
+    }
+
+    ScientificMaterialID overflowReserved = regOverflow.ReserveNextCustomMaterialId();
+    if (overflowReserved != INVALID_SCIENTIFIC_MATERIAL_ID) {
+        res.passed = false;
+        res.observedDesc = "ReserveNextCustomMaterialId() in condizione di overflow non ha restituito INVALID_SCIENTIFIC_MATERIAL_ID (0): osservato " + 
+                           std::to_string(overflowReserved);
+        return res;
+    }
+    // High-water mark deve rimanere a max uint32_t senza wrap-around
+    if (regOverflow.GetCustomIdHighWaterMark() != std::numeric_limits<ScientificMaterialID>::max()) {
+        res.passed = false;
+        res.observedDesc = "HWM alterato o andato in wrap-around dopo fallimento overflow";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Allocazione ID custom validata: 300 prenotazioni concorrenti univoche, HWM persistente dopo Clear e catalogo ridotto, retrocompatibilita' e overflow controllato.";
+    return res;
+}
+
+// =============================================================================
+// P0.2D: SCIENTIFIC MATERIAL PERSISTENCE HARDENING (CUST-23 .. CUST-26)
+// =============================================================================
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test23_ConcurrentSavesSamePathCollisionFreeAndSerialized() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-23";
+    res.testName = "Salvataggi concorrenti sullo stesso percorso: collision-free temp files e serializzazione";
+    res.inputDesc = "4 thread scrittori invocano simultaneamente SaveCustomMaterialsToJson sullo stesso percorso di destinazione";
+    res.expectedDesc = "Tutti i salvataggi completati senza collisioni sui file temporanei, senza sharing violations e con catalogo finale valido e integro";
+
+    std::error_code ec;
+    auto tempFile = std::filesystem::temp_directory_path() / "fairworld_cust23_concurrent_save.json";
+    std::filesystem::remove(tempFile, ec);
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    for (ScientificMaterialID id = 1000; id < 1005; ++id) {
+        ScientificMaterialDef m = CreateValidBaseCustomDef(id, "custom:mat/concurrent_save_" + std::to_string(id), "Mat Save " + std::to_string(id));
+        reg.RegisterMaterial(m);
+    }
+
+    const size_t THREADS = 4;
+    std::vector<std::thread> workers;
+    workers.reserve(THREADS);
+    std::atomic<bool> startFlag{false};
+    std::atomic<size_t> successCount{0};
+    std::atomic<size_t> failureCount{0};
+    std::string firstError;
+    std::mutex errMutex;
+
+    for (size_t t = 0; t < THREADS; ++t) {
+        workers.emplace_back([&]() {
+            while (!startFlag.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            std::string err;
+            if (reg.SaveCustomMaterialsToJson(tempFile.string(), &err)) {
+                successCount.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                failureCount.fetch_add(1, std::memory_order_relaxed);
+                std::lock_guard<std::mutex> lk(errMutex);
+                if (firstError.empty()) firstError = err;
+            }
+        });
+    }
+
+    startFlag.store(true, std::memory_order_release);
+
+    for (auto& w : workers) {
+        w.join();
+    }
+
+    if (failureCount.load() > 0) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio concorrente fallito (" + std::to_string(failureCount.load()) + " fallimenti): " + firstError;
+        std::filesystem::remove(tempFile, ec);
+        return res;
+    }
+
+    // Verifica integrita' del catalogo finale salvato
+    ScientificMaterialRegistry verifyReg;
+    verifyReg.Initialize();
+    std::string loadErr;
+    if (!verifyReg.LoadCustomMaterialsFromJson(tempFile.string(), &loadErr)) {
+        res.passed = false;
+        res.observedDesc = "Caricamento catalogo post salvataggi concorrenti fallito: " + loadErr;
+        std::filesystem::remove(tempFile, ec);
+        return res;
+    }
+    std::filesystem::remove(tempFile, ec);
+
+    if (verifyReg.GetMaterialCount() != 4 + 5) {
+        res.passed = false;
+        res.observedDesc = "Conteggio materiali errato nel file salvato: atteso 9, osservato " + std::to_string(verifyReg.GetMaterialCount());
+        return res;
+    }
+
+    for (ScientificMaterialID id = 1000; id < 1005; ++id) {
+        if (!verifyReg.HasMaterial(id)) {
+            res.passed = false;
+            res.observedDesc = "Materiale " + std::to_string(id) + " assente dal catalogo salvato concorrentemente";
+            return res;
+        }
+    }
+
+    res.passed = true;
+    res.observedDesc = "Salvataggi concorrenti validati: 4/4 completati con successo sullo stesso percorso, zero collisioni temp, catalogo integro.";
+    return res;
+}
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test24_StaleSnapshotOverwriteProtectionAndConcurrentMutations() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-24";
+    res.testName = "Protezione contro sovrascrittura da snapshot obsoleti e mutazioni concorrenti";
+    res.inputDesc = "Tentativo di salvataggio di uno snapshot obsoleto (rev N) su una destinazione gia' avanzata a rev N+K";
+    res.expectedDesc = "Salvataggio dello snapshot obsoleto respinto con errore esplicito; destinazione preserva la revisione piu' recente";
+
+    std::error_code ec;
+    auto targetPath = std::filesystem::temp_directory_path() / "fairworld_cust24_stale_protect.json";
+    std::filesystem::remove(targetPath, ec);
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/stale_test_1000", "Stale 1000");
+    reg.RegisterMaterial(m1000);
+
+    // Snapshot e JSON a revisione R1
+    uint64_t rev1 = reg.GetRevision();
+    std::string err;
+    if (!reg.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio preliminare rev1 fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Mutazione successiva a revisione R2 > R1
+    auto m1001 = CreateValidBaseCustomDef(1001, "custom:mat/stale_test_1001", "Stale 1001");
+    reg.RegisterMaterial(m1001);
+    uint64_t rev2 = reg.GetRevision();
+
+    if (rev2 <= rev1) {
+        res.passed = false;
+        res.observedDesc = "Revisione non avanzata dopo nuova mutazione";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Salvataggio di rev2 sulla destinazione
+    if (!reg.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio rev2 fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Costruzione payload fittizio con rev1 (obsoleto)
+    nlohmann::json staleJson;
+    staleJson["schemaVersion"] = 3;
+    staleJson["customIdHighWaterMark"] = 1001;
+    staleJson["materials"] = nlohmann::json::array();
+
+    std::string staleErr;
+    bool staleSaveResult = ScientificMaterialRegistry::AtomicWriteAndReplaceJson(targetPath, staleJson, rev1, &staleErr);
+
+    if (staleSaveResult) {
+        res.passed = false;
+        res.observedDesc = "AtomicWriteAndReplaceJson avrebbe dovuto respingere il salvataggio con revisione obsoleta (" + 
+                           std::to_string(rev1) + " < " + std::to_string(rev2) + ")";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Verifica che il file sul disco contenga ancora il catalogo aggiornato con materiale 1001
+    ScientificMaterialRegistry verifyReg;
+    verifyReg.Initialize();
+    if (!verifyReg.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Caricamento verifica fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+    std::filesystem::remove(targetPath, ec);
+
+    if (!verifyReg.HasMaterial(1001)) {
+        res.passed = false;
+        res.observedDesc = "File sovrascritto o corrotto: materiale 1001 non trovato dopo tentativo obsoleto";
+        return res;
+    }
+
+    res.passed = true;
+    res.observedDesc = "Protezione sovrascrittura obsoleta validata: salvataggio rev " + std::to_string(rev1) + 
+                       " respinto con successo, preservato stato rev " + std::to_string(rev2);
+    return res;
+}
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test25_FaultInjectionAtomicReplaceTargetPreservationAndZeroResidues() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-25";
+    res.testName = "Fault injection deterministica su temp write e atomic replacement con conservazione target e zero residui";
+    res.inputDesc = "Iniezione guasti: FailTempFileWrite e FailAtomicReplace durante SaveCustomMaterialsToJson";
+    res.expectedDesc = "Salvataggi falliscono in sicurezza, file target originale rimane valido e integro, zero file temporanei orfani";
+
+    std::error_code ec;
+    auto targetPath = std::filesystem::temp_directory_path() / "fairworld_cust25_fault_inject.json";
+    std::filesystem::remove(targetPath, ec);
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    auto m1000 = CreateValidBaseCustomDef(1000, "custom:mat/fault_orig_1000", "Original Valid 1000");
+    reg.RegisterMaterial(m1000);
+
+    std::string err;
+    if (!reg.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Creazione iniziale target valido fallita: " + err;
+        return res;
+    }
+
+    auto countTmpFiles = [&]() -> size_t {
+        size_t count = 0;
+        std::error_code itEc;
+        for (const auto& entry : std::filesystem::directory_iterator(targetPath.parent_path(), itEc)) {
+            if (entry.path().filename().string().rfind("fairworld_cust25_fault_inject.json.tmp", 0) == 0) {
+                count++;
+            }
+        }
+        return count;
+    };
+
+    // Caso 1: Simulazione fallimento scrittura file temporaneo
+    reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::FailTempFileWrite);
+    auto m1001 = CreateValidBaseCustomDef(1001, "custom:mat/fault_fail_1001", "Fail 1001");
+    reg.RegisterMaterial(m1001);
+
+    bool saveFailedWrite = reg.SaveCustomMaterialsToJson(targetPath.string(), &err);
+    if (saveFailedWrite) {
+        res.passed = false;
+        res.observedDesc = "SaveCustomMaterialsToJson avrebbe dovuto fallire con FailTempFileWrite";
+        reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::None);
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    if (countTmpFiles() > 0) {
+        res.passed = false;
+        res.observedDesc = "Rilevati file temporanei orfani dopo FailTempFileWrite";
+        reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::None);
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Caso 2: Simulazione fallimento sostituzione atomica (ReplaceFileW)
+    reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::FailAtomicReplace);
+    bool saveFailedReplace = reg.SaveCustomMaterialsToJson(targetPath.string(), &err);
+    if (saveFailedReplace) {
+        res.passed = false;
+        res.observedDesc = "SaveCustomMaterialsToJson avrebbe dovuto fallire con FailAtomicReplace";
+        reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::None);
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    if (countTmpFiles() > 0) {
+        res.passed = false;
+        res.observedDesc = "Rilevati file temporanei orfani dopo FailAtomicReplace";
+        reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::None);
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Reset della fault injection
+    reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::None);
+
+    // Verifica che il file target originale sia RIMASTO INTEGRO (contiene solo 1000)
+    ScientificMaterialRegistry regCheck;
+    regCheck.Initialize();
+    if (!regCheck.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "File target originale corrotto dopo fallimenti simulati: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    if (!regCheck.HasMaterial(1000) || regCheck.GetMaterial(1000).displayName != "Original Valid 1000") {
+        res.passed = false;
+        res.observedDesc = "Materiale 1000 originale corrotto o alterato nel target";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    if (regCheck.HasMaterial(1001)) {
+        res.passed = false;
+        res.observedDesc = "Target contiene materiale 1001 nonostante i fallimenti simulati";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Salvataggio legittimo finale
+    if (!reg.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio post-fault injection fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+    std::filesystem::remove(targetPath, ec);
+
+    res.passed = true;
+    res.observedDesc = "Fault injection validata: target originale preservato al 100% su errori di scrittura e sostituzione, zero residui temporanei orfani.";
+    return res;
+}
+
+CustomScientificTestResult CustomScientificMaterialContractTests::Test26_DurableHighWaterMarkPersistenceCrashRecoveryAndLegacyCompat() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-26";
+    res.testName = "Durabilita' High-Water Mark: prenotazione durevole, recovery riavvio e compatibilita' legacy";
+    res.inputDesc = "Prenotazione durevole via ReserveDurableCustomMaterialId, simulazione crash/riavvio, rollback I/O e caricamento legacy";
+    res.expectedDesc = "ID garantito persistito su disco prima della restituzione, HWM non regredisce mai post-crash, zero riciclo ID, rollback atomico su errore";
+
+    std::error_code ec;
+    auto targetPath = std::filesystem::temp_directory_path() / "fairworld_cust26_durable_hwm.json";
+    std::filesystem::remove(targetPath, ec);
+
+    ScientificMaterialRegistry reg;
+    reg.Initialize();
+
+    // 1. Prenotazione durevole di un ID custom
+    std::string err;
+    ScientificMaterialID durableId1 = reg.ReserveDurableCustomMaterialId(targetPath.string(), &err);
+    if (durableId1 != 1000) {
+        res.passed = false;
+        res.observedDesc = "ReserveDurableCustomMaterialId ha restituito ID inatteso: atteso 1000, osservato " + std::to_string(durableId1);
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Verifica che l'ID sia confermato durevole su disco
+    if (!ScientificMaterialRegistry::IsCustomIdConfirmedDurable(1000, targetPath.string())) {
+        res.passed = false;
+        res.observedDesc = "IsCustomIdConfirmedDurable(1000) ha restituito false dopo ReserveDurableCustomMaterialId riuscito";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Verifica che l'ID successivo (1001) NON sia confermato durevole
+    if (ScientificMaterialRegistry::IsCustomIdConfirmedDurable(1001, targetPath.string())) {
+        res.passed = false;
+        res.observedDesc = "IsCustomIdConfirmedDurable(1001) ha restituito true prima della sua prenotazione";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // Verifica HWM su file
+    ScientificMaterialID hwmOnFile = ScientificMaterialRegistry::ReadDurableCustomIdHighWaterMark(targetPath.string());
+    if (hwmOnFile != 1001) {
+        res.passed = false;
+        res.observedDesc = "ReadDurableCustomIdHighWaterMark errato su disco: atteso 1001, osservato " + std::to_string(hwmOnFile);
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // 2. Simulazione crash di processo e recovery in una nuova istanza
+    {
+        ScientificMaterialRegistry regRecovered;
+        regRecovered.Initialize();
+        if (!regRecovered.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Recovery del catalogo durevole fallito al riavvio: " + err;
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+
+        if (regRecovered.GetCustomIdHighWaterMark() != 1001) {
+            res.passed = false;
+            res.observedDesc = "HWM non ripristinato correttamente al riavvio: atteso 1001, osservato " + 
+                               std::to_string(regRecovered.GetCustomIdHighWaterMark());
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+
+        // Il prossimo ID allocato deve essere 1001 (1000 non deve mai essere riciclato!)
+        ScientificMaterialID nextAlloc = regRecovered.ReserveNextCustomMaterialId();
+        if (nextAlloc != 1001) {
+            res.passed = false;
+            res.observedDesc = "Violazione anti-riciclo ID: allocato " + std::to_string(nextAlloc) + " anziche' 1001";
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+    }
+
+    // 3. Rollback atomico di prenotazione durevole su errore I/O
+    ScientificMaterialID hwmBeforeFail = reg.GetCustomIdHighWaterMark();
+    reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::FailAtomicReplace);
+
+    ScientificMaterialID failedDurable = reg.ReserveDurableCustomMaterialId(targetPath.string(), &err);
+    reg.SetPersistenceFaultInjectionForTesting(ScientificMaterialRegistry::PersistenceFaultMode::None);
+
+    if (failedDurable != INVALID_SCIENTIFIC_MATERIAL_ID) {
+        res.passed = false;
+        res.observedDesc = "ReserveDurableCustomMaterialId avrebbe dovuto restituire INVALID_SCIENTIFIC_MATERIAL_ID su errore I/O";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    if (reg.GetCustomIdHighWaterMark() != hwmBeforeFail) {
+        res.passed = false;
+        res.observedDesc = "HWM non ripristinato dopo fallimento prenotazione durevole: atteso " + 
+                           std::to_string(hwmBeforeFail) + ", osservato " + std::to_string(reg.GetCustomIdHighWaterMark());
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // 4. Compatibilita' con catalogo legacy (schemaVersion 2 senza customIdHighWaterMark)
+    auto legacyPath = std::filesystem::temp_directory_path() / "fairworld_cust26_legacy.json";
+    {
+        std::ofstream lf(legacyPath);
+        lf << "{\n"
+           << "  \"schemaVersion\": 2,\n"
+           << "  \"materials\": [\n"
+           << "    {\n"
+           << "      \"id\": 1050,\n"
+           << "      \"canonicalId\": \"custom:mat/legacy_durable\",\n"
+           << "      \"displayName\": \"Legacy Durable Mat\"\n"
+           << "    }\n"
+           << "  ]\n"
+           << "}\n";
+    }
+
+    ScientificMaterialID legacyHwm = ScientificMaterialRegistry::ReadDurableCustomIdHighWaterMark(legacyPath.string());
+    if (legacyHwm != 1051) {
+        res.passed = false;
+        res.observedDesc = "ReadDurableCustomIdHighWaterMark per catalogo legacy errato: atteso 1051, osservato " + std::to_string(legacyHwm);
+        std::filesystem::remove(targetPath, ec);
+        std::filesystem::remove(legacyPath, ec);
+        return res;
+    }
+
+    // 5. Invariante multi-sessione e preservazione HWM su commit successivi
+    {
+        ScientificMaterialRegistry regSession2;
+        regSession2.Initialize();
+        if (!regSession2.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Caricamento sessione 2 fallito: " + err;
+            std::filesystem::remove(targetPath, ec);
+            std::filesystem::remove(legacyPath, ec);
+            return res;
+        }
+
+        // Verifica che la nuova sessione possa salvare sullo stesso percorso senza blocco spurio da lastSavedRevision
+        if (!regSession2.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Salvataggio nuova sessione bloccato spuriamente da revisione sessione precedente: " + err;
+            std::filesystem::remove(targetPath, ec);
+            std::filesystem::remove(legacyPath, ec);
+            return res;
+        }
+
+        // Verifica che nessun commit successivo possa abbassare l'HWM consolidato
+        ScientificMaterialID hwmBefore = ScientificMaterialRegistry::ReadDurableCustomIdHighWaterMark(targetPath.string());
+        nlohmann::json staleHwmPayload;
+        staleHwmPayload["schemaVersion"] = 3;
+        staleHwmPayload["customIdHighWaterMark"] = 1000; // inferiore a 1001 consolidato
+        staleHwmPayload["materials"] = nlohmann::json::array();
+
+        if (!ScientificMaterialRegistry::AtomicWriteAndReplaceJson(targetPath, staleHwmPayload, 0, &err)) {
+            res.passed = false;
+            res.observedDesc = "AtomicWriteAndReplaceJson fallito durante test invariante HWM: " + err;
+            std::filesystem::remove(targetPath, ec);
+            std::filesystem::remove(legacyPath, ec);
+            return res;
+        }
+
+        ScientificMaterialID hwmAfter = ScientificMaterialRegistry::ReadDurableCustomIdHighWaterMark(targetPath.string());
+        if (hwmAfter < hwmBefore) {
+            res.passed = false;
+            res.observedDesc = "Violazione invariante: l'HWM su disco e' diminuito da " + 
+                               std::to_string(hwmBefore) + " a " + std::to_string(hwmAfter);
+            std::filesystem::remove(targetPath, ec);
+            std::filesystem::remove(legacyPath, ec);
+            return res;
+        }
+    }
+
+    std::filesystem::remove(targetPath, ec);
+    std::filesystem::remove(legacyPath, ec);
+
+    res.passed = true;
+    res.observedDesc = "Durabilita' HWM validata: prenotazione durevole garantita, recovery post-crash conforme, rollback atomico, retrocompatibilita' legacy, multi-sessione e preservazione HWM monotono su disco verificati.";
+    return res;
+}
+
+// -----------------------------------------------------------------------------
+// TEST 27: Rilevamento modifiche concorrenti tra cataloghi distinti: protezione lost update e sostituzione intenzionale
+// -----------------------------------------------------------------------------
+CustomScientificTestResult CustomScientificMaterialContractTests::Test27_ConcurrentCatalogsLostUpdateProtectionAndIntentionalOverwrite() {
+    CustomScientificTestResult res;
+    res.testId = "CUST-27";
+    res.testName = "Protezione Lost Update tra cataloghi concorrenti e sostituzione intenzionale";
+    res.inputDesc = "Registry A e B caricano stesso catalogo; B muta e salva; A muta e tenta salvataggio normale (rifiutato), poi sostituzione intenzionale (accettata)";
+    res.expectedDesc = "Salvataggio normale di A respinto senza cancellare modifiche di B; modifiche di B preservate; sostituzione intenzionale con forceOverwrite riuscita";
+
+    auto targetPath = std::filesystem::temp_directory_path() / "fairworld_cust27_lost_update.json";
+    std::error_code ec;
+    std::filesystem::remove(targetPath, ec);
+
+    std::string err;
+
+    // 1. Setup catalogo iniziale con materiale 1000
+    {
+        ScientificMaterialRegistry regInit;
+        regInit.Initialize();
+        auto m0 = CreateValidBaseCustomDef(1000, "custom:mat/cust27_base", "Initial Base Material");
+        regInit.RegisterMaterial(m0);
+        if (!regInit.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Salvataggio iniziale fallito: " + err;
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+    }
+
+    // 2. Registry A e Registry B caricano entrambi lo stesso catalogo
+    ScientificMaterialRegistry regA;
+    regA.Initialize();
+    if (!regA.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Caricamento Registry A fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    ScientificMaterialRegistry regB;
+    regB.Initialize();
+    if (!regB.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Caricamento Registry B fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // 3. Registry B modifica un materiale, registra un nuovo materiale 1001 e salva
+    auto mB1000 = regB.GetMaterial(1000);
+    mB1000.displayName = "Modified by B";
+    regB.RegisterMaterial(mB1000, true);
+    auto mB1001 = CreateValidBaseCustomDef(1001, "custom:mat/cust27_b", "Added by B");
+    regB.RegisterMaterial(mB1001);
+
+    if (!regB.SaveCustomMaterialsToJson(targetPath.string(), &err)) {
+        res.passed = false;
+        res.observedDesc = "Salvataggio Registry B fallito: " + err;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // 4. Registry A (senza aver ricaricato B) modifica materiale 1000 e tenta salvataggio normale
+    auto mA1000 = regA.GetMaterial(1000);
+    mA1000.displayName = "Modified by A (stale)";
+    regA.RegisterMaterial(mA1000, true);
+    auto mA1002 = CreateValidBaseCustomDef(1002, "custom:mat/cust27_a", "Added by A");
+    regA.RegisterMaterial(mA1002);
+
+    std::string errA;
+    bool normalSaveA = regA.SaveCustomMaterialsToJson(targetPath.string(), &errA, false /* forceOverwrite */);
+
+    if (normalSaveA) {
+        res.passed = false;
+        res.observedDesc = "Violazione requisito: il salvataggio normale di A e' riuscito sovrascrivendo silenziosamente le modifiche di B!";
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // 5. Verifica che le modifiche di B sul disco siano integre e NON cancellate
+    {
+        ScientificMaterialRegistry verifyB;
+        verifyB.Initialize();
+        if (!verifyB.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Caricamento verifica B fallito: " + err;
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+
+        if (!verifyB.HasMaterial(1001)) {
+            res.passed = false;
+            res.observedDesc = "Modifiche di B cancellate: materiale 1001 non trovato sul disco!";
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+
+        if (!verifyB.HasMaterial(1000) || verifyB.GetMaterial(1000).displayName != "Modified by B") {
+            res.passed = false;
+            res.observedDesc = "Modifiche di B alterate o cancellate su materiale 1000: atteso 'Modified by B'";
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+    }
+
+    // 6. Sostituzione intenzionale da parte di A con forceOverwrite = true
+    bool forceSaveA = regA.SaveCustomMaterialsToJson(targetPath.string(), &errA, true /* forceOverwrite */);
+    if (!forceSaveA) {
+        res.passed = false;
+        res.observedDesc = "Sostituzione intenzionale di A fallita con forceOverwrite = true: " + errA;
+        std::filesystem::remove(targetPath, ec);
+        return res;
+    }
+
+    // 7. Verifica finale dello stato dopo sostituzione intenzionale
+    {
+        ScientificMaterialRegistry verifyA;
+        verifyA.Initialize();
+        if (!verifyA.LoadCustomMaterialsFromJson(targetPath.string(), &err)) {
+            res.passed = false;
+            res.observedDesc = "Caricamento verifica finale A fallito: " + err;
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+
+        if (!verifyA.HasMaterial(1002)) {
+            res.passed = false;
+            res.observedDesc = "Sostituzione intenzionale non consolidata: materiale 1002 non trovato!";
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+
+        if (!verifyA.HasMaterial(1000) || verifyA.GetMaterial(1000).displayName != "Modified by A (stale)") {
+            res.passed = false;
+            res.observedDesc = "Sostituzione intenzionale non consolidata su materiale 1000";
+            std::filesystem::remove(targetPath, ec);
+            return res;
+        }
+    }
+
+    std::filesystem::remove(targetPath, ec);
+
+    res.passed = true;
+    res.observedDesc = "Lost update protetto con successo: salvataggio normale di A respinto, modifiche di B preservate su disco, sostituzione intenzionale con forceOverwrite pienamente convalidata.";
     return res;
 }
 

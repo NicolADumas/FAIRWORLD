@@ -182,6 +182,15 @@ public:
         return m_activeClipMask;
     }
 
+    // --- Diagnostica Runtime UV-PAINT (BM-UV-DEBUG-04) ---
+    struct UVPaintDiagResult {
+        uint32_t insideChanged = 0;
+        uint32_t outsideChanged = 0;
+        uint32_t totalChanged = 0;
+    };
+    static void EnableUVPaintDiagnostic(bool enable = true);
+    static UVPaintDiagResult GetLastUVPaintDiagResult();
+
     // --- Geometric Stamp Tool (BM-PAINT-STAMP-02) ---
     bool ApplyStampClipped(uint32_t layerId, glm::vec2 centerCoords, const StampDefinition& stamp, const PixelClipCallback& clipCb = nullptr);
     bool ApplyStamp(uint32_t layerId, glm::vec2 centerCoords, const StampDefinition& stamp) {

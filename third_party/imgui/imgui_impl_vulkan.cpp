@@ -117,6 +117,8 @@
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_vulkan.h"
 #include <stdio.h>
+#include <iostream>
+#include "vulkan/VulkanForensicAudit.h"
 #ifndef IM_MAX
 #define IM_MAX(A, B)    (((A) >= (B)) ? (A) : (B))
 #endif
@@ -1675,6 +1677,12 @@ void ImGui_ImplVulkanH_CreateWindowCommandBuffers(VkPhysicalDevice physical_devi
             check_vk_result(err);
             err = vkCreateSemaphore(device, &info, allocator, &fsd->RenderCompleteSemaphore);
             check_vk_result(err);
+
+            std::cerr << "\n[VULKAN FORENSIC AUDIT] ImGui_ImplVulkanH_CreateWindowCommandBuffers: created semaphores for wd=" << wd
+                      << " ImageAcquired: 0x" << std::hex << (uint64_t)fsd->ImageAcquiredSemaphore
+                      << " RenderComplete: 0x" << (uint64_t)fsd->RenderCompleteSemaphore << std::dec << "\n"
+                      << "  Phase: " << fw::forensic::GetPhaseName(fw::forensic::GetPhase()) << "\n"
+                      << "  Callstack:\n" << fw::forensic::CaptureCallstack(1, 14) << "\n";
         }
     }
 }
@@ -1838,6 +1846,14 @@ void ImGui_ImplVulkanH_CreateWindowSwapChain(VkPhysicalDevice physical_device, V
     // Create Framebuffer
     if (wd->UseDynamicRendering == false)
     {
+        if (wd->RenderPass == VK_NULL_HANDLE) {
+            std::cerr << "\n[VULKAN FORENSIC AUDIT] ImGui_ImplVulkanH_CreateWindowSwapChain: wd->RenderPass is VK_NULL_HANDLE!\n"
+                      << "  Device: 0x" << std::hex << (uint64_t)device << std::dec << "\n"
+                      << "  wd ptr: " << wd << "\n"
+                      << "  Width: " << wd->Width << ", Height: " << wd->Height << "\n"
+                      << "  Phase: " << fw::forensic::GetPhaseName(fw::forensic::GetPhase()) << "\n"
+                      << "  Callstack:\n" << fw::forensic::CaptureCallstack(1, 14) << "\n";
+        }
         VkImageView attachment[1];
         VkFramebufferCreateInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1981,6 +1997,12 @@ void ImGui_ImplVulkanH_DestroyFrame(VkDevice device, ImGui_ImplVulkanH_Frame* fd
 
 void ImGui_ImplVulkanH_DestroyFrameSemaphores(VkDevice device, ImGui_ImplVulkanH_FrameSemaphores* fsd, const VkAllocationCallbacks* allocator)
 {
+    if (fsd->ImageAcquiredSemaphore != VK_NULL_HANDLE || fsd->RenderCompleteSemaphore != VK_NULL_HANDLE) {
+        std::cerr << "\n[VULKAN FORENSIC AUDIT] ImGui_ImplVulkanH_DestroyFrameSemaphores: device=0x"
+                  << std::hex << (uint64_t)device
+                  << " ImageAcquired=0x" << (uint64_t)fsd->ImageAcquiredSemaphore
+                  << " RenderComplete=0x" << (uint64_t)fsd->RenderCompleteSemaphore << std::dec << "\n";
+    }
     vkDestroySemaphore(device, fsd->ImageAcquiredSemaphore, allocator);
     vkDestroySemaphore(device, fsd->RenderCompleteSemaphore, allocator);
     fsd->ImageAcquiredSemaphore = fsd->RenderCompleteSemaphore = VK_NULL_HANDLE;

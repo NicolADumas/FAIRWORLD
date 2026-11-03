@@ -11,6 +11,7 @@
 #include "PlanetMapperState.h"
 #include "BlockMakerState.h"
 #include "SolarSystemState.h"
+#include "MaterialAtlasState.h"
 #include "RuntimeManager.h"
 #include <iostream>
 #include "imgui.h"
@@ -79,7 +80,7 @@ void HubState::Render() {
             ImVec4 hoverColor;
             ImVec4 textColor;
         };
-        TileInfo tiles[8] = {
+        TileInfo tiles[9] = {
             { "FAIRWORLD\n[ Avvia Progetto JSON ]",         {0.3f,0.55f,0.9f,1.f}, {0.45f,0.7f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
             { "LA FORGE\n[ Officina 3D ]",                  {1.0f,0.55f,0.1f,1.f}, {1.f,0.7f,0.3f,1.f},   {0.1f,0.1f,0.1f,1.f} },
             { "PHYSICS LAB\n[ Calibrazione Materiali ]",     {0.2f,0.75f,0.3f,1.f}, {0.3f,0.9f,0.4f,1.f},  {0.05f,0.05f,0.05f,1.f} },
@@ -87,10 +88,11 @@ void HubState::Render() {
             { "PLANET MAPPER\n[ Configura Globo & Sistema ]",{0.55f,0.3f,0.85f,1.f},{0.7f,0.45f,1.f,1.f},  {1.f,1.f,1.f,1.f} },
             { "BLOCK MAKER\n[ PBR & Lookdev ]",              {0.1f,0.7f,0.75f,1.f}, {0.2f,0.85f,0.9f,1.f}, {0.05f,0.05f,0.05f,1.f} },
             { "CONNESSIONE DISPOSITIVI\n[ Hardware ]",       {0.7f,0.7f,0.7f,1.f}, {0.85f,0.85f,0.85f,1.f},{0.1f,0.1f,0.1f,1.f} },
-            { "SOLAR SYSTEM\n[ Mappa Spaziale ]",            {0.9f,0.2f,0.5f,1.f}, {1.0f,0.3f,0.6f,1.f},   {1.f,1.f,1.f,1.f} }
+            { "SOLAR SYSTEM\n[ Mappa Spaziale ]",            {0.9f,0.2f,0.5f,1.f}, {1.0f,0.3f,0.6f,1.f},   {1.f,1.f,1.f,1.f} },
+            { "MATERIAL ATLAS\n[ Catalogo Scientifico PBR ]",{0.18f,0.62f,0.60f,1.f},{0.25f,0.78f,0.75f,1.f},{1.f,1.f,1.f,1.f} }
         };
 
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 9; i++) {
             int col = i % cols;
             int row = i / cols;
             float px = gridStartX + col * (channelWidth + padding);
@@ -139,6 +141,10 @@ void HubState::Render() {
                         m_context->engine->SetGameMode(GameMode::SolarSystem);
                         m_context->engine->ForceGameState(GameState::PLAYING);
                         m_context->stateManager->PushState(std::make_unique<SolarSystemState>(m_context));
+                        break;
+                    case 8: // MATERIAL ATLAS
+                        m_context->engine->SetGameMode(GameMode::Hub);
+                        m_context->stateManager->PushState(std::make_unique<fw::MaterialAtlasState>(m_context));
                         break;
                 }
             }

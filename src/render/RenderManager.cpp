@@ -17,6 +17,7 @@
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
 #include "VulkanResourceTracker.h"
+#include "vulkan/VulkanForensicAudit.h"
 #include <algorithm>
 #include <imgui.h>
 #include <imgui_impl_win32.h>
@@ -48,12 +49,14 @@ RenderManager::~RenderManager() {
 }
 
 bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* hinstance) {
+    fw::forensic::SetPhase(fw::forensic::Phase::Startup);
     m_isVRMode = isVRMode;
     m_hwnd = hwnd;
 
     m_core = std::make_unique<fw::VulkanCore>();
     if (!m_core->InitDevice(isVRMode, xrManager, hwnd, hinstance)) return false;
     
+    fw::forensic::SetupDebugMessenger(m_core->GetInstance());
     fw::VulkanResourceTracker::Get().Initialize(m_core->GetDevice());
     
     m_memory = std::make_unique<fw::VulkanMemory>(m_core.get());
@@ -88,8 +91,8 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     // FASE 3.3: Creazione della Swapchain (Gia' gestita da VulkanCore)
     // FASE 3.4, 4 e 5: Creazione del Render Loop, Pipeline e UBO
     fw::SwapchainConfig swapConfig = m_core->BuildSwapchainConfig(m_hwnd);
-    if (!CreateRenderPass(swapConfig.surfaceFormat.format)) return false;
     if (!m_core->InitSwapchain(swapConfig)) return false;
+    if (!CreateRenderPass(m_core->GetSwapchainImageFormat())) return false;
     
     if (!CreateCommandPoolAndBuffer()) return false;
 
@@ -133,6 +136,7 @@ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* 
     InitImGui(hwnd);
     
     m_isFullyInitialized = true; // Da questo momento, RecreateSwapchain è sicuro
+    fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
     std::cout << "[VULKAN] Motore Grafico pronto. Pronti a renderizzare!" << std::endl;
 
     return true;
@@ -288,6 +292,7 @@ bool RenderManager::CreateRenderPass(VkFormat swapchainImageFormat) {
         std::cerr << "[VULKAN ERROR] vkCreateRenderPass fallito!" << std::endl;
         return false;
     }
+    m_renderPassFormat = swapchainImageFormat;
     std::cout << "[VULKAN] RenderPass creato (con Depth Buffer)." << std::endl;
     return true;
 }
@@ -296,21 +301,27 @@ bool RenderManager::CreateRenderPass(VkFormat swapchainImageFormat) {
 // STEP 2: FRAMEBUFFERS (Collegano Swapchain e RenderPass)
 // ---------------------------------------------------------
 bool RenderManager::CreateFramebuffers() {
-    if (m_renderPass == VK_NULL_HANDLE) {
-        OutputDebugStringA("[RenderManager] ERROR: m_renderPass is VK_NULL_HANDLE during CreateFramebuffers!\n");
+    if (m_renderPass == VK_NULL_HANDLE || m_core == nullptr || m_core->GetDevice() == VK_NULL_HANDLE ||
+        m_depthImageView == VK_NULL_HANDLE || m_renderPassFormat != m_core->GetSwapchainImageFormat()) {
+        std::cerr << "\n[VULKAN FORENSIC][CreateFramebuffers REJECTED]\n"
+                  << "  m_renderPass       : 0x" << std::hex << (uint64_t)m_renderPass << std::dec << "\n"
+                  << "  m_core             : " << m_core.get() << "\n"
+                  << "  m_depthImageView   : 0x" << std::hex << (uint64_t)m_depthImageView << std::dec << "\n"
+                  << "  m_renderPassFormat : " << m_renderPassFormat << "\n"
+                  << "  swapchainFormat    : " << (m_core ? m_core->GetSwapchainImageFormat() : VK_FORMAT_UNDEFINED) << "\n"
+                  << "  Phase              : " << fw::forensic::GetPhaseName(fw::forensic::GetPhase()) << "\n"
+                  << "  Callstack:\n" << fw::forensic::CaptureCallstack(1, 10) << "\n";
         return false;
     }
 
-    char debugMsg[1024];
-    sprintf_s(debugMsg, "[DEBUG] CreateFramebuffers chiamato! m_renderPass (RAW) = 0x%llx\n", (unsigned long long)(uintptr_t)m_renderPass);
-    OutputDebugStringA(debugMsg);
-    std::cout << debugMsg;
+    const auto& imageViews = m_core->GetSwapchainImageViews();
+    if (imageViews.empty()) return false;
 
-    m_framebuffers.resize(m_core->GetSwapchainImageViews().size());
-    for (size_t i = 0; i < m_core->GetSwapchainImageViews().size(); i++) {
+    m_framebuffers.resize(imageViews.size(), VK_NULL_HANDLE);
+    for (size_t i = 0; i < imageViews.size(); i++) {
         // Ogni framebuffer ha: color attachment + depth attachment
         std::array<VkImageView, 2> attachments = {
-            m_core->GetSwapchainImageViews()[i],
+            imageViews[i],
             m_depthImageView          // FIX: depth buffer!
         };
 
@@ -322,31 +333,17 @@ bool RenderManager::CreateFramebuffers() {
         framebufferInfo.width           = m_core->GetSwapchainExtent().width;
         framebufferInfo.height          = m_core->GetSwapchainExtent().height;
         framebufferInfo.layers          = 1;
-        
-        // --- INVESTIGATE RENDERPASS VALIDATION ANOMALY ---
-        sprintf_s(debugMsg, "[DEBUG-LIFECYCLE] CreateFramebuffer[%zu] Handles:\n"
-                            "  m_core->GetDevice()        = 0x%llx\n"
-                            "  m_renderPass               = 0x%llx\n"
-                            "  m_core->GetSwapchain()     = 0x%llx\n"
-                            "  ImageView[0]               = 0x%llx\n"
-                            "  DepthImageView             = 0x%llx\n"
-                            "  framebufferInfo.renderPass = 0x%llx\n",
-                            i,
-                            (unsigned long long)(uintptr_t)m_core->GetDevice(),
-                            (unsigned long long)(uintptr_t)m_renderPass,
-                            (unsigned long long)(uintptr_t)m_core->GetSwapchain(),
-                            (unsigned long long)(uintptr_t)attachments[0],
-                            (unsigned long long)(uintptr_t)attachments[1],
-                            (unsigned long long)(uintptr_t)framebufferInfo.renderPass);
-        OutputDebugStringA(debugMsg);
-        std::cout << debugMsg;
 
-        if (m_renderPass == VK_NULL_HANDLE || m_core->GetDevice() == VK_NULL_HANDLE) {
-            OutputDebugStringA("[CRITICAL ERROR] Device or RenderPass is NULL!\n");
+        if (fw::forensic::InterceptCreateFramebuffer("RenderManager::CreateFramebuffers", m_core->GetDevice(), &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) {
+            for (size_t j = 0; j < i; j++) {
+                if (m_framebuffers[j] != VK_NULL_HANDLE) {
+                    fw::forensic::InterceptDestroyFramebuffer("RenderManager::CreateFramebuffers[rollback]", m_core->GetDevice(), m_framebuffers[j], nullptr);
+                    m_framebuffers[j] = VK_NULL_HANDLE;
+                }
+            }
+            m_framebuffers.clear();
             return false;
         }
-
-        if (vkCreateFramebuffer(m_core->GetDevice(), &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) return false;
     }
     return true;
 }
@@ -871,15 +868,20 @@ bool RenderManager::CreateCommandPoolAndBuffer() {
 // STEP 4: SINCRONIZZAZIONE E RENDER LOOP (Il semaforo)
 // ---------------------------------------------------------
 bool RenderManager::CreateSyncObjects() {
+    // Se i semafori e fence sono già stati creati, preservali per evitare sovrascrittura di handle attivi
+    if (!m_imageAvailableSemaphores.empty() && !m_renderFinishedSemaphores.empty() && !m_inFlightFences.empty()) {
+        return true;
+    }
+
     uint32_t swapchainImageCount = (uint32_t)m_core->GetSwapchainImages().size();
 
     // imageAvailable: 1 per FRAME IN VOLO (protetto dal fence, consumato da vkQueueSubmit)
-    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_imageAvailableSemaphores.assign(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     // renderFinished: 1 per IMMAGINE SWAPCHAIN (indicizzato da imageIndex)
     // La swapchain restituisce imageIndex solo quando la sua presentazione e' finita
     // => renderFinishedSemaphores[imageIndex] e' garantito libero ogni volta
-    m_renderFinishedSemaphores.resize(swapchainImageCount);
-    m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    m_renderFinishedSemaphores.assign(swapchainImageCount, VK_NULL_HANDLE);
+    m_inFlightFences.assign(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -888,17 +890,43 @@ bool RenderManager::CreateSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(m_core->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
+        std::string semName = "ImageAvailableSem_" + std::to_string(i);
+        if (fw::forensic::InterceptCreateSemaphore("RenderManager::CreateSyncObjects", semName.c_str(), "RenderManager", m_core->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
             vkCreateFence(m_core->GetDevice(), &fenceInfo, nullptr, &m_inFlightFences[i]) != VK_SUCCESS) {
+            for (auto sem : m_imageAvailableSemaphores) {
+                if (sem != VK_NULL_HANDLE) {
+                    fw::forensic::InterceptDestroySemaphore("RenderManager::CreateSyncObjects[rollback]", m_core->GetDevice(), sem, nullptr);
+                }
+            }
+            m_imageAvailableSemaphores.clear();
+            for (auto fence : m_inFlightFences) {
+                if (fence != VK_NULL_HANDLE) vkDestroyFence(m_core->GetDevice(), fence, nullptr);
+            }
+            m_inFlightFences.clear();
             return false;
         }
-        fw::VulkanResourceTracker::Get().TrackCreate(m_imageAvailableSemaphores[i], "ImageAvailableSem_" + std::to_string(i), "RenderManager");
     }
     for (size_t i = 0; i < swapchainImageCount; i++) {
-        if (vkCreateSemaphore(m_core->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
+        std::string semName = "RenderFinishedSem_" + std::to_string(i);
+        if (fw::forensic::InterceptCreateSemaphore("RenderManager::CreateSyncObjects", semName.c_str(), "RenderManager", m_core->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
+            for (auto sem : m_imageAvailableSemaphores) {
+                if (sem != VK_NULL_HANDLE) {
+                    fw::forensic::InterceptDestroySemaphore("RenderManager::CreateSyncObjects[rollback]", m_core->GetDevice(), sem, nullptr);
+                }
+            }
+            m_imageAvailableSemaphores.clear();
+            for (auto fence : m_inFlightFences) {
+                if (fence != VK_NULL_HANDLE) vkDestroyFence(m_core->GetDevice(), fence, nullptr);
+            }
+            m_inFlightFences.clear();
+            for (auto sem : m_renderFinishedSemaphores) {
+                if (sem != VK_NULL_HANDLE) {
+                    fw::forensic::InterceptDestroySemaphore("RenderManager::CreateSyncObjects[rollback]", m_core->GetDevice(), sem, nullptr);
+                }
+            }
+            m_renderFinishedSemaphores.clear();
             return false;
         }
-        fw::VulkanResourceTracker::Get().TrackCreate(m_renderFinishedSemaphores[i], "RenderFinishedSem_" + std::to_string(i), "RenderManager");
     }
     return true;
 }
@@ -1455,7 +1483,8 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 
 void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
     if (m_deviceLost) return;
-    if (m_core->GetDevice() == VK_NULL_HANDLE) return;
+    if (m_core == nullptr || m_core->GetDevice() == VK_NULL_HANDLE || m_core->GetSwapchain() == VK_NULL_HANDLE) return;
+    if (m_renderPass == VK_NULL_HANDLE || m_framebuffers.empty() || m_imageAvailableSemaphores.empty() || m_inFlightFences.empty()) return;
     
     VkResult waitResult = vkWaitForFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
     if (waitResult == VK_ERROR_DEVICE_LOST) {
@@ -1482,7 +1511,11 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         return;
     }
 
-    vkResetFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame]);
+    if (imageIndex >= m_framebuffers.size() || imageIndex >= m_renderFinishedSemaphores.size()) {
+        std::cerr << "[VULKAN ERROR] Indice immagine swapchain fuori limite (" << imageIndex << ")!" << std::endl;
+        return;
+    }
+
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
 
     ReclaimTerrainStaging(m_currentFrame);
@@ -1490,7 +1523,12 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     // REGISTRAZIONE DEI COMANDI
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer(m_commandBuffers[m_currentFrame], &beginInfo);
+    VkResult beginRes = vkBeginCommandBuffer(m_commandBuffers[m_currentFrame], &beginInfo);
+    if (beginRes != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] vkBeginCommandBuffer fallito con codice: " << beginRes << std::endl;
+        if (beginRes == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+        return;
+    }
 
     // === TERRAIN COMPUTE DISPATCH (deve stare FUORI dal Render Pass) ===
     // Carica i dati sulla GPU e lancia il Compute Shader solo quando i dati sono dirty.
@@ -1594,7 +1632,12 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     }
 
     vkCmdEndRenderPass(m_commandBuffers[m_currentFrame]);
-    vkEndCommandBuffer(m_commandBuffers[m_currentFrame]);
+    VkResult endRes = vkEndCommandBuffer(m_commandBuffers[m_currentFrame]);
+    if (endRes != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] vkEndCommandBuffer fallito con codice: " << endRes << std::endl;
+        if (endRes == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+        return;
+    }
 
     // Submit: attende imageAvailable[currentFrame], segnala renderFinished[imageIndex]
     VkSubmitInfo submitInfo{};
@@ -1615,13 +1658,45 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
 
     {
         std::lock_guard<std::mutex> lock((*m_core->GetQueueMutex()));
+
+        // Reset del fence SOLO immediatamente prima della sottomissione effettiva
+        VkResult resetRes = vkResetFences(m_core->GetDevice(), 1, &m_inFlightFences[m_currentFrame]);
+        if (resetRes != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] vkResetFences fallito con codice: " << resetRes << std::endl;
+            if (resetRes == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+            return;
+        }
+
         VkResult submitResult = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]);
         if (submitResult == VK_ERROR_DEVICE_LOST) {
             std::cerr << "[VULKAN FATAL] Device perso durante vkQueueSubmit!" << std::endl;
             m_deviceLost = true;
             return;
         } else if (submitResult != VK_SUCCESS) {
-            std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer!" << std::endl;
+            std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer! Codice: " << submitResult << std::endl;
+
+            // Non tentare recovery se il device e' perso
+            if (m_deviceLost) return;
+
+            // La sottomissione principale e' fallita senza consumare m_imageAvailableSemaphores.
+            // Eseguiamo una submission di recupero vuota che attende su m_imageAvailableSemaphores (consumandolo)
+            // e segnala la fence in-flight, evitando deadlock al frame successivo.
+            VkPipelineStageFlags waitStagesRecovery[] = { VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
+            VkSubmitInfo recoverySubmit{};
+            recoverySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            recoverySubmit.waitSemaphoreCount = 1;
+            recoverySubmit.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrame];
+            recoverySubmit.pWaitDstStageMask = waitStagesRecovery;
+
+            VkResult recoveryRes = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &recoverySubmit, m_inFlightFences[m_currentFrame]);
+            if (recoveryRes == VK_ERROR_DEVICE_LOST) {
+                std::cerr << "[VULKAN FATAL] Device perso durante recovery vkQueueSubmit!\n";
+                m_deviceLost = true;
+            } else if (recoveryRes != VK_SUCCESS) {
+                std::cerr << "[VULKAN FATAL] Sottomissione di recupero fallita con codice " << recoveryRes << "! Imposto device lost per prevenire attese indefinite.\n";
+                m_deviceLost = true;
+            }
+            return; // Interrompi: non presentare l'immagine non renderizzata
         }
     }
 
@@ -2138,8 +2213,12 @@ void RenderManager::LoadGLBMesh(const std::string& filepath) {
 
 void RenderManager::Shutdown() {
     m_isFullyInitialized = false; // Blocca RecreateSwapchain durante lo shutdown
+    fw::forensic::SetPhase(fw::forensic::Phase::Shutdown);
     if (m_core && m_core->GetDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_core->GetDevice());
+        if (!m_inFlightFences.empty()) {
+            vkWaitForFences(m_core->GetDevice(), static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
+        }
 
         if (m_blockPropertiesBuffer != VK_NULL_HANDLE) {
             vmaDestroyBuffer(m_memory->GetAllocator(), m_blockPropertiesBuffer, m_blockPropertiesAlloc);
@@ -2164,9 +2243,32 @@ void RenderManager::Shutdown() {
         if (m_ormImage    != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_ormImage,    m_ormImageAllocation);    m_ormImage    = VK_NULL_HANDLE; }
         if (m_forgeDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(m_core->GetDevice(), m_forgeDescriptorSetLayout, nullptr); m_forgeDescriptorSetLayout = VK_NULL_HANDLE; }
 
-        // Depth buffer cleanup
-        if (m_depthImageView   != VK_NULL_HANDLE) { vkDestroyImageView(m_core->GetDevice(), m_depthImageView, nullptr);   m_depthImageView = VK_NULL_HANDLE; }
-        if (m_depthImage       != VK_NULL_HANDLE) { vmaDestroyImage(m_memory->GetAllocator(), m_depthImage, m_depthImageAllocation); m_depthImage = VK_NULL_HANDLE; m_depthImageAllocation = VK_NULL_HANDLE; }
+        // Framebuffers e Depth buffer cleanup (ordine conforme Vulkan: FB prima di DepthImageView)
+        CleanupSwapchain();
+
+        // 1. Distruzione Swapchain PRIMA dei semafori:
+        // Ritira tutte le operazioni di presentazione WSI garantendo che nessun semaforo sia ancora referenziato.
+        m_core->DestroySwapchain();
+
+        // 2. Distruzione semafori e fence a swapchain inattiva
+        for (auto sem : m_imageAvailableSemaphores) {
+            if (sem != VK_NULL_HANDLE) {
+                fw::forensic::InterceptDestroySemaphore("RenderManager::Shutdown:imageAvailable", m_core->GetDevice(), sem, nullptr);
+            }
+        }
+        m_imageAvailableSemaphores.clear();
+
+        for (auto sem : m_renderFinishedSemaphores) {
+            if (sem != VK_NULL_HANDLE) {
+                fw::forensic::InterceptDestroySemaphore("RenderManager::Shutdown:renderFinished", m_core->GetDevice(), sem, nullptr);
+            }
+        }
+        m_renderFinishedSemaphores.clear();
+
+        for (auto fence : m_inFlightFences) {
+            if (fence != VK_NULL_HANDLE) vkDestroyFence(m_core->GetDevice(), fence, nullptr);
+        }
+        m_inFlightFences.clear();
 
     if (m_graphicsPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(m_core->GetDevice(), m_graphicsPipeline, nullptr); m_graphicsPipeline = VK_NULL_HANDLE; }
     if (m_portalPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(m_core->GetDevice(), m_portalPipeline, nullptr); m_portalPipeline = VK_NULL_HANDLE; }
@@ -2198,29 +2300,6 @@ void RenderManager::Shutdown() {
             m_glbPipelineLayout = VK_NULL_HANDLE;
         }
 
-        for (auto sem : m_imageAvailableSemaphores) {
-            if (sem != VK_NULL_HANDLE) {
-                vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
-                fw::VulkanResourceTracker::Get().TrackDestroy(sem);
-            }
-        }
-        m_imageAvailableSemaphores.clear();
-
-        for (auto sem : m_renderFinishedSemaphores) {
-            if (sem != VK_NULL_HANDLE) {
-                vkDestroySemaphore(m_core->GetDevice(), sem, nullptr);
-                fw::VulkanResourceTracker::Get().TrackDestroy(sem);
-            }
-        }
-        m_renderFinishedSemaphores.clear();
-
-        for (auto fence : m_inFlightFences) {
-            if (fence != VK_NULL_HANDLE) vkDestroyFence(m_core->GetDevice(), fence, nullptr);
-        }
-        m_inFlightFences.clear();
-
-
-
         if (m_descriptorSetLayout != VK_NULL_HANDLE) {
             vkDestroyDescriptorSetLayout(m_core->GetDevice(), m_descriptorSetLayout, nullptr);
             m_descriptorSetLayout = VK_NULL_HANDLE;
@@ -2229,13 +2308,10 @@ void RenderManager::Shutdown() {
             vkDestroyCommandPool(m_core->GetDevice(), m_commandPool, nullptr);
             m_commandPool = VK_NULL_HANDLE;
         }
-        for (auto framebuffer : m_framebuffers) {
-            vkDestroyFramebuffer(m_core->GetDevice(), framebuffer, nullptr);
-        }
-        m_framebuffers.clear();
         if (m_renderPass != VK_NULL_HANDLE) {
             vkDestroyRenderPass(m_core->GetDevice(), m_renderPass, nullptr);
             m_renderPass = VK_NULL_HANDLE;
+            m_renderPassFormat = VK_FORMAT_UNDEFINED;
         }
         for (auto& pair : m_chunkBuffers) {
             if (pair.second.vertexBuffer != VK_NULL_HANDLE) vmaDestroyBuffer(m_memory->GetAllocator(), pair.second.vertexBuffer, pair.second.vertexBufferAllocation);
@@ -2272,6 +2348,10 @@ void RenderManager::Shutdown() {
         m_memory.reset();
 
         // 3. Destroy Logical Device, Swapchain, Instance (Core owns these!)
+        fw::forensic::InterceptDestroyDevice("RenderManager::Shutdown", m_core->GetDevice(), nullptr);
+        VkInstance instance = m_core->GetInstance();
+        m_core->DestroyDeviceOnly();
+        fw::forensic::DestroyDebugMessenger(instance);
         m_core.reset();
     }
 }
@@ -3067,14 +3147,70 @@ VkDescriptorSet RenderManager::GetOrCreateImGuiTextureDescriptor(uint32_t layerI
 // BM-UV-PAINTER-MG01: PAINTER PREVIEW GPU TEXTURE & BINDING
 // ---------------------------------------------------------
 
-void RenderManager::CleanupPainterPreviewResources() {
-    if (!m_core || m_core->GetDevice() == VK_NULL_HANDLE) return;
+bool RenderManager::CleanupPainterPreviewResources() {
+    if (!m_core || m_core->GetDevice() == VK_NULL_HANDLE) return true;
     VkDevice device = m_core->GetDevice();
 
+    // Se non ci sono risorse Painter allocate, non c'e' nulla da sincronizzare o rilasciare
+    if (m_painterPreviewImage == VK_NULL_HANDLE &&
+        m_painterPreview2DView == VK_NULL_HANDLE &&
+        m_painterPreviewArrayView == VK_NULL_HANDLE &&
+        m_blockMakerDescriptorPool == VK_NULL_HANDLE &&
+        m_painterPreviewImGuiDescriptor == VK_NULL_HANDLE) {
+        m_painterPreviewCleanupPending = false;
+        m_painterPreviewWidth = 0;
+        m_painterPreviewHeight = 0;
+        return true;
+    }
+
+    // 1. Sincronizzazione GPU: attendi il completamento dei frame in volo che utilizzano le risorse Painter
+    bool syncSuccess = true;
+    if (!m_inFlightFences.empty()) {
+        VkResult waitRes = vkWaitForFences(device, static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
+        if (waitRes != VK_SUCCESS) {
+            std::cerr << "[VULKAN ERROR] CleanupPainterPreviewResources: vkWaitForFences failed with code " << waitRes << ". Tentativo fallback vkDeviceWaitIdle...\n";
+            VkResult idleRes = vkDeviceWaitIdle(device);
+            if (idleRes != VK_SUCCESS) {
+                std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: anche fallback vkDeviceWaitIdle fallito con codice " << idleRes << "!\n";
+                syncSuccess = false;
+                if (waitRes == VK_ERROR_DEVICE_LOST || idleRes == VK_ERROR_DEVICE_LOST) {
+                    m_deviceLost = true;
+                }
+            } else {
+                std::cout << "[VULKAN INFO] CleanupPainterPreviewResources: sincronizzazione GPU completata con successo tramite fallback vkDeviceWaitIdle.\n";
+            }
+        }
+    }
+
+    // 2. Disaccoppia SEMPRE i descriptor dal renderer per evitare riferimenti dangling
+    if (m_blockMakerRenderer) {
+        m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
+        m_blockMakerRenderer->SetPainterDescriptorSets(nullptr);
+    }
+
+    // Se la sincronizzazione GPU e' fallita durante l'esecuzione attiva (runtime valido),
+    // non distruggere le risorse GPU immediatamente per evitare crash hardware / access violation.
+    // L'ownership rimane esplicita in RenderManager (m_painterPreviewCleanupPending = true) per la distruzione differita a Shutdown.
+    if (!syncSuccess && m_isFullyInitialized) {
+        std::cerr << "[VULKAN WARN] CleanupPainterPreviewResources: distruzione immediata interrotta per sicurezza. Risorse trattenute per shutdown (m_painterPreviewCleanupPending=true).\n";
+        m_painterPreviewCleanupPending = true;
+        return false;
+    }
+
+    // 3. Rilascia il descriptor ImGui per il 2D canvas
     if (m_painterPreviewImGuiDescriptor != VK_NULL_HANDLE) {
         ImGui_ImplVulkan_RemoveTexture(m_painterPreviewImGuiDescriptor);
         m_painterPreviewImGuiDescriptor = VK_NULL_HANDLE;
     }
+
+    // 4. Distruggi il Descriptor Pool dedicato (distrugge implicitamente i descriptor sets)
+    if (m_blockMakerDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, m_blockMakerDescriptorPool, nullptr);
+        m_blockMakerDescriptorPool = VK_NULL_HANDLE;
+        m_blockMakerDescriptorSets.clear();
+    }
+
+    // 5. Distruggi le Image View (2D canvas view e 2D array view)
     if (m_painterPreview2DView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, m_painterPreview2DView, nullptr);
         m_painterPreview2DView = VK_NULL_HANDLE;
@@ -3083,23 +3219,18 @@ void RenderManager::CleanupPainterPreviewResources() {
         vkDestroyImageView(device, m_painterPreviewArrayView, nullptr);
         m_painterPreviewArrayView = VK_NULL_HANDLE;
     }
+
+    // 6. Distruggi l'immagine GPU
     if (m_painterPreviewImage != VK_NULL_HANDLE) {
         vmaDestroyImage(m_memory->GetAllocator(), m_painterPreviewImage, m_painterPreviewImageAllocation);
         m_painterPreviewImage = VK_NULL_HANDLE;
         m_painterPreviewImageAllocation = VK_NULL_HANDLE;
     }
-    if (m_blockMakerDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, m_blockMakerDescriptorPool, nullptr);
-        m_blockMakerDescriptorPool = VK_NULL_HANDLE;
-        m_blockMakerDescriptorSets.clear();
-    }
+
     m_painterPreviewWidth = 0;
     m_painterPreviewHeight = 0;
-
-    if (m_blockMakerRenderer) {
-        m_blockMakerRenderer->SetDefaultDescriptorSets(&m_memory->GetForgeDescriptorSets());
-        m_blockMakerRenderer->SetPainterDescriptorSets(nullptr);
-    }
+    m_painterPreviewCleanupPending = false;
+    return true;
 }
 
 void RenderManager::UpdatePainterPreviewTexture(const void* pixelData, uint32_t width, uint32_t height) {
@@ -3337,7 +3468,9 @@ void RenderManager::UpdateBlockPropertiesSSBO(const std::vector<fw::BlockPropert
 
 void RenderManager::CleanupSwapchain() {
     for (auto framebuffer : m_framebuffers) {
-        vkDestroyFramebuffer(m_core->GetDevice(), framebuffer, nullptr);
+        if (framebuffer != VK_NULL_HANDLE) {
+            fw::forensic::InterceptDestroyFramebuffer("RenderManager::CleanupSwapchain", m_core->GetDevice(), framebuffer, nullptr);
+        }
     }
     m_framebuffers.clear();
 
@@ -3350,7 +3483,9 @@ void RenderManager::CleanupSwapchain() {
 }
 
 void RenderManager::RecreateSwapchain() {
-    if (m_core->GetDevice() == VK_NULL_HANDLE || m_hwnd == nullptr || m_renderPass == VK_NULL_HANDLE) return;
+    if (!m_isFullyInitialized || m_core == nullptr || m_core->GetDevice() == VK_NULL_HANDLE || m_hwnd == nullptr) return;
+
+    fw::forensic::SetPhase(fw::forensic::Phase::Resize);
 
     RECT rect;
     GetClientRect((HWND)m_hwnd, &rect);
@@ -3359,19 +3494,47 @@ void RenderManager::RecreateSwapchain() {
 
     // Se la finestra è minimizzata o ha dimensione zero, non bloccare il thread principale.
     // Il prossimo frame utile chiamerà NotifyResize() di nuovo automaticamente.
-    if (width == 0 || height == 0) return;
+    if (width == 0 || height == 0) {
+        fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
+        return;
+    }
 
     vkDeviceWaitIdle(m_core->GetDevice());
+    if (!m_inFlightFences.empty()) {
+        vkWaitForFences(m_core->GetDevice(), static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
+    }
 
     CleanupSwapchain();
 
     m_core->DestroySwapchain();
     fw::SwapchainConfig swapConfig = m_core->BuildSwapchainConfig(m_hwnd);
-    m_core->InitSwapchain(swapConfig);
+    if (!m_core->InitSwapchain(swapConfig)) {
+        fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
+        return;
+    }
     
-    CreateDepthResources();
-    CreateFramebuffers();
+    // Verifica compatibilita' del RenderPass: se il formato swapchain e' cambiato, ricrea
+    if (m_renderPass != VK_NULL_HANDLE && m_renderPassFormat != m_core->GetSwapchainImageFormat()) {
+        vkDestroyRenderPass(m_core->GetDevice(), m_renderPass, nullptr);
+        m_renderPass = VK_NULL_HANDLE;
+        m_renderPassFormat = VK_FORMAT_UNDEFINED;
+    }
 
+    // Assicura che il RenderPass esista e sia valido
+    if (m_renderPass == VK_NULL_HANDLE) {
+        if (!CreateRenderPass(m_core->GetSwapchainImageFormat())) {
+            fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
+            return;
+        }
+    }
+
+    // Ricrea Depth buffer dimensionato per la nuova swapchain
+    if (!CreateDepthResources()) {
+        fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
+        return;
+    }
+
+    // Distrugge e ricrea le pipeline per l'extent aggiornato
     if (m_graphicsPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_core->GetDevice(), m_graphicsPipeline, nullptr);
         m_graphicsPipeline = VK_NULL_HANDLE;
@@ -3415,6 +3578,44 @@ void RenderManager::RecreateSwapchain() {
     CreateGraphicsPipeline();
     CreateForgePipeline(); // Aggiorna anche il BlockMakerRenderer con extent aggiornato
     CreateGLBPipeline();
+
+    // Framebuffers creati con Swapchain, RenderPass e Depth resources validi
+    if (!CreateFramebuffers()) {
+        fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
+        return;
+    }
+
+    uint32_t swapchainImageCount = static_cast<uint32_t>(m_core->GetSwapchainImages().size());
+    // Invariante Vulkan: imageAvailable è legato a MAX_FRAMES_IN_FLIGHT ed è indipendente dalla swapchain.
+    // Con vkDeviceWaitIdle già eseguito, i semafori esistenti sono garantiti unsignaled.
+    if (m_imageAvailableSemaphores.empty()) {
+        m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            std::string semName = "ImageAvailableSem_" + std::to_string(i);
+            fw::forensic::InterceptCreateSemaphore("RenderManager::RecreateSwapchain", semName.c_str(), "RenderManager", m_core->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]);
+        }
+    }
+
+    // renderFinished: solo se il conteggio immagini swapchain è variato riallineiamo i semafori
+    if (m_renderFinishedSemaphores.size() != swapchainImageCount) {
+        for (auto sem : m_renderFinishedSemaphores) {
+            if (sem != VK_NULL_HANDLE) {
+                fw::forensic::InterceptDestroySemaphore("RenderManager::RecreateSwapchain", m_core->GetDevice(), sem, nullptr);
+            }
+        }
+        m_renderFinishedSemaphores.assign(swapchainImageCount, VK_NULL_HANDLE);
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        for (size_t i = 0; i < swapchainImageCount; i++) {
+            std::string semName = "RenderFinishedSem_" + std::to_string(i);
+            fw::forensic::InterceptCreateSemaphore("RenderManager::RecreateSwapchain", semName.c_str(), "RenderManager", m_core->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]);
+        }
+    }
+
+    m_currentFrame = 0;
+    fw::forensic::SetPhase(fw::forensic::Phase::Runtime);
 
     std::cout << "[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (" << width << "x" << height << ")" << std::endl;
 }

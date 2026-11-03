@@ -68,6 +68,7 @@ struct RuntimeLifecycleSnapshot
 struct VulkanFinalSnapshot
 {
     uint32_t liveSemaphores = 0;
+    uint32_t validationErrors = 0;
     // In futuro: altri handle Vulkan tracciati (pipeline, descriptor pool, ecc.)
 };
 

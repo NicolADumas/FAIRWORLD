@@ -25,7 +25,11 @@ void VulkanResourceTracker::Shutdown() {
 }
 
 void VulkanResourceTracker::TrackCreate(VkSemaphore semaphore, const std::string& name, const std::string& owner) {
+    if (semaphore == VK_NULL_HANDLE) return;
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_semaphores.find(semaphore) != m_semaphores.end()) {
+        return; // Already tracked
+    }
     m_semaphores[semaphore] = { name, owner };
     m_semaphoresCreated++;
     m_ownerStats[owner].created++;

@@ -9,6 +9,9 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
+#include <shared_mutex>
+#include <mutex>
+#include <filesystem>
 #include <glm/glm.hpp>
 #include "json.hpp"
 
@@ -143,6 +146,32 @@ struct ScientificTensor3x3 {
     std::string unit = "";
     PropertyState state = PropertyState::Unknown;
 };
+
+inline bool operator==(const ScientificQuantity& a, const ScientificQuantity& b) {
+    return a.state == b.state &&
+           a.value == b.value &&
+           a.unit == b.unit &&
+           a.temperatureKelvin == b.temperatureKelvin &&
+           a.pressurePascal == b.pressurePascal &&
+           a.quality == b.quality &&
+           a.source == b.source;
+}
+
+inline bool operator==(const ScientificCurve& a, const ScientificCurve& b) {
+    return a.independentVar == b.independentVar &&
+           a.xUnit == b.xUnit &&
+           a.yUnit == b.yUnit &&
+           a.points == b.points &&
+           a.state == b.state &&
+           a.source == b.source;
+}
+
+inline bool operator==(const ScientificTensor3x3& a, const ScientificTensor3x3& b) {
+    return a.components == b.components &&
+           a.isAnisotropic == b.isAnisotropic &&
+           a.unit == b.unit &&
+           a.state == b.state;
+}
 
 // =============================================================================
 // MA-03.1: SCIENTIFIC TAXONOMY, RELATIONS & COMPOSITION (v2)
@@ -928,10 +957,13 @@ struct ScientificMaterialDef;
 
 struct RegistrySnapshot {
     uint32_t snapshotId = 0;
+    uint64_t revision = 0;
     std::unordered_map<ScientificMaterialID, ScientificMaterialDef> materials;
     std::unordered_map<std::string, ScientificMaterialID> canonicalToIdMap;
     std::vector<ScientificPropertyDefinition> propertyDefinitions;
     std::unordered_map<ScientificPropertyID, PropertyKeyIndex> propertyUriToIndex;
+
+    uint64_t GetRevision() const { return revision; }
 
     const ScientificPropertyDefinition* GetPropertyDef(const ScientificPropertyID& uri) const {
         auto it = propertyUriToIndex.find(uri);
@@ -943,6 +975,8 @@ struct RegistrySnapshot {
 
     const ScientificMaterialDef* GetMaterial(ScientificMaterialID id) const;
     const ScientificMaterialDef* GetMaterial(const std::string& canon) const;
+    std::vector<const ScientificMaterialDef*> GetSelectableMaterials(ScientificMaterialID currentSelection = 0) const;
+    const std::unordered_map<ScientificMaterialID, ScientificMaterialDef>& GetAllMaterials() const { return materials; }
 };
 
 class RegistrySnapshotHandle {
@@ -1013,6 +1047,9 @@ struct ScientificMaterialDef {
     }
 };
 
+bool operator==(const ScientificMaterialDef& a, const ScientificMaterialDef& b);
+bool operator!=(const ScientificMaterialDef& a, const ScientificMaterialDef& b);
+
 inline const ScientificMaterialDef* RegistrySnapshot::GetMaterial(ScientificMaterialID id) const {
     auto it = materials.find(id);
     if (it != materials.end()) return &it->second;
@@ -1023,6 +1060,25 @@ inline const ScientificMaterialDef* RegistrySnapshot::GetMaterial(const std::str
     auto it = canonicalToIdMap.find(canon);
     if (it != canonicalToIdMap.end()) return GetMaterial(it->second);
     return nullptr;
+}
+
+inline std::vector<const ScientificMaterialDef*> RegistrySnapshot::GetSelectableMaterials(ScientificMaterialID currentSelection) const {
+    std::vector<const ScientificMaterialDef*> result;
+    result.reserve(materials.size());
+
+    for (const auto& [id, def] : materials) {
+        if (def.lifecycleState == MaterialLifecycleState::Published && def.enabledInBlockMaker) {
+            result.push_back(&def);
+        } else if (id == currentSelection && currentSelection != 0) {
+            result.push_back(&def);
+        }
+    }
+
+    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) {
+        return a->id < b->id;
+    });
+
+    return result;
 }
 
 // =============================================================================
@@ -1176,8 +1232,10 @@ public:
     bool HasMaterial(ScientificMaterialID id) const;
     bool HasMaterial(const std::string& canonicalId) const;
 
-    const ScientificMaterialDef& GetMaterial(ScientificMaterialID id) const;
-    const ScientificMaterialDef& GetMaterial(const std::string& canonicalId) const;
+    // P0.2A: Query con semantica per valore. Restituisce una copia indipendente,
+    // eliminando il rischio di dangling references a seguito di successive mutazioni del registry.
+    ScientificMaterialDef GetMaterial(ScientificMaterialID id) const;
+    ScientificMaterialDef GetMaterial(const std::string& canonicalId) const;
     ScientificMaterialID GetMaterialIdByCanonical(const std::string& canonicalId) const;
 
     // MA-02.3: Risoluzione gerarchica delle proprietà (override esplicito -> ereditarietà dal registry -> Unknown)
@@ -1217,25 +1275,29 @@ public:
     std::vector<ScientificMaterialID> GetMaterialsByAggregationState(AggregationState state) const;
     std::vector<ScientificRelation> GetRelationsForMaterial(ScientificMaterialID id) const;
 
-    const std::unordered_map<ScientificMaterialID, ScientificMaterialDef>& GetAllMaterials() const {
-        return m_materials;
-    }
-    size_t GetMaterialCount() const { return m_materials.size(); }
+    // P0.2A: Restituisce una copia per valore dell'insieme dei materiali (memory-safe contro mutazioni del registro).
+    // Per iterazioni zero-copy protette da snapshot, utilizzare GetSnapshotHandle()->GetAllMaterials().
+    std::unordered_map<ScientificMaterialID, ScientificMaterialDef> GetAllMaterials() const;
+    size_t GetMaterialCount() const;
 
     void Clear();
 
     // =========================================================================
-    // MA-03.3: SCIENTIFIC MATERIAL AUTHORING FOUNDATION (Custom Materials Backend)
+    // MA-03.3 & P0.2C: SCIENTIFIC MATERIAL AUTHORING FOUNDATION & STABLE CUSTOM IDS
     // =========================================================================
 
-    // Assegnazione stabile del prossimo identificativo numerico per materiali custom (>= 1000).
-    // Implementa il contratto max(ID) + 1 calcolato sull'insieme dei materiali registrati
-    // (preservando Draft, Published e Deprecated). Gli ID allocati sono non-riutilizzabili
-    // per tutta la durata del catalogo.
-    // NOTA CONTRATTUALE PERSISTENZA: Trattandosi di un'architettura file-based pura senza
-    // database centrale o autorita' remota distribuita, la perdita completa del file catalogo
-    // comporta anche la perdita dello storico degli ID allocati, salvo ripristino da backup.
+    // Consultazione deterministica del prossimo identificativo custom (senza avanzamento high-water mark)
+    ScientificMaterialID PeekNextCustomMaterialId() const;
     ScientificMaterialID AllocateNextCustomMaterialId() const;
+
+    // Prenotazione atomica e thread-safe del prossimo ID custom (avanza l'high-water mark)
+    ScientificMaterialID ReserveNextCustomMaterialId();
+
+    // Lettura dell'high-water mark corrente
+    ScientificMaterialID GetCustomIdHighWaterMark() const;
+
+    // Helper per test contrattuali (simulazione overflow)
+    void SetCustomIdHighWaterMarkForTesting(ScientificMaterialID hwm);
 
     // Validazione preventiva di una singola definizione materiale
     bool ValidateMaterialDefinition(const ScientificMaterialDef& def, std::string* outError = nullptr) const;
@@ -1250,27 +1312,79 @@ public:
     // Gestione disponibilità Block Maker
     bool SetEnabledInBlockMaker(ScientificMaterialID id, bool enabled, std::string* outError = nullptr);
 
-    // Filtro specializzato per la selezione in Block Maker (Published && enabledInBlockMaker)
-    // Include sempre currentSelection (se valido) per evitare falsi avvisi orfani su asset preesistenti
-    std::vector<const ScientificMaterialDef*> GetSelectableMaterials(ScientificMaterialID currentSelection = 0) const;
+    // P0.2A: Versione con semantica per valore, immune da qualsiasi invalidazione o dangling pointer.
+    // Per ottenere puntatori const ScientificMaterialDef* garantiti, utilizzare GetSnapshotHandle()->GetSelectableMaterials().
+    std::vector<ScientificMaterialDef> GetSelectableMaterialCopies(ScientificMaterialID currentSelection = 0) const;
 
     // Query per stato di ciclo di vita
     std::vector<ScientificMaterialID> GetMaterialsByLifecycle(MaterialLifecycleState state) const;
 
+    // P0.2B: Revisione monotona del registro scientifico.
+    uint64_t GetRevision() const;
+
     // Persistenza separata catalogo custom (con controlli di collisione e rollback atomico).
-    // Su Windows implementa sostituzione sicura con ReplaceFileW / MoveFileExW senza eliminazione
-    // preventiva della destinazione (process-crash consistency). Non garantisce durabilita' contro
-    // interruzioni di alimentazione (power-loss) non supportate dall'hardware sottostante.
     bool LoadCustomMaterialsFromJson(const std::string& filepath, std::string* outError = nullptr);
-    bool SaveCustomMaterialsToJson(const std::string& filepath, std::string* outError = nullptr) const;
+    bool SaveCustomMaterialsToJson(
+        const std::string& filepath, 
+        std::string* outError = nullptr, 
+        bool forceOverwrite = false
+    ) const;
+
+    // Generazione corrente del catalogo caricato da disco (per optimistic concurrency control)
+    uint64_t GetLoadedCatalogGeneration() const;
+
+    // =========================================================================
+    // P0.2D: SCIENTIFIC MATERIAL PERSISTENCE HARDENING & DURABLE CUSTOM IDS
+    // =========================================================================
+
+    // Modalità fault injection per test deterministici di robustezza I/O
+    enum class PersistenceFaultMode : uint8_t {
+        None = 0,
+        FailTempFileWrite,
+        FailAtomicReplace
+    };
+    static void SetPersistenceFaultInjectionForTesting(PersistenceFaultMode mode);
+
+    // Prenotazione atomica e durevole: garantisce che l'HWM sia confermato su disco prima di restituire l'ID
+    ScientificMaterialID ReserveDurableCustomMaterialId(const std::string& catalogFilepath, std::string* outError = nullptr);
+
+    // Verifica se un ID è confermato durevole sul catalogo persistito
+    static bool IsCustomIdConfirmedDurable(ScientificMaterialID id, const std::string& catalogFilepath, std::string* outError = nullptr);
+
+    // Lettura HWM durevole direttamente da file persistito senza mutare il registry
+    static ScientificMaterialID ReadDurableCustomIdHighWaterMark(const std::string& catalogFilepath, std::string* outError = nullptr);
+
+    // Helper statico per scrittura e sostituzione atomica con crash-consistency e serializzazione per destinazione
+    static bool AtomicWriteAndReplaceJson(
+        const std::filesystem::path& targetPath,
+        const nlohmann::json& j,
+        uint64_t saveRevision,
+        std::string* outError = nullptr,
+        uint64_t registryInstanceId = 0,
+        uint64_t expectedGeneration = 0,
+        bool forceOverwrite = false,
+        uint64_t* outCommittedGeneration = nullptr
+    );
 
 private:
     void RegisterStandardMaterials();
+    void RegisterStandardMaterialsLocked();
+    void ClearLocked();
+    bool RegisterMaterialLocked(const ScientificMaterialDef& def, bool allowUpdate);
+    bool PublishMaterialLocked(ScientificMaterialID id, std::string* outError);
+    bool DeprecateMaterialLocked(ScientificMaterialID id, std::string* outError);
+    bool SetEnabledInBlockMakerLocked(ScientificMaterialID id, bool enabled, std::string* outError);
+    bool ValidateMaterialDefinitionLocked(const ScientificMaterialDef& def, std::string* outError) const;
 
+    mutable std::shared_mutex m_mutex;
     std::unordered_map<ScientificMaterialID, ScientificMaterialDef> m_materials;
     std::unordered_map<std::string, ScientificMaterialID> m_canonicalToIdMap;
     ScientificMaterialDef m_fallbackMaterial;
     std::shared_ptr<RegistrySnapshot> m_activeSnapshot;
+    uint64_t m_revision = 0;
+    uint64_t m_instanceId = 0;
+    mutable uint64_t m_loadedCatalogGeneration = 0;
+    ScientificMaterialID m_customIdHighWaterMark = CUSTOM_SCIENTIFIC_MATERIAL_ID_BASE;
 };
 
 } // namespace fw

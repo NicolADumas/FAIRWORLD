@@ -168,6 +168,7 @@ private:
 
     // --- NUOVI COMPONENTI (FASE 3 - ULTIMA PARTE) ---
     VkRenderPass m_renderPass{ VK_NULL_HANDLE };
+    VkFormat m_renderPassFormat{ VK_FORMAT_UNDEFINED };
     std::vector<VkFramebuffer> m_framebuffers;
     
     
@@ -291,6 +292,7 @@ private:
     uint32_t m_painterPreviewHeight{ 0 };
     VkDescriptorPool m_blockMakerDescriptorPool{ VK_NULL_HANDLE };
     std::vector<VkDescriptorSet> m_blockMakerDescriptorSets;
+    bool m_painterPreviewCleanupPending{ false };
 
     // --- DEPTH BUFFER (risolve il problema delle facce trasparenti) ---
     VkImage m_depthImage{ VK_NULL_HANDLE };
@@ -348,7 +350,8 @@ public:
     // --- BM-UV-PAINTER-MG01: Painter Preview GPU Texture & Material Binding ---
     void UpdatePainterPreviewTexture(const void* pixelData, uint32_t width, uint32_t height);
     VkDescriptorSet GetPainterPreviewImGuiDescriptor() const { return m_painterPreviewImGuiDescriptor; }
-    void CleanupPainterPreviewResources();
+    bool CleanupPainterPreviewResources();
+    bool HasPendingPainterCleanup() const { return m_painterPreviewCleanupPending; }
 
     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
     struct VulkanChunkBuffer {

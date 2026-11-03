@@ -7,6 +7,7 @@
 #include <thread>
 #include <atomic>
 #include <string>
+#include <filesystem>
 
 #include "SharedContext.h"
 #include "StateManager.h"
@@ -18,6 +19,8 @@
 #include "ChunkEditorState.h"
 #include "BlockMakerState.h"
 #include "SolarSystemState.h"
+#include "MaterialAtlasState.h"
+#include "MaterialAppearanceRegistry.h"
 #include "WorldProjectManager.h"
 #include "DeviceManager.h"
 #include "DiagnosticsManager.h"
@@ -34,6 +37,7 @@
 #include "core/memory/MemorySystem.h"
 #include "core/memory/RuntimeMemoryDiagnostics.h"
 #include "world/terrain/validation/TerrainValidation.h"
+#include "vulkan/VulkanForensicAudit.h"
 
 // OPT-01: L'esecuzione automatica di TerrainValidation all'avvio e' disabilitata
 // per garantire avvio rapido in Debug e Release. Eseguibile su richiesta con CLI: --validate-terrain
@@ -178,6 +182,16 @@ int main(int argc, char* argv[]) {
         } else if (std::string(argv[i]) == "--vr") {
             enableVr = true;
             std::cout << "[VR] Opzione esplicita --vr attivata da CLI.\n";
+        } else if (std::string(argv[i]) == "--disable-implicit-layers") {
+#if defined(_WIN32)
+            _putenv("VK_LOADER_LAYERS_DISABLE=~implicit~");
+            std::cout << "[VULKAN] Opzione esplicita --disable-implicit-layers: impostato VK_LOADER_LAYERS_DISABLE=~implicit~.\n";
+#endif
+        } else if (std::string(argv[i]) == "--disable-twitch-layer") {
+#if defined(_WIN32)
+            _putenv("VK_LOADER_LAYERS_DISABLE=*twitch*");
+            std::cout << "[VULKAN] Esclusione selettiva layer Twitch: impostato VK_LOADER_LAYERS_DISABLE=*twitch*.\n";
+#endif
         } else if (std::string(argv[i]) == "--memory-diagnostics") {
             fw::memory::InitializeGlobalMemory();
             std::cout << "[MEM-06] Esecuzione suite diagnostica runtime richiesta da CLI...\n";
@@ -208,7 +222,8 @@ int main(int argc, char* argv[]) {
     std::cout << "5. PLANET MAPPER (Configura Globo & Sistema)\n";
     std::cout << "6. BLOCK MAKER (Editor Blocchi e Materiali PBR)\n";
     std::cout << "7. SOLAR SYSTEM (Mappa Spaziale)\n";
-    std::cout << "Scelta [0-7] (predefinito 0): ";
+    std::cout << "8. MATERIAL ATLAS (Catalogo Scientifico PBR)\n";
+    std::cout << "Scelta [0-8] (predefinito 0): ";
     
     int choice = 0;
     std::string input;
@@ -275,8 +290,19 @@ int main(int argc, char* argv[]) {
     materialRegistry.Initialize();
     materialRegistry.LoadFromJson("assets/definitions/materials.json");
 
+    fw::MaterialAppearanceRegistry appearanceRegistry;
+    appearanceRegistry.BootstrapLegacyBlockAppearances(&materialRegistry);
+
     scientificMaterialRegistry.Initialize();
     scientificMaterialRegistry.LoadFromJson("assets/definitions/scientific_materials.json");
+    if (std::filesystem::exists("assets/definitions/custom_materials.json")) {
+        std::string customErr;
+        if (!scientificMaterialRegistry.LoadCustomMaterialsFromJson("assets/definitions/custom_materials.json", &customErr)) {
+            std::cerr << "[SYSTEM] Avviso caricamento custom_materials.json: " << customErr << "\n";
+        } else {
+            std::cout << "[SYSTEM] Catalogo materiali custom caricato con successo da disco.\n";
+        }
+    }
 
     // MA-03.2E.2A: Cross-Registry Scientific Reference Diagnostics (Read-Only)
     blockRegistry.ValidateScientificReferences(scientificMaterialRegistry, "Bootstrap");
@@ -295,6 +321,7 @@ int main(int argc, char* argv[]) {
     context.blockRegistry = &blockRegistry;
     context.shapeRegistry = &shapeRegistry;
     context.materialRegistry = &materialRegistry;
+    context.appearanceRegistry = &appearanceRegistry;
     context.scientificMaterialRegistry = &scientificMaterialRegistry;
     context.cacheManager = &cacheManager;
     context.projectManager = &projectManager;
@@ -340,6 +367,11 @@ int main(int argc, char* argv[]) {
         engine.SetGameMode(GameMode::SolarSystem);
         engine.ForceGameState(GameState::PLAYING);
         std::cout << "[SYSTEM] Avviato SolarSystemState...\n";
+    } else if (choice == 8) {
+        stateManager.ChangeState(std::make_unique<fw::MaterialAtlasState>(&context));
+        engine.SetGameMode(GameMode::Hub);
+        engine.ForceGameState(GameState::MAIN_MENU);
+        std::cout << "[SYSTEM] Avviato MaterialAtlasState...\n";
     } else {
         // Fallback default: HUB (Scelta 0 o non valida)
         stateManager.ChangeState(std::make_unique<HubState>(&context));
@@ -420,6 +452,11 @@ while (context.engine->IsRunning()) {
         // Calcola l'alpha per l'interpolazione del render:
         // quanta frazione del FIXED_DT è già 'avanzata' nel tempo rimanente.
         context.interpolationAlpha = accumulator / FIXED_DT;
+
+        // P0.3C3: Commit incrementale GPU controllato dal render thread
+        if (context.runtimeManager) {
+            context.runtimeManager->ProcessGpuCommits(1);
+        }
 
         // Rendering (V-Sync limits the rate)
         context.engine->BeginUIFrame();
@@ -522,6 +559,7 @@ while (context.engine->IsRunning()) {
 
     std::cout << "[SYSTEM] Chiusura del motore completata.\n";
     engine.Shutdown();
+    fw::forensic::DumpForensicReport();
     StopAIServer();
     fw::JoltPhysicsSystem::ShutdownGlobals();
 

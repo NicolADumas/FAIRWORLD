@@ -3,6 +3,7 @@
 #include "SharedContext.h"
 #include "RuntimeManager.h"
 #include "VulkanResourceTracker.h"
+#include "vulkan/VulkanForensicAudit.h"
 #include <iostream>
 #include <iomanip>
 
@@ -227,6 +228,7 @@ VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal()
 {
     VulkanFinalSnapshot snap;
     snap.liveSemaphores = VulkanResourceTracker::Get().GetLiveSemaphoreCount();
+    snap.validationErrors = fw::forensic::GetValidationErrorCount();
     return snap;
 }
 
@@ -235,7 +237,7 @@ VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal()
 // ─────────────────────────────────────────────────────────────
 bool LifecycleFreezeGate::EvaluateVulkanFinal(const VulkanFinalSnapshot& snap)
 {
-    return snap.liveSemaphores == 0;
+    return snap.liveSemaphores == 0 && snap.validationErrors == 0;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -251,6 +253,7 @@ void LifecycleFreezeGate::PrintVulkanFinalReport(const VulkanFinalSnapshot& snap
     std::cout << "====================================================\n\n";
 
     PrintRow("Tracked Semaphores LIVE", snap.liveSemaphores, snap.liveSemaphores == 0);
+    PrintRow("Validation Layer Errors", snap.validationErrors, snap.validationErrors == 0);
     std::cout << "\n";
 
     std::cout << "====================================================\n";

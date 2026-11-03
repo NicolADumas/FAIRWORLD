@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <atomic>
 #include "MaterialRegistry.h" // Per PBRMaterialDef
 
 namespace fw {
@@ -16,14 +17,20 @@ struct PackedTextureData {
     int height = 512;
     int channels = 4; // Costretto a RGBA
     size_t totalBytesPerArray = 0;
+    bool isCancelled = false;
+    std::string cancellationPhase = "";
 };
 
 class TexturePacker {
 public:
     TexturePacker(int targetResolution = 512);
     
-    // Itererà sull'array dei materiali registrati e impacchetterà tutto
-    PackedTextureData PackMaterials(const std::vector<PBRMaterialDef>& materials);
+    // Itererà sull'array dei materiali registrati e impacchetterà tutto.
+    // cancelRequested è un token atomico opzionale per la cancellazione cooperativa.
+    PackedTextureData PackMaterials(
+        const std::vector<PBRMaterialDef>& materials,
+        const std::atomic<bool>* cancelRequested = nullptr
+    );
 
 private:
     int m_targetResolution;

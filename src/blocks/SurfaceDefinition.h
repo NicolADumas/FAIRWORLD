@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include "ShapeRegistry.h"
+#include "ScientificMaterialRegistry.h"
 #include "json.hpp"
 
 namespace fw {
@@ -76,6 +77,19 @@ struct SurfaceOverride {
     uint32_t materialId = 0;             // Target material/layer ID (0 = inherit from parent block)
     bool useExplicitMaterial = false;
 
+    // P0.3C3: Campo legacy preservato per retrocompatibilità e round-trip lossless di asset esistenti.
+    // Nella simulazione fisica e nel runtime la parte è uniformemente definita da rootScientificMaterialId.
+    uint32_t scientificMaterialId = 0;   // 0 = Inherit from root block/asset scientific material
+
+    bool HasScientificOverride() const {
+        return scientificMaterialId != 0;
+    }
+
+    uint32_t ResolveEffectiveScientificMaterialId(uint32_t rootScientificMaterialId) const {
+        // La radice della parte è l'unica fonte autoritativa (P0.3C3)
+        return rootScientificMaterialId;
+    }
+
     UVProjectionMode projection = UVProjectionMode::Default;
     UVTransform uvTransform;
 
@@ -88,6 +102,104 @@ struct SurfaceOverride {
     // BM-TX2.7: Texture maps per-superficie opzionali
     SurfaceTextureBinding textures;
 };
+
+// =============================================================================
+// BM-SC: SCIENTIFIC MATERIAL RESOLUTION & ADAPTER CONTRACT (P0.3B1 / P0.3C3)
+// =============================================================================
+
+struct SurfaceScientificResolution {
+    uint32_t resolvedId = 0;
+    bool isOverridden = false;
+    bool isOrphan = false; // true se resolvedId != 0 ma non presente nel registro fornito
+};
+
+inline uint32_t ResolveSurfaceScientificMaterialId(
+    uint32_t /*surfaceId*/,
+    const std::vector<SurfaceOverride>& /*overrides*/,
+    uint32_t rootScientificMaterialId
+) {
+    // Modello P0.3C3 autorizzato: la parte è un corpo solido fisicamente omogeneo
+    return rootScientificMaterialId;
+}
+
+inline SurfaceScientificResolution ResolveSurfaceScientificBinding(
+    uint32_t /*surfaceId*/,
+    const std::vector<SurfaceOverride>& /*overrides*/,
+    uint32_t rootScientificMaterialId,
+    const ScientificMaterialRegistry* registry = nullptr
+) {
+    SurfaceScientificResolution res;
+    // Un solo scientificMaterialId per parte: la radice è l'unica fonte autoritativa
+    res.resolvedId = rootScientificMaterialId;
+    res.isOverridden = false; // Le superfici non possono alterare il materiale fisico
+    res.isOrphan = false;
+
+    if (registry && res.resolvedId != 0) {
+        res.isOrphan = !registry->HasMaterial(res.resolvedId);
+    }
+
+    return res;
+}
+
+// BM-SC3: Adattatore per risalire al materiale scientifico di una faccia poligonale (MeshFace)
+// tramite il suo puntatore semantico surfaceId, senza memorizzare campi ridondanti nella faccia.
+inline SurfaceScientificResolution ResolveMeshFaceScientificBinding(
+    uint32_t faceSurfaceId,
+    const std::vector<SurfaceOverride>& overrides,
+    uint32_t rootScientificMaterialId,
+    const ScientificMaterialRegistry* registry = nullptr
+) {
+    return ResolveSurfaceScientificBinding(faceSurfaceId, overrides, rootScientificMaterialId, registry);
+}
+
+// =============================================================================
+// BM-SC4: DIAGNOSTICA SCIENTIFICA PER BINDING PACCHETTO / BLOCCO (P0.3B2)
+// =============================================================================
+struct PackageScientificDiagnosticReport {
+    bool hasOrphans = false;
+    bool rootIsOrphan = false;
+    uint32_t rootScientificMaterialId = 0;
+    struct SurfaceDiagnostic {
+        uint32_t surfaceId = 0;
+        uint32_t scientificMaterialId = 0;
+        bool isOrphan = false;
+    };
+    std::vector<SurfaceDiagnostic> surfaceDiagnostics;
+    std::vector<std::string> warnings;
+};
+
+inline PackageScientificDiagnosticReport AuditScientificMaterialBindings(
+    uint32_t rootScientificMaterialId,
+    const std::vector<SurfaceOverride>& surfaces,
+    const ScientificMaterialRegistry* registry = nullptr
+) {
+    PackageScientificDiagnosticReport rep;
+    rep.rootScientificMaterialId = rootScientificMaterialId;
+    if (registry && rootScientificMaterialId != 0) {
+        rep.rootIsOrphan = !registry->HasMaterial(rootScientificMaterialId);
+        if (rep.rootIsOrphan) {
+            rep.hasOrphans = true;
+            rep.warnings.push_back("Root scientificMaterialId=" + std::to_string(rootScientificMaterialId) +
+                                   " non registrato in ScientificMaterialRegistry (orfano).");
+        }
+    }
+    for (const auto& so : surfaces) {
+        PackageScientificDiagnosticReport::SurfaceDiagnostic sd;
+        sd.surfaceId = so.surfaceId;
+        sd.scientificMaterialId = so.scientificMaterialId;
+        if (registry && so.scientificMaterialId != 0) {
+            sd.isOrphan = !registry->HasMaterial(so.scientificMaterialId);
+            if (sd.isOrphan) {
+                rep.hasOrphans = true;
+                rep.warnings.push_back("SurfaceOverride #" + std::to_string(so.surfaceId) +
+                                       " scientificMaterialId=" + std::to_string(so.scientificMaterialId) +
+                                       " non registrato in ScientificMaterialRegistry (orfano).");
+            }
+        }
+        rep.surfaceDiagnostics.push_back(sd);
+    }
+    return rep;
+}
 
 // Semantic surface definitions for standard primitives (BM-C: Asset-specific cube faces, distinctly typed from PlanetMath CubeFace)
 enum class AssetCubeFace : uint32_t {
@@ -286,6 +398,7 @@ inline void to_json(nlohmann::json& j, const SurfaceOverride& s) {
         {"surfaceId", s.surfaceId},
         {"materialId", s.materialId},
         {"useExplicitMaterial", s.useExplicitMaterial},
+        {"scientificMaterialId", s.scientificMaterialId},
         {"projection", static_cast<uint8_t>(s.projection)},
         {"uvTransform", s.uvTransform},
         {"overridePbr", s.overridePbr},
@@ -309,6 +422,7 @@ inline void from_json(const nlohmann::json& j, SurfaceOverride& s) {
     s.surfaceId = j.value("surfaceId", (uint32_t)0);
     s.materialId = j.value("materialId", (uint32_t)0);
     s.useExplicitMaterial = j.value("useExplicitMaterial", false);
+    s.scientificMaterialId = j.value("scientificMaterialId", (uint32_t)0);
     s.projection = static_cast<UVProjectionMode>(j.value("projection", (uint8_t)0));
     if (j.contains("uvTransform")) {
         j["uvTransform"].get_to(s.uvTransform);

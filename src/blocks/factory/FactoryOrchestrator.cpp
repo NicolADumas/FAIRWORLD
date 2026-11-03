@@ -481,6 +481,7 @@ std::optional<RawAssetPackage> FactoryOrchestrator::BuildPackage(ShapeRegistry* 
     package.emissiveStrength = m_activeDraft->emissiveStrength;
     package.alphaFallback = m_activeDraft->alphaFallback;
     package.behaviors = m_activeDraft->behaviors;
+    package.surfaces = m_activeDraft->surfaces; // P0.3B2: Canonical surfaces propagation
 
     // Trasformazioni congelate
     package.packagePosition = m_activeDraft->localPosition;
