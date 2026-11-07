@@ -569,7 +569,7 @@ void World::AddFace(int x, int y, int z, int face, const glm::vec3& color, uint3
         if (lowerY && pos.y == origin.y + 1) {
             pos.y -= 0.15f;
         }
-        outVerts.push_back({ pos, glm::vec4(color, 1.0f), glm::vec2(0.5f, 0.0f), materialID, normal, 1.0f, 1.0f, 0.0f });
+        outVerts.push_back({ pos, glm::vec4(color, 1.0f), UVS[i], materialID, normal, 1.0f, 1.0f, 0.0f });
     }
 
     outIndices.push_back(baseIndex + 0);

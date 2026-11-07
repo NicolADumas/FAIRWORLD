@@ -1,0 +1,17 @@
+[D1.2] Esecuzione mirata delle convenzioni planetarie.
+
+====================================================
+ FAIRWORLD - D1.2 SPATIAL CONVENTION TESTS
+====================================================
+[D1.2 GRID FAIL] control=F.internal_edge_tie_break PlanetSize=Huge N=41 face=n/a UV=(0.0243902,0.0243902) edgeIndex=1 expected(col,row)=(1,1) actual(col,row)=(0,0) tolerance=n/a colDifference=-1 rowDifference=-1
+[D1.2 GRID FAIL] control=F.internal_edge_tie_break PlanetSize=Huge N=41 face=n/a UV=(0.0487805,0.0487805) edgeIndex=2 expected(col,row)=(2,2) actual(col,row)=(1,1) tolerance=n/a colDifference=-1 rowDifference=-1
+[D1.2 GRID FAIL] control=F.internal_edge_tie_break PlanetSize=Huge N=41 face=n/a UV=(0.097561,0.097561) edgeIndex=4 expected(col,row)=(4,4) actual(col,row)=(3,3) tolerance=n/a colDifference=-1 rowDifference=-1
+[D1.2 GRID FAIL] control=F.internal_edge_tie_break PlanetSize=Huge N=41 face=n/a UV=(0.195122,0.195122) edgeIndex=8 expected(col,row)=(8,8) actual(col,row)=(7,7) tolerance=n/a colDifference=-1 rowDifference=-1
+[D1.2 GRID FAIL] control=F.internal_edge_tie_break PlanetSize=Huge N=41 face=n/a UV=(0.390244,0.390244) edgeIndex=16 expected(col,row)=(16,16) actual(col,row)=(15,15) tolerance=n/a colDifference=-1 rowDifference=-1
+[D1.2 GRID FAIL] control=F.internal_edge_tie_break PlanetSize=Huge N=41 face=n/a UV=(0.780488,0.780488) edgeIndex=32 expected(col,row)=(32,32) actual(col,row)=(31,31) tolerance=n/a colDifference=-1 rowDifference=-1
+      UV/chart/direction round-trip, faces, edges, corners and ties [PASS]
+      Six planet sizes, valid rows, endpoints and rejected invalid rows [FAIL]
+      Single row conversion through TerrainSolver and mesh mapping [PASS]
+      Legacy spawn JSON/binary values and direction preserved [PASS]
+ D1.2 STATUS: FAIL
+====================================================

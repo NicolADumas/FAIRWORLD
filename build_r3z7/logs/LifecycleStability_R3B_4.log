@@ -1,0 +1,373 @@
+====================================================================================================
+  FAIRWORLD RUNTIME LIFECYCLE & OWNERSHIP VERIFICATION TEST RUNNER
+  SUITES: LC (8 Tests: LC-01 .. LC-08) + RLC (5 Tests: RLC-01 .. RLC-05) | TOTAL: 13 TESTS
+====================================================================================================
+
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[HubState] Costruito.
+[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.
+[BlockMakerState] Creato.
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[ForgeState] Costruito.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[VULKAN FORENSIC PHASE] -> Shutdown
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.
+[HubState] Distrutto. Isolamento memoria garantito.
+[ForgeState] Inizializzazione completata. Preparazione infrastruttura VRAM/DMA...
+[ForgeState] Inizializzazione ECS per Arcball-Cam...
+[ForgeState] (ForgeWorld è ora globale e persistente in SharedContext)
+[WorldChunkManager] Salvati 0 chunk su disco (saves/forge).
+[HubState] Costruito.
+[ForgeState] Distrutto.
+[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.
+[BlockMakerState] Creato.
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[HubState] Distrutto. Isolamento memoria garantito.
+[BlockMakerState] Creato.
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[PhysicsLabState] Init
+[PhysicsLab] Bipede: 18 giunti
+[WorldChunkManager] Salvati 0 chunk su disco (saves/world).
+
+====================================================
+ FAIRWORLD RUNTIME LIFECYCLE GATE
+====================================================
+ RUNTIME LIFECYCLE: NOT APPLICABLE (explicit headless test)
+====================================================
+
+
+====================================================
+ FAIRWORLD FINAL VULKAN OWNERSHIP GATE
+ (post RenderManager::Shutdown)
+====================================================
+
+      Vulkan cleanup state             COMPLETED [PASS]
+      Tracked Semaphores LIVE           0   [PASS]
+      Validation Layer Errors           0   [PASS]
+
+====================================================
+ VULKAN OWNERSHIP: CLEAN (PASS)
+====================================================
+
+
+====================================================
+ [VulkanResourceTracker][Semaphore]
+====================================================
+CREATED   : 0
+DESTROYED : 0
+LIVE      : 0
+
+BY OWNER:
+====================================================
+
+[VULKAN FORENSIC PHASE] -> Shutdown
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[StateManager ERROR] Inizializzazione PushState fallita. Rollback eseguito.
+[StateManager ERROR] Inizializzazione PushState fallita. Rollback eseguito.
+[StateManager ERROR] Inizializzazione ReplaceState fallita. Rollback eseguito.
+[StateManager ERROR] PushState called with null newState.
+[StateManager ERROR] ChangeState called with null newState.
+[StateManager ERROR] ReplaceState called with null newState.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x2 -> pendingMask=0x2 (m_workerActive=true).
+[RLC-01] [Thread 22248] [Phase: Client Concurrency] Avvio 8 thread client concorrenti...
+[RLC-01] [Thread 22248] [Phase: Client Concurrency] Attesa join degli 8 thread client...
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Estratto batch: 0x2 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [Thread 24368] [RequireFeaturesAsync] Registrate richieste CPU: 0x1 -> pendingMask=0x1 (m_workerActive=true).
+[RuntimeManager] [Thread 23868] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x5 (m_workerActive=true).
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Batch completato, ulteriori richieste pendenti: 0x5 (m_workerActive resta true).
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Estratto batch: 0x5 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[RuntimeManager] [Thread 11952] [RequireFeaturesAsync] Registrate richieste CPU: 0x1 -> pendingMask=0x1 (m_workerActive=true).
+[RuntimeManager] [Thread 11400] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x5 (m_workerActive=true).
+[RuntimeManager] [Thread 21340] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x5 (m_workerActive=true).
+[RuntimeManager] [Thread 17676] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x5 (m_workerActive=true).
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[RLC-01] [Thread 22248] [Phase: Client Concurrency] Tutti gli 8 thread client hanno completato le richieste.
+[RLC-01] [Thread 22248] [Phase: CPU Wait] Attesa completamento CPU preparation (GlobalVRAM, JobSystem, PBRTextures)...
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (423.259 ms).
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Batch completato, ulteriori richieste pendenti: 0x5 (m_workerActive resta true).
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Estratto batch: 0x5 (m_workerActive=true).
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[RLC-01] [Thread 22248] [Phase: CPU Wait] CPU preparation completata con successo.
+[RLC-01] [Thread 22248] [Phase: GPU Commit] Invocazione ProcessGpuCommits(SIZE_MAX)...
+[RuntimeManager] [GPU Commit] Inizializzazione Lazy VRAM Allocator e DMA...
+[RuntimeManager] [GPU Commit] Feature 1 committata con successo (0.056 ms).
+[RuntimeManager] [GPU Commit] Feature 2 committata con successo (0.0003 ms).
+[RuntimeManager] [GPU Commit] Upload Texture PBR su Vulkan VRAM...
+[RuntimeManager] [GPU Commit] Feature 4 committata con successo (107.385 ms).
+[RLC-01] [Thread 22248] [Phase: GPU Commit] ProcessGpuCommits completato. Features committate: 3
+[RLC-01] [Thread 22248] [Phase: Shutdown] Inizio ShutdownGpuRuntime...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 20132] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 0.1783 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 0.2517 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] VulkanDmaManager Drain completato.
+
+[RuntimeShutdown]
+DMA drained
+Pending DMA transfers     : 0
+Live DMA command buffers  : 0
+[VramSlabAllocator] Distrutto. 0 bytes rimasti allocati.
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=0.1783 ms, JobSystemStop=0.2517 ms, Totale=0.5771 ms]
+[RLC-01] [Thread 22248] [Phase: Shutdown] ShutdownGpuRuntime completato.
+[RuntimeManager] Distrutto.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x2 -> pendingMask=0x2 (m_workerActive=true).
+[RuntimeManager] [Thread 22248] [Phase: Sync Prep] Attesa completamento worker asincrono in corso...
+[RuntimeManager] [Thread 16144] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[RuntimeManager] [Thread 16144] [Phase: Dedicated Worker] Estratto batch: 0x2 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [Thread 16144] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[RuntimeManager] [Thread 22248] [Phase: Sync Prep] Worker asincrono terminato o inattivo.
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (425.369 ms).
+[RuntimeManager] [GPU Commit] Inizializzazione Lazy VRAM Allocator e DMA...
+[RuntimeManager] [GPU Commit] Feature 1 committata con successo (0.0504 ms).
+[RuntimeManager] [GPU Commit] Feature 2 committata con successo (0.0002 ms).
+[RuntimeManager] [GPU Commit] Upload Texture PBR su Vulkan VRAM...
+[RuntimeManager] [GPU Commit] Feature 4 committata con successo (104.025 ms).
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 16144] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 0.1206 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 0.3442 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] VulkanDmaManager Drain completato.
+
+[RuntimeShutdown]
+DMA drained
+Pending DMA transfers     : 0
+Live DMA command buffers  : 0
+[VramSlabAllocator] Distrutto. 0 bytes rimasti allocati.
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=0.1206 ms, JobSystemStop=0.3442 ms, Totale=0.5863 ms]
+[RuntimeManager] Distrutto.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x4 (m_workerActive=true).
+[RuntimeManager] [Thread 20808] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[RuntimeManager] [Thread 20808] [Phase: Dedicated Worker] Estratto batch: 0x4 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[TexturePacker] [Cooperative Cancel] Cancellazione intercettata nella fase: Fase 2B: Cache valida, pre-lettura Albedo. Rilascio immediato risorse parziali.
+[RuntimeManager] [CPU Prep] Preparazione PBR interrotta cooperativamente (fase: Fase 2B: Cache valida, pre-lettura Albedo). Feature NON promossa a CpuReady.
+[RuntimeManager] [Thread 20808] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[RuntimeManager] [Thread 20808] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [FAULT-INJECTION] Errore simulato durante commit GPU per feature idx 2
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 284.11 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 0.2239 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=284.11 ms, JobSystemStop=0.2239 ms, Totale=284.414 ms]
+[RuntimeManager] Distrutto.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RLC-04] [Thread 22248] [Phase: CPU Wait] Attesa completamento CPU prep PBRTextures...
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x4 (m_workerActive=true).
+[RuntimeManager] [Thread 18832] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[RuntimeManager] [Thread 18832] [Phase: Dedicated Worker] Estratto batch: 0x4 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (425.872 ms).
+[RuntimeManager] [Thread 18832] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[RLC-04] [Thread 22248] [Phase: CPU Wait] PBRTextures CPU ready.
+[RuntimeManager] [GPU Commit] Inizializzazione Lazy VRAM Allocator e DMA...
+[RuntimeManager] [GPU Commit] Feature 1 committata con successo (0.0551 ms).
+[RuntimeManager] [GPU Commit] Feature 2 committata con successo (0.0002 ms).
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (430.193 ms).
+[RuntimeManager] [GPU Commit] Upload Texture PBR su Vulkan VRAM...
+[RuntimeManager] [GPU Commit] Feature 4 committata con successo (100.209 ms).
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 18832] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 0.2255 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 0.342 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] VulkanDmaManager Drain completato.
+
+[RuntimeShutdown]
+DMA drained
+Pending DMA transfers     : 0
+Live DMA command buffers  : 0
+[VramSlabAllocator] Distrutto. 0 bytes rimasti allocati.
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=0.2255 ms, JobSystemStop=0.342 ms, Totale=0.6904 ms]
+[RuntimeManager] Distrutto.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x2 -> pendingMask=0x2 (m_workerActive=true).
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x1 -> pendingMask=0x3 (m_workerActive=true).
+[RuntimeManager] [Thread 22248] [RequireFeaturesAsync] Registrate richieste CPU: 0x2 -> pendingMask=0x3 (m_workerActive=true).
+[RLC-05] [Thread 22248] [Phase: CPU Wait] Attesa completamento CPU prep JobSystem e GlobalVRAM...
+[RuntimeManager] [Thread 4532] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[RuntimeManager] [Thread 4532] [Phase: Dedicated Worker] Estratto batch: 0x3 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [Thread 4532] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[RLC-05] [Thread 22248] [Phase: GPU Commit] Invocazione ProcessGpuCommits...
+[RuntimeManager] [GPU Commit] Inizializzazione Lazy VRAM Allocator e DMA...
+[RuntimeManager] [GPU Commit] Feature 1 committata con successo (0.0697 ms).
+[RuntimeManager] [GPU Commit] Feature 2 committata con successo (0.0001 ms).
+[RLC-05] [Thread 22248] [Phase: Job Dispatch] Invio job di prova al thread pool...
+[RLC-05] [Thread 22248] [Phase: Job Wait] Attesa completamento WaitAll()...
+[RLC-05] [Thread 22248] [Phase: Job Wait] WaitAll completato con successo.
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 4532] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 0.1217 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 0.2748 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...
+[RuntimeManager] [Thread 22248] [Phase: Shutdown] VulkanDmaManager Drain completato.
+
+[RuntimeShutdown]
+DMA drained
+Pending DMA transfers     : 0
+Live DMA command buffers  : 0
+[VramSlabAllocator] Distrutto. 0 bytes rimasti allocati.
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=0.1217 ms, JobSystemStop=0.2748 ms, Totale=0.4729 ms]
+[RuntimeManager] Distrutto.
+--- SUITE 1: MEM-07 LIFECYCLE REMEDIATION (LC-01 .. LC-08) ---
+ID      TARGET         TEST NAME                                                        STATUS    
+----------------------------------------------------------------------------------------------------
+LC-01   MEM07-F01      Cross-State Transition (BlockMaker -> Forge -> Hub -> BlockMaker)[PASS]    
+   -> Observed: PASS: Cross-state transitions completed safely with zero dangling references and zero crashes
+   -> Details:  Validated 4 transitions: Hub -> BlockMaker -> Forge -> Hub -> BlockMaker -> Hub with persistent master restoration.
+
+LC-02   MEM07-F01      BlockMaker Destruction Shared ForgeWorld Preservation            [PASS]    
+   -> Observed: PASS: BlockMaker destruction cleanly restores SharedContext in both persistent and isolated cases
+   -> Details:  Case A (Persistent Master): correctly restored to master. Case B (Isolated Null): cleanly nullified, 0 dangling pointers.
+
+LC-03   MEM07-F03, MEM07-F04Shutdown Order with Active PhysicsLab State                      [PASS]    
+   -> Observed: PASS: PhysicsLabState cleanly destroyed bodies during Clear(); ShutdownGlobals() completed with 0 errors
+   -> Details:  Simulation was active with 19 bodies. Cleanup was idempotent and ordered.
+
+LC-04   MEM07-F02      Shutdown with Registered EventManager Listeners (Zero-Leak)      [PASS]    
+   -> Observed: PASS: Engine registered subscriptions, unsubscribed in Shutdown(), zero listener leaks, zero dangling callbacks
+   -> Details:  Baseline listeners: 0, active: +2, post-shutdown: 0
+
+LC-05   MEM07-F03, MEM07-F04, MEM07-F07Partial Initialization Followed by Cleanup Safety                [PASS]    
+   -> Observed: PASS: Uninitialized states cleaned up safely; failing Init() prevents OnEnter() and discards state
+   -> Details:  Tested PhysicsLab uninitialized, BlockMaker uninitialized, and StateManager failing transition rollback.
+
+LC-06   MEM07-F05      GameWorld Teardown Without Reallocations or Token Resurrection   [PASS]    
+   -> Observed: PASS: GameWorld destroyed cleanly; cancel token stayed true; zero component reallocations during teardown
+   -> Details:  Verified cancel token persistence, context pointer clearing, and Teardown/Clear separation.
+
+LC-07   MEM07-F06      Aligned Allocator Fallback and Sized Delete Pairing              [PASS]    
+   -> Observed: PASS: Over-aligned types (16/32/64/128), small alignments and sized delete executed without CRT heap corruption
+   -> Details:  MSVC _aligned_malloc and _aligned_free paired cleanly across all alignment sizes.
+
+LC-08   MEM07-F07      StateManager Initialization Failure Rollback and ReplaceState Safety[PASS]    
+   -> Observed: PASS: PushState failure rolls back and resumes underlying state; ReplaceState discards failed state; null states handled gracefully
+   -> Details:  Full StateManager transition error recovery validated for Push, Replace, Change and null guards.
+
+
+--- SUITE 2: P0.3C3 RUNTIME LIFECYCLE GATE (RLC-01 .. RLC-05) ---
+ID      TARGET         TEST NAME                                                        STATUS    
+----------------------------------------------------------------------------------------------------
+RLC-01  Accorpamento richieste concorrenti senza race sulla terminazione del workerConcurrent Requests During Worker Termination (No Lost Requests) [PASS]    
+   -> Observed: Committed=3, States(GV=GpuReady, JS=GpuReady, PBR=GpuReady, IsReady=TRUE), CPU Prep Times: [JS=0.2553ms, PBR=423.259ms], GPU Commit Times: [GV=0.056ms, PBR=107.385ms]
+   -> Duration: 548.15 ms
+
+RLC-02  Dipendenze risolte in ordine topologico prima dell'attivazione e misurazione transizioniRapid Cross-State Transition (Hub -> Play -> BlockMaker)         [PASS]    
+   -> Observed: Transizioni misurate: Hub=0.0004ms, Play=0.0137ms, BlockMaker=545.809ms. DAG Status: GV=OK, JS=OK, PBR=OK
+   -> Duration: 547.40 ms
+
+RLC-03  Cancellazione pulita senza deadlock né leak di puntatori pendentiState Exit and Cancellation During CPU Preparation               [PASS]    
+   -> Observed: Shutdown completato in 284.43ms. IsShutdownComplete=YES, PBRNotReady=YES
+   -> Duration: 297.51 ms
+
+RLC-04  Rollback su errore commit GPU, stato Failed isolato, e successivo retry con esito positivoGPU Commit Failure Rollback and Subsequent Safe Retry            [PASS]    
+   -> Observed: Stato dopo errore simulato: Failed (OK), NotInActive=YES | Stato dopo Retry: GpuReady (OK), InActive=YES
+   -> Duration: 1064.11 ms
+
+RLC-05  Ownership indipendente dalla singola schermata e prevenzione di distruzione prematuraShared Feature Independent Ownership Across Screen Lifecycles    [PASS]    
+   -> Observed: RefCount(Initial=2, PostScreenA=1, Final=0), JobSystemAlive=YES, ExecutionCheck=SUCCESS
+   -> Duration: 8.30 ms
+
+====================================================================================================
+  TOTAL TESTS:   13 (8 LC + 5 RLC)
+  PASSED:        13
+  FAILED:        0
+  DURATION:      3263.57 ms
+  STATUS:        ALL PASS (SUCCESS)
+====================================================================================================

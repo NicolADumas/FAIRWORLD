@@ -1,10 +1,17 @@
 #include "Noise.h"
 
 // Disable warnings for third party headers if necessary
+#if defined(_MSC_VER)
+#pragma float_control(precise, on, push)
+#pragma fp_contract(off)
+#endif
 #pragma warning(push, 0)
 #define FASTNOISELITE_IMPLEMENTATION
 #include "../../../third_party/FastNoiseLite.h"
 #pragma warning(pop)
+#if defined(_MSC_VER)
+#pragma float_control(pop)
+#endif
 
 namespace fw {
 

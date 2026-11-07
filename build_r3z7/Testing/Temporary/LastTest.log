@@ -1,0 +1,19 @@
+Start testing: Nov 04 14:19 ora solare Europa occidentale
+----------------------------------------------------------
+2/17 Testing: FairworldForgeVertexContractTests
+2/17 Test: FairworldForgeVertexContractTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldForgeVertexContractTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldForgeVertexContractTests" start time: Nov 04 14:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+Forge vertex contract: voxel orientations=PASS, cube-sphere=PASS, mesh producers=PASS
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldForgeVertexContractTests" end time: Nov 04 14:19 ora solare Europa occidentale
+"FairworldForgeVertexContractTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 04 14:19 ora solare Europa occidentale

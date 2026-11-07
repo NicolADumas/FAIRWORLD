@@ -5,7 +5,7 @@
 #include "AssetManager.h"
 #include "MapWorldGenerator.h"
 #include "BlockRegistry.h"
-#include "MaterialRegistry.h"
+#include "CubeSphereMapping.h"
 #include <unordered_map>
 #include <cmath>
 
@@ -175,8 +175,7 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
     }
     entt::entity target = node->targetEntity;
     
-    auto* matReg = world ? world->GetMaterialRegistry() : nullptr;
-    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, planetSize, isFlat, activeRegions, blockReg, matReg, centerPos, boundsRadius, baseTerrain]() {
+    jobs->Execute([world, assets, target, meshName, p00, p10, p01, p11, planetRadius, planetSize, isFlat, activeRegions, blockReg, centerPos, boundsRadius, baseTerrain]() {
         MeshComponent mesh;
         mesh.name = meshName;
         mesh.type = fw::MeshType::Chunk; // Set to Chunk so MapRenderer draws it!
@@ -428,17 +427,11 @@ void SphericalLODSystem::RequestMeshGeneration(ChunkNode* node, GameWorld* world
                     vtx.position = {positions[idx].x, positions[idx].y, positions[idx].z};
                     vtx.normal = {normals[idx].x, normals[idx].y, normals[idx].z};
                     vtx.color = {colors[idx].r, colors[idx].g, colors[idx].b, colors[idx].a};
-                    float rough = 0.8f;
-                    float metal = 0.0f;
-                    if (matReg) {
-                        const auto& matDef = matReg->GetMaterial(materials[idx]);
-                        rough = matDef.roughnessFallback;
-                        metal = matDef.metallicFallback;
-                    } else if (materials[idx] == 6 || materials[idx] == 13) {
-                        rough = 0.02f;
-                        metal = 0.25f;
-                    }
-                    vtx.roughMetal = {rough, metal};
+                    glm::vec2 planetUV;
+                    fw::CubeFace uvFace;
+                    fw::CubeSphereMapping::DirectionToFaceUV(normals[idx], uvFace, planetUV);
+                    (void)uvFace;
+                    vtx.roughMetal = {planetUV.x, planetUV.y};
                     vtx.materialID = materials[idx];
                     vtx.ao = 1.0f;
                     vtx.light = 1.0f;

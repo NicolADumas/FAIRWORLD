@@ -1,0 +1,18 @@
+FairworldUVTests 2 7.29168
+FairworldSculptTests 2 0.319092
+FairworldScientificTests 0 0
+FairworldEventTests 2 0.0645967
+FairworldNoiseTests 2 0.0240753
+FairworldAsyncInputTests 2 0.190951
+FairworldMemoryTests 2 0.294004
+FairworldGameplayStressTests 2 0.810963
+FairworldDiagnostics 2 3.8826
+FairworldLifecycleTests 1 0
+FairworldAppearanceTests 2 0.235733
+FairworldCustomScientificTests 2 6.77555
+FairworldBindingTests 2 0.209831
+FairworldAuthoringTests 2 0.171802
+FairworldVulkanRecoveryTests 2 0.0152773
+FairworldTextureCacheTests 2 0.192389
+FairworldForgeVertexContractTests 2 0.0243613
+---

@@ -1,0 +1,4 @@
+[PASS] device lost skips recovery and fence wait
+[PASS] successful recovery consumes acquire semaphore and signals fence
+[PASS] failed recovery quarantines acquire semaphore and skips unsignaled fence
+TOTAL: 3, PASSED: 3, FAILED: 0

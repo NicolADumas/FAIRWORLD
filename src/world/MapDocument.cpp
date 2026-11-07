@@ -5,6 +5,9 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <stdexcept>
+#include <limits>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -475,6 +478,11 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 }
                 rj["influence"] = r.influence;
                 rj["overrides"] = r.overrides;
+                rj["isGridAligned"] = r.isGridAligned;
+                rj["faceIndex"] = r.faceIndex;
+                rj["gridX"] = r.gridX;
+                rj["gridY"] = r.gridY;
+                rj["isBackgroundFill"] = r.isBackgroundFill;
                 
                 tj["subRegions"].push_back(rj);
             }
@@ -489,6 +497,9 @@ bool MapDocument::SaveJSON(const std::string& path) {
             pj["name"] = planet.name;
             pj["planetSize"] = (int)planet.planetSize;
             pj["isFlat"] = planet.isFlat;
+            pj["axialTilt"] = planet.axialTilt;
+            pj["yearLength"] = planet.yearLength;
+            pj["planetaryReliefScale"] = planet.planetaryReliefScale;
             pj["regions"] = json::array();
 
             // Nuovi campi per DimensionsManager
@@ -525,12 +536,18 @@ bool MapDocument::SaveJSON(const std::string& path) {
                 }
                 rj["influence"] = region.influence;
                 rj["overrides"] = region.overrides;
+                rj["isGridAligned"] = region.isGridAligned;
+                rj["faceIndex"] = region.faceIndex;
+                rj["gridX"] = region.gridX;
+                rj["gridY"] = region.gridY;
+                rj["isBackgroundFill"] = region.isBackgroundFill;
                 pj["regions"].push_back(rj);
             }
             
             json b;
             b["biome"] = static_cast<int>(planet.baseTerrain.biome);
             b["baseRules"] = planet.baseTerrain.baseRules;
+            b["seed"] = planet.baseTerrain.seed;
             pj["baseTerrain"] = b;
             
             pj["chunkInstances"] = json::array();
@@ -633,6 +650,11 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         if (rj.contains("overrides")) {
                             r.overrides = rj["overrides"].get<TerrainRuleOverrides>();
                         }
+                        r.isGridAligned = rj.value("isGridAligned", false);
+                        r.faceIndex = rj.value("faceIndex", -1);
+                        r.gridX = rj.value("gridX", -1);
+                        r.gridY = rj.value("gridY", -1);
+                        r.isBackgroundFill = rj.value("isBackgroundFill", false);
                         t.subRegions.push_back(r);
                     }
                 }
@@ -650,6 +672,9 @@ bool MapDocument::LoadJSON(const std::string& path) {
                 int pSizeInt = pj.value("planetSize", (int)fw::PlanetSize::Medium);
                 planet.planetSize = (fw::PlanetSize)pSizeInt;
                 planet.isFlat = pj.value("isFlat", false);
+                planet.axialTilt = pj.value("axialTilt", planet.axialTilt);
+                planet.yearLength = pj.value("yearLength", planet.yearLength);
+                planet.planetaryReliefScale = pj.value("planetaryReliefScale", 1.0f);
 
                 planet.minX = pj.value("minX", -6);
                 planet.maxX = pj.value("maxX", 6);
@@ -710,6 +735,11 @@ bool MapDocument::LoadJSON(const std::string& path) {
                         if (rj.contains("overrides")) {
                             region.overrides = rj["overrides"].get<TerrainRuleOverrides>();
                         }
+                        region.isGridAligned = rj.value("isGridAligned", false);
+                        region.faceIndex = rj.value("faceIndex", -1);
+                        region.gridX = rj.value("gridX", -1);
+                        region.gridY = rj.value("gridY", -1);
+                        region.isBackgroundFill = rj.value("isBackgroundFill", false);
                         planet.regions.push_back(region);
                     }
                 }
@@ -720,6 +750,7 @@ bool MapDocument::LoadJSON(const std::string& path) {
                     if (b.contains("baseRules")) {
                         planet.baseTerrain.baseRules = b["baseRules"].get<TerrainGenerationRules>();
                     }
+                    planet.baseTerrain.seed = b.value("seed", 0U);
                 }
                 
                 if (pj.contains("chunkInstances") && pj["chunkInstances"].is_array()) {
@@ -790,6 +821,8 @@ inline void writeI32(std::ostream& s, int32_t v)  { s.write(reinterpret_cast<con
 inline void writeU8 (std::ostream& s, uint8_t v)  { s.write(reinterpret_cast<const char*>(&v), 1); }
 inline void writeBool(std::ostream& s, bool v)    { uint8_t b = v ? 1 : 0; s.write(reinterpret_cast<const char*>(&b), 1); }
 inline void writeStr (std::ostream& s, const std::string& str) {
+    constexpr size_t MAX_STRING_BYTES = 16u * 1024u * 1024u;
+    if (str.size() > MAX_STRING_BYTES) throw std::runtime_error("FWB string exceeds size limit");
     uint32_t len = (uint32_t)str.size();
     writeU32(s, len);
     if (len > 0) s.write(str.data(), len);
@@ -798,16 +831,22 @@ inline void writeVec3(std::ostream& s, const glm::vec3& v) { writeF32(s,v.x); wr
 inline void writeVec4(std::ostream& s, const glm::vec4& v) { writeF32(s,v.x); writeF32(s,v.y); writeF32(s,v.z); writeF32(s,v.w); }
 inline void writeIVec2(std::ostream& s, const glm::ivec2& v) { writeI32(s,v.x); writeI32(s,v.y); }
 
-inline uint32_t readU32(std::istream& s) { uint32_t v; s.read(reinterpret_cast<char*>(&v), 4); return v; }
-inline float    readF32(std::istream& s) { float v;    s.read(reinterpret_cast<char*>(&v), 4); return v; }
-inline int32_t  readI32(std::istream& s) { int32_t v;  s.read(reinterpret_cast<char*>(&v), 4); return v; }
-inline uint8_t  readU8 (std::istream& s) { uint8_t v;  s.read(reinterpret_cast<char*>(&v), 1); return v; }
-inline bool     readBool(std::istream& s){ return readU8(s) != 0; }
+inline void readBytes(std::istream& s, char* out, std::streamsize size) {
+    s.read(out, size);
+    if (!s) throw std::runtime_error("FWB truncated or unreadable");
+}
+inline uint32_t readU32(std::istream& s) { uint32_t v{}; readBytes(s, reinterpret_cast<char*>(&v), 4); return v; }
+inline float    readF32(std::istream& s) { float v{}; readBytes(s, reinterpret_cast<char*>(&v), 4); if (!std::isfinite(v)) throw std::runtime_error("FWB non-finite float"); return v; }
+inline int32_t  readI32(std::istream& s) { int32_t v{}; readBytes(s, reinterpret_cast<char*>(&v), 4); return v; }
+inline uint8_t  readU8 (std::istream& s) { uint8_t v{}; readBytes(s, reinterpret_cast<char*>(&v), 1); return v; }
+inline bool     readBool(std::istream& s){ const auto v = readU8(s); if (v > 1) throw std::runtime_error("FWB invalid boolean"); return v != 0; }
 inline std::string readStr(std::istream& s) {
     uint32_t len = readU32(s);
+    constexpr uint32_t MAX_STRING_BYTES = 16u * 1024u * 1024u;
+    if (len > MAX_STRING_BYTES) throw std::runtime_error("FWB string exceeds size limit");
     if (len == 0) return {};
     std::string str(len, '\0');
-    s.read(&str[0], len);
+    readBytes(s, &str[0], static_cast<std::streamsize>(len));
     return str;
 }
 inline glm::vec3  readVec3(std::istream& s)  { float x=readF32(s),y=readF32(s),z=readF32(s); return {x,y,z}; }
@@ -833,7 +872,7 @@ void writeRegion(std::ostream& s, const fw::MapRegion& r) {
     writeI32(s, r.gridY);
 }
 
-fw::MapRegion readRegion(std::istream& s) {
+fw::MapRegion readRegion(std::istream& s, uint32_t version) {
     fw::MapRegion r;
     r.eulerAngles      = readVec3(s);
     r.angularRadius    = readF32(s);
@@ -851,7 +890,27 @@ fw::MapRegion readRegion(std::istream& s) {
     r.faceIndex        = readI32(s);
     r.gridX            = readI32(s);
     r.gridY            = readI32(s);
+    if (version >= 8) {
+        r.influence = readF32(s);
+        const std::string overridesJson = readStr(s);
+        if (!overridesJson.empty()) r.overrides = nlohmann::json::parse(overridesJson).get<fw::TerrainRuleOverrides>();
+        r.isBackgroundFill = readBool(s);
+    }
     return r;
+}
+
+void writeRegionV8(std::ostream& s, const fw::MapRegion& r) {
+    writeRegion(s, r); // v7 prefix remains byte-for-byte unchanged
+    writeF32(s, r.influence);
+    writeStr(s, nlohmann::json(r.overrides).dump());
+    writeBool(s, r.isBackgroundFill);
+}
+
+inline uint32_t readCount(std::istream& s, const char* what) {
+    constexpr uint32_t MAX_RECORDS = 1'000'000;
+    const uint32_t count = readU32(s);
+    if (count > MAX_RECORDS) throw std::runtime_error(std::string("FWB excessive ") + what + " count");
+    return count;
 }
 
 } // anonymous namespace
@@ -861,7 +920,7 @@ namespace fw {
 
 // Numero magico + versione formato. Cambia FWB_VERSION se modifichi la struttura.
 static constexpr uint32_t FWB_MAGIC = 0x46574231; // 'FWB1'
-static constexpr uint32_t FWB_VERSION = 7;
+static constexpr uint32_t FWB_VERSION = 8;
 
 bool MapDocument::SaveBinary
 (const std::string& path) const {
@@ -891,7 +950,7 @@ bool MapDocument::SaveBinary
             writeStr(f, rulesJson.dump());
             
             writeU32(f, (uint32_t)t.subRegions.size());
-            for (const auto& r : t.subRegions) writeRegion(f, r);
+            for (const auto& r : t.subRegions) writeRegionV8(f, r);
         }
 
         // Planets
@@ -907,9 +966,15 @@ bool MapDocument::SaveBinary
             writeI32(f, p.minY); writeI32(f, p.maxY);
             writeI32(f, p.minZ); writeI32(f, p.maxZ);
 
+            // v8 extension: persistent planetary terrain generation state.
+            writeF32(f, p.planetaryReliefScale);
+            writeI32(f, (int32_t)p.baseTerrain.biome);
+            writeStr(f, nlohmann::json(p.baseTerrain.baseRules).dump());
+            writeU32(f, p.baseTerrain.seed);
+
             // Regions
             writeU32(f, (uint32_t)p.regions.size());
-            for (const auto& r : p.regions) writeRegion(f, r);
+            for (const auto& r : p.regions) writeRegionV8(f, r);
 
             // ChunkInstances
             writeU32(f, (uint32_t)p.chunkInstances.size());
@@ -949,7 +1014,7 @@ bool MapDocument::SaveBinary
         }
 
         f.close();
-        return true;
+        return !f.fail();
     }
     catch (const std::exception& e) {
         std::cerr << "[MapDocument] Errore salvataggio binario: " << e.what() << "\n";
@@ -964,18 +1029,18 @@ bool MapDocument::LoadBinary(const std::string& path) {
 
         uint32_t magic   = readU32(f);
         uint32_t version = readU32(f);
-        if (magic != FWB_MAGIC || version != FWB_VERSION) {
+        if (magic != FWB_MAGIC || (version != 7 && version != FWB_VERSION)) {
             std::cerr << "[MapDocument] Binario .fwb obsoleto (magic=" << magic
                       << " ver=" << version << "). Rigenerazione da JSON...\n";
             return false; // triggera il fallback a LoadJSON
         }
 
-        isCompiled = readBool(f);
+        MapDocument parsed;
+        parsed.isCompiled = readBool(f);
 
         // TerrainLibrary
-        terrainLibrary.clear();
-        uint32_t numTemplates = readU32(f);
-        terrainLibrary.reserve(numTemplates);
+        uint32_t numTemplates = readCount(f, "template");
+        parsed.terrainLibrary.reserve(numTemplates);
         for (uint32_t i = 0; i < numTemplates; ++i) {
             TerrainTemplate t;
             t.id                   = readStr(f);
@@ -986,24 +1051,19 @@ bool MapDocument::LoadBinary(const std::string& path) {
             t.seed                 = readU32(f);
             
             if (version >= 6) {
-                std::string rulesStr = readStr(f);
-                if (!rulesStr.empty()) {
-                    try {
-                        t.baseRules = nlohmann::json::parse(rulesStr).get<TerrainGenerationRules>();
-                    } catch (...) {}
-                }
+                const std::string rulesStr = readStr(f);
+                if (!rulesStr.empty()) t.baseRules = nlohmann::json::parse(rulesStr).get<TerrainGenerationRules>();
             }
             
-            uint32_t numSubs       = readU32(f);
+            uint32_t numSubs       = readCount(f, "subregion");
             t.subRegions.reserve(numSubs);
-            for (uint32_t s = 0; s < numSubs; ++s) t.subRegions.push_back(readRegion(f));
-            terrainLibrary.push_back(std::move(t));
+            for (uint32_t s = 0; s < numSubs; ++s) t.subRegions.push_back(readRegion(f, version));
+            parsed.terrainLibrary.push_back(std::move(t));
         }
 
         // Planets
-        planets.clear();
-        uint32_t numPlanets = readU32(f);
-        planets.reserve(numPlanets);
+        uint32_t numPlanets = readCount(f, "planet");
+        parsed.planets.reserve(numPlanets);
         for (uint32_t i = 0; i < numPlanets; ++i) {
             PlanetMap p;
             p.type         = (PlanetType)readI32(f);
@@ -1016,11 +1076,19 @@ bool MapDocument::LoadBinary(const std::string& path) {
             p.minY = readI32(f); p.maxY = readI32(f);
             p.minZ = readI32(f); p.maxZ = readI32(f);
 
-            uint32_t numRegions = readU32(f);
-            p.regions.reserve(numRegions);
-            for (uint32_t r = 0; r < numRegions; ++r) p.regions.push_back(readRegion(f));
+            if (version >= 8) {
+                p.planetaryReliefScale = readF32(f);
+                p.baseTerrain.biome = (MapRegionType)readI32(f);
+                const std::string baseRules = readStr(f);
+                if (!baseRules.empty()) p.baseTerrain.baseRules = nlohmann::json::parse(baseRules).get<TerrainGenerationRules>();
+                p.baseTerrain.seed = readU32(f);
+            }
 
-            uint32_t numInst = readU32(f);
+            uint32_t numRegions = readCount(f, "region");
+            p.regions.reserve(numRegions);
+            for (uint32_t r = 0; r < numRegions; ++r) p.regions.push_back(readRegion(f, version));
+
+            uint32_t numInst = readCount(f, "chunk instance");
             p.chunkInstances.reserve(numInst);
             for (uint32_t c = 0; c < numInst; ++c) {
                 PlanetChunkInstance ci;
@@ -1036,7 +1104,7 @@ bool MapDocument::LoadBinary(const std::string& path) {
                 p.chunkInstances.push_back(std::move(ci));
             }
 
-            uint32_t numOverrides = readU32(f);
+            uint32_t numOverrides = readCount(f, "chunk override");
             p.chunkOverrides.reserve(numOverrides);
             for (uint32_t c = 0; c < numOverrides; ++c) {
                 ChunkDataExport co;
@@ -1049,7 +1117,7 @@ bool MapDocument::LoadBinary(const std::string& path) {
                 p.chunkOverrides.push_back(co);
             }
 
-            uint32_t numSpawns = readU32(f);
+            uint32_t numSpawns = readCount(f, "spawn");
             p.spawnPoints.reserve(numSpawns);
             for (uint32_t s = 0; s < numSpawns; ++s) {
                 SpawnPoint sp;
@@ -1061,14 +1129,11 @@ bool MapDocument::LoadBinary(const std::string& path) {
                 sp.color        = readVec4(f);
                 p.spawnPoints.push_back(std::move(sp));
             }
-            planets.push_back(std::move(p));
+            parsed.planets.push_back(std::move(p));
         }
 
-        if (!f.good()) {
-            std::cerr << "[MapDocument] Binario .fwb troncato o corrotto.\n";
-            return false;
-        }
-
+        if (f.peek() != std::char_traits<char>::eof()) throw std::runtime_error("FWB has trailing bytes");
+        *this = std::move(parsed);
         return true;
     }
     catch (const std::exception& e) {
@@ -1098,9 +1163,27 @@ bool MapDocument::LoadSmart(const std::string& jsonPath) {
     }
 
     if (useBinary) {
-        std::cout << "[MapDocument] Caricamento rapido da: " << binPath << "\n";
-        if (LoadBinary(binPath)) return true;
-        std::cerr << "[MapDocument] Binario non valido, fallback a JSON...\n";
+        uint32_t binaryVersion = 0;
+        try {
+            std::ifstream header(binPath, std::ios::binary);
+            const uint32_t magic = readU32(header);
+            binaryVersion = readU32(header);
+            if (magic != FWB_MAGIC) binaryVersion = 0;
+        } catch (...) {
+            binaryVersion = 0;
+        }
+
+        // FWB v7 is readable, but cannot contain region influence/overrides or
+        // the v8 planet terrain fields. When its JSON sidecar exists, that JSON
+        // is the only complete semantic source and must win even if older.
+        const bool v7HasAuthoritativeJson = binaryVersion == 7 && fs::exists(jsonPath);
+        if (v7HasAuthoritativeJson) {
+            std::cout << "[MapDocument] FWB v7 privo di campi semantici: ricarico il JSON associato.\n";
+        } else {
+            std::cout << "[MapDocument] Caricamento rapido da: " << binPath << "\n";
+            if (LoadBinary(binPath)) return true;
+            std::cerr << "[MapDocument] Binario non valido, fallback a JSON...\n";
+        }
     }
 
     // Carica da JSON e genera il binario per la prossima volta

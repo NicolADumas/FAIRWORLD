@@ -6,7 +6,7 @@
 class PlanetMapperCamera {
 public:
     PlanetMapperCamera();
-    ~PlanetMapperCamera() = default;
+    ~PlanetMapperCamera();
 
     void Init(float initialDistance, float initialPitch, float initialYaw);
 

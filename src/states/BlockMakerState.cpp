@@ -4649,16 +4649,13 @@ bool BlockMakerState::Init() {
     if (!m_context->vramAllocator) {
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
         m_context->vramAllocator->SetAllocateCompartmentCallback([ctx = m_context](uint32_t compIdx) {
-            if (ctx && ctx->engine && ctx->engine->GetRenderManager()) {
-                ctx->engine->GetRenderManager()->AddVramCompartment();
-                if (ctx->dmaManager) {
-                    ctx->dmaManager->UpdateStagingBuffer(
-                        ctx->engine->GetRenderManager()->GetStagingRingBuffer(),
-                        ctx->engine->GetRenderManager()->GetStagingDeviceMemory(),
-                        ctx->engine->GetRenderManager()->GetMappedStagingData()
-                    );
-                }
-            }
+            auto* rm = ctx && ctx->engine ? ctx->engine->GetRenderManager() : nullptr;
+            if (!rm || rm->GetVramCompartments().size() != compIdx || !rm->AddVramCompartment()) return false;
+            const auto& compartments = rm->GetVramCompartments();
+            if (compartments.size() != static_cast<size_t>(compIdx) + 1 || compartments[compIdx] == VK_NULL_HANDLE) return false;
+            if (ctx->dmaManager) ctx->dmaManager->UpdateStagingBuffer(
+                rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData());
+            return true;
         });
     }
     if (!m_context->dmaManager) {
@@ -4668,7 +4665,8 @@ bool BlockMakerState::Init() {
                 m_context->dmaManager->Initialize(
                     rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
                     rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
-                    rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex()
+                    rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex(),
+                    rm->GetTransferCommandPoolMutex()
                 );
             }
         }
@@ -4695,7 +4693,6 @@ bool BlockMakerState::Init() {
     auto floorMesh = fw::MeshGenerators::MakeCube(10.0f);
     for (auto& v : floorMesh.vertices) {
         v.color = {0.15f, 0.15f, 0.15f, 1.0f}; // Dark gray grid/floor
-        v.roughMetal = {0.9f, 0.0f}; // Rough, non-metallic
     }
     
     entt::entity envEntity = m_previewWorld->GetRegistry().create();
@@ -11563,15 +11560,15 @@ void BlockMakerState::AuditCubeUVPipeline() {
     std::cout << "Formato Vertex Attribute: fw::Vertex (Stride = 64 bytes, standard layout)\n";
     std::cout << "  - Location 0: position     (vec3, float32, offset 0)\n";
     std::cout << "  - Location 1: color        (vec4, float32, offset 12)\n";
-    std::cout << "  - Location 2: roughMetal   (vec2, float32, offset 28: .xy = UV Atlas [0..1])\n";
+    std::cout << "  - Location 2: UV   (vec2, float32, offset 28; legacy member name: roughMetal)\n";
     std::cout << "  - Location 3: materialID   (uint32, offset 36)\n";
     std::cout << "  - Location 4: normal       (vec3, float32, offset 40)\n";
     std::cout << "  - Location 5: ao           (float32, offset 52)\n";
     std::cout << "  - Location 6: light        (float32, offset 56)\n";
     std::cout << "  - Location 7: emissive     (float32, offset 60)\n";
     std::cout << "Percorso Shader Effettivo:\n";
-    std::cout << "  - forge.vert: legge inRoughMetal alla Location 2 e lo passa come outUV interpolato (Location 2) al fragment shader.\n";
-    std::cout << "    Fallback Planar: attivo ESCLUSIVAMENTE se inRoughMetal.x < -0.5 || inRoughMetal.y < -0.5 (nessun clobber di coordinate 0..1 valide).\n";
+    std::cout << "  - forge.vert: legge inUV alla Location 2 e lo passa come outUV interpolato (Location 2) al fragment shader.\n";
+    std::cout << "    Fallback Planar: attivo ESCLUSIVAMENTE se inUV.x < -0.5 || inUV.y < -0.5 (nessun clobber di coordinate 0..1 valide).\n";
     std::cout << "  - forge.frag: campiona la texture PBR con inUV (Location 2).\n";
 
     // 4. Dettaglio Isole UV & AABB
@@ -11806,7 +11803,7 @@ void BlockMakerState::AuditCubeUVPipeline() {
                 break;
             }
         }
-        std::cout << "  Validita' UV buffer GPU (roughMetal.xy): " 
+        std::cout << "  Validita' UV buffer GPU (Vertex::roughMetal.xy legacy slot): "
                   << (allGpuUvValid ? "PASS (UV valide passate allo shader)" : "ATTENZIONE (Bypass/Fallback planar attivo per alcuni vertici)") << "\n";
         cpuGpuMatch = allGpuUvValid;
     }
@@ -11828,9 +11825,9 @@ void BlockMakerState::AuditCubeUVPipeline() {
         }
         std::cout << "4. Poligono UV nel Canvas 2D: Tipo = " << testFace.polygonType 
                   << " | Area UV = " << testFace.uvArea << "\n";
-        std::cout << "5. Vertici nel Buffer GPU: fw::Vertex (Stride 64B), Location 2 inRoughMetal.xy = UV Atlas [0..1]\n";
+        std::cout << "5. Vertici nel Buffer GPU: fw::Vertex (Stride 64B), Location 2 inUV = UV Atlas [0..1]\n";
         std::cout << "6. Texture Sampling nello Shader:\n";
-        std::cout << "     forge.vert: inRoughMetal.xy -> outUV (Location 2)\n";
+        std::cout << "     forge.vert: inUV -> outUV (Location 2)\n";
         std::cout << "     forge.frag: texture(uAlbedoTexture, inUV)\n";
         std::cout << "7. Esito Tracciabilita': CATENA DI CORRISPONDENZA COMPLETA E VERIFICATA.\n";
         std::cout << "   [Dichiarazione Vincolo]: Esecuzione dinamica del renderer Vulkan non invocata durante questa sessione (BUILD NOT RUN / RUNTIME NOT TESTED). La catena topologica, di packing e di attributi GPU e' certificata al 100% in memoria e tramite audit.\n";

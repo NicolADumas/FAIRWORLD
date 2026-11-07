@@ -1,0 +1,113 @@
+====================================================================================
+  FAIRWORLD SCIENTIFIC MATERIAL BINDING CONTRACT TEST RUNNER (P0.3C3)
+  SUITE: BIND (16 Tests: BIND-01..16) | PERSISTENCE & CONTRACT GATE VERIFICATION
+====================================================================================
+
+
+         --- VERIFICHE INTERMEDIE BIND-08 ---
+         1. Draft -> Package:            [PASS]
+         2. Package -> JSON:             [PASS]
+         3. JSON -> Package:             [PASS]
+         4. Package -> MaterialRegistry: [PASS]
+         5. Package -> BlockRegistry:    [PASS]
+         6. Risoluzione scientifica:     [PASS]
+         ------------------------------------
+[UV-PAINT-DIAG] MaskPresence=YES MaskDim=(512x512) CanvasDim=(512x512) MaskIsland=0 InsideChanged=804 OutsideChanged=0 TotalChanged=804
+[PAINTER DIAG] StrokeBegin: UV=(0.25,0.175) TargetIsland=1 LayerID=1 Mode=SurfacePaint
+[PAINTER DIAG] PaintLayer Initial Point: (128,89.6) on LayerID=1
+[UV-PAINT-DIAG] MaskPresence=YES MaskDim=(512x512) CanvasDim=(512x512) MaskIsland=1 InsideChanged=731 OutsideChanged=0 TotalChanged=731
+[PAINTER DIAG] StrokeEnd: DirtyRect=[112,74 -> 142,105] isEmpty=false
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (0.0129 ms).
+[RuntimeManager] [GPU Commit] Upload Texture PBR su Vulkan VRAM...
+[RuntimeManager] [GPU Commit] Feature 4 committata con successo (0.0064 ms).
+
+         --- PREDICATI DETTAGLIATI BIND-15 ---
+         [PASS] CylMapping | Expected=true | Actual=true
+         [PASS] MantleTransform | Expected=vec4(1, 0.65, 0, 0.35) | Actual=vec4(1, 0.65, 0, 0.35)
+         [PASS] TopTransform | Expected=vec4(0.5, 0.35, 0, 0) | Actual=vec4(0.5, 0.35, 0, 0)
+         [PASS] BotTransform | Expected=vec4(0.5, 0.35, 0.5, 0) | Actual=vec4(0.5, 0.35, 0.5, 0)
+         [PASS] HitTest2D | Expected=M:1,T:1,B:1 | Actual=M:1,T:1,B:1
+         [PASS] Paint3DDiag | Expected=inside>0,outside==0 | Actual=in:804,out:0
+         [PASS] TopCap2DDiag | Expected=inside>0,outside==0 | Actual=in:731,out:0
+         [PASS] OutsideTopCapUntouched | Expected=true | Actual=true
+         [PASS] BindingMantle | Expected=id:1,ov:0,orph:0 | Actual=id:1,ov:0,orph:0
+         [PASS] BindingTop | Expected=id:1,ov:0,orph:0 | Actual=id:1,ov:0,orph:0
+         [PASS] BindingBot | Expected=id:1,ov:0,orph:0 | Actual=id:1,ov:0,orph:0
+         [PASS] LegacyOverridesPreserved | Expected=M:1000,B:1000 | Actual=M:1000,B:1000
+         [PASS] PBRReady | Expected=true | Actual=true
+         ------------------------------------
+[RuntimeManager] [Thread 1388] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 23480] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[RuntimeManager] [Thread 23480] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 1388] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 0.4429 ms).
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=0.4429 ms, JobSystemStop=0 ms, Totale=0.4665 ms]
+[RuntimeManager] Distrutto.
+
+         --- PREDICATI DETTAGLIATI BIND-16 ---
+         [PASS] PartA_Uniform | Expected=id:4,ov:0,orph:0 | Actual=A0(id:4,ov:0,orph:0) A1(id:4,ov:0,orph:0)
+         [PASS] PartB_Uniform | Expected=id:1000,ov:0,orph:0 | Actual=B0(id:1000,ov:0,orph:0) B1(id:1000,ov:0,orph:0)
+         [PASS] DensitiesKnown | Expected=Known,Known | Actual=A:Known (7870),B:Known (4930)
+         [PASS] MassPartA | Expected=7870.0 kg | Actual=7870 kg
+         [PASS] MassPartB | Expected=2465.0 kg | Actual=2465 kg
+         [PASS] TotalAssemblyMass | Expected=10335.0 kg | Actual=10335 kg
+         [PASS] CrossContaminationIsolation | Expected=A:1,B:1000 | Actual=A:1,B:1000
+         ------------------------------------
+  [PASS] BIND-01  | Root Material Inheritance for Unoverridden Surfaces
+         Observed: Surf0: ID=1 (overridden=false), Surf1: ID=1 (overridden=false), ZeroRoot: ID=0
+
+  [PASS] BIND-02  | Part-Level Uniform Scientific Material Enforcement & Legacy Preservation
+         Observed: Surf0=1 (ov=0), Surf2=1 (ov=0), Surf3=1 (ov=0) | LegacyLossless=YES
+
+  [PASS] BIND-03  | Preservation and Diagnostic Flagging of Non-Existent Scientific Material IDs
+         Observed: RootOrphan: ID=999999, isOrphan=true | ValidRoot: ID=1, isOrphan=false | Zero: ID=0, isOrphan=false | LegacyStructPreserved=YES
+
+  [PASS] BIND-04  | Legacy Asset JSON Backward Compatibility & Modern Round-Trip Serialization
+         Observed: Legacy deserialized: ID=0 (HasOverride=false) | Modern round-trip: ID=1042 (HasOverride=true) | RootAuthority=1
+
+  [PASS] BIND-05  | Orthogonality: Scientific Material vs Appearance & Visual Layer Independence
+         Observed: Visual edit -> scientificMaterialId=75 | Scientific edit -> visual materialId=20, albedo=textures/gold_painted.png
+
+  [PASS] BIND-06  | MeshFace Semantic Adapter Resolution without DCEL Data Duplication
+         Observed: Overridden Face (surf 2): ID=12, Inherited Face (surf 0): ID=12 | LegacyStructPreserved=YES
+
+  [PASS] BIND-07  | Zero Physical Property Duplication in Surface Contracts
+         Observed: Part Density (ID 1) = 1000.000000 kg/m^3 | Other Density (ID 2) = 2650.000000 kg/m^3 (Zero duplication, uniform part resolution PASS)
+
+  [PASS] BIND-08  | Full Workflow Draft -> Package -> Save -> Load -> Runtime Persistence
+         Observed: Draft->Pkg: PASS | Pkg->JSON: PASS | JSON->Pkg: PASS | Pkg->MatReg: PASS | Pkg->BlockReg: PASS | SciResolution: PASS
+
+  [PASS] BIND-09  | Dynamic Root Propagation Across All Part Surfaces
+         Observed: Prima mutazione: S0=1, S1=1 | Dopo mutazione radice (6): S0=6 (uniforme), S1=6 (uniforme) | LegacyPreserved=YES
+
+  [PASS] BIND-10  | Orphan Scientific IDs Preservation Across Workflow and Diagnostic Audit
+         Observed: ID orfani preservati: Root=999999, Surface1=999999 (isOrphan=true), LegacyStruct=888888, Diagnostica: 2 warnings emessi.
+
+  [PASS] BIND-11  | Legacy Package Backward Compatibility Without Surfaces Key
+         Observed: Package legacy caricato senza chiave 'surfaces'. surfaces.size()=0, root ID=1, risoluzione superfici fall-through deterministica al materiale radice (1).
+
+  [PASS] BIND-12  | Complete Orthogonal Separation Between AppearanceID and Scientific Material Bindings
+         Observed: Indipendenza verificata: mutazione AppearanceID (1001->2002) non altera scientificMaterialId (3) né superficie (risolve a root 3). Mutazione superficie non altera AppearanceID né PBR.
+
+  [PASS] BIND-13  | Block Maker Surface Selection, Root Isolation, Dynamic Inheritance and PBR Decoupling
+         Observed: Autorita radice verificata: entrambe le superfici risolvono uniformemente al materiale della parte (1 poi 4). Legacy override 1000 preservato in struct. Mutazioni PBR e scientifiche completamente ortogonali; ripristino scientifico a 0 preserva PBR.
+
+  [PASS] BIND-14  | Block Maker Surface Override Persistence, Custom Materials and Orphan Preservation
+         Observed: Ciclo persistenza completato: root=2 uniforme, sup 1=custom 1001 preservato (densita 3200 kg/m^3, fusione 2150 K), sup 2=orfano 9999 preservato intatto e diagnosticato, sup 3=eredita 2. Nessun reset silenzioso.
+
+  [PASS] BIND-15  | Cylinder UV Isolation, UV-PAINT Diagnostic and Scientific Surface Binding
+         Observed: CylTransform=OK, 2DHit=OK, 3DPaint=OK, 2DTopCap(in=731,out=0,untouched=YES)=OK, BindingUniform(Mantle=1,Top=1,Bot=1)=OK, LegacyPreserved=YES, PBRReady=OK
+
+  [PASS] BIND-16  | Part Assembly Preserves Distinct Scientific Materials in Multi-Material Bodies
+         Observed: Assembly multi-parte verificato: ParteA=4 (massa=7870.000000 kg), ParteB=1000 (massa=2465.000000 kg), MassaTotale=10335.000000 kg. Mutazione ParteA isolata (ParteB invariata).
+
+====================================================================================
+  TEST SUMMARY
+====================================================================================
+  TOTAL TESTS:   16 / 16
+  PASSED:        16
+  FAILED:        0
+  DURATION:      427.95 ms
+  STATUS:        ALL PASS (SUCCESS)
+====================================================================================

@@ -69,6 +69,8 @@ struct VulkanFinalSnapshot
 {
     uint32_t liveSemaphores = 0;
     uint32_t validationErrors = 0;
+    bool cleanupDeferred = false;
+    bool deviceLostAfterCleanup = false;
     // In futuro: altri handle Vulkan tracciati (pipeline, descriptor pool, ecc.)
 };
 
@@ -88,11 +90,11 @@ public:
 
     // ── FINAL VULKAN OWNERSHIP GATE ───────────────────────────
     // Chiamato DOPO RenderManager::Shutdown(), PRIMA di VulkanResourceTracker::Shutdown()
-    static VulkanFinalSnapshot CollectVulkanFinal();
+    static VulkanFinalSnapshot CollectVulkanFinal(bool cleanupDeferred = false, bool deviceLostAfterCleanup = false);
     static bool EvaluateVulkanFinal(const VulkanFinalSnapshot& snap);
     static void PrintVulkanFinalReport(const VulkanFinalSnapshot& snap);
     // Helper combinato: Collect + Evaluate + Print
-    static bool RunVulkanFinalGate();
+    static bool RunVulkanFinalGate(bool cleanupDeferred = false, bool deviceLostAfterCleanup = false);
 
 private:
     LifecycleFreezeGate() = delete;

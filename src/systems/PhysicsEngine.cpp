@@ -3,10 +3,16 @@
 #include "GameWorld.h"
 #include "PlanetComponents.h"
 #include "MapWorldGenerator.h"
+#include "PlanetRadialMapping.h"
+#include "PlanetaryCameraFrame.h"
+#include "PlanetaryMovementMath.h"
 #include <algorithm>
+#include <chrono>
+#include <unordered_set>
 #include <glm/gtx/quaternion.hpp>
 
-void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world) {
+void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world,
+                                   const glm::vec3* preferredPlanetaryForward) {
     // 1. Azzera la forza netta del frame precedente
     rb.netForce = glm::vec3(0.0f);
 
@@ -17,7 +23,9 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld&
     
     bool isSpherical = false;
     auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
-    if (!planetView.empty()) isSpherical = true;
+    if (!planetView.empty()) {
+        isSpherical = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin()).isLogicalSphere;
+    }
 
     // Se ci troviamo in un chunk non caricato e non siamo su un pianeta sferico di base, freeziamo la fisica!
     if (!isSpherical && (feetBlock == fw::BlockType::OutOfBounds || centerBlock == fw::BlockType::OutOfBounds)) {
@@ -31,7 +39,7 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld&
 
     // 3. Applica forze continue (Gravità e Attrito - Dinamica Cap. 8/9)
     ApplyGravity(rb, world);
-    ApplyDrag(rb);
+    ApplyDrag(rb, world);
 
     // [Spazio per galleggiamento Archimede se in acqua]
     if (rb.isInWater) {
@@ -54,7 +62,7 @@ void PhysicsEngine::StepSimulation(RigidBody& rb, float dt, const fw::GameWorld&
     Integrate(rb, dt);
 
     // 5. Risolvi collisioni spaziali e reazioni vincolari (Cap. 9)
-    ResolveCollisions(rb, dt, world);
+    ResolveCollisions(rb, dt, world, preferredPlanetaryForward);
 }
 
 void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
@@ -86,7 +94,7 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
             float r_clamped = std::max(distance, R * 0.1f);
             float ratio = R / r_clamped;
             float currentG = surfaceGravity * (ratio * ratio);
-            
+
             glm::vec3 gravityAcceleration = normDir * currentG;
             rb.dbg_gravityAccel = gravityAcceleration;
             
@@ -100,7 +108,7 @@ void PhysicsEngine::ApplyGravity(RigidBody& rb, const fw::GameWorld& world) {
     }
 }
 
-void PhysicsEngine::ApplyDrag(RigidBody& rb) {
+void PhysicsEngine::ApplyDrag(RigidBody& rb, const fw::GameWorld& world) {
     // F_d = -k * v (Resistenza aerodinamica semplificata lineare)
     glm::vec3 dragForce = -rb.drag * rb.velocity;
     rb.netForce += dragForce;
@@ -115,7 +123,20 @@ void PhysicsEngine::ApplyDrag(RigidBody& rb) {
     const float massRatio = (rb.mass > 0.0f) ? rb.mass / BASE_MASS : 1.0f;
     const float terminalVel = BASE_TERMINAL * sqrtf(massRatio);
 
-    if (rb.velocity.y < -terminalVel) {
+    bool spherical = false;
+    auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
+    if (!planetView.empty()) {
+        const auto& geometry = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin());
+        spherical = geometry.isLogicalSphere;
+    }
+
+    if (spherical) {
+        glm::vec3 up;
+        if (fw::PlanetaryCameraFrame::Normalize(rb.position, up)) {
+            rb.velocity = fw::PlanetaryMovementMath::ClampInwardRadialSpeed(rb.velocity, up, terminalVel);
+        }
+    } else if (rb.velocity.y < -terminalVel) {
+        // Preserve the legacy Cartesian-world terminal speed rule.
         rb.velocity.y = -terminalVel;
     }
 }
@@ -129,20 +150,34 @@ void PhysicsEngine::Integrate(RigidBody& rb, float dt) {
     // La posizione verrà aggiornata parzialmente in ResolveCollisions per gestire l'AABB
 }
 
-void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world) {
+void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world,
+                                      const glm::vec3* preferredPlanetaryForward) {
     rb.isGrounded = false;
     rb.isAgainstWall = false;
     rb.dbg_voxelContacts = 0;
+    rb.dbg_collisionProbeCount = 0;
+    rb.dbg_collisionQueryNanoseconds = 0;
+    rb.dbg_initialRecoveryProbeCount = 0;
+    rb.dbg_contactRefinementProbeCount = 0;
+    rb.dbg_airSamples = 0;
+    rb.dbg_passableVoxelSamples = 0;
+    rb.dbg_outOfBoundsSamples = 0;
+    rb.dbg_terrainPendingSamples = 0;
+    rb.dbg_terrainPending = false;
+    rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::None;
+    rb.dbg_radialGroundContact = false;
+    rb.dbg_tangentialSolidBlock = false;
+    rb.dbg_initialPenetrationUnresolved = false;
+    rb.dbg_groundVoxelCoord = glm::ivec3(-1);
+    rb.dbg_groundContactNormal = glm::vec3(0.0f);
     
     bool isSpherical = false;
     fw::PlanetSize pSize = fw::PlanetSize::Medium;
-    bool isFlat = false;
     auto planetView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
     if (!planetView.empty()) {
         auto& geom = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin());
         pSize = geom.planetSize;
-        isFlat = !geom.isLogicalSphere;
-        isSpherical = true;
+        isSpherical = geom.isLogicalSphere;
     }
 
     glm::vec3 voxPos = rb.position;
@@ -152,7 +187,7 @@ void PhysicsEngine::ResolveCollisions(RigidBody& rb, float dt, const fw::GameWor
     glm::vec3 preCollisionGlobalPos = rb.position;
     
     if (isSpherical) {
-        ResolveSphericalCollisions(rb, dt, world, pSize);
+        ResolveSphericalCollisions(rb, dt, world, preferredPlanetaryForward);
         return;
     }
 
@@ -710,61 +745,146 @@ bool PhysicsEngine::SweepTest(const AABB& playerBounds, const glm::vec3& movemen
     return outHit.hit;
 }
 
-void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw::GameWorld& world, fw::PlanetSize pSize) {
+void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw::GameWorld& world,
+                                               const glm::vec3* preferredPlanetaryForward) {
     if (glm::length(rb.position) < 0.1f) return;
     
     glm::vec3 preCollisionGlobalPos = rb.position;
     glm::vec3 movement = rb.velocity * dt;
     float oldVelY = glm::dot(rb.velocity, glm::normalize(rb.position));
 
-    glm::vec3 localUp = glm::normalize(rb.position);
-    glm::vec3 localRight = glm::normalize(glm::cross(localUp, glm::vec3(0,1,0)));
-    if (glm::length(glm::cross(localUp, glm::vec3(0,1,0))) < 0.01f) {
-        localRight = glm::normalize(glm::cross(localUp, glm::vec3(1,0,0)));
-    }
-    glm::vec3 localFwd = glm::cross(localRight, localUp);
+    glm::vec3 localUp;
+    if (!fw::PlanetaryCameraFrame::Normalize(rb.position, localUp)) return;
 
-    auto isCylinderBlocked = [&](const glm::vec3& cPos) -> bool {
+    fw::PlanetaryCameraFrame::State collisionFrame{
+        rb.planetaryCollisionFrameUp,
+        rb.planetaryCollisionFrameForward,
+        rb.planetaryCollisionFrameInitialized};
+    bool frameReady = false;
+    if (preferredPlanetaryForward) {
+        glm::vec3 preferredTangent = fw::PlanetaryCameraFrame::ProjectToTangent(
+            *preferredPlanetaryForward, localUp);
+        frameReady = fw::PlanetaryCameraFrame::Normalize(preferredTangent, preferredTangent);
+        if (frameReady) collisionFrame = {localUp, preferredTangent, true};
+    }
+    if (!frameReady) frameReady = fw::PlanetaryCameraFrame::TransportTo(collisionFrame, localUp);
+    if (!frameReady) return;
+    rb.planetaryCollisionFrameUp = collisionFrame.up;
+    rb.planetaryCollisionFrameForward = collisionFrame.forward;
+    rb.planetaryCollisionFrameInitialized = collisionFrame.initialized;
+
+    fw::PlanetSize planetSize = fw::PlanetSize::Tiny;
+    auto planetGeometryView = const_cast<fw::GameWorld&>(world).GetRegistry().view<fw::PlanetGeometryComponent>();
+    if (!planetGeometryView.empty()) {
+        planetSize = planetGeometryView.get<fw::PlanetGeometryComponent>(*planetGeometryView.begin()).planetSize;
+    }
+
+    glm::vec3 localFwd = collisionFrame.forward;
+    glm::vec3 localRight;
+    if (!fw::PlanetaryCameraFrame::Normalize(glm::cross(localFwd, localUp), localRight)) return;
+    bool usedRadialStepCorrection = false;
+
+    enum class CylinderBlockReason : uint8_t { Clear, SolidVoxel, OutOfBounds, TerrainPending, InvalidInput };
+    enum class CollisionProbePhase : uint8_t { General, InitialRecovery, ContactRefinement };
+    CollisionProbePhase probePhase = CollisionProbePhase::General;
+    std::unordered_set<uint64_t> solidContacts;
+    auto isCylinderBlocked = [&](const glm::vec3& cPos) -> CylinderBlockReason {
         float r = rb.radius;
         float h = rb.height;
-        float y_steps[] = { 0.1f, h * 0.5f, h - 0.1f };
-        glm::vec2 xz_offsets[] = {
+        // RigidBody::position is the foot/base point. Probe it as well as the
+        // interior heights so resting contact cannot settle 0.1 units inside
+        // a solid voxel while the lowest legacy sample is still clear.
+        float y_steps[] = { 0.0f, 0.1f, h * 0.5f, h - 0.1f };
+        std::array<glm::vec2, 17> xz_offsets = {{
             {0, 0}, {r, 0}, {-r, 0}, {0, r}, {0, -r},
             {r*0.707f, r*0.707f}, {-r*0.707f, r*0.707f}, {r*0.707f, -r*0.707f}, {-r*0.707f, -r*0.707f}
-        };
+        }};
+        // The cardinal/diagonal perimeter probes leave angular gaps wide
+        // enough for a voxel corner to intersect the player's cylinder.
+        // Add eight deterministic half-angle probes at 95% radius.
+        constexpr int perimeterSamples = 8;
+        for (int sample = 0; sample < perimeterSamples; ++sample) {
+            const float angle = 6.28318530718f *
+                (static_cast<float>(sample) + 0.5f) / static_cast<float>(perimeterSamples);
+            xz_offsets[9 + sample] = glm::vec2(r * 0.95f * std::cos(angle),
+                                                r * 0.95f * std::sin(angle));
+        }
         for (float y_off : y_steps) {
             for (auto& off : xz_offsets) {
                 glm::vec3 samplePos = cPos + localUp * y_off + localRight * off.x + localFwd * off.y;
-                fw::BlockType b = world.GetBlockCartesian(samplePos);
-                
-                if (b != fw::BlockType::Air && b != fw::BlockType::Water && 
-                    b != fw::BlockType::Lava && b != fw::BlockType::StargatePortal) {
-                    
-                    if (b == fw::BlockType::OutOfBounds) {
-                        float dist = glm::length(samplePos);
-                        float R = fw::PlanetMath::GetPlanetRadius(pSize);
-                        if (dist - R < 25.0f) return true;
-                        continue;
+                if (rb.dbg_countCollisionProbes) ++rb.dbg_collisionProbeCount;
+                const auto queryStart = rb.dbg_countCollisionProbes ? std::chrono::steady_clock::now()
+                    : std::chrono::steady_clock::time_point{};
+                const fw::WorldVoxelQueryResult query = world.QueryBlockCartesian(samplePos);
+                if (rb.dbg_countCollisionProbes) {
+                    rb.dbg_collisionQueryNanoseconds += static_cast<uint64_t>(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now() - queryStart).count());
+                    if (probePhase == CollisionProbePhase::InitialRecovery)
+                        ++rb.dbg_initialRecoveryProbeCount;
+                    else if (probePhase == CollisionProbePhase::ContactRefinement)
+                        ++rb.dbg_contactRefinementProbeCount;
+                }
+                switch (query.status) {
+                    case fw::WorldVoxelQueryStatus::SolidVoxel: {
+                        rb.dbg_lastLookupCoord = query.voxelCoord;
+                        rb.dbg_lastLookupSolid = true;
+                        rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::SolidVoxel;
+                        const uint64_t key = (static_cast<uint64_t>(query.voxelCoord.x) << 18) |
+                            (static_cast<uint64_t>(query.voxelCoord.y) << 11) |
+                            static_cast<uint64_t>(query.voxelCoord.z);
+                        if (solidContacts.insert(key).second) ++rb.dbg_voxelContacts;
+                        return CylinderBlockReason::SolidVoxel;
                     }
-                    return true;
+                    case fw::WorldVoxelQueryStatus::Air:
+                        ++rb.dbg_airSamples;
+                        rb.dbg_lastLookupCoord = query.voxelCoord;
+                        rb.dbg_lastLookupSolid = false;
+                        rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::Air;
+                        break;
+                    case fw::WorldVoxelQueryStatus::PassableVoxel:
+                        ++rb.dbg_passableVoxelSamples;
+                        rb.dbg_lastLookupCoord = query.voxelCoord;
+                        rb.dbg_lastLookupSolid = false;
+                        rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::PassableVoxel;
+                        break;
+                    case fw::WorldVoxelQueryStatus::OutOfBounds:
+                        ++rb.dbg_outOfBoundsSamples;
+                        rb.dbg_lastLookupCoord = query.voxelCoord;
+                        rb.dbg_lastLookupSolid = false;
+                        rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::OutOfBounds;
+                        return CylinderBlockReason::OutOfBounds;
+                    case fw::WorldVoxelQueryStatus::TerrainPending:
+                        ++rb.dbg_terrainPendingSamples;
+                        rb.dbg_terrainPending = true;
+                        rb.dbg_lastLookupCoord = query.voxelCoord;
+                        rb.dbg_lastLookupSolid = false;
+                        rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::TerrainPending;
+                        return CylinderBlockReason::TerrainPending;
+                    case fw::WorldVoxelQueryStatus::InvalidInput:
+                        rb.dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::InvalidInput;
+                        return CylinderBlockReason::InvalidInput;
                 }
             }
         }
-        return false;
+        return CylinderBlockReason::Clear;
     };
 
-    auto tryMove = [&](const glm::vec3& stepVec, bool isY) -> bool {
-        if (!isCylinderBlocked(rb.position + stepVec)) {
+    auto tryMove = [&](const glm::vec3& stepVec, bool isY, CylinderBlockReason& blockedBy) -> bool {
+        blockedBy = isCylinderBlocked(rb.position + stepVec);
+        if (blockedBy == CylinderBlockReason::Clear) {
             rb.position += stepVec;
             return true;
         }
-        if (!isY && rb.isGrounded) {
+        if (!isY && rb.isGrounded && blockedBy == CylinderBlockReason::SolidVoxel) {
             float stepUp = 0.6f;
-            if (!isCylinderBlocked(rb.position + localUp * stepUp)) {
-                if (!isCylinderBlocked(rb.position + localUp * stepUp + stepVec)) {
+            if (isCylinderBlocked(rb.position + localUp * stepUp) == CylinderBlockReason::Clear) {
+                const CylinderBlockReason stepMoveReason = isCylinderBlocked(rb.position + localUp * stepUp + stepVec);
+                if (stepMoveReason == CylinderBlockReason::Clear) {
                     rb.position += localUp * stepUp + stepVec;
+                    usedRadialStepCorrection = true;
                     for(float d = 0.1f; d <= stepUp; d += 0.1f) {
-                        if (isCylinderBlocked(rb.position - localUp * 0.1f)) break;
+                        if (isCylinderBlocked(rb.position - localUp * 0.1f) != CylinderBlockReason::Clear) break;
                         rb.position -= localUp * 0.1f;
                     }
                     return true;
@@ -774,15 +894,52 @@ void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw
         return false;
     };
 
-    // Basic Depenetration
-    if (isCylinderBlocked(rb.position)) {
-        for(int i = 1; i <= 5; ++i) {
-            if (!isCylinderBlocked(rb.position + localUp * (0.1f * i))) {
-                rb.position += localUp * (0.1f * i);
+    // Recover an initially embedded body to the nearest clear radial position.
+    // Solid terrain is bounded by the configured radial voxel column; missing,
+    // OOB, or invalid samples stop recovery rather than being treated as clear.
+    bool usedInitialDepenetration = false;
+    const glm::vec3 initialPosition = rb.position;
+    probePhase = CollisionProbePhase::InitialRecovery;
+    const CylinderBlockReason initialOverlap = isCylinderBlocked(initialPosition);
+    if (initialOverlap == CylinderBlockReason::SolidVoxel) {
+        const float guaranteedAirRadius = fw::PlanetMath::GetPlanetRadius(planetSize) +
+            static_cast<float>(fw::ChunkDimensions::VoxelsY - fw::PlanetRadialMapping::ReferenceVoxelOffset) -
+            0.5f + 0.1f;
+        const float maximumDistance = std::max(0.0f, guaranteedAirRadius - glm::length(initialPosition));
+        const int maximumSteps = static_cast<int>(std::ceil(maximumDistance / 0.1f)) + 1;
+        float lastSolidDistance = 0.0f;
+        bool recovered = false;
+        for (int step = 1; step <= maximumSteps; ++step) {
+            const float distance = std::min(maximumDistance, static_cast<float>(step) * 0.1f);
+            const glm::vec3 candidate = initialPosition + localUp * distance;
+            const CylinderBlockReason candidateState = isCylinderBlocked(candidate);
+            if (candidateState == CylinderBlockReason::Clear) {
+                float clearDistance = distance;
+                float solidDistance = lastSolidDistance;
+                for (int refinement = 0; refinement < 8; ++refinement) {
+                    const float midpointDistance = (solidDistance + clearDistance) * 0.5f;
+                    const CylinderBlockReason midpointState = isCylinderBlocked(
+                        initialPosition + localUp * midpointDistance);
+                    if (midpointState == CylinderBlockReason::Clear) {
+                        clearDistance = midpointDistance;
+                    } else if (midpointState == CylinderBlockReason::SolidVoxel) {
+                        solidDistance = midpointDistance;
+                    } else {
+                        break;
+                    }
+                }
+                rb.position = initialPosition + localUp * clearDistance;
+                usedInitialDepenetration = true;
+                recovered = true;
                 break;
             }
+            if (candidateState != CylinderBlockReason::SolidVoxel) break;
+            lastSolidDistance = distance;
+            if (distance >= maximumDistance) break;
         }
+        rb.dbg_initialPenetrationUnresolved = !recovered;
     }
+    probePhase = CollisionProbePhase::General;
 
     float dy = glm::dot(movement, localUp);
     float dx = glm::dot(movement, localRight);
@@ -793,8 +950,33 @@ void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw
         float inc = dy / steps;
         glm::vec3 stepVec = localUp * inc;
         for(int i = 0; i < steps; ++i) {
-            if (!tryMove(stepVec, true)) {
-                if (dy < 0.0f) rb.isGrounded = true;
+            CylinderBlockReason blockedBy = CylinderBlockReason::Clear;
+            if (!tryMove(stepVec, true, blockedBy)) {
+                if (dy < 0.0f && blockedBy == CylinderBlockReason::SolidVoxel) {
+                    rb.dbg_radialGroundContact = true;
+                    rb.dbg_groundVoxelCoord = rb.dbg_lastLookupCoord;
+                    rb.dbg_groundContactNormal = localUp;
+                    // The sweep advances in <= 0.1-unit increments. Without
+                    // refining the last clear/first solid interval, the body
+                    // can be left almost one step above the surface: Grounded
+                    // is true for this tick, then drops on the next small
+                    // gravity step. Find the voxel contact boundary along the
+                    // same swept segment instead of applying a radial clamp.
+                    glm::vec3 clearPosition = rb.position;
+                    glm::vec3 solidPosition = rb.position + stepVec;
+                    probePhase = CollisionProbePhase::ContactRefinement;
+                    for (int refinement = 0; refinement < 8; ++refinement) {
+                        const glm::vec3 midpoint = (clearPosition + solidPosition) * 0.5f;
+                        if (isCylinderBlocked(midpoint) == CylinderBlockReason::Clear) {
+                            clearPosition = midpoint;
+                        } else {
+                            solidPosition = midpoint;
+                        }
+                    }
+                    probePhase = CollisionProbePhase::General;
+                    rb.position = clearPosition;
+                    rb.isGrounded = true;
+                }
                 break;
             }
         }
@@ -805,8 +987,12 @@ void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw
         float inc = dx / steps;
         glm::vec3 stepVec = localRight * inc;
         for(int i = 0; i < steps; ++i) {
-            if (!tryMove(stepVec, false)) {
-                rb.isAgainstWall = true;
+            CylinderBlockReason blockedBy = CylinderBlockReason::Clear;
+            if (!tryMove(stepVec, false, blockedBy)) {
+                if (blockedBy == CylinderBlockReason::SolidVoxel) {
+                    rb.isAgainstWall = true;
+                    rb.dbg_tangentialSolidBlock = true;
+                }
                 break;
             }
         }
@@ -817,15 +1003,36 @@ void PhysicsEngine::ResolveSphericalCollisions(RigidBody& rb, float dt, const fw
         float inc = dz / steps;
         glm::vec3 stepVec = localFwd * inc;
         for(int i = 0; i < steps; ++i) {
-            if (!tryMove(stepVec, false)) {
-                rb.isAgainstWall = true;
+            CylinderBlockReason blockedBy = CylinderBlockReason::Clear;
+            if (!tryMove(stepVec, false, blockedBy)) {
+                if (blockedBy == CylinderBlockReason::SolidVoxel) {
+                    rb.isAgainstWall = true;
+                    rb.dbg_tangentialSolidBlock = true;
+                }
                 break;
             }
         }
     }
 
     if (dt > 0.0f) {
-        rb.velocity = (rb.position - preCollisionGlobalPos) / dt;
+        const glm::vec3 displacementVelocity = (rb.position - preCollisionGlobalPos) / dt;
+        rb.velocity = displacementVelocity;
+        if (usedRadialStepCorrection || usedInitialDepenetration) {
+            // Stepping over a voxel is a positional collision resolution, not
+            // an upward impulse. Keep the incoming radial velocity (or cancel
+            // an inward one when the same tick established Grounded) instead
+            // of converting the step height into launch velocity.
+            float desiredRadialVelocity = oldVelY;
+            if (rb.isGrounded && desiredRadialVelocity < 0.0f) desiredRadialVelocity = 0.0f;
+            const float displacementRadialVelocity = glm::dot(displacementVelocity, localUp);
+            rb.velocity += localUp * (desiredRadialVelocity - displacementRadialVelocity);
+        }
+        if (rb.isGrounded) {
+            // A downward SolidVoxel hit is a unilateral contact: retain
+            // tangential motion, but remove velocity into the contacted voxel.
+            const float inwardRadialVelocity = glm::dot(rb.velocity, localUp);
+            if (inwardRadialVelocity < 0.0f) rb.velocity -= localUp * inwardRadialVelocity;
+        }
     }
 
     if (rb.isGrounded && oldVelY < -7.7f) {

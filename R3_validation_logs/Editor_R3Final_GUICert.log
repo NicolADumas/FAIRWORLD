@@ -1,0 +1,872 @@
+[VULKAN] Esclusione selettiva layer Twitch: impostato VK_LOADER_LAYERS_DISABLE=*twitch*.
+==========================================
+    FAIRWORLD ENGINE - BOOT SEQUENCE   
+==========================================
+
+[SYSTEM] AI Server Python avviato in background.
+
+Seleziona la modalita' di avvio:
+0. HUB (Hub Principale)
+1. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)
+2. LA FORGE (Editor Strutture e Minivoxel)
+3. PHYSICS LAB (Test Fisica e Materiali)
+4. CHUNK EDITOR (Modellazione Terreni 2D/3D)
+5. PLANET MAPPER (Configura Globo & Sistema)
+6. BLOCK MAKER (Editor Blocchi e Materiali PBR)
+7. SOLAR SYSTEM (Mappa Spaziale)
+8. MATERIAL ATLAS (Catalogo Scientifico PBR)
+Scelta [0-8] (predefinito 0): ==========================================
+    FAIRWORLD ENGINE - INIZIALIZZAZIONE   
+==========================================
+
+[SYSTEM] Inizializzazione Finestra Principale...
+[SYSTEM] Finestra Desktop creata con successo.
+[SYSTEM] Avvio in MODALITA' DESKTOP (Probing OpenXR disabilitato per avvio rapido).
+[VULKAN FORENSIC PHASE] -> Startup
+[VULKAN] Istanza creata con successo (Validation Layers: ATTIVI).
+[VULKAN] Surface Win32 creata con successo.
+[VULKAN] GPU Selezionata: NVIDIA GeForce GTX 1660 Ti
+[VULKAN] Logical Device e Code (Graphics, Present, Transfer) configurate.
+[VULKAN FORENSIC] VkDebugUtilsMessengerEXT successfully registered on VkInstance: 0x22192fa0080
+[VMA] VmaAllocator inizializzato con successo.
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] RenderPass creato (con Depth Buffer).
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN] GLB Graphics Pipeline creata con successo!
+[VULKAN] Depth Buffer creato (126).
+
+[VULKAN FORENSIC][vkCreateFramebuffer #1]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x90000000009
+    [1] ImageView: 0x560000000056
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x570000000057
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #2]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xa000000000a
+    [1] ImageView: 0x560000000056
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x580000000058
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #3]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xb000000000b
+    [1] ImageView: 0x560000000056
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x590000000059
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #1]
+  Handle      : 0x5a000000005a
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : ImageAvailableSem_0
+  Phase       : Startup
+  Device      : 0x221937abe60
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x2e8
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #2]
+  Handle      : 0x5c000000005c
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : ImageAvailableSem_1
+  Phase       : Startup
+  Device      : 0x221937abe60
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x2e8
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #3]
+  Handle      : 0x5e000000005e
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_0
+  Phase       : Startup
+  Device      : 0x221937abe60
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #4]
+  Handle      : 0x5f000000005f
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_1
+  Phase       : Startup
+  Device      : 0x221937abe60
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #5]
+  Handle      : 0x600000000060
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_2
+  Phase       : Startup
+  Device      : 0x221937abe60
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[VULKAN] Motore Grafico pronto. Pronti a renderizzare!
+[ASSETS] Nessun biomes.json trovato, uso biomi di default.
+[ASSETS] Caricati 19 blocchi, 3 mob e 1 biomi.
+[VULKAN] Nessun modello trovato in models/goblin.obj
+[VULKAN] Nessun modello trovato in models/skeleton.obj
+[VULKAN] Nessun modello trovato in models/golem.obj
+[PERF] Ingresso in main -> prima finestra creata: 3529.72 ms
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[MaterialRegistry] Caricati 21 materiali da assets/definitions/materials.json
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[SYSTEM] Catalogo materiali custom caricato con successo da disco.
+[CacheManager] Inizializzazione Gestore Cache CPU & GPU...
+[WorldProjectManager] Inizializzato con percorso predefinito: saves/map/world_map.json
+[MapDocument] Caricamento da JSON: saves/map/world_map.json
+[WorldProjectManager] File progetto non trovato o non valido in: saves/map/world_map.json. Inizializzazione predefinita.
+[WorldProjectManager] Nessun salvataggio pianeti trovato. Creato nuovo 'Fairworld Prime'.
+[WorldProjectManager] Libreria terreni vuota. Creato 'Terreno Standard' con strati.
+[WorldProjectManager] Validazione BlockRegistry completata con successo.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 20984] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[CacheManager] Sincronizzazione globale di tutti i materiali su GPU...
+[HubState] Costruito.
+[SYSTEM] Avviato HubState...
+
+[SYSTEM] Entro nel main loop guidato dalla State Machine...
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.
+[VULKAN FORENSIC PHASE] -> Resize
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x570000000057
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x580000000058
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x590000000059
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] Depth Buffer creato (126).
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN] GLB Graphics Pipeline creata con successo!
+
+[VULKAN FORENSIC][vkCreateFramebuffer #4]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xad00000000ad
+    [1] ImageView: 0xb200000000b2
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xc500000000c5
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #5]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xae00000000ae
+    [1] ImageView: 0xb200000000b2
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xc600000000c6
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #6]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xaf00000000af
+    [1] ImageView: 0xb200000000b2
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xc700000000c7
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (1264x681)
+[PERF] Ingresso in main -> primo frame presentato:     3786.66 ms
+[PERF] Ingresso in main -> prima interazione effettiva: 3786.66 ms
+       (Bootstrap motore netto: 3708.14 ms)
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 72.0 | FPS: 72.0 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 76.8 | FPS: 76.8 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 75.2 | FPS: 75.2 | FixedTicks/s: 59.8 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 135.2 | FPS: 135.2 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 183.8 | FPS: 183.8 | FixedTicks/s: 60.1 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 199.2 | FPS: 199.2 | FixedTicks/s: 59.9 | Minimized: NO
+[BlockMakerState] Creato.
+[BM-R1][3D] BlockMakerRenderer::Draw() avviato. GameMode=5 (5=BlockMaker), Extent=(1264x681)
+[BM-R1][3D] BlockMakerRenderer::Draw() completato: Entita nel view=0, Entita disegnate con vkCmdDraw=0
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[RuntimeManager] [Thread 21744] [RequireFeaturesAsync] Registrate richieste CPU: 0x1 -> pendingMask=0x1 (m_workerActive=true).
+[RuntimeManager] [Thread 21744] [RequireFeaturesAsync] Registrate richieste CPU: 0x2 -> pendingMask=0x3 (m_workerActive=true).
+[RuntimeManager] [Thread 21744] [RequireFeaturesAsync] Registrate richieste CPU: 0x4 -> pendingMask=0x7 (m_workerActive=true).
+[RuntimeManager] [Thread 21744] [Phase: Sync Prep] Attesa completamento worker asincrono in corso...
+[RuntimeManager] [Thread 20984] [Phase: Dedicated Worker] Estratto batch: 0x7 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (504.4 ms).
+[RuntimeManager] [Thread 20984] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[RuntimeManager] [Thread 21744] [Phase: Sync Prep] Worker asincrono terminato o inattivo.
+[RuntimeManager] [GPU Commit] Inizializzazione Lazy VRAM Allocator e DMA...
+[Vulkan DMA] Inizializzazione Macro Staging Buffer e Timeline Semaphore...
+
+[VULKAN FORENSIC][vkCreateSemaphore #6]
+  Handle      : 0xda00000000da
+  Caller      : VulkanDmaManager::Initialize
+  Owner       : VulkanDmaManager
+  Name        : DMATransferTimeline
+  Phase       : Runtime
+  Device      : 0x221937abe60
+  Result      : 0
+  Callstack:
+    [0] fw::VulkanDmaManager::Initialize + 0x1a6
+    [1] fw::RuntimeManager::CommitGpuGlobalVRAM + 0x212
+    [2] fw::RuntimeManager::ProcessGpuCommits + 0x24e
+    [3] fw::RuntimeManager::RequireFeaturesSync + 0x196
+    [4] BlockMakerState::Init + 0x156
+    [5] StateManager::ProcessTransitions + 0x386
+    [6] main + 0x194a
+    [7] invoke_main + 0x39
+
+[Vulkan DMA] Transfer Timeline Semaphore creato e inizializzato a 0.
+[RuntimeManager] [GPU Commit] Feature 1 committata con successo (334.5 ms).
+[RuntimeManager] [GPU Commit] Feature 2 committata con successo (0.0 ms).
+[RuntimeManager] [GPU Commit] Upload Texture PBR su Vulkan VRAM...
+[RuntimeManager] [GPU Commit] Textures PBR caricate su VkImage con successo.
+[RuntimeManager] [GPU Commit] Feature 4 committata con successo (1264.0 ms).
+[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[CacheManager] Sincronizzazione GPU Material Cache per BlockID 1...
+[BM-UI2.1][PREVIEW] invalidated reason=BlockIDChanged BlockID=1
+[BM-UI2.1][PREVIEW] update queued BlockID=1
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[PAINTER ASSET] Caricati 1 PaintLayer persistenti da assets/layers/block_1_layers.json per BlockID=1
+[PAINTER DIAG] GPU Upload Completed: (512x512) Recreate=true DescriptorBound=YES
+[PAINTER ASSET] Load BlockID=1 Layers=1 Dimensions=(512x512)
+[PAINTER ASSET] PreviewUpdated BlockID=1
+[BM-UI2.1][PREVIEW] invalidated reason=EditableMeshModified BlockID=1
+[BM-PREVIEW][COMPILE] EditableMesh Authoritative Success BlockID=1 Vertices=36 Triangles=12
+[BM-UI2.1][PREVIEW] update queued BlockID=1
+[BM-UI2.3-B1][INIT] LoadFactoryDraft(BlockID=1) esito: SUCCESS
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 3 (Snapshot 1/5)
+[VRAM] Allocazione dinamica nuovo compartimento: 0 (256MB)
+[VulkanMemory] AddVramCompartment: Allocazione Compartimento da 256MB...
+[VulkanMemory] Staging Buffer 128MB allocato.
+[VulkanMemory] Compartimento VRAM 0 da 256MB allocato.
+[BM-R1][IMGUI] Prima chiamata a BlockMakerState::Render() eseguita.
+[BM-R1][IMGUI] Prima chiamata a BlockMakerState::DrawUI() eseguita.
+[BM-R1][3D] BlockMakerRenderer::Draw() avviato. GameMode=5 (5=BlockMaker), Extent=(1264x681)
+[BM-R1][3D] Entita ECS [PreviewBlock] EntityID=2 | Vertici=36 | Triangoli=12 | MeshType=1 | VramHandle=2 | IsVisible=SI
+[BM-R1][3D] Entita ECS [BlockMakerEnv] EntityID=1 | Vertici=36 | Triangoli=12 | MeshType=3 | VramHandle=0 | IsVisible=SI
+[BM-R1][3D] BlockMakerRenderer::Draw() completato: Entita nel view=2, Entita disegnate con vkCmdDraw=2
+[BM-R1][3D] BlockMakerRenderer::Draw() avviato. GameMode=5 (5=BlockMaker), Extent=(1264x681)
+[BM-R1][3D] Entita ECS [PreviewBlock] EntityID=2 | Vertici=36 | Triangoli=12 | MeshType=1 | VramHandle=2 | IsVisible=SI
+[BM-R1][3D] Entita ECS [BlockMakerEnv] EntityID=1 | Vertici=36 | Triangoli=12 | MeshType=3 | VramHandle=0 | IsVisible=SI
+[BM-R1][3D] BlockMakerRenderer::Draw() completato: Entita nel view=2, Entita disegnate con vkCmdDraw=2
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 100.8 | FPS: 100.8 | FixedTicks/s: 34.6 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.7 | FPS: 200.7 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 166.7 | FPS: 166.7 | FixedTicks/s: 59.9 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 93.2 | FPS: 93.2 | FixedTicks/s: 50.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 89.1 | FPS: 89.1 | FixedTicks/s: 54.8 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 173.1 | FPS: 173.1 | FixedTicks/s: 62.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 196.9 | FPS: 196.9 | FixedTicks/s: 60.0 | Minimized: NO
+[HubState] Costruito.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.
+[HubState] Distrutto. Isolamento memoria garantito.
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.
+[BlockMakerState] Creato.
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[CacheManager] Sincronizzazione GPU Material Cache per BlockID 1...
+[BM-UI2.1][PREVIEW] invalidated reason=BlockIDChanged BlockID=1
+[BM-UI2.1][PREVIEW] update queued BlockID=1
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[PAINTER ASSET] Caricati 1 PaintLayer persistenti da assets/layers/block_1_layers.json per BlockID=1
+[PAINTER DIAG] GPU Upload Completed: (512x512) Recreate=true DescriptorBound=YES
+[PAINTER ASSET] Load BlockID=1 Layers=1 Dimensions=(512x512)
+[PAINTER ASSET] PreviewUpdated BlockID=1
+[BM-UI2.1][PREVIEW] invalidated reason=EditableMeshModified BlockID=1
+[BM-PREVIEW][COMPILE] EditableMesh Authoritative Success BlockID=1 Vertices=36 Triangles=12
+[BM-UI2.1][PREVIEW] update queued BlockID=1
+[BM-UI2.3-B1][INIT] LoadFactoryDraft(BlockID=1) esito: SUCCESS
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 3 (Snapshot 2/5)
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 191.8 | FPS: 191.8 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.2 | FPS: 199.2 | FixedTicks/s: 60.0 | Minimized: NO
+[HubState] Costruito.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[HubState] Distrutto. Isolamento memoria garantito.
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 186.7 | FPS: 186.7 | FixedTicks/s: 58.8 | Minimized: NO
+[BlockMakerState] Creato.
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[BM-R1][INIT] Ingresso in BlockMakerState::Init()...
+[BlockMakerState] Inizializzazione...
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[CacheManager] Sincronizzazione GPU Material Cache per BlockID 1...
+[BM-UI2.1][PREVIEW] invalidated reason=BlockIDChanged BlockID=1
+[BM-UI2.1][PREVIEW] update queued BlockID=1
+[BM-R1][INIT] Startup Gate: 28 suite diagnostiche disaccoppiate da Init(). Accessibili on-demand da UI.
+[PAINTER ASSET] Caricati 1 PaintLayer persistenti da assets/layers/block_1_layers.json per BlockID=1
+[PAINTER DIAG] GPU Upload Completed: (512x512) Recreate=true DescriptorBound=YES
+[PAINTER ASSET] Load BlockID=1 Layers=1 Dimensions=(512x512)
+[PAINTER ASSET] PreviewUpdated BlockID=1
+[BM-UI2.1][PREVIEW] invalidated reason=EditableMeshModified BlockID=1
+[BM-PREVIEW][COMPILE] EditableMesh Authoritative Success BlockID=1 Vertices=36 Triangles=12
+[BM-UI2.1][PREVIEW] update queued BlockID=1
+[BM-UI2.3-B1][INIT] LoadFactoryDraft(BlockID=1) esito: SUCCESS
+[BM-R1][INIT] Uscita da BlockMakerState::Init() con successo -> return true;
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 3 (Snapshot 3/5)
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 191.4 | FPS: 191.4 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.0 | FPS: 199.0 | FixedTicks/s: 60.0 | Minimized: NO
+[VULKAN FORENSIC PHASE] -> Resize
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xc500000000c5
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xc600000000c6
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xc700000000c7
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] Depth Buffer creato (126).
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN] GLB Graphics Pipeline creata con successo!
+
+[VULKAN FORENSIC][vkCreateFramebuffer #7]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 2400x1057 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x16f000000016f
+    [1] ImageView: 0x1740000000174
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0x1870000000187
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #8]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 2400x1057 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x1700000000170
+    [1] ImageView: 0x1740000000174
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0x1880000000188
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #9]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 2400x1057 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x1710000000171
+    [1] ImageView: 0x1740000000174
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0x1890000000189
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (2400x1057)
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 193.9 | FPS: 193.9 | FixedTicks/s: 60.0 | Minimized: NO
+[VULKAN FORENSIC PHASE] -> Resize
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x1870000000187
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x1880000000188
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x1890000000189
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] Depth Buffer creato (126).
+[VULKAN VALIDATION WARNING] (Warning - This VUID has now been reported 10 times, which is the duplicate_message_limit value, this will be the last time reporting it).
+vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN] GLB Graphics Pipeline creata con successo!
+
+[VULKAN FORENSIC][vkCreateFramebuffer #10]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x19a000000019a
+    [1] ImageView: 0x19f000000019f
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0x1b200000001b2
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #11]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x19b000000019b
+    [1] ImageView: 0x19f000000019f
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0x1b300000001b3
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #12]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x221937abe60
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x19c000000019c
+    [1] ImageView: 0x19f000000019f
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0x1b400000001b4
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (1264x681)
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 195.2 | FPS: 195.2 | FixedTicks/s: 59.9 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.1 | FPS: 200.1 | FixedTicks/s: 60.2 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.9 | FPS: 199.9 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.9 | FPS: 199.9 | FixedTicks/s: 60.0 | Minimized: NO
+[PAINTER DIAG] StrokeBegin: MouseScreen=(404.0,250.0) ImageRectMin=(264.0,200.5) ImageRectSize=(304.0,304.0) UV=(0.5,0.2) TexelXY=(235.8,83.4) Zoom=1.0 Pan=(0.0,0.0)
+[PAINTER DIAG] StrokeBegin: UV=(0.5,0.2) TargetIsland=UNCLIPPED LayerID=1 Mode=AtlasPaint
+[PAINTER DIAG] PaintLayer Initial Point: (235.8,83.4) on LayerID=1
+[UV-PAINT-DIAG] MaskPresence=NO MaskDim=(0x0) CanvasDim=(512x512) MaskIsland=NONE InsideChanged=3820 OutsideChanged=0 TotalChanged=3820
+[PAINTER DIAG] StrokeEnd: DirtyRect=[220,67 -> 316,169] isEmpty=false
+[PAINTER DIAG] StrokeEnd: Mode=AtlasPaint Revision=2
+[PAINTER DIAG] GPU Upload Completed: (512x512) Recreate=false DescriptorBound=YES
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 191.7 | FPS: 191.7 | FixedTicks/s: 60.0 | Minimized: NO
+[PAINTER ASSET] Save BlockID=1 Layers=1 Dirty=true
+[PAINTER ASSET] Bake Albedo completato con successo: textures/blocks/fairworld_Grass_albedo.png
+[PAINTER ASSET] Salvati 1 PaintLayer persistenti per BlockID=1 in assets/layers/block_1_layers.json
+[BlockRegistry] Saved blocks to assets/definitions/blocks.json
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 173.1 | FPS: 173.1 | FixedTicks/s: 58.8 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 196.9 | FPS: 196.9 | FixedTicks/s: 60.0 | Minimized: NO
+[SYSTEM] Main loop terminato.
+[SYSTEM] Svuotamento StateManager e distruzione stati attivi...
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[BlockMakerState] Distrutto.
+[HubState] Distrutto. Isolamento memoria garantito.
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[SYSTEM] Chiusura del motore completata.
+[WorldChunkManager] Salvati 0 chunk su disco (saves/world).
+[RuntimeManager] [Thread 21744] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 20984] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 21744] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 1.7 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 21744] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 21744] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 0.5 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeManager] [Thread 21744] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...
+
+[DMA]
+Drain begin
+Pending transfers : 1
+
+[DMA]
+Transfer queue idle
+Pending transfers : 0
+[RuntimeManager] [Thread 21744] [Phase: Shutdown] VulkanDmaManager Drain completato.
+
+[RuntimeShutdown]
+DMA drained
+Pending DMA transfers     : 0
+Live DMA command buffers  : 0
+
+[DMA]
+Destroy timeline semaphore
+
+[VULKAN FORENSIC][vkDestroySemaphore #1]
+  Handle      : 0xda00000000da
+  Caller      : VulkanDmaManager::~VulkanDmaManager
+  Phase       : Runtime
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Owner: VulkanDmaManager, Name: DMATransferTimeline, CreateID: #6)
+Timeline semaphore destroyed
+[VramSlabAllocator] Distrutto. 20736 bytes rimasti allocati.
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=1.7 ms, JobSystemStop=0.5 ms, Totale=3.4 ms]
+
+====================================================
+ FAIRWORLD RUNTIME LIFECYCLE GATE
+====================================================
+
+[1/3] PRODUCERS
+      CPU StopAcceptingJobs called    YES   [PASS]
+      DMA Drain called                YES   [PASS]
+
+[2/3] ASYNC SUBSYSTEMS (captured before delete)
+      Pending CPU jobs                  0   [PASS]
+      Active workers                    0   [PASS]
+      Pending DMA transfers             0   [PASS]
+      Live DMA command buffers          0   [PASS]
+
+[3/3] RUNTIME STATE
+      Runtime shutdown complete       YES   [PASS]
+      Cache invalidated               N/A   [WARN] not observable (CacheManager has no flush flag)
+      GameWorld released              YES   [PASS]
+
+====================================================
+ RUNTIME LIFECYCLE: FROZEN (100% APPLICABLE CHECKS PASS)
+====================================================
+
+[VULKAN FORENSIC PHASE] -> Shutdown
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x1b200000001b2
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x1b300000001b3
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x1b400000001b4
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroySemaphore #2]
+  Handle      : 0x5a000000005a
+  Caller      : RenderManager::Shutdown:imageAvailable
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: ImageAvailableSem_0, CreateID: #1)
+
+[VULKAN FORENSIC][vkDestroySemaphore #3]
+  Handle      : 0x5c000000005c
+  Caller      : RenderManager::Shutdown:imageAvailable
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: ImageAvailableSem_1, CreateID: #2)
+
+[VULKAN FORENSIC][vkDestroySemaphore #4]
+  Handle      : 0x5e000000005e
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_0, CreateID: #3)
+
+[VULKAN FORENSIC][vkDestroySemaphore #5]
+  Handle      : 0x5f000000005f
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_1, CreateID: #4)
+
+[VULKAN FORENSIC][vkDestroySemaphore #6]
+  Handle      : 0x600000000060
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x221937abe60
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_2, CreateID: #5)
+[VMA] VmaAllocator distrutto.
+
+============================================================
+ [VULKAN FORENSIC AUDIT] FINAL REPORT AT vkDestroyDevice
+============================================================
+Caller               : RenderManager::Shutdown
+Device               : 0x221937abe60
+Total Semaphores Cr. : 6
+Total Semaphores Des.: 6
+LIVE SEMAPHORES REMAINING: 0
+All tracked semaphores were cleanly destroyed!
+============================================================
+
+[VULKAN FORENSIC] VkDebugUtilsMessengerEXT cleanly destroyed on instance 0x22192fa0080
+
+====================================================
+ FAIRWORLD FINAL VULKAN OWNERSHIP GATE
+ (post RenderManager::Shutdown)
+====================================================
+
+      Vulkan cleanup state             COMPLETED [PASS]
+      Tracked Semaphores LIVE           0   [PASS]
+      Validation Layer Errors           0   [PASS]
+
+====================================================
+ VULKAN OWNERSHIP: CLEAN (PASS)
+====================================================
+
+
+====================================================
+ [VulkanResourceTracker][Semaphore]
+====================================================
+CREATED   : 6
+DESTROYED : 6
+LIVE      : 0
+
+BY OWNER:
+  RenderManager
+    Created   : 5
+    Destroyed : 5
+    Live      : 0
+
+  VulkanDmaManager
+    Created   : 1
+    Destroyed : 1
+    Live      : 0
+
+====================================================
+
+
+[VULKAN FORENSIC AUDIT] Intermediate Report:
+  Phase: Shutdown
+  Framebuffers created: 12, currently live: 0
+  Semaphores created: 6, destroyed: 6, currently live: 0
+  Validation Layer Errors: 0
+[SYSTEM] AI Server Python chiuso.
+[SYSTEM] Memoria globale mantenuta residente (6065 allocazioni attive, 9367266 bytes) per garantire terminazione CRT esente da Use-After-Free.
+[WorldProjectManager] Distrutto.
+[RuntimeManager] Distrutto.
+[VULKAN FORENSIC PHASE] -> Shutdown

@@ -16,6 +16,19 @@ float PlanetRadialMapping::GetRadialDistance(float g, float planetRadius) {
     return planetRadius + (g * ChunkDimensions::VoxelWorldSize);
 }
 
+float PlanetRadialMapping::GetVoxelCellCoordinateFromDistance(float radialDistance, float planetRadius) {
+    const float voxelOffset = (radialDistance - planetRadius) / ChunkDimensions::VoxelWorldSize;
+    return voxelOffset + static_cast<float>(ReferenceVoxelOffset) + 0.5f;
+}
+
+float PlanetRadialMapping::GetCellCenterRadius(int32_t layer, int32_t localCellY, float planetRadius) {
+    return GetRadialDistance(GetGlobalRadialOffset(layer, static_cast<float>(localCellY)), planetRadius);
+}
+
+float PlanetRadialMapping::GetCellOuterRadius(int32_t layer, int32_t localCellY, float planetRadius) {
+    return GetRadialDistance(GetGlobalRadialOffset(layer, static_cast<float>(localCellY) + 0.5f), planetRadius);
+}
+
 bool PlanetRadialMapping::IsValidRadialDistance(float r) {
     return r > 0.0f;
 }

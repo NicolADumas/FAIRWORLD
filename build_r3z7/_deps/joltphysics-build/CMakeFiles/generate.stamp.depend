@@ -1,0 +1,9 @@
+# CMake generation dependency list for this directory.
+D:/FAIRWORLD/FAIRWORLD/build/_deps/joltphysics-src/Build/CMakeLists.txt
+D:/FAIRWORLD/FAIRWORLD/build/_deps/joltphysics-src/Jolt/Jolt.cmake
+D:/FAIRWORLD/FAIRWORLD/build_r3z7/CMakeFiles/cmake.verify_globs
+D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-4.3/Modules/CMakeDependentOption.cmake
+D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-4.3/Modules/CheckIPOSupported.cmake
+D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-4.3/Modules/CheckIPOSupported/CMakeLists-CXX.txt.in
+D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-4.3/Modules/CheckIPOSupported/foo.cpp
+D:/Visual Code/vs/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-4.3/Modules/CheckIPOSupported/main.cpp

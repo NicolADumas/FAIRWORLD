@@ -1,168 +1,262 @@
 #include "pch.h"
 #include "VramSlabAllocator.h"
 #include <iostream>
+#include <limits>
 
 namespace fw {
+namespace {
+uint64_t PackHandle(uint32_t slot, uint32_t generation) {
+    return (static_cast<uint64_t>(generation) << 32) | slot;
+}
+uint32_t HandleSlot(VramAllocationHandle handle) { return static_cast<uint32_t>(handle); }
+uint32_t HandleGeneration(VramAllocationHandle handle) { return static_cast<uint32_t>(handle >> 32); }
+}
 
 VramSlabAllocator::VramSlabAllocator(uint32_t maxMemoryBytes, uint32_t compartmentSizeBytes, uint32_t pageSizeBytes)
     : m_maxMemory(maxMemoryBytes), m_compartmentSize(compartmentSizeBytes), m_pageSize(pageSizeBytes) {
-    
-    // Inizializza le classi di Bucket (Potenze di 2 partendo da 8KB fino a 4MB)
-    uint32_t sizes[] = { 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304 };
-    for (uint32_t size : sizes) {
-        Bucket b;
-        b.slotSize = size;
-        m_buckets.push_back(std::move(b));
-    }
+    m_configurationValid = compartmentSizeBytes != 0 && pageSizeBytes != 0 &&
+        pageSizeBytes <= compartmentSizeBytes && compartmentSizeBytes % pageSizeBytes == 0;
+    constexpr uint32_t sizes[] = {8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304};
+    for (uint32_t size : sizes) m_buckets.push_back(Bucket{size, {}});
 }
 
 VramSlabAllocator::~VramSlabAllocator() {
-    std::cout << "[VramSlabAllocator] Distrutto. " << m_statAllocated << " bytes rimasti allocati.\n";
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::cout << "[VramSlabAllocator] Distrutto. " << m_statAllocated << " bytes ancora attivi/ritirati/quarantinati.\n";
 }
 
 int VramSlabAllocator::GetBucketIndex(uint32_t size) const {
-    for (int i = 0; i < m_buckets.size(); ++i) {
-        if (size <= m_buckets[i].slotSize) {
-            return i;
-        }
+    for (size_t i = 0; i < m_buckets.size(); ++i) {
+        if (size <= m_buckets[i].slotSize) return static_cast<int>(i);
     }
-    return -1; // Troppo grande per l'allocatore a bucket!
+    return -1;
 }
 
 bool VramSlabAllocator::AllocateNewCompartment() {
-    uint32_t maxCompartments = m_maxMemory / m_compartmentSize;
+    if (!m_configurationValid || m_compartmentSize == 0 || m_pageSize == 0) return false;
+    const uint32_t maxCompartments = m_maxMemory / m_compartmentSize;
     if (m_allocatedCompartments >= maxCompartments) {
-        std::cerr << "[VRAM] ERROR: Raggiunto il limite massimo di " << (m_maxMemory / (1024*1024)) << " MB!\n";
+        std::cerr << "[VRAM] ERROR: Raggiunto il limite massimo di " << (m_maxMemory / (1024 * 1024)) << " MB!\n";
+        return false;
+    }
+    const uint32_t pagesPerCompartment = m_compartmentSize / m_pageSize;
+    try {
+        m_freePages.reserve(m_freePages.size() + pagesPerCompartment);
+    } catch (...) {
+        std::cerr << "[VRAM] ERROR: memoria host insufficiente per metadata delle pagine.\n";
         return false;
     }
 
-    uint32_t newCompartmentIdx = m_allocatedCompartments;
-    m_allocatedCompartments++;
-
-    std::cout << "[VRAM] Allocazione dinamica nuovo compartimento: " << newCompartmentIdx << " (256MB)\n";
-
-    // Chiama il VulkanMemory per creare il VkBuffer fisico
+    const uint32_t newCompartmentIdx = m_allocatedCompartments;
     if (m_allocateCompartmentCallback) {
-        m_allocateCompartmentCallback(newCompartmentIdx);
+        bool created = false;
+        try { created = m_allocateCompartmentCallback(newCompartmentIdx); }
+        catch (...) { created = false; }
+        if (!created) {
+            std::cerr << "[VRAM] ERROR: creazione del compartimento " << newCompartmentIdx << " fallita.\n";
+            return false;
+        }
     }
 
-    // Aggiungi le nuove pagine logiche (da 4MB) per questo compartimento
-    uint32_t pagesPerCompartment = m_compartmentSize / m_pageSize;
+    ++m_allocatedCompartments;
     for (uint32_t i = 0; i < pagesPerCompartment; ++i) {
         VramAllocationInfo pageInfo;
         pageInfo.compartmentIdx = newCompartmentIdx;
-        // Le mettiamo in ordine inverso così il pop_back() ci darà l'offset più basso
         pageInfo.offset = (pagesPerCompartment - 1 - i) * m_pageSize;
         pageInfo.size = m_pageSize;
         pageInfo.valid = true;
         m_freePages.push_back(pageInfo);
     }
-
     return true;
 }
 
 bool VramSlabAllocator::ExpandBucket(int bucketIdx) {
-    if (m_freePages.empty()) {
-        if (!AllocateNewCompartment()) {
-            return false;
-        }
-    }
-
-    VramAllocationInfo pageInfo = m_freePages.back();
+    if (bucketIdx < 0 || static_cast<size_t>(bucketIdx) >= m_buckets.size() || !m_configurationValid) return false;
+    if (m_freePages.empty() && !AllocateNewCompartment()) return false;
+    const VramAllocationInfo pageInfo = m_freePages.back();
+    Bucket& bucket = m_buckets[static_cast<size_t>(bucketIdx)];
+    if (!pageInfo.valid || bucket.slotSize == 0 || bucket.slotSize > pageInfo.size) return false;
+    const uint32_t slotsInPage = pageInfo.size / bucket.slotSize;
+    if (slotsInPage == 0) return false;
+    try { bucket.freeSlots.reserve(bucket.freeSlots.size() + slotsInPage); }
+    catch (...) { return false; }
     m_freePages.pop_back();
-
-    Bucket& b = m_buckets[bucketIdx];
-    uint32_t slotsInPage = m_pageSize / b.slotSize;
-    
-    // Affettiamo la pagina di 4MB in N slot della taglia richiesta dal bucket
     for (uint32_t i = 0; i < slotsInPage; ++i) {
         VramAllocationInfo slotInfo;
         slotInfo.compartmentIdx = pageInfo.compartmentIdx;
-        slotInfo.offset = pageInfo.offset + (slotsInPage - 1 - i) * b.slotSize;
-        slotInfo.size = b.slotSize;
-        slotInfo.bucketIdx = bucketIdx;
+        slotInfo.offset = pageInfo.offset + (slotsInPage - 1 - i) * bucket.slotSize;
+        slotInfo.size = bucket.slotSize;
+        slotInfo.bucketIdx = static_cast<uint32_t>(bucketIdx);
         slotInfo.valid = true;
-        b.freeSlots.push_back(slotInfo);
+        bucket.freeSlots.push_back(slotInfo);
     }
-
     return true;
 }
 
-VramAllocationHandle VramSlabAllocator::CreateHandle(const VramAllocationInfo& info) {
+VramAllocationHandle VramSlabAllocator::CreateHandle(const VramAllocationInfo& info, uint32_t requestedSize) {
+    uint32_t slot = 0;
     if (!m_freeHandles.empty()) {
-        VramAllocationHandle handle = m_freeHandles.back();
+        slot = m_freeHandles.back();
         m_freeHandles.pop_back();
-        m_allocations[handle] = info;
-        return handle;
+        if (slot >= m_allocations.size()) return INVALID_VRAM_HANDLE;
+    } else {
+        if (m_allocations.size() >= std::numeric_limits<uint32_t>::max()) return INVALID_VRAM_HANDLE;
+        slot = static_cast<uint32_t>(m_allocations.size());
+        m_allocations.emplace_back();
     }
-    
-    VramAllocationHandle handle = static_cast<VramAllocationHandle>(m_allocations.size());
-    m_allocations.push_back(info);
-    return handle;
+    AllocationRecord& record = m_allocations[slot];
+    if (record.generation == 0 || record.generation == UINT32_MAX) {
+        record.state = VramAllocationState::Invalid;
+        return INVALID_VRAM_HANDLE;
+    }
+    record.info = info;
+    record.requestedSize = requestedSize;
+    record.retireAfterSerial = 0;
+    record.state = VramAllocationState::Active;
+    return PackHandle(slot, record.generation);
+}
+
+VramSlabAllocator::AllocationRecord* VramSlabAllocator::ResolveHandle(VramAllocationHandle handle) {
+    if (handle == INVALID_VRAM_HANDLE) return nullptr;
+    const uint32_t slot = HandleSlot(handle);
+    if (slot >= m_allocations.size()) return nullptr;
+    auto& record = m_allocations[slot];
+    if (record.generation != HandleGeneration(handle) || record.state == VramAllocationState::Invalid) return nullptr;
+    return &record;
+}
+
+const VramSlabAllocator::AllocationRecord* VramSlabAllocator::ResolveHandle(VramAllocationHandle handle) const {
+    if (handle == INVALID_VRAM_HANDLE) return nullptr;
+    const uint32_t slot = HandleSlot(handle);
+    if (slot >= m_allocations.size()) return nullptr;
+    const auto& record = m_allocations[slot];
+    if (record.generation != HandleGeneration(handle) || record.state == VramAllocationState::Invalid) return nullptr;
+    return &record;
+}
+
+bool VramSlabAllocator::ReleaseRecord(uint32_t slotIndex, AllocationRecord& record) {
+    if (record.info.bucketIdx >= m_buckets.size()) return false;
+    Bucket& bucket = m_buckets[record.info.bucketIdx];
+    try { bucket.freeSlots.push_back(record.info); }
+    catch (...) {
+        std::cerr << "[VRAM] ERROR: slot non rilasciato: metadata host insufficiente.\n";
+        return false;
+    }
+    m_statAllocated -= std::min(m_statAllocated, record.requestedSize);
+    const uint32_t wasted = record.info.size - record.requestedSize;
+    m_statWasted -= std::min(m_statWasted, wasted);
+    record.info.valid = false;
+    record.requestedSize = 0;
+    record.retireAfterSerial = 0;
+    record.state = VramAllocationState::Invalid;
+    if (record.generation != UINT32_MAX) {
+        ++record.generation;
+        try { m_freeHandles.push_back(slotIndex); }
+        catch (...) { /* The physical slot is free; only this handle-table slot is retired. */ }
+    }
+    return true;
 }
 
 VramAllocationHandle VramSlabAllocator::Allocate(uint32_t requestedSize) {
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    int bIdx = GetBucketIndex(requestedSize);
-    if (bIdx == -1) {
+    if (requestedSize == 0 || !m_configurationValid) return INVALID_VRAM_HANDLE;
+    const int bucketIndex = GetBucketIndex(requestedSize);
+    if (bucketIndex < 0) {
         std::cerr << "[VRAM] Richiesta (" << requestedSize << " byte) superiore al bucket massimo!\n";
         return INVALID_VRAM_HANDLE;
     }
-
-    Bucket& b = m_buckets[bIdx];
-
-    // Se il bucket è vuoto, espandiamolo con una nuova pagina (potrebbe allocare un nuovo compartimento fisico)
-    if (b.freeSlots.empty()) {
-        if (!ExpandBucket(bIdx)) {
-            return INVALID_VRAM_HANDLE; // Out of memory
-        }
+    Bucket& bucket = m_buckets[static_cast<size_t>(bucketIndex)];
+    if (bucket.slotSize > m_pageSize) return INVALID_VRAM_HANDLE;
+    if (bucket.freeSlots.empty() && !ExpandBucket(bucketIndex)) return INVALID_VRAM_HANDLE;
+    const VramAllocationInfo slotInfo = bucket.freeSlots.back();
+    bucket.freeSlots.pop_back();
+    VramAllocationHandle handle = INVALID_VRAM_HANDLE;
+    try { handle = CreateHandle(slotInfo, requestedSize); }
+    catch (...) { handle = INVALID_VRAM_HANDLE; }
+    if (handle == INVALID_VRAM_HANDLE) {
+        bucket.freeSlots.push_back(slotInfo);
+        return INVALID_VRAM_HANDLE;
     }
-
-    VramAllocationInfo slotInfo = b.freeSlots.back();
-    b.freeSlots.pop_back();
-
     m_statAllocated += requestedSize;
-    m_statWasted += (b.slotSize - requestedSize);
-
-    return CreateHandle(slotInfo);
+    m_statWasted += slotInfo.size - requestedSize;
+    return handle;
 }
 
 void VramSlabAllocator::Free(VramAllocationHandle handle) {
-    if (handle == INVALID_VRAM_HANDLE) return;
-
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    if (handle >= m_allocations.size() || !m_allocations[handle].valid) {
-        std::cerr << "[VRAM ERROR] Tentativo di liberare un handle non valido: " << handle << "\n";
+    AllocationRecord* record = ResolveHandle(handle);
+    if (!record || record->state != VramAllocationState::Active) {
+        std::cerr << "[VRAM] Free ignorato per handle stale o non attivo: " << handle << "\n";
         return;
     }
+    ReleaseRecord(HandleSlot(handle), *record);
+}
 
-    VramAllocationInfo& info = m_allocations[handle];
-    
-    assert(info.bucketIdx < m_buckets.size());
-    Bucket& b = m_buckets[info.bucketIdx];
-    
-    // Reinseriamo lo slot in O(1)
-    b.freeSlots.push_back(info);
-    
-    // Invalida l'handle e riciclalo
-    info.valid = false;
-    m_freeHandles.push_back(handle);
+bool VramSlabAllocator::Retire(VramAllocationHandle handle, uint64_t lastGraphicsUseSerial) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    AllocationRecord* record = ResolveHandle(handle);
+    if (!record || record->state != VramAllocationState::Active) return false;
+    record->state = VramAllocationState::Retired;
+    record->retireAfterSerial = lastGraphicsUseSerial;
+    return true;
+}
+
+size_t VramSlabAllocator::CollectRetired(uint64_t completedGraphicsSerial) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    size_t released = 0;
+    for (uint32_t i = 0; i < m_allocations.size(); ++i) {
+        auto& record = m_allocations[i];
+        if (record.state == VramAllocationState::Retired && record.retireAfterSerial <= completedGraphicsSerial) {
+            if (ReleaseRecord(i, record)) ++released;
+        }
+    }
+    return released;
+}
+
+bool VramSlabAllocator::Quarantine(VramAllocationHandle handle) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    AllocationRecord* record = ResolveHandle(handle);
+    if (!record || record->state != VramAllocationState::Active) return false;
+    record->state = VramAllocationState::Quarantined;
+    return true;
+}
+
+bool VramSlabAllocator::ReleaseQuarantined(VramAllocationHandle handle, bool completionConfirmed) {
+    if (!completionConfirmed) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    AllocationRecord* record = ResolveHandle(handle);
+    if (!record || record->state != VramAllocationState::Quarantined) return false;
+    return ReleaseRecord(HandleSlot(handle), *record);
 }
 
 VramAllocationInfo VramSlabAllocator::GetAllocation(VramAllocationHandle handle) const {
-    if (handle != INVALID_VRAM_HANDLE && handle < m_allocations.size()) {
-        return m_allocations[handle];
-    }
-    return VramAllocationInfo{};
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const AllocationRecord* record = ResolveHandle(handle);
+    return record ? record->info : VramAllocationInfo{};
 }
 
-void VramSlabAllocator::AddCompartment(uint32_t compartmentIdx) {
-    // Usato se VulkanMemory pre-alloca, ma ora usiamo il callback AllocateNewCompartment
+VramAllocationState VramSlabAllocator::GetAllocationState(VramAllocationHandle handle) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const AllocationRecord* record = ResolveHandle(handle);
+    return record ? record->state : VramAllocationState::Invalid;
 }
 
-uint32_t VramSlabAllocator::GetAllocatedBytes() const { return m_statAllocated; }
-uint32_t VramSlabAllocator::GetWastedBytes() const { return m_statWasted; }
+uint32_t VramSlabAllocator::GetAllocatedBytes() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_statAllocated;
+}
+uint32_t VramSlabAllocator::GetWastedBytes() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_statWasted;
+}
+uint32_t VramSlabAllocator::GetCompartmentCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_allocatedCompartments;
+}
+void VramSlabAllocator::AddCompartment(uint32_t) {}
+void VramSlabAllocator::SetAllocateCompartmentCallback(std::function<bool(uint32_t)> callback) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_allocateCompartmentCallback = std::move(callback);
+}
 
 } // namespace fw

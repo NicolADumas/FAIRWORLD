@@ -207,11 +207,10 @@ PlanetMapperUIResult PlanetMapperUI::Draw(SharedContext* context,
                 
                 if (lastRayHit.hit) {
                     sp.faceIndex = lastRayHit.faceIndex;
-                    float localU = (lastRayHit.uv.x * 2.0f) - 1.0f;
-                    float localV = (lastRayHit.uv.y * 2.0f) - 1.0f;
+                    const glm::vec2 chart = fw::CubeSphereMapping::FaceUVToChartCoordinates(lastRayHit.uv);
                     float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
-                    sp.localX = localU * R;
-                    sp.localZ = localV * R;
+                    sp.localX = chart.x * R;
+                    sp.localZ = chart.y * R;
                 } else {
                     sp.faceIndex = 0; sp.localX = 0.0f; sp.localZ = 0.0f;
                 }

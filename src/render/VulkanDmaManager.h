@@ -1,104 +1,119 @@
 #pragma once
-#include <vector>
+
+#include <vulkan/vulkan.h>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
-#include <atomic>
+#include <vector>
+#include <functional>
 #include "VramSlabAllocator.h"
 
-// Forward declaration per i tipi Vulkan
-typedef struct VkDevice_T* VkDevice;
-typedef struct VkBuffer_T* VkBuffer;
-typedef struct VkQueue_T* VkQueue;
-typedef struct VkSemaphore_T* VkSemaphore;
-typedef struct VkCommandPool_T* VkCommandPool;
-typedef struct VkDeviceMemory_T* VkDeviceMemory;
-
-typedef struct VkCommandBuffer_T* VkCommandBuffer;
-
 namespace fw {
+
+enum class DmaUploadStatus : uint8_t {
+    Completed,
+    InvalidInput,
+    CommandBufferAllocationFailed,
+    CommandBufferBeginFailed,
+    CommandBufferEndFailed,
+    FlushFailed,
+    SubmitFailed,
+    WaitFailed,
+    CounterQueryFailed,
+    PendingTransferNotConfirmed,
+    DeviceLost
+};
+
+enum class DmaSubmissionState : uint8_t {
+    NotSubmitted,
+    SubmitFailed,
+    SubmittedButNotConfirmed,
+    Completed,
+    DeviceLost
+};
+
+struct DmaUploadResult {
+    DmaUploadStatus status = DmaUploadStatus::InvalidInput;
+    DmaSubmissionState submission = DmaSubmissionState::NotSubmitted;
+    VkResult vkResult = VK_SUCCESS;
+    uint64_t timelineTarget = 0;
+
+    bool completed() const { return status == DmaUploadStatus::Completed; }
+    bool mayStillBeInUse() const {
+        return submission == DmaSubmissionState::SubmittedButNotConfirmed ||
+               submission == DmaSubmissionState::DeviceLost;
+    }
+};
+
+// Narrow injectable boundary used only by deterministic CPU fault tests.
+// Empty callbacks always dispatch to Vulkan in normal production operation.
+struct VulkanDmaDispatch {
+    std::function<VkResult(VkDevice, const VkSemaphoreCreateInfo*, const VkAllocationCallbacks*, VkSemaphore*)> createSemaphore;
+    std::function<void(VkDevice, VkSemaphore, const VkAllocationCallbacks*)> destroySemaphore;
+    std::function<VkResult(VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer*)> allocateCommandBuffers;
+    std::function<void(VkDevice, VkCommandPool, uint32_t, const VkCommandBuffer*)> freeCommandBuffers;
+    std::function<VkResult(VkCommandBuffer, const VkCommandBufferBeginInfo*)> beginCommandBuffer;
+    std::function<void(VkCommandBuffer, VkBuffer, VkBuffer, uint32_t, const VkBufferCopy*)> cmdCopyBuffer;
+    std::function<VkResult(VkCommandBuffer)> endCommandBuffer;
+    std::function<VkResult(VkDevice, uint32_t, const VkMappedMemoryRange*)> flushMappedMemoryRanges;
+    std::function<VkResult(VkQueue, uint32_t, const VkSubmitInfo*, VkFence)> queueSubmit;
+    std::function<VkResult(VkDevice, const VkSemaphoreWaitInfo*, uint64_t)> waitSemaphores;
+    std::function<VkResult(VkDevice, VkSemaphore, uint64_t*)> getSemaphoreCounterValue;
+    std::function<VkResult(VkQueue)> queueWaitIdle;
+};
 
 class VulkanDmaManager {
 public:
     VulkanDmaManager();
     ~VulkanDmaManager();
 
-    // Inizializza il Dma Manager con gli handle di Vulkan generati da RenderManager
-    void Initialize(
-        VkDevice device, 
-        VkQueue transferQueue, 
-        VkCommandPool commandPool,
-        VkBuffer stagingBuffer, 
-        VkDeviceMemory stagingMemory, 
-        void* mappedData, 
-        uint64_t stagingSize,
-        VkBuffer deprecatedGlobalVramBuffer,
-        std::mutex* queueMutex
-    );
-    
+    void SetDispatchForTesting(VulkanDmaDispatch dispatch);
+    void Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool commandPool,
+        VkBuffer stagingBuffer, VkDeviceMemory stagingMemory, void* mappedData,
+        uint64_t stagingSize, VkBuffer deprecatedGlobalVramBuffer, std::mutex* queueMutex,
+        std::mutex* commandPoolMutex = nullptr);
+
     void UpdateStagingBuffer(VkBuffer stagingBuffer, VkDeviceMemory stagingMemory, void* mappedData) {
+        std::lock_guard<std::mutex> lock(m_mutex);
         m_stagingVkBuffer = stagingBuffer;
         m_stagingVkDeviceMemory = stagingMemory;
         m_mappedStagingBuffer = mappedData;
     }
 
     void Cleanup();
-    void Drain();
-
-    // C4 Diagnostic getters — read-only, zero runtime overhead
-    // Numero di trasferimenti DMA ancora in volo (prima di Drain)
+    VkResult Drain();
     size_t GetPendingTransferCount() const;
-    // Dopo Drain+Cleanup, m_device viene invalidato: nessuna nuova submission possibile
-    bool   IsAcceptingSubmissions() const { return m_device != nullptr; }
-    // Vero counter atomico: incrementato dopo vkAllocateCommandBuffers riuscita,
-    // decrementato in ogni vkFreeCommandBuffers (Drain e GC in UploadMeshAsync).
+    bool IsAcceptingSubmissions() const { return m_device != VK_NULL_HANDLE && !m_deviceLost; }
     size_t GetLiveCommandBufferCount() const { return m_liveCommandBuffers.load(); }
-
-    // Funzione chiamata dal Worker Thread (Job System).
-    // Esegue una copia Zero-Copy in RAM (Write-Combine burst) verso lo Staging Buffer,
-    // e accoda un Job di trasferimento DMA sulla Transfer Queue di Vulkan.
-    // Ritorna il valore del Timeline Semaphore a cui la Graphics Queue dovrà attendere.
-    uint64_t UploadMeshAsync(const void* meshData, uint32_t sizeInBytes, const VramAllocationInfo& destination, VkBuffer destBuffer);
-
-    // Ritorna il Timeline Semaphore da passare al vkQueueSubmit grafico
+    DmaUploadResult UploadMeshAsync(const void* meshData, uint32_t sizeInBytes,
+        const VramAllocationInfo& destination, VkBuffer destBuffer);
+    VkResult QueryTimelineCompletion(uint64_t targetValue, bool& completed);
     VkSemaphore GetTimelineSemaphore() const { return m_transferTimeline; }
+    uint64_t GetSubmittedTimelineValue() const;
 
 private:
+    struct PendingTransfer { uint64_t timelineId; VkCommandBuffer cmd; };
+    void FreeUnsubmittedCommandBuffer(VkCommandBuffer cmd);
+    VkResult GetCompletedTimelineValue(uint64_t& value) const;
+
     mutable std::mutex m_mutex;
-
-    // -- Staging Ring Buffer --
-    uint32_t m_stagingBufferSize;
-    uint32_t m_headOffset = 0; // Dove scriviamo
-    uint32_t m_tailOffset = 0; // Cosa ha finito di leggere la GPU
-    
-    // Puntatore MAPPATO persistente in memoria HOST_VISIBLE | HOST_COHERENT
-    void* m_mappedStagingBuffer = nullptr; 
-    
-    VkDevice m_device = nullptr;
-    VkBuffer m_stagingVkBuffer = nullptr;
-    VkDeviceMemory m_stagingVkDeviceMemory = nullptr;
-    VkQueue m_transferQueue = nullptr;
-    VkCommandPool m_transferPool = nullptr;
-    VkBuffer m_globalVramBuffer = nullptr;
+    uint64_t m_stagingBufferSize = 0;
+    uint64_t m_headOffset = 0;
+    void* m_mappedStagingBuffer = nullptr;
+    VkDevice m_device = VK_NULL_HANDLE;
+    VkBuffer m_stagingVkBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_stagingVkDeviceMemory = VK_NULL_HANDLE;
+    VkQueue m_transferQueue = VK_NULL_HANDLE;
+    VkCommandPool m_transferPool = VK_NULL_HANDLE;
+    VkBuffer m_globalVramBuffer = VK_NULL_HANDLE;
     std::mutex* m_queueMutex = nullptr;
-
-    // -- Timeline Semaphore --
-    VkSemaphore m_transferTimeline = nullptr;
+    VkSemaphore m_transferTimeline = VK_NULL_HANDLE;
+    std::mutex* m_commandPoolMutex = nullptr;
     uint64_t m_currentTimelineValue = 0;
-
-    // Helper interno per allocare spazio nel ring buffer.
-    // Se non c'è spazio, in una VERA implementazione dovrebbe attendere (wait)
-    // l'avanzamento della m_tailOffset verificando il valore del Timeline Semaphore.
-    uint32_t AllocateStagingSpace(uint32_t size);
-
-    struct PendingTransfer {
-        uint64_t timelineId;
-        VkCommandBuffer cmd;
-    };
     std::vector<PendingTransfer> m_pendingTransfers;
-
-    // C4: vero counter dei command buffer live — incrementato/decrementato
-    // in ogni percorso di alloc/free (nessun percorso alternativo esiste).
     std::atomic<uint32_t> m_liveCommandBuffers{0};
+    VulkanDmaDispatch m_dispatch;
+    bool m_deviceLost = false;
 };
 
 } // namespace fw

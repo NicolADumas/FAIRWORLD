@@ -245,10 +245,8 @@ void PlanetMapperState::UpdateApp(float dt) {
                 if (!m_previewWorld->GetRegistry().valid(ent)) continue;
                 
                 float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
-                float cx = sp.localX / R;
-                float cy = sp.localZ / R;
-                glm::vec2 uv((cx + 1.0f) * 0.5f, (1.0f - cy) * 0.5f);
-                glm::vec3 dir = fw::CubeSphereMapping::FaceUVToDirection(sp.faceIndex, uv);
+                const glm::vec2 chart(sp.localX / R, sp.localZ / R);
+                glm::vec3 dir = fw::CubeSphereMapping::FaceChartToDirection(sp.faceIndex, chart);
                 glm::vec3 pos = dir * (R + sp.heightOffset);
                 
                 auto& trans = m_previewWorld->GetRegistry().get<fw::TransformComponent>(ent);

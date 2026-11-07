@@ -378,7 +378,9 @@ LifecycleTestResult LifecycleRemediationContractTests::Test04_ShutdownWithRegist
             }
 
             // Esegui Shutdown dell'engine
-            engine.Shutdown();
+            // This contract test intentionally has no SharedContext/RuntimeManager.
+            // Event ownership is tested here; the runtime gate is not applicable.
+            engine.Shutdown(false);
 
             if (engine.GetSubBlockMined() != INVALID_SUBSCRIPTION_ID || 
                 engine.GetSubBlockPlaced() != INVALID_SUBSCRIPTION_ID) {

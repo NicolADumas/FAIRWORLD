@@ -1,5 +1,6 @@
 #pragma once
 #include <glm/glm.hpp>
+#include <cstdint>
 
 // Forward declaration
 namespace fw { class GameWorld; class ForgeWorld; }
@@ -7,6 +8,16 @@ namespace fw { class GameWorld; class ForgeWorld; }
 #include "core/utils/PlanetMath.h"
 
 #include <vector>
+
+enum class PlanetaryCollisionSampleStatus : uint8_t {
+    None,
+    SolidVoxel,
+    Air,
+    PassableVoxel,
+    OutOfBounds,
+    TerrainPending,
+    InvalidInput
+};
 
 // Eventi fisici generati durante il tick
 struct PhysicsEvent {
@@ -57,8 +68,29 @@ struct RigidBody {
     
     glm::vec3 dbg_gravityAccel = glm::vec3(0.0f);
     int dbg_voxelContacts = 0;
+    int dbg_collisionProbeCount = 0;
+    bool dbg_countCollisionProbes = false;
+    uint64_t dbg_collisionQueryNanoseconds = 0;
+    int dbg_initialRecoveryProbeCount = 0;
+    int dbg_contactRefinementProbeCount = 0;
+    int dbg_airSamples = 0;
+    int dbg_passableVoxelSamples = 0;
+    int dbg_outOfBoundsSamples = 0;
+    int dbg_terrainPendingSamples = 0;
+    bool dbg_terrainPending = false;
+    PlanetaryCollisionSampleStatus dbg_lastPlanetarySample = PlanetaryCollisionSampleStatus::None;
     glm::ivec3 dbg_lastLookupCoord = glm::ivec3(0);
     bool dbg_lastLookupSolid = false;
+    bool dbg_radialGroundContact = false;
+    bool dbg_tangentialSolidBlock = false;
+    bool dbg_initialPenetrationUnresolved = false;
+    glm::ivec3 dbg_groundVoxelCoord = glm::ivec3(-1);
+    glm::vec3 dbg_groundContactNormal = glm::vec3(0.0f);
+
+    // Stable tangent reference used to resolve spherical collision axes.
+    glm::vec3 planetaryCollisionFrameUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 planetaryCollisionFrameForward = glm::vec3(0.0f, 0.0f, -1.0f);
+    bool planetaryCollisionFrameInitialized = false;
 };
 
 class PhysicsEngine {
@@ -68,7 +100,8 @@ public:
     static constexpr float RHO_WATER = 1000.0f;  // [kg/m^3]
 
     // Integra il moto e risolve collisioni nel timestep dt
-    void StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world);
+    void StepSimulation(RigidBody& rb, float dt, const fw::GameWorld& world,
+                        const glm::vec3* preferredPlanetaryForward = nullptr);
 
     // Esegue uno sweep di un AABB contro il mondo voxel, restituendo il punto di collisione
     bool SweepTest(const AABB& playerBounds, const glm::vec3& movement, RaycastHit& hitResult, const fw::GameWorld& world);
@@ -81,11 +114,13 @@ private:
     void ApplyGravity(RigidBody& rb, const fw::GameWorld& world);
 
     // Applica attrito viscoso: F = -k * v (Cap. 9)
-    void ApplyDrag(RigidBody& rb);
+    void ApplyDrag(RigidBody& rb, const fw::GameWorld& world);
 
     // Risolve collisioni AABB contro i blocchi Voxel (Cap. 9 - reazioni vincolari normali)
-    void ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world);
-    void ResolveSphericalCollisions(RigidBody& rb, float dt, const fw::GameWorld& world, fw::PlanetSize pSize);
+    void ResolveCollisions(RigidBody& rb, float dt, const fw::GameWorld& world,
+                           const glm::vec3* preferredPlanetaryForward);
+    void ResolveSphericalCollisions(RigidBody& rb, float dt, const fw::GameWorld& world,
+                                    const glm::vec3* preferredPlanetaryForward);
 
     // Integrazione Numerica (Metodo di Eulero/Verlet) (Cap. 7)
     void Integrate(RigidBody& rb, float dt);

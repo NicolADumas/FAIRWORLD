@@ -1,0 +1,7 @@
+
+  Checking File Globs
+  Jolt.vcxproj -> D:\FAIRWORLD\FAIRWORLD\build_r3z7\_deps\joltphysics-build\Debug\Jolt.lib
+  FairworldCore.vcxproj -> D:\FAIRWORLD\FAIRWORLD\build_r3z7\Debug\FairworldCore.lib
+  PlanetaryVoxelE2ETests.cpp
+  GLM_GTX_hash requires C++11 standard library support
+  FairworldPlanetaryVoxelE2ETests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldPlanetaryVoxelE2ETests.exe

@@ -1,62 +1,70 @@
 #include "pch.h"
 #include "VulkanDmaManager.h"
 #include <iostream>
-#include <cstring> // per memcpy
+#include <cstring>
+#include <limits>
 #include "VulkanResourceTracker.h"
 #include "vulkan/VulkanForensicAudit.h"
 
-#include <vulkan/vulkan.h>
-
 namespace fw {
 
-VulkanDmaManager::VulkanDmaManager() {
-}
+VulkanDmaManager::VulkanDmaManager() = default;
 
 VulkanDmaManager::~VulkanDmaManager() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_pendingTransfers.empty()) {
-        std::cerr << "[VulkanDmaManager] ERROR: Destructor called with pending transfers! Call Drain() first!\n";
+        std::cerr << "[VulkanDmaManager] ERROR: retaining timeline and command buffers with "
+                  << m_pendingTransfers.size() << " unconfirmed transfer(s).\n";
+        return;
     }
-
     if (m_device != VK_NULL_HANDLE && m_transferTimeline != VK_NULL_HANDLE) {
-        std::cout << "\n[DMA]\nDestroy timeline semaphore\n";
-        fw::forensic::InterceptDestroySemaphore("VulkanDmaManager::~VulkanDmaManager", m_device, m_transferTimeline, nullptr);
-        std::cout << "Timeline semaphore destroyed\n";
+        if (m_dispatch.destroySemaphore) m_dispatch.destroySemaphore(m_device, m_transferTimeline, nullptr);
+        else fw::forensic::InterceptDestroySemaphore("VulkanDmaManager::~VulkanDmaManager", m_device, m_transferTimeline, nullptr);
+        fw::VulkanResourceTracker::Get().TrackDestroy(m_transferTimeline);
         m_transferTimeline = VK_NULL_HANDLE;
     }
 }
 
-void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool, 
-                                  VkBuffer stagingBuffer, VkDeviceMemory stagingDeviceMemory, void* mappedStaging, uint64_t stagingSize,
-                                  VkBuffer deprecatedGlobalVramBuffer, std::mutex* queueMutex) {
+void VulkanDmaManager::SetDispatchForTesting(VulkanDmaDispatch dispatch) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_device != VK_NULL_HANDLE || m_transferTimeline != VK_NULL_HANDLE) {
+        throw std::logic_error("DMA test dispatch must be set before Initialize");
+    }
+    m_dispatch = std::move(dispatch);
+}
+
+void VulkanDmaManager::Initialize(VkDevice device, VkQueue transferQueue, VkCommandPool transferPool,
+    VkBuffer stagingBuffer, VkDeviceMemory stagingMemory, void* mappedStaging, uint64_t stagingSize,
+    VkBuffer deprecatedGlobalVramBuffer, std::mutex* queueMutex, std::mutex* commandPoolMutex) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_device = device;
     m_transferQueue = transferQueue;
     m_transferPool = transferPool;
     m_stagingVkBuffer = stagingBuffer;
-    m_stagingVkDeviceMemory = stagingDeviceMemory;
+    m_stagingVkDeviceMemory = stagingMemory;
     m_mappedStagingBuffer = mappedStaging;
     m_stagingBufferSize = stagingSize;
+    m_globalVramBuffer = deprecatedGlobalVramBuffer;
     m_queueMutex = queueMutex;
-    
-    // m_globalVramBuffer non più usato qui, passato per parametro
+    m_commandPoolMutex = commandPoolMutex;
+    m_deviceLost = false;
 
-    std::cout << "[Vulkan DMA] Inizializzazione Macro Staging Buffer e Timeline Semaphore...\n";
-    
-    // Inizializzazione Timeline Semaphore
     VkSemaphoreTypeCreateInfo timelineCreateInfo{};
     timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
     timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-    timelineCreateInfo.initialValue = 0;
-
     VkSemaphoreCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     createInfo.pNext = &timelineCreateInfo;
-
-    if (fw::forensic::InterceptCreateSemaphore("VulkanDmaManager::Initialize", "DMATransferTimeline", "VulkanDmaManager", m_device, &createInfo, nullptr, &m_transferTimeline) != VK_SUCCESS) {
-        std::cerr << "[Vulkan DMA] Errore: Impossibile creare Timeline Semaphore!\n";
-    } else {
-        std::cout << "[Vulkan DMA] Transfer Timeline Semaphore creato e inizializzato a 0.\n";
-        fw::VulkanResourceTracker::Get().TrackCreate(m_transferTimeline, "DMATransferTimeline", "VulkanDmaManager");
+    VkResult result = m_dispatch.createSemaphore
+        ? m_dispatch.createSemaphore(m_device, &createInfo, nullptr, &m_transferTimeline)
+        : fw::forensic::InterceptCreateSemaphore("VulkanDmaManager::Initialize", "DMATransferTimeline", "VulkanDmaManager", m_device, &createInfo, nullptr, &m_transferTimeline);
+    if (result != VK_SUCCESS || m_transferTimeline == VK_NULL_HANDLE) {
+        m_transferTimeline = VK_NULL_HANDLE;
+        std::cerr << "[Vulkan DMA] Timeline creation failed: " << result << "\n";
+        if (result == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+        return;
     }
+    fw::VulkanResourceTracker::Get().TrackCreate(m_transferTimeline, "DMATransferTimeline", "VulkanDmaManager");
 }
 
 size_t VulkanDmaManager::GetPendingTransferCount() const {
@@ -64,176 +72,264 @@ size_t VulkanDmaManager::GetPendingTransferCount() const {
     return m_pendingTransfers.size();
 }
 
-void VulkanDmaManager::Drain() {
-    if (m_device == VK_NULL_HANDLE) return;
-
-    std::cout << "\n[DMA]\nDrain begin\nPending transfers : " << m_pendingTransfers.size() << "\n";
-
-    if (m_transferQueue != VK_NULL_HANDLE) {
-        if (m_queueMutex) {
-            std::lock_guard<std::mutex> lock(*m_queueMutex);
-            vkQueueWaitIdle(m_transferQueue);
-        } else {
-            vkQueueWaitIdle(m_transferQueue);
-        }
-    }
-
-    std::cout << "\n[DMA]\nTransfer queue idle\nPending transfers : 0\n";
-
-    for (auto& transfer : m_pendingTransfers) {
-        if (transfer.cmd != VK_NULL_HANDLE) {
-            --m_liveCommandBuffers;  // C4: decrementa al momento della reale liberazione
-            vkFreeCommandBuffers(m_device, m_transferPool, 1, &transfer.cmd);
-            transfer.cmd = VK_NULL_HANDLE;
-        }
-    }
-    m_pendingTransfers.clear();
-}
-
-uint32_t VulkanDmaManager::AllocateStagingSpace(uint32_t size) {
-    // Semplificazione: per un vero Ring Buffer bisognerebbe gestire il wrap-around 
-    // e verificare se Head raggiunge Tail. 
-    // Per il test, assumiamo che i 64MB non si esauriscano o gestiamo un wrap barbaro.
-    uint32_t allocOffset = m_headOffset;
-    
-    if (m_headOffset + size > m_stagingBufferSize) {
-        // Wrap around (in Vulkan dovresti emettere due vkCmdCopyBuffer se il blocco si spezza,
-        // o scartare lo spazio a fine buffer e ricominciare da 0).
-        allocOffset = 0; 
-        m_headOffset = size;
-    } else {
-        m_headOffset += size;
-    }
-    
-    return allocOffset;
-}
-
-uint64_t VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeInBytes, const VramAllocationInfo& destination, VkBuffer destBuffer) {
+uint64_t VulkanDmaManager::GetSubmittedTimelineValue() const {
     std::lock_guard<std::mutex> lock(m_mutex);
+    return m_currentTimelineValue;
+}
 
-    // 0. Garbage Collection dei Command Buffer completati
-    uint64_t completedValue = 0;
-    if (m_transferTimeline) {
-        // Query del valore attuale del semaforo sulla GPU
-        vkGetSemaphoreCounterValue(m_device, m_transferTimeline, &completedValue);
+void VulkanDmaManager::FreeUnsubmittedCommandBuffer(VkCommandBuffer cmd) {
+    if (cmd == VK_NULL_HANDLE) return;
+    if (m_commandPoolMutex) {
+        std::lock_guard<std::mutex> poolLock(*m_commandPoolMutex);
+        if (m_dispatch.freeCommandBuffers) m_dispatch.freeCommandBuffers(m_device, m_transferPool, 1, &cmd);
+        else vkFreeCommandBuffers(m_device, m_transferPool, 1, &cmd);
+    } else if (m_dispatch.freeCommandBuffers) m_dispatch.freeCommandBuffers(m_device, m_transferPool, 1, &cmd);
+    else vkFreeCommandBuffers(m_device, m_transferPool, 1, &cmd);
+    --m_liveCommandBuffers;
+}
+
+VkResult VulkanDmaManager::GetCompletedTimelineValue(uint64_t& value) const {
+    if (m_dispatch.getSemaphoreCounterValue) return m_dispatch.getSemaphoreCounterValue(m_device, m_transferTimeline, &value);
+    return vkGetSemaphoreCounterValue(m_device, m_transferTimeline, &value);
+}
+
+VkResult VulkanDmaManager::Drain() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_device == VK_NULL_HANDLE || m_deviceLost) return VK_ERROR_DEVICE_LOST;
+    if (m_pendingTransfers.empty()) return VK_SUCCESS;
+    if (m_transferQueue == VK_NULL_HANDLE) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result;
+    if (m_queueMutex) {
+        std::lock_guard<std::mutex> queueLock(*m_queueMutex);
+        result = m_dispatch.queueWaitIdle ? m_dispatch.queueWaitIdle(m_transferQueue) : vkQueueWaitIdle(m_transferQueue);
+    } else {
+        result = m_dispatch.queueWaitIdle ? m_dispatch.queueWaitIdle(m_transferQueue) : vkQueueWaitIdle(m_transferQueue);
     }
-    
+    if (result != VK_SUCCESS) {
+        if (result == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+        std::cerr << "[VulkanDmaManager] Drain could not confirm queue idle: " << result << "\n";
+        return result;
+    }
+    for (const auto& transfer : m_pendingTransfers) FreeUnsubmittedCommandBuffer(transfer.cmd);
+    m_pendingTransfers.clear();
+    m_headOffset = 0;
+    return VK_SUCCESS;
+}
+
+VkResult VulkanDmaManager::QueryTimelineCompletion(uint64_t targetValue, bool& completed) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    completed = false;
+    if (m_deviceLost) return VK_ERROR_DEVICE_LOST;
+    if (m_device == VK_NULL_HANDLE || m_transferTimeline == VK_NULL_HANDLE) return VK_ERROR_INITIALIZATION_FAILED;
+    uint64_t counter = 0;
+    const VkResult result = GetCompletedTimelineValue(counter);
+    if (result != VK_SUCCESS) {
+        if (result == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+        return result;
+    }
+    completed = counter >= targetValue;
+    if (!completed) return VK_SUCCESS;
+    auto it = m_pendingTransfers.begin();
+    while (it != m_pendingTransfers.end()) {
+        if (counter >= it->timelineId) {
+            FreeUnsubmittedCommandBuffer(it->cmd);
+            it = m_pendingTransfers.erase(it);
+        } else ++it;
+    }
+    if (m_pendingTransfers.empty()) m_headOffset = 0;
+    return VK_SUCCESS;
+}
+
+void VulkanDmaManager::Cleanup() {
+    const VkResult drainResult = Drain();
+    if (drainResult != VK_SUCCESS) return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_device != VK_NULL_HANDLE && m_transferTimeline != VK_NULL_HANDLE) {
+        if (m_dispatch.destroySemaphore) m_dispatch.destroySemaphore(m_device, m_transferTimeline, nullptr);
+        else fw::forensic::InterceptDestroySemaphore("VulkanDmaManager::Cleanup", m_device, m_transferTimeline, nullptr);
+        fw::VulkanResourceTracker::Get().TrackDestroy(m_transferTimeline);
+    }
+    m_transferTimeline = VK_NULL_HANDLE;
+    m_device = VK_NULL_HANDLE;
+}
+
+DmaUploadResult VulkanDmaManager::UploadMeshAsync(const void* meshData, uint32_t sizeInBytes,
+    const VramAllocationInfo& destination, VkBuffer destBuffer) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto result = [](DmaUploadStatus status, DmaSubmissionState submission, VkResult vkResult, uint64_t target = 0) {
+        return DmaUploadResult{status, submission, vkResult, target};
+    };
+    if (m_deviceLost) return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, VK_ERROR_DEVICE_LOST);
+    if (!meshData || sizeInBytes == 0 || !destination.valid || destination.size == 0 ||
+        sizeInBytes > destination.size || destination.offset > UINT32_MAX - sizeInBytes ||
+        static_cast<uint64_t>(destination.offset) + sizeInBytes > 256ULL * 1024ULL * 1024ULL ||
+        m_device == VK_NULL_HANDLE || m_transferQueue == VK_NULL_HANDLE || m_transferPool == VK_NULL_HANDLE ||
+        m_transferTimeline == VK_NULL_HANDLE || m_stagingVkBuffer == VK_NULL_HANDLE ||
+        m_stagingVkDeviceMemory == VK_NULL_HANDLE || !m_mappedStagingBuffer ||
+        destBuffer == VK_NULL_HANDLE || m_stagingBufferSize == 0 || sizeInBytes > m_stagingBufferSize) {
+        return result(DmaUploadStatus::InvalidInput, DmaSubmissionState::NotSubmitted, VK_ERROR_INITIALIZATION_FAILED);
+    }
+
+    uint64_t completedValue = 0;
+    VkResult vkResult = GetCompletedTimelineValue(completedValue);
+    if (vkResult != VK_SUCCESS) {
+        if (vkResult == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+            return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult);
+        }
+        return result(DmaUploadStatus::CounterQueryFailed, DmaSubmissionState::NotSubmitted, vkResult);
+    }
     auto it = m_pendingTransfers.begin();
     while (it != m_pendingTransfers.end()) {
         if (completedValue >= it->timelineId) {
-            vkFreeCommandBuffers(m_device, m_transferPool, 1, &it->cmd);
-            --m_liveCommandBuffers;  // C4: decrementa al momento della reale liberazione
+            FreeUnsubmittedCommandBuffer(it->cmd);
             it = m_pendingTransfers.erase(it);
-        } else {
-            ++it;
+        } else ++it;
+    }
+    // Until every prior transfer is confirmed, the single staging range is owned by it.
+    if (!m_pendingTransfers.empty()) {
+        return result(DmaUploadStatus::PendingTransferNotConfirmed, DmaSubmissionState::SubmittedButNotConfirmed, VK_NOT_READY,
+            m_pendingTransfers.front().timelineId);
+    }
+    m_headOffset = 0;
+    if (sizeInBytes > m_stagingBufferSize - m_headOffset) {
+        return result(DmaUploadStatus::InvalidInput, DmaSubmissionState::NotSubmitted, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+    }
+    const uint64_t stagingOffset = m_headOffset;
+    std::memcpy(static_cast<unsigned char*>(m_mappedStagingBuffer) + stagingOffset, meshData, sizeInBytes);
+
+    VkMappedMemoryRange flushRange{};
+    flushRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    flushRange.memory = m_stagingVkDeviceMemory;
+    flushRange.offset = 0;
+    flushRange.size = VK_WHOLE_SIZE;
+    vkResult = m_dispatch.flushMappedMemoryRanges
+        ? m_dispatch.flushMappedMemoryRanges(m_device, 1, &flushRange)
+        : vkFlushMappedMemoryRanges(m_device, 1, &flushRange);
+    if (vkResult != VK_SUCCESS) {
+        if (vkResult == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+            return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult);
         }
+        return result(DmaUploadStatus::FlushFailed, DmaSubmissionState::NotSubmitted, vkResult);
     }
 
-    // 1. Alloca spazio nello staging buffer (O(1))
-    uint32_t stagingOffset = AllocateStagingSpace(sizeInBytes);
-
-    // 2. Burst Copy in RAM. 
-    void* dstPtr = static_cast<char*>(m_mappedStagingBuffer) + stagingOffset;
-    std::memcpy(dstPtr, meshData, sizeInBytes);
-    
-    // Flush the mapped memory so the GPU sees the new data
-    if (m_stagingVkDeviceMemory != VK_NULL_HANDLE) {
-        VkMappedMemoryRange flushRange{};
-        flushRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-        flushRange.memory = m_stagingVkDeviceMemory;
-        flushRange.offset = 0;
-        flushRange.size = VK_WHOLE_SIZE;
-        vkFlushMappedMemoryRanges(m_device, 1, &flushRange);
-    }
-    
-    // 3. Registrazione del comando Vulkan
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandPool = m_transferPool;
     allocInfo.commandBufferCount = 1;
-
     VkCommandBuffer cmd = VK_NULL_HANDLE;
-    VkResult resAlloc = vkAllocateCommandBuffers(m_device, &allocInfo, &cmd);
-    if (resAlloc != VK_SUCCESS || cmd == VK_NULL_HANDLE) {
-        std::cerr << "[VulkanDmaManager] ERROR: vkAllocateCommandBuffers fallito con codice " << resAlloc << "!\n";
-        return 0;
+    if (m_commandPoolMutex) {
+        std::lock_guard<std::mutex> poolLock(*m_commandPoolMutex);
+        vkResult = m_dispatch.allocateCommandBuffers
+            ? m_dispatch.allocateCommandBuffers(m_device, &allocInfo, &cmd)
+            : vkAllocateCommandBuffers(m_device, &allocInfo, &cmd);
+    } else {
+        vkResult = m_dispatch.allocateCommandBuffers
+            ? m_dispatch.allocateCommandBuffers(m_device, &allocInfo, &cmd)
+            : vkAllocateCommandBuffers(m_device, &allocInfo, &cmd);
     }
-    ++m_liveCommandBuffers;  // C4: incrementa solo dopo allocazione verificata
+    if (vkResult != VK_SUCCESS || cmd == VK_NULL_HANDLE) {
+        if (vkResult == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+            return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult);
+        }
+        return result(DmaUploadStatus::CommandBufferAllocationFailed, DmaSubmissionState::NotSubmitted,
+            vkResult == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : vkResult);
+    }
+    ++m_liveCommandBuffers;
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
-        std::cerr << "[VulkanDmaManager] ERROR: vkBeginCommandBuffer fallito!\n";
-        return 0;
+    vkResult = m_dispatch.beginCommandBuffer ? m_dispatch.beginCommandBuffer(cmd, &beginInfo) : vkBeginCommandBuffer(cmd, &beginInfo);
+    if (vkResult != VK_SUCCESS) {
+        FreeUnsubmittedCommandBuffer(cmd);
+        if (vkResult == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+            return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult);
+        }
+        return result(DmaUploadStatus::CommandBufferBeginFailed, DmaSubmissionState::NotSubmitted, vkResult);
     }
-
     VkBufferCopy copyRegion{};
     copyRegion.srcOffset = stagingOffset;
     copyRegion.dstOffset = destination.offset;
     copyRegion.size = sizeInBytes;
-    
-    if (destBuffer == VK_NULL_HANDLE) {
-        std::cerr << "[VulkanDmaManager] ERROR: destBuffer IS NULL! Cannot copy buffer.\n";
-    } else if (m_stagingVkBuffer == VK_NULL_HANDLE) {
-        std::cerr << "[VulkanDmaManager] ERROR: m_stagingVkBuffer IS NULL! Cannot copy buffer.\n";
-    } else {
-        vkCmdCopyBuffer(cmd, m_stagingVkBuffer, destBuffer, 1, &copyRegion);
-    }
-    
-    vkEndCommandBuffer(cmd);
+    if (m_dispatch.cmdCopyBuffer) m_dispatch.cmdCopyBuffer(cmd, m_stagingVkBuffer, destBuffer, 1, &copyRegion);
+    else vkCmdCopyBuffer(cmd, m_stagingVkBuffer, destBuffer, 1, &copyRegion);
 
-    // 5. Incremento del Timeline Counter e Sottomissione
-    m_currentTimelineValue++;
-    
+    vkResult = m_dispatch.endCommandBuffer ? m_dispatch.endCommandBuffer(cmd) : vkEndCommandBuffer(cmd);
+    if (vkResult != VK_SUCCESS) {
+        FreeUnsubmittedCommandBuffer(cmd);
+        if (vkResult == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+            return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult);
+        }
+        return result(DmaUploadStatus::CommandBufferEndFailed, DmaSubmissionState::NotSubmitted, vkResult);
+    }
+
+    // Reserve before submission so host allocation failure cannot lose ownership of a pending command buffer.
+    try { m_pendingTransfers.reserve(m_pendingTransfers.size() + 1); }
+    catch (...) {
+        FreeUnsubmittedCommandBuffer(cmd);
+        return result(DmaUploadStatus::CommandBufferAllocationFailed, DmaSubmissionState::NotSubmitted, VK_ERROR_OUT_OF_HOST_MEMORY);
+    }
+    const uint64_t target = m_currentTimelineValue + 1;
+    if (target == 0) {
+        FreeUnsubmittedCommandBuffer(cmd);
+        return result(DmaUploadStatus::InvalidInput, DmaSubmissionState::NotSubmitted, VK_ERROR_TOO_MANY_OBJECTS);
+    }
     VkTimelineSemaphoreSubmitInfo timelineInfo{};
     timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
     timelineInfo.signalSemaphoreValueCount = 1;
-    timelineInfo.pSignalSemaphoreValues = &m_currentTimelineValue;
-
+    timelineInfo.pSignalSemaphoreValues = &target;
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.pNext = &timelineInfo;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
-    
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &m_transferTimeline;
-
-    VkResult resSubmit = VK_SUCCESS;
     if (m_queueMutex) {
-        std::lock_guard<std::mutex> qLock(*m_queueMutex);
-        resSubmit = vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        std::lock_guard<std::mutex> queueLock(*m_queueMutex);
+        vkResult = m_dispatch.queueSubmit ? m_dispatch.queueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE)
+                                          : vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
     } else {
-        resSubmit = vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkResult = m_dispatch.queueSubmit ? m_dispatch.queueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE)
+                                          : vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
     }
-    
-    if (resSubmit != VK_SUCCESS) {
-        std::cerr << "[VulkanDmaManager] ERROR: vkQueueSubmit fallito con codice " << resSubmit << "!\n";
-    } else {
-        // Aspetta che il trasferimento sia completo PRIMA di segnare la mesh come pronta.
-        // Utilizziamo il timeline semaphore invece di vkQueueWaitIdle per non toccare la queue
-        // e non creare race conditions o bloccare il mutex della coda grafice/transfer!
-        VkSemaphoreWaitInfo waitInfo{};
-        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        waitInfo.semaphoreCount = 1;
-        waitInfo.pSemaphores = &m_transferTimeline;
-        waitInfo.pValues = &m_currentTimelineValue;
-        
-        vkWaitSemaphores(m_device, &waitInfo, UINT64_MAX);
+    if (vkResult != VK_SUCCESS) {
+        if (vkResult == VK_ERROR_DEVICE_LOST) {
+            // DEVICE_LOST does not prove that the driver retired the submitted command.
+            m_pendingTransfers.push_back({target, cmd});
+            m_deviceLost = true;
+            return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult, target);
+        }
+        FreeUnsubmittedCommandBuffer(cmd);
+        return result(DmaUploadStatus::SubmitFailed, DmaSubmissionState::SubmitFailed, vkResult, target);
     }
+    m_currentTimelineValue = target;
+    m_pendingTransfers.push_back({target, cmd});
 
-    if (sizeInBytes > 1024 * 1024) {
-        std::cout << "[DMA Transfer] Mesh da " << (sizeInBytes / 1024) << "KB sparata sul PCIe. "
-                  << "VRAM Offset: " << destination.offset << ". Timeline attesa: " << m_currentTimelineValue << "\n";
+    VkSemaphoreWaitInfo waitInfo{};
+    waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    waitInfo.semaphoreCount = 1;
+    waitInfo.pSemaphores = &m_transferTimeline;
+    waitInfo.pValues = &target;
+    vkResult = m_dispatch.waitSemaphores ? m_dispatch.waitSemaphores(m_device, &waitInfo, UINT64_MAX)
+                                         : vkWaitSemaphores(m_device, &waitInfo, UINT64_MAX);
+    if (vkResult == VK_SUCCESS) {
+        FreeUnsubmittedCommandBuffer(cmd);
+        m_pendingTransfers.pop_back();
+        m_headOffset = 0;
+        return result(DmaUploadStatus::Completed, DmaSubmissionState::Completed, vkResult, target);
     }
-
-    // 6. Registriamo il Command Buffer per la pulizia futura
-    m_pendingTransfers.push_back({m_currentTimelineValue, cmd});
-    
-    return m_currentTimelineValue;
+    if (vkResult == VK_ERROR_DEVICE_LOST) {
+        m_deviceLost = true;
+        return result(DmaUploadStatus::DeviceLost, DmaSubmissionState::DeviceLost, vkResult, target);
+    }
+    return result(DmaUploadStatus::WaitFailed, DmaSubmissionState::SubmittedButNotConfirmed, vkResult, target);
 }
 
 } // namespace fw

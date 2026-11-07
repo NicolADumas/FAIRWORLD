@@ -6,6 +6,15 @@ namespace fw {
 
 class CubeSphereMapping {
 public:
+    // Convert UV [0, 1] to the canonical face chart coordinates (cx, cy).
+    static glm::vec2 FaceUVToChartCoordinates(const glm::vec2& uv);
+
+    // Convert canonical face chart coordinates (cx, cy) to a normalized direction.
+    static glm::vec3 FaceChartToDirection(CubeFace face, const glm::vec2& chart);
+    static glm::vec3 FaceChartToDirection(int face, const glm::vec2& chart) {
+        return FaceChartToDirection(static_cast<CubeFace>(face), chart);
+    }
+
     // Convert a normalized 3D direction vector to Face and UV coordinates [0, 1]
     static void DirectionToFaceUV(const glm::vec3& direction, CubeFace& outFace, glm::vec2& outUV);
     static void DirectionToFaceUV(const glm::vec3& direction, int& outFace, glm::vec2& outUV) {

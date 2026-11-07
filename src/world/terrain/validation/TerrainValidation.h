@@ -5,6 +5,7 @@ namespace fw {
 class TerrainValidation {
 public:
     static bool RunAll();
+    static bool RunD12ConventionTests();
     static bool RunLegacyVoxelWriterAudit();
     
     // Phase 5 Determinism Freeze Gate
@@ -24,8 +25,14 @@ public:
 
     // Phase D4 Mapping / Determinism Gate
     static bool RunD4MappingDeterminismGateTest();
+    static bool RunP03D1FwbSemanticParityTest();
 
 private:
+    static bool TestD12ChartRoundTrips();
+    static bool TestD12GridRowsAndBounds();
+    static bool TestD12TerrainAndMeshRowFlow();
+    static bool TestD12SpawnPersistenceCompatibility();
+    static bool TestP03D1FwbSemanticParity();
     static bool TestD4CanonicalCenters();
     static bool TestD4FaceOrientation();
     static bool TestD4RoundTripInterior();

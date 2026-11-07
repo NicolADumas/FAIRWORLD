@@ -1,0 +1,27 @@
+Versione di MSBuild 18.10.1-1.26427.6+3cd27c13e per .NET Framework
+
+  Checking File Globs
+  Jolt.vcxproj -> D:\FAIRWORLD\FAIRWORLD\build_r3z7\_deps\joltphysics-build\Debug\Jolt.lib
+  FairworldCore.vcxproj -> D:\FAIRWORLD\FAIRWORLD\build_r3z7\Debug\FairworldCore.lib
+  FairworldAppearanceTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAppearanceTests.exe
+  FairworldAsyncInputTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAsyncInputTests.exe
+  FairworldAuthoringTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAuthoringTests.exe
+  FairworldBindingTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldBindingTests.exe
+  FairworldCustomScientificTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldCustomScientificTests.exe
+  FairworldDiagnostics.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldDiagnostics.exe
+  FairworldEditor.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldEditor.exe
+  FairworldEventTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldEventTests.exe
+  FairworldGameplayStressTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldGameplayStressTests.exe
+  FairworldLifecycleTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldLifecycleTests.exe
+  FairworldMemoryTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldMemoryTests.exe
+  FairworldNoiseTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldNoiseTests.exe
+  FairworldScientificTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldScientificTests.exe
+  FairworldSculptTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldSculptTests.exe
+  TextureCacheContractTests.cpp
+  FairworldTextureCacheTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldTextureCacheTests.exe
+  FairworldUVTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldUVTests.exe
+  FairworldVulkanRecoveryTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldVulkanRecoveryTests.exe
+  Module_GeometryNodes.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\Module_GeometryNodes.dll
+  Module_Modeling.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\Module_Modeling.dll
+  Module_Sculpting.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\Module_Sculpting.dll
+  Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt

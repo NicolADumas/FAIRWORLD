@@ -1,0 +1,877 @@
+Change Dir: 'D:/FAIRWORLD/FAIRWORLD/build_r3z7'
+
+Run Build Command(s): "D:/Visual Code/vs/MSBuild/Current/Bin/amd64/MSBuild.exe" ALL_BUILD.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=18.0 /m:1 /v:n
+Versione di MSBuild 18.10.1-1.26427.6+3cd27c13e per .NET Framework
+Compilazione avviata 04/11/2026 00:05:19.
+
+Progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" sul nodo 1 (destinazioni predefinite).
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ZERO_CHECK.vcxproj" (2) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\unsuccessfulbuild".
+PreBuildEvent:
+  Checking File Globs
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -P D:/FAIRWORLD/FAIRWORLD/build_r3z7/CMakeFiles/VerifyGlobs.cmake
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+CustomBuild:
+  Tutti gli output sono aggiornati.
+FinalizeBuildStatus:
+  Eliminazione del file "x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "x64\Debug\ZERO_CHECK\ZERO_CHECK.tlog\ZERO_CHECK.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ZERO_CHECK.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAppearanceTests.vcxproj" (3) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldCore.vcxproj" (4) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAppearanceTests.vcxproj" (3) sul nodo 1 (destinazioni predefinite).
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\_deps\joltphysics-build\Jolt.vcxproj" (5) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldCore.vcxproj" (4) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "Jolt.dir\Debug\Jolt.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "Jolt.dir\Debug\Jolt.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ClCompile:
+  Tutti gli output sono aggiornati.
+  Tutti gli output sono aggiornati.
+Lib:
+  Tutti gli output sono aggiornati.
+  Jolt.vcxproj -> D:\FAIRWORLD\FAIRWORLD\build_r3z7\_deps\joltphysics-build\Debug\Jolt.lib
+FinalizeBuildStatus:
+  Eliminazione del file "Jolt.dir\Debug\Jolt.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "Jolt.dir\Debug\Jolt.tlog\Jolt.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\_deps\joltphysics-build\Jolt.vcxproj" (destinazioni predefinite) completata.
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Aggiornamento timestamp di "FairworldCore.dir\Debug\FairworldCore.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\CL.exe /c /ID:\FAIRWORLD\FAIRWORLD\src /ID:\FAIRWORLD\FAIRWORLD\src\states /ID:\FAIRWORLD\FAIRWORLD\src\blocks /ID:\FAIRWORLD\FAIRWORLD\src\blocks\factory /ID:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt /ID:\FAIRWORLD\FAIRWORLD\src\blocks\texture /ID:\FAIRWORLD\FAIRWORLD\src\blocks\uv /ID:\FAIRWORLD\FAIRWORLD\src\world /ID:\FAIRWORLD\FAIRWORLD\src\systems /ID:\FAIRWORLD\FAIRWORLD\src\render /ID:\FAIRWORLD\FAIRWORLD\src\hardware /ID:\FAIRWORLD\FAIRWORLD\src\simulation /ID:\FAIRWORLD\FAIRWORLD\src\modules /ID:\FAIRWORLD\FAIRWORLD\src\ui /ID:\FAIRWORLD\FAIRWORLD\src\components /ID:\FAIRWORLD\FAIRWORLD\src\core /ID:\FAIRWORLD\FAIRWORLD\src\core\app /ID:\FAIRWORLD\FAIRWORLD\src\core\memory /ID:\FAIRWORLD\FAIRWORLD\src\core\entities /ID:\FAIRWORLD\FAIRWORLD\src\core\utils /ID:\FAIRWORLD\FAIRWORLD\third_party /ID:\FAIRWORLD\FAIRWORLD\third_party\imgui /ID:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include /ID:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include /I"D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src" /I"D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\.." /Z7 /nologo /W1 /WX- /diagnostics:column /MP4 /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D GLM_ENABLE_EXPERIMENTAL /D _DEBUG /D JPH_FLOATING_POINT_EXCEPTIONS_ENABLED /D JPH_DEBUG_RENDERER /D JPH_PROFILE_ENABLED /D JPH_USE_AVX2 /D JPH_USE_AVX /D JPH_USE_SSE4_1 /D JPH_USE_SSE4_2 /D JPH_USE_LZCNT /D JPH_USE_TZCNT /D JPH_USE_F16C /D JPH_USE_FMADD /D "CMAKE_INTDIR=\"Debug\"" /EHsc /RTC1 /MDd /arch:AVX2 /fp:fast /std:c++latest /Fo"FairworldCore.dir\Debug\\" /Fd"D:\FAIRWORLD\FAIRWORLD\build_r3z7\Debug\FairworldCore.pdb" /external:W0 /TP /wd4819 /wd4244 /errorReport:queue  /external:I "D:/VulkanSDK/include" D:\FAIRWORLD\FAIRWORLD\src\states\components\PlanetMapperCamera.cpp
+  PlanetMapperCamera.cpp
+  GLM_GTX_hash requires C++11 standard library support
+Lib:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\Lib.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\build_r3z7\Debug\FairworldCore.lib" /NOLOGO /MACHINE:X64  /machine:x64 FairworldCore.dir\Debug\BlockRegistry.obj
+  FairworldCore.dir\Debug\CustomScientificMaterialContractTests.obj
+  FairworldCore.dir\Debug\MaterialAppearance.obj
+  FairworldCore.dir\Debug\MaterialAppearanceContractTests.obj
+  FairworldCore.dir\Debug\MaterialAppearanceRegistry.obj
+  FairworldCore.dir\Debug\MaterialAuthoringContractTests.obj
+  FairworldCore.dir\Debug\MaterialAuthoringWorkflow.obj
+  FairworldCore.dir\Debug\MaterialRegistry.obj
+  FairworldCore.dir\Debug\ScientificBindingContractTests.obj
+  FairworldCore.dir\Debug\ScientificMaterialRegistry.obj
+  FairworldCore.dir\Debug\ScientificMaterialRegistryContractTests.obj
+  FairworldCore.dir\Debug\ShapeRegistry.obj
+  FairworldCore.dir\Debug\ZoneRegistry.obj
+  FairworldCore.dir\Debug\AssetCrashRecoveryHardeningTests.obj
+  FairworldCore.dir\Debug\AssetCrashRecoveryTests.obj
+  FairworldCore.dir\Debug\AssetDependencyContractTests.obj
+  FairworldCore.dir\Debug\AssetDependencyGraph.obj
+  FairworldCore.dir\Debug\AssetDigestTrustTests.obj
+  FairworldCore.dir\Debug\AssetIntegrityHardeningTests.obj
+  FairworldCore.dir\Debug\AssetIntegrityRoundTripTests.obj
+  FairworldCore.dir\Debug\AssetPackagingContractTests.obj
+  FairworldCore.dir\Debug\AssetPackagingService.obj
+  FairworldCore.dir\Debug\AssetSchemaMigrationService.obj
+  FairworldCore.dir\Debug\AssetSchemaMigrationTests.obj
+  FairworldCore.dir\Debug\FactoryOrchestrator.obj
+  FairworldCore.dir\Debug\PainterStationContractTests.obj
+  FairworldCore.dir\Debug\SculptedMeshRuntimeBridgeTests.obj
+  FairworldCore.dir\Debug\TextureBakingContractTests.obj
+  FairworldCore.dir\Debug\TextureBakingService.obj
+  FairworldCore.dir\Debug\TransactionIntegrityAuditTests.obj
+  FairworldCore.dir\Debug\EditableMesh.obj
+  FairworldCore.dir\Debug\MeshBridgeService.obj
+  FairworldCore.dir\Debug\MeshHistoryService.obj
+  FairworldCore.dir\Debug\MeshModelingService.obj
+  FairworldCore.dir\Debug\MeshRepairService.obj
+  FairworldCore.dir\Debug\MeshSculptService.obj
+  FairworldCore.dir\Debug\MeshSelectionService.obj
+  FairworldCore.dir\Debug\MeshTopologyService.obj
+  FairworldCore.dir\Debug\ImageBitmap.obj
+  FairworldCore.dir\Debug\PBRTexturePack.obj
+  FairworldCore.dir\Debug\PaintContractTests.obj
+  FairworldCore.dir\Debug\PaintLayer.obj
+  FairworldCore.dir\Debug\SurfacePaintContractTests.obj
+  FairworldCore.dir\Debug\SurfacePaintingAdapter.obj
+  FairworldCore.dir\Debug\TextureAsset.obj
+  FairworldCore.dir\Debug\TextureContractTests.obj
+  FairworldCore.dir\Debug\TexturePaintingService.obj
+  FairworldCore.dir\Debug\AtlasUVContractTests.obj
+  FairworldCore.dir\Debug\CompiledTopologyTests.obj
+  FairworldCore.dir\Debug\GeneralUVContractTests.obj
+  FairworldCore.dir\Debug\GeneralUVMapper.obj
+  FairworldCore.dir\Debug\LSCMParameterizer.obj
+  FairworldCore.dir\Debug\MeshBridgeContractTests.obj
+  FairworldCore.dir\Debug\PrimitiveUVContractTests.obj
+  FairworldCore.dir\Debug\PrimitiveUVMapper.obj
+  FairworldCore.dir\Debug\SeamGraph.obj
+  FairworldCore.dir\Debug\TexelDensityCalculator.obj
+  FairworldCore.dir\Debug\TextureReprojectionContractTests.obj
+  FairworldCore.dir\Debug\TextureReprojectionService.obj
+  FairworldCore.dir\Debug\UVAtlasPacker.obj
+  FairworldCore.dir\Debug\UVEditorContractTests.obj
+  FairworldCore.dir\Debug\UVEditorDocument.obj
+  FairworldCore.dir\Debug\UVEditorPanel.obj
+  FairworldCore.dir\Debug\UVFactoryIntegrationTests.obj
+  FairworldCore.dir\Debug\UVIslandExtractor.obj
+  FairworldCore.dir\Debug\AssetManager.obj
+  FairworldCore.dir\Debug\DiagnosticsManager.obj
+  FairworldCore.dir\Debug\EventSubscriptionContractTests.obj
+  FairworldCore.dir\Debug\FAIRWORLD.obj
+  FairworldCore.dir\Debug\GameplayLifecycleStressTests.obj
+  FairworldCore.dir\Debug\LifecycleFreezeGate.obj
+  FairworldCore.dir\Debug\LifecycleRemediationContractTests.obj
+  FairworldCore.dir\Debug\RuntimeLifecycleContractTests.obj
+  FairworldCore.dir\Debug\RuntimeManager.obj
+  FairworldCore.dir\Debug\SharedContext.obj
+  FairworldCore.dir\Debug\Inventory.obj
+  FairworldCore.dir\Debug\MobManager.obj
+  FairworldCore.dir\Debug\Player.obj
+  FairworldCore.dir\Debug\CacheManager.obj
+  FairworldCore.dir\Debug\FreeListAllocator.obj
+  FairworldCore.dir\Debug\GlobalMemoryLifecycleContractTests.obj
+  FairworldCore.dir\Debug\LinearAllocator.obj
+  FairworldCore.dir\Debug\MemorySystem.obj
+  FairworldCore.dir\Debug\PoolAllocator.obj
+  FairworldCore.dir\Debug\ProxyAllocator.obj
+  FairworldCore.dir\Debug\RuntimeMemoryDiagnostics.obj
+  FairworldCore.dir\Debug\StackAllocator.obj
+  FairworldCore.dir\Debug\VmaUsage.obj
+  FairworldCore.dir\Debug\World.obj
+  FairworldCore.dir\Debug\cgltf_impl.obj
+  FairworldCore.dir\Debug\dllmain.obj
+  FairworldCore.dir\Debug\pch.obj
+  FairworldCore.dir\Debug\AsyncInput.obj
+  FairworldCore.dir\Debug\AsyncInputLifecycleContractTests.obj
+  FairworldCore.dir\Debug\DeviceManager.obj
+  FairworldCore.dir\Debug\WindowManager.obj
+  FairworldCore.dir\Debug\XrManager.obj
+  FairworldCore.dir\Debug\ModelEditor.obj
+  FairworldCore.dir\Debug\Camera.obj
+  FairworldCore.dir\Debug\RenderManager.obj
+  FairworldCore.dir\Debug\TexturePacker.obj
+  FairworldCore.dir\Debug\VramSlabAllocator.obj
+  FairworldCore.dir\Debug\VulkanDmaManager.obj
+  FairworldCore.dir\Debug\VulkanResourceTracker.obj
+  FairworldCore.dir\Debug\BlockMakerRenderer.obj
+  FairworldCore.dir\Debug\ChunkEditorRenderer.obj
+  FairworldCore.dir\Debug\ForgeRenderer.obj
+  FairworldCore.dir\Debug\MapRenderer.obj
+  FairworldCore.dir\Debug\PhysicsLabRenderer.obj
+  FairworldCore.dir\Debug\PlanetMapperRenderer.obj
+  FairworldCore.dir\Debug\PlayRenderer.obj
+  FairworldCore.dir\Debug\SolarSystemRenderer.obj
+  FairworldCore.dir\Debug\stb_image_impl.obj
+  FairworldCore.dir\Debug\VulkanCore.obj
+  FairworldCore.dir\Debug\VulkanForensicAudit.obj
+  FairworldCore.dir\Debug\VulkanMemory.obj
+  FairworldCore.dir\Debug\AstronomySystem.obj
+  FairworldCore.dir\Debug\PlanetTimeSystem.obj
+  FairworldCore.dir\Debug\ThermodynamicsPipeline.obj
+  FairworldCore.dir\Debug\TimeManager.obj
+  FairworldCore.dir\Debug\AppBaseState.obj
+  FairworldCore.dir\Debug\BlockMakerState.obj
+  FairworldCore.dir\Debug\ChunkEditorState.obj
+  FairworldCore.dir\Debug\ForgeState.obj
+  FairworldCore.dir\Debug\HubState.obj
+  FairworldCore.dir\Debug\MapState.obj
+  FairworldCore.dir\Debug\MaterialAtlasState.obj
+  FairworldCore.dir\Debug\PhysicsLabState.obj
+  FairworldCore.dir\Debug\PlanetMapperState.obj
+  FairworldCore.dir\Debug\PlayState.obj
+  FairworldCore.dir\Debug\SolarSystemState.obj
+  FairworldCore.dir\Debug\PlanetMapperCamera.obj
+  FairworldCore.dir\Debug\PlanetMapperCompiler.obj
+  FairworldCore.dir\Debug\PlanetMapperUI.obj
+  FairworldCore.dir\Debug\BiomeSystems.obj
+  FairworldCore.dir\Debug\JobSystem.obj
+  FairworldCore.dir\Debug\JoltPhysicsSystem.obj
+  FairworldCore.dir\Debug\PhysicsEngine.obj
+  FairworldCore.dir\Debug\PlanetSystems.obj
+  FairworldCore.dir\Debug\PortalSystem.obj
+  FairworldCore.dir\Debug\RaycastSystem.obj
+  FairworldCore.dir\Debug\Systems.obj
+  FairworldCore.dir\Debug\TerrainSolverSystem.obj
+  FairworldCore.dir\Debug\AIAssistant.obj
+  FairworldCore.dir\Debug\DeskarmWebView.obj
+  FairworldCore.dir\Debug\EditorPanel.obj
+  FairworldCore.dir\Debug\GlobalAssetBrowser.obj
+  FairworldCore.dir\Debug\CubeSphereMapping.obj
+  FairworldCore.dir\Debug\DimensionsManager.obj
+  FairworldCore.dir\Debug\ForgeWorld.obj
+  FairworldCore.dir\Debug\GameWorld.obj
+  FairworldCore.dir\Debug\GeometryCompiler.obj
+  FairworldCore.dir\Debug\MapDocument.obj
+  FairworldCore.dir\Debug\MapWorldGenerator.obj
+  FairworldCore.dir\Debug\MeshGenerators.obj
+  FairworldCore.dir\Debug\PlanetRadialMapping.obj
+  FairworldCore.dir\Debug\PlanetaryMeshGenerator.obj
+  FairworldCore.dir\Debug\SphericalLOD.obj
+  FairworldCore.dir\Debug\TerrainAlgorithms.obj
+  FairworldCore.dir\Debug\TerrainSolver.obj
+  FairworldCore.dir\Debug\WorldChunkManager.obj
+  FairworldCore.dir\Debug\WorldProjectManager.obj
+  FairworldCore.dir\Debug\WorldStructureManager.obj
+  FairworldCore.dir\Debug\Noise.obj
+  FairworldCore.dir\Debug\NoiseContractTests.obj
+  FairworldCore.dir\Debug\TerrainValidation.obj
+  FairworldCore.dir\Debug\ImGuizmo.obj
+  FairworldCore.dir\Debug\imgui.obj
+  FairworldCore.dir\Debug\imgui_demo.obj
+  FairworldCore.dir\Debug\imgui_draw.obj
+  FairworldCore.dir\Debug\imgui_impl_vulkan.obj
+  FairworldCore.dir\Debug\imgui_impl_win32.obj
+  FairworldCore.dir\Debug\imgui_tables.obj
+  FairworldCore.dir\Debug\imgui_widgets.obj
+  FairworldCore.vcxproj -> D:\FAIRWORLD\FAIRWORLD\build_r3z7\Debug\FairworldCore.lib
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldCore.dir\Debug\FairworldCore.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldCore.dir\Debug\FairworldCore.tlog\FairworldCore.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldCore.vcxproj" (destinazioni predefinite) completata.
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldAppearanceTests.dir\Debug\Fairworl.2945312B.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldAppearanceTests.dir\Debug\Fairworl.2945312B.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAppearanceTests.exe" /INCREMENTAL /ILK:"FairworldAppearanceTests.dir\Debug\FairworldAppearanceTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAppearanceTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldAppearanceTests.lib" /MACHINE:X64  /machine:x64 FairworldAppearanceTests.dir\Debug\appearance_tests_main.obj
+  FairworldAppearanceTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAppearanceTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldAppearanceTests.dir\Debug\Fairworl.2945312B.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldAppearanceTests.dir\Debug\Fairworl.2945312B.tlog\FairworldAppearanceTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAppearanceTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAsyncInputTests.vcxproj" (6) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldAsyncInputTests.dir\Debug\Fairworl.34253CB3.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldAsyncInputTests.dir\Debug\Fairworl.34253CB3.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAsyncInputTests.exe" /INCREMENTAL /ILK:"FairworldAsyncInputTests.dir\Debug\FairworldAsyncInputTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAsyncInputTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldAsyncInputTests.lib" /MACHINE:X64  /machine:x64 FairworldAsyncInputTests.dir\Debug\async_input_tests_main.obj
+  FairworldAsyncInputTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAsyncInputTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldAsyncInputTests.dir\Debug\Fairworl.34253CB3.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldAsyncInputTests.dir\Debug\Fairworl.34253CB3.tlog\FairworldAsyncInputTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAsyncInputTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAuthoringTests.vcxproj" (7) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldAuthoringTests.dir\Debug\Fairworl.BE018BB1.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldAuthoringTests.dir\Debug\Fairworl.BE018BB1.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAuthoringTests.exe" /INCREMENTAL /ILK:"FairworldAuthoringTests.dir\Debug\FairworldAuthoringTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAuthoringTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldAuthoringTests.lib" /MACHINE:X64  /machine:x64 FairworldAuthoringTests.dir\Debug\authoring_tests_main.obj
+  FairworldAuthoringTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldAuthoringTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldAuthoringTests.dir\Debug\Fairworl.BE018BB1.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldAuthoringTests.dir\Debug\Fairworl.BE018BB1.tlog\FairworldAuthoringTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldAuthoringTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldBindingTests.vcxproj" (8) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldBindingTests.dir\Debug\Fairworl.230256D7.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldBindingTests.dir\Debug\Fairworl.230256D7.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldBindingTests.exe" /INCREMENTAL /ILK:"FairworldBindingTests.dir\Debug\FairworldBindingTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldBindingTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldBindingTests.lib" /MACHINE:X64  /machine:x64 FairworldBindingTests.dir\Debug\binding_tests_main.obj
+  FairworldBindingTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldBindingTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldBindingTests.dir\Debug\Fairworl.230256D7.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldBindingTests.dir\Debug\Fairworl.230256D7.tlog\FairworldBindingTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldBindingTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldCustomScientificTests.vcxproj" (9) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldCustomScientificTests.dir\Debug\Fairworl.40A61DB5.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldCustomScientificTests.dir\Debug\Fairworl.40A61DB5.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldCustomScientificTests.exe" /INCREMENTAL /ILK:"FairworldCustomScientificTests.dir\Debug\FairworldCustomScientificTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldCustomScientificTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldCustomScientificTests.lib" /MACHINE:X64  /machine:x64 FairworldCustomScientificTests.dir\Debug\custom_scientific_tests_main.obj
+  FairworldCustomScientificTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldCustomScientificTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldCustomScientificTests.dir\Debug\Fairworl.40A61DB5.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldCustomScientificTests.dir\Debug\Fairworl.40A61DB5.tlog\FairworldCustomScientificTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldCustomScientificTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldDiagnostics.vcxproj" (10) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldDiagnostics.dir\Debug\Fairworl.1E04C709.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldDiagnostics.dir\Debug\Fairworl.1E04C709.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldDiagnostics.exe" /INCREMENTAL /ILK:"FairworldDiagnostics.dir\Debug\FairworldDiagnostics.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldDiagnostics.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldDiagnostics.lib" /MACHINE:X64  /machine:x64 FairworldDiagnostics.dir\Debug\diagnostics_main.obj
+  FairworldDiagnostics.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldDiagnostics.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldDiagnostics.dir\Debug\Fairworl.1E04C709.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldDiagnostics.dir\Debug\Fairworl.1E04C709.tlog\FairworldDiagnostics.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldDiagnostics.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldEditor.vcxproj" (11) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldEditor.dir\Debug\FairworldEditor.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldEditor.dir\Debug\FairworldEditor.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldEditor.exe" /INCREMENTAL /ILK:"FairworldEditor.dir\Debug\FairworldEditor.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldEditor.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldEditor.lib" /MACHINE:X64  /machine:x64 FairworldEditor.dir\Debug\main.obj
+  FairworldEditor.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldEditor.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/vert.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/frag.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/sky_vert.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/sky_frag.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/chunk_culling.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/terrain_generation.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/forge_vert.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/src/render/forge_frag.spv D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_directory D:/FAIRWORLD/FAIRWORLD/assets/definitions D:/FAIRWORLD/FAIRWORLD/bin/Debug/assets/definitions
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_directory D:/FAIRWORLD/FAIRWORLD/assets/textures D:/FAIRWORLD/FAIRWORLD/bin/Debug/assets/textures
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldEditor.dir\Debug\FairworldEditor.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldEditor.dir\Debug\FairworldEditor.tlog\FairworldEditor.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldEditor.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldEventTests.vcxproj" (12) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldEventTests.dir\Debug\Fairworl.8FD95584.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldEventTests.dir\Debug\Fairworl.8FD95584.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldEventTests.exe" /INCREMENTAL /ILK:"FairworldEventTests.dir\Debug\FairworldEventTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldEventTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldEventTests.lib" /MACHINE:X64  /machine:x64 FairworldEventTests.dir\Debug\event_tests_main.obj
+  FairworldEventTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldEventTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldEventTests.dir\Debug\Fairworl.8FD95584.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldEventTests.dir\Debug\Fairworl.8FD95584.tlog\FairworldEventTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldEventTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldGameplayStressTests.vcxproj" (13) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldGameplayStressTests.dir\Debug\Fairworl.7A39982D.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldGameplayStressTests.dir\Debug\Fairworl.7A39982D.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldGameplayStressTests.exe" /INCREMENTAL /ILK:"FairworldGameplayStressTests.dir\Debug\FairworldGameplayStressTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldGameplayStressTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldGameplayStressTests.lib" /MACHINE:X64  /machine:x64 FairworldGameplayStressTests.dir\Debug\gameplay_stress_tests_main.obj
+  FairworldGameplayStressTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldGameplayStressTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldGameplayStressTests.dir\Debug\Fairworl.7A39982D.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldGameplayStressTests.dir\Debug\Fairworl.7A39982D.tlog\FairworldGameplayStressTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldGameplayStressTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldLifecycleTests.vcxproj" (14) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldLifecycleTests.dir\Debug\Fairworl.D711DE49.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldLifecycleTests.dir\Debug\Fairworl.D711DE49.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldLifecycleTests.exe" /INCREMENTAL /ILK:"FairworldLifecycleTests.dir\Debug\FairworldLifecycleTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldLifecycleTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldLifecycleTests.lib" /MACHINE:X64  /machine:x64 FairworldLifecycleTests.dir\Debug\lifecycle_tests_main.obj
+  FairworldLifecycleTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldLifecycleTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldLifecycleTests.dir\Debug\Fairworl.D711DE49.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldLifecycleTests.dir\Debug\Fairworl.D711DE49.tlog\FairworldLifecycleTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldLifecycleTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldMemoryTests.vcxproj" (15) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldMemoryTests.dir\Debug\Fairworl.8B2CE54B.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldMemoryTests.dir\Debug\Fairworl.8B2CE54B.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldMemoryTests.exe" /INCREMENTAL /ILK:"FairworldMemoryTests.dir\Debug\FairworldMemoryTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldMemoryTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldMemoryTests.lib" /MACHINE:X64  /machine:x64 FairworldMemoryTests.dir\Debug\memory_tests_main.obj
+  FairworldMemoryTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldMemoryTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldMemoryTests.dir\Debug\Fairworl.8B2CE54B.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldMemoryTests.dir\Debug\Fairworl.8B2CE54B.tlog\FairworldMemoryTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldMemoryTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldNoiseTests.vcxproj" (16) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldNoiseTests.dir\Debug\Fairworl.7F3DB298.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldNoiseTests.dir\Debug\Fairworl.7F3DB298.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldNoiseTests.exe" /INCREMENTAL /ILK:"FairworldNoiseTests.dir\Debug\FairworldNoiseTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldNoiseTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldNoiseTests.lib" /MACHINE:X64  /machine:x64 FairworldNoiseTests.dir\Debug\noise_tests_main.obj
+  FairworldNoiseTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldNoiseTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldNoiseTests.dir\Debug\Fairworl.7F3DB298.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldNoiseTests.dir\Debug\Fairworl.7F3DB298.tlog\FairworldNoiseTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldNoiseTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldScientificTests.vcxproj" (17) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldScientificTests.dir\Debug\Fairworl.3B91B122.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldScientificTests.dir\Debug\Fairworl.3B91B122.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldScientificTests.exe" /INCREMENTAL /ILK:"FairworldScientificTests.dir\Debug\FairworldScientificTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldScientificTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldScientificTests.lib" /MACHINE:X64  /machine:x64 FairworldScientificTests.dir\Debug\scientific_tests_main.obj
+  FairworldScientificTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldScientificTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldScientificTests.dir\Debug\Fairworl.3B91B122.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldScientificTests.dir\Debug\Fairworl.3B91B122.tlog\FairworldScientificTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldScientificTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldSculptTests.vcxproj" (18) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldSculptTests.dir\Debug\Fairworl.5F278B77.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldSculptTests.dir\Debug\Fairworl.5F278B77.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldSculptTests.exe" /INCREMENTAL /ILK:"FairworldSculptTests.dir\Debug\FairworldSculptTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldSculptTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldSculptTests.lib" /MACHINE:X64  /machine:x64 FairworldSculptTests.dir\Debug\sculpt_tests_main.obj
+  FairworldSculptTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldSculptTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldSculptTests.dir\Debug\Fairworl.5F278B77.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldSculptTests.dir\Debug\Fairworl.5F278B77.tlog\FairworldSculptTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldSculptTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldUVTests.vcxproj" (19) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldUVTests.dir\Debug\FairworldUVTests.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldUVTests.dir\Debug\FairworldUVTests.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe /OUT:"D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldUVTests.exe" /INCREMENTAL /ILK:"FairworldUVTests.dir\Debug\FairworldUVTests.ilk" /NOLOGO Debug\FairworldCore.lib "D:\VulkanSDK\Lib\vulkan-1.lib" "_deps\joltphysics-build\Debug\Jolt.lib" Shell32.lib Psapi.lib D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldUVTests.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/FAIRWORLD/FAIRWORLD/build_r3z7/Debug/FairworldUVTests.lib" /MACHINE:X64  /machine:x64 FairworldUVTests.dir\Debug\uv_tests_main.obj
+  FairworldUVTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldUVTests.exe
+PostBuildEvent:
+  setlocal
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  "D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+  if %errorlevel% neq 0 goto :cmEnd
+  :cmEnd
+  endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+  :cmErrorLevel
+  exit /b %1
+  :cmDone
+  if %errorlevel% neq 0 goto :VCEnd
+  :VCEnd
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldUVTests.dir\Debug\FairworldUVTests.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldUVTests.dir\Debug\FairworldUVTests.tlog\FairworldUVTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldUVTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldVulkanRecoveryTests.vcxproj" (20) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "FairworldVulkanRecoveryTests.dir\Debug\Fairworl.F1D739A8.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "FairworldVulkanRecoveryTests.dir\Debug\Fairworl.F1D739A8.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  Tutti gli output sono aggiornati.
+  FairworldVulkanRecoveryTests.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\FairworldVulkanRecoveryTests.exe
+FinalizeBuildStatus:
+  Eliminazione del file "FairworldVulkanRecoveryTests.dir\Debug\Fairworl.F1D739A8.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "FairworldVulkanRecoveryTests.dir\Debug\Fairworl.F1D739A8.tlog\FairworldVulkanRecoveryTests.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\FairworldVulkanRecoveryTests.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\Module_GeometryNodes.vcxproj" (21) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "Module_GeometryNodes.dir\Debug\Module_G.4C294196.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "Module_GeometryNodes.dir\Debug\Module_G.4C294196.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  Tutti gli output sono aggiornati.
+  Module_GeometryNodes.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\Module_GeometryNodes.dll
+FinalizeBuildStatus:
+  Eliminazione del file "Module_GeometryNodes.dir\Debug\Module_G.4C294196.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "Module_GeometryNodes.dir\Debug\Module_G.4C294196.tlog\Module_GeometryNodes.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\Module_GeometryNodes.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\Module_Modeling.vcxproj" (22) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "Module_Modeling.dir\Debug\Module_Modeling.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "Module_Modeling.dir\Debug\Module_Modeling.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  Tutti gli output sono aggiornati.
+  Module_Modeling.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\Module_Modeling.dll
+FinalizeBuildStatus:
+  Eliminazione del file "Module_Modeling.dir\Debug\Module_Modeling.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "Module_Modeling.dir\Debug\Module_Modeling.tlog\Module_Modeling.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\Module_Modeling.vcxproj" (destinazioni predefinite) completata.
+Compilazione di "D:\FAIRWORLD\FAIRWORLD\build_r3z7\Module_Sculpting.vcxproj" (23) dal progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (1) sul nodo 1 (destinazioni predefinite).
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "Module_Sculpting.dir\Debug\Module_Sculpting.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "Module_Sculpting.dir\Debug\Module_Sculpting.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+ComputeStdModulesCompileInputs:
+  Lettura del file manifesto della libreria 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\modules.json' che fornisce i dati per la libreria 'microsoft/STL'.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+  È in corso l'aggiunta di 'D:\Visual Code\vs\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' di origine del modulo dalla libreria 'microsoft/STL' da compilare con questo progetto.
+ClCompile:
+  Tutti gli output sono aggiornati.
+Link:
+  Tutti gli output sono aggiornati.
+  Module_Sculpting.vcxproj -> D:\FAIRWORLD\FAIRWORLD\bin\Debug\Module_Sculpting.dll
+FinalizeBuildStatus:
+  Eliminazione del file "Module_Sculpting.dir\Debug\Module_Sculpting.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "Module_Sculpting.dir\Debug\Module_Sculpting.tlog\Module_Sculpting.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\Module_Sculpting.vcxproj" (destinazioni predefinite) completata.
+PrepareForBuild:
+  L'output strutturato è abilitato. La formattazione della diagnostica del compilatore rifletterà la gerarchia degli errori. Per altri dettagli, vedere https://aka.ms/cpp/structured-output.
+InitializeBuildStatus:
+  Creazione di "x64\Debug\ALL_BUILD\ALL_BUILD.tlog\unsuccessfulbuild". È stato specificato "AlwaysCreate".
+  Aggiornamento timestamp di "x64\Debug\ALL_BUILD\ALL_BUILD.tlog\unsuccessfulbuild".
+CustomBuild:
+  Tutti gli output sono aggiornati.
+FinalizeBuildStatus:
+  Eliminazione del file "x64\Debug\ALL_BUILD\ALL_BUILD.tlog\unsuccessfulbuild" in corso.
+  Aggiornamento timestamp di "x64\Debug\ALL_BUILD\ALL_BUILD.tlog\ALL_BUILD.lastbuildstate".
+Compilazione progetto "D:\FAIRWORLD\FAIRWORLD\build_r3z7\ALL_BUILD.vcxproj" (destinazioni predefinite) completata.
+
+Compilazione completata.
+    Avvisi: 0
+    Errori: 0
+
+Tempo trascorso 00:01:55.90
+
+BUILD_EXIT_CODE=0

@@ -46,8 +46,9 @@ bool VulkanMemory::Initialize() {
     return true;
 }
 
-void VulkanMemory::AddVramCompartment() {
+bool VulkanMemory::AddVramCompartment() {
     std::cout << "[VulkanMemory] AddVramCompartment: Allocazione Compartimento da 256MB...\n";
+    if (m_vmaAllocator == VK_NULL_HANDLE || m_core == nullptr || m_core->GetDevice() == VK_NULL_HANDLE) return false;
     
     // Assicurati che lo staging buffer esista al primo compartimento
     if (m_stagingRingBuffer == VK_NULL_HANDLE) {
@@ -61,13 +62,23 @@ void VulkanMemory::AddVramCompartment() {
         
         if (vmaCreateBuffer(m_vmaAllocator, &stagingBufInfo, &stagingAllocInfo, &m_stagingRingBuffer, &m_stagingAllocation, nullptr) != VK_SUCCESS) {
             std::cerr << "[VULKAN ERROR] Impossibile creare lo Staging Ring Buffer!\n";
-            return;
+            return false;
         }
         
         VmaAllocationInfo vmaRingInfo;
         vmaGetAllocationInfo(m_vmaAllocator, m_stagingAllocation, &vmaRingInfo);
         m_mappedStagingData = vmaRingInfo.pMappedData;
+        if (m_mappedStagingData == nullptr) {
+            vmaDestroyBuffer(m_vmaAllocator, m_stagingRingBuffer, m_stagingAllocation);
+            m_stagingRingBuffer = VK_NULL_HANDLE;
+            m_stagingAllocation = VK_NULL_HANDLE;
+            return false;
+        }
         std::cout << "[VulkanMemory] Staging Buffer 128MB allocato.\n";
+    }
+    if (m_stagingRingBuffer == VK_NULL_HANDLE || m_stagingAllocation == VK_NULL_HANDLE || m_mappedStagingData == nullptr) {
+        std::cerr << "[VULKAN ERROR] Staging compartment non valido; VRAM compartment non creato.\n";
+        return false;
     }
 
     VkBufferCreateInfo vramBufInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
@@ -93,18 +104,36 @@ void VulkanMemory::AddVramCompartment() {
     
     VmaAllocationCreateInfo vramAllocInfo = {};
     vramAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    // Riserva entrambi gli array prima di creare l'oggetto Vulkan, così la
+    // pubblicazione di buffer e allocation resta atomica rispetto a bad_alloc.
+    try {
+        m_vramCompartments.reserve(m_vramCompartments.size() + 1);
+        m_vramCompartmentAllocations.reserve(m_vramCompartmentAllocations.size() + 1);
+    } catch (...) {
+        std::cerr << "[VULKAN ERROR] Memoria host insufficiente per registrare il compartimento.\n";
+        return false;
+    }
     
     VkBuffer newCompartment = VK_NULL_HANDLE;
     VmaAllocation newAllocation = VK_NULL_HANDLE;
     if (vmaCreateBuffer(m_vmaAllocator, &vramBufInfo, &vramAllocInfo, &newCompartment, &newAllocation, nullptr) != VK_SUCCESS) {
         std::cerr << "[VULKAN ERROR] Impossibile creare il VRAM Compartment da 256MB!\n";
-        return;
+        return false;
+    }
+
+    if (newCompartment == VK_NULL_HANDLE || newAllocation == VK_NULL_HANDLE) {
+        if (newCompartment != VK_NULL_HANDLE && newAllocation != VK_NULL_HANDLE)
+            vmaDestroyBuffer(m_vmaAllocator, newCompartment, newAllocation);
+        std::cerr << "[VULKAN ERROR] VMA creation returned success with incomplete compartment handles.\n";
+        return false;
     }
     
     m_vramCompartments.push_back(newCompartment);
     m_vramCompartmentAllocations.push_back(newAllocation);
 
     std::cout << "[VulkanMemory] Compartimento VRAM " << (m_vramCompartments.size() - 1) << " da 256MB allocato.\n";
+    return true;
 }
 
 

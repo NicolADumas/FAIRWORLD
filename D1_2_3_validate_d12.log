@@ -1,0 +1,11 @@
+[D1.2] Esecuzione mirata delle convenzioni planetarie.
+
+====================================================
+ FAIRWORLD - D1.2 SPATIAL CONVENTION TESTS
+====================================================
+      UV/chart/direction round-trip, faces, edges, corners and ties [PASS]
+      Six planet sizes, valid rows, endpoints and rejected invalid rows [FAIL]
+      Single row conversion through TerrainSolver and mesh mapping [PASS]
+      Legacy spawn JSON/binary values and direction preserved [PASS]
+ D1.2 STATUS: FAIL
+====================================================

@@ -1,0 +1,400 @@
+{
+  "backtraceGraph" : 
+  {
+    "commands" : 
+    [
+      "add_test"
+    ],
+    "files" : 
+    [
+      "D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt"
+    ],
+    "nodes" : 
+    [
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 340,
+        "parent" : 0
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 343,
+        "parent" : 2
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 346,
+        "parent" : 4
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 349,
+        "parent" : 6
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 352,
+        "parent" : 8
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 355,
+        "parent" : 10
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 358,
+        "parent" : 12
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 361,
+        "parent" : 14
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 364,
+        "parent" : 16
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 367,
+        "parent" : 18
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 370,
+        "parent" : 20
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 373,
+        "parent" : 22
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 376,
+        "parent" : 24
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 379,
+        "parent" : 26
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 382,
+        "parent" : 28
+      }
+    ]
+  },
+  "kind" : "ctestInfo",
+  "tests" : 
+  [
+    {
+      "backtrace" : 1,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldUVTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldUVTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 3,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldSculptTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldSculptTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 5,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldScientificTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldScientificTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 7,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldEventTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldEventTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 9,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldNoiseTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldNoiseTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 11,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAsyncInputTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldAsyncInputTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 13,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldMemoryTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldMemoryTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 15,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldGameplayStressTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldGameplayStressTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 17,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldDiagnostics.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldDiagnostics",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 19,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldLifecycleTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldLifecycleTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 21,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAppearanceTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldAppearanceTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 23,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldCustomScientificTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldCustomScientificTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 25,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldBindingTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldBindingTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 27,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAuthoringTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldAuthoringTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    },
+    {
+      "backtrace" : 29,
+      "command" : 
+      [
+        "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldVulkanRecoveryTests.exe"
+      ],
+      "config" : "Debug",
+      "name" : "FairworldVulkanRecoveryTests",
+      "properties" : 
+      [
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "D:/FAIRWORLD/FAIRWORLD"
+        }
+      ]
+    }
+  ],
+  "version" : 
+  {
+    "major" : 1,
+    "minor" : 0
+  }
+}

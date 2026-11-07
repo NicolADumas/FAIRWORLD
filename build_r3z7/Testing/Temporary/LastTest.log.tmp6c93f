@@ -1,0 +1,1510 @@
+Start testing: Nov 03 22:18 ora solare Europa occidentale
+----------------------------------------------------------
+1/15 Testing: FairworldUVTests
+1/15 Test: FairworldUVTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldUVTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldUVTests" start time: Nov 03 22:18 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================
+  FAIRWORLD CONSOLIDATED HEADLESS ENGINEERING TEST RUNNER (BUILD-RECOVERY-04A)
+  MODE: FULL CERTIFICATION | 20 SUITES | BASELINE CONSOLIDATA: 286 TESTS
+====================================================================================
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [UVP] Primitive & Parametric UV (Expected: 15 tests)
+------------------------------------------------------------------------------------
+[UV-PAINT-DIAG] MaskPresence=YES MaskDim=(512x512) CanvasDim=(512x512) MaskIsland=1 InsideChanged=179 OutsideChanged=0 TotalChanged=179
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 7. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 16. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 11. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 19. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 14. Using legacy unrolled fallback.
+[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType 0: ShapeType compilation not implemented.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 5. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 7. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 11. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 12. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 13. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 14. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 15. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 16. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 17. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 18. Using legacy unrolled fallback.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 19. Using legacy unrolled fallback.
+[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType 20: ShapeType compilation not implemented.
+[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType 21: Compound compilation requires valid ShapeRegistry context.
+[MeshBridgeService] ERROR: Invalid shape parameters: TriangleMesh parameters empty or invalid.
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 23. Using legacy unrolled fallback.
+[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType 24: ShapeType compilation not implemented.
+[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType 25: ShapeType compilation not implemented.
+  [PASS] UVP-1 | Cube Mapping & Seams -> Status: SUCCESS, Islands: 6, Seam edges: 12, Valid: true
+  [PASS] UVP-2 | Cuboid e Parallelepiped Mapping -> Status: SUCCESS, Islands: 6, Valid: true
+  [PASS] UVP-3 | Pyramid e PyramidFrustum Mapping -> Status: SUCCESS, Islands: 5, NaN/Inf: 0
+  [PASS] UVP-4 | Cylinder Continuous Unroll & Island Transforms -> Mantle=OK, Top=OK, Bot=OK, 2DHit=OK, 3DPaint=OK, JsonRoundtrip=OK
+  [PASS] UVP-5 | HollowCylinder Internal & External Mantle -> Status: SUCCESS, Islands: 4, Valid: true
+  [PASS] UVP-6 | SlicedCylinder Oblique Projection -> Status: SUCCESS, Islands: 3, Valid: true
+  [PASS] UVP-7 | Cone Singularity & ConeFrustum -> Status: SUCCESS, Islands: 2, NaN/Inf: 0
+  [PASS] UVP-8 | Sphere Dual-Hemisphere & Polar Unroll -> Status: SUCCESS, Islands: 2, Strategy: Dual-Hemisphere Chart
+  [PASS] UVP-9 | SphericalZone e SphericalSegment -> Status: SUCCESS, Islands: 1
+  [PASS] UVP-10 | Capsule Multi-Part Mapping -> Status: SUCCESS, Islands: 3
+  [PASS] UVP-11 | Cavity Shapes (Bore & Conical Cavities) -> Status: SUCCESS, Islands: 4, Cavity Wall: Separata
+  [PASS] UVP-12 | ConvexHull Polyhedral Mapping -> Status: SUCCESS, Valid: true
+  [PASS] UVP-13 | Degenerate Geometry & NaN Detection -> Valid: false, NaN detected: 1, Degenerate: 1
+  [PASS] UVP-14 | Revision Tracking & Zero-Work -> GeomRev: 17 -> 17, AttrRev: 8 -> 9
+  [PASS] UVP-15 | ShapeRegistry Catalog Full Coverage -> Covered: 26/26 (Implemented: 20, BM-UV3: 6)
+[END SUITE] [UVP] Primitive & Parametric UV -> Passed: 15/15 | Failed: 0 | Skipped: 0 | Duration: 1126.39 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [UVG] General Mesh Unwrapping (Expected: 18 tests)
+------------------------------------------------------------------------------------
+[MeshBridgeService] DIAGNOSTIC: CompiledTopology absent for ShapeType 7. Using legacy unrolled fallback.
+  [PASS] UVG-1 | Planar Open Mesh Unwrapping -> Islands: 1, Flipped: 0, NaN: 0
+  [PASS] UVG-2 | Closed Mesh Auto-Seams & Island Extraction -> Islands: 6, Seam weight checked, Valid: true
+  [PASS] UVG-3 | Sculpted Mesh Variable Curvature -> Islands: 6, MaxStretch: 1.000000
+  [PASS] UVG-4 | Extruded Geometry Unwrapping -> Islands: 3, Valid: true
+  [PASS] UVG-5 | Inset/Bevel Geometry Unwrapping -> Islands: 2, Valid: true
+  [PASS] UVG-6 | Disconnected Components Handling -> Islands: 12, Total Faces: 12
+  [PASS] UVG-7 | Cavity / Tunnel Surface Unwrapping -> Islands: 64, Valid: true
+  [PASS] UVG-8 | Concave N-Gon Unwrapping -> Islands: 1, Valid: true
+  [PASS] UVG-9 | Non-Manifold Topology Diagnostic -> Classification: RequiresRepair, Issues: Rilevati vertici non-manifold a clessidra (pinched vertices: 1). Richiede MeshRepairService.
+  [PASS] UVG-10 | Degenerate Triangle Handling -> Classification: SupportedWithDiagnostic
+  [PASS] UVG-11 | Manual Seam Preservation -> IsManual: true, Preserved: true
+  [PASS] UVG-12 | Island Extraction Determinism -> Run1 Islands: 6, Run2 Islands: 6
+  [PASS] UVG-13 | LSCM Numerical Convergence -> Residual: 0.000000, Iters: 6, Pinned: 2
+  [PASS] UVG-14 | UV Distortion Metrics Calculation -> AreaDist: 0.500000, Stretch: 1.000000
+  [PASS] UVG-15 | UV Revision & Zero-Work Cache -> Run1 CacheHit: false, Run2 CacheHit: true
+  [PASS] UVG-16 | Imported Mesh UV Preservation -> Preserved UV: (0.420000, 0.420000)
+  [PASS] UVG-17 | Shape to EditableMesh Topology Consistency -> V: 8, E: 12, F: 6
+  [PASS] UVG-18 | UVLayout Serialization Roundtrip -> Restored AssetId: Asset_Serialization_Test, Islands: 1, FaceToIsland: 2
+[END SUITE] [UVG] General Mesh Unwrapping -> Passed: 18/18 | Failed: 0 | Skipped: 0 | Duration: 69.52 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [UVK] Universal Atlas Packing (Expected: 18 tests)
+------------------------------------------------------------------------------------
+  [PASS] UVK-1 | Single Island Atlas Packing -> Pages: 1, Occupancy: 0.650669, Transform: [0.806641, 0.806641]
+  [PASS] UVK-2 | Multiple Islands Atlas Packing -> Islands: 6, Overlaps: false, Occupancy: 0.326855
+  [PASS] UVK-3 | Differently Sized Islands Packing -> Islands: 2, ScaleRatioValid: true
+  [PASS] UVK-4 | Orthogonal Island Rotation -> RotationDegrees: 0.000000
+  [PASS] UVK-5 | Gutter Padding Enforcement -> LayoutPaddingPixels: 8.000000
+  [PASS] UVK-6 | Atlas Packing Determinism -> Run1 Occ: 0.326855, Run2 Occ: 0.326855
+  [PASS] UVK-7 | Atlas Full (Overflow Handling) -> Success: false, Errors: Impossibile impacchettare tutte le isole: spazio atlas esaurito (ATLAS_OVERFLOW).
+  [PASS] UVK-8 | Multi-Atlas Paging Support -> PagesUsed: 6, TotalPages: 6
+  [PASS] UVK-9 | Uniform Texel Density Balancing -> AvgLinear: 78.889366, StdDev: 0.000000, Uniform: true
+  [PASS] UVK-10 | Semantic Weighted Texel Density -> DensitySurf1: 476.646057, DensitySurf0: 0.000000
+  [PASS] UVK-11 | Coordinate Space Invertibility Roundtrip -> Original: (0.350000, 0.750000), Restored: (0.350000, 0.750000), Err: 0.000000
+  [PASS] UVK-12 | Atlas Layout Overlap Verification -> Valid: true, Errors: 0
+  [PASS] UVK-13 | Corner UV Bounds Strict Invariance -> AllCornersInBounds: true
+  [PASS] UVK-14 | Atlas Revision Monotonicity -> AtlasRev: 2, MeshAttrRev: 10
+  [PASS] UVK-15 | Zero-Work Packing Cache -> Run1 CacheHit: false, Run2 CacheHit: true
+  [PASS] UVK-16 | Packed UVLayout JSON Roundtrip -> Restored AtlasRev: 2, TotalPages: 2
+  [PASS] UVK-17 | Heterogeneous Islands Packing -> IslandsPacked: 6
+  [PASS] UVK-18 | Texture Migration Trigger Contract -> TransformChanged: true, MigrationRequired: true
+[END SUITE] [UVK] Universal Atlas Packing -> Passed: 18/18 | Failed: 0 | Skipped: 0 | Duration: 27.02 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [UVE] 2D UV Editor Backend (Expected: 35 tests)
+------------------------------------------------------------------------------------
+[PAINTER DIAG] StrokeBegin: UV=(0.09,0.87) TargetIsland=3 LayerID=1 Mode=SurfacePaint
+[PAINTER DIAG] PaintLayer Initial Point: (43.69,446.98) on LayerID=1
+[PAINTER DIAG] StrokeEnd: DirtyRect=[4,407 -> 83,486] isEmpty=false
+[PAINTER DIAG] StrokeBegin: UV=(0.05,0.05) TargetIsland=0 LayerID=1 Mode=SurfacePaint
+[PAINTER DIAG] PaintLayer Initial Point: (27.65,27.65) on LayerID=1
+[PAINTER DIAG] StrokeEnd: DirtyRect=[23,23 -> 32,32] isEmpty=false
+[PAINTER DIAG] StrokeBegin: UV=(0.17,0.25) TargetIsland=0 LayerID=1 Mode=SurfacePaint
+[PAINTER DIAG] PaintLayer Initial Point: (85.33,128.00) on LayerID=1
+[PAINTER DIAG] StrokeEnd: DirtyRect=[79,122 -> 90,133] isEmpty=false
+[PAINTER DIAG] StrokeBegin: UV=(0.17,0.25) TargetIsland=0 LayerID=1 Mode=SurfacePaint
+[PAINTER DIAG] PaintLayer Initial Point: (85.33,128.00) on LayerID=1
+[PAINTER DIAG] StrokeEnd: DirtyRect=[80,123 -> 89,132] isEmpty=false
+[PAINTER DIAG] StrokeBegin: UV=(0.17,0.25) TargetIsland=0 LayerID=1 Mode=SurfacePaint
+[PAINTER DIAG] PaintLayer Initial Point: (85.33,128.00) on LayerID=1
+[PAINTER DIAG] StrokeEnd: DirtyRect=[77,120 -> 92,135] isEmpty=false
+  [PASS] UVE-1 | Island Selection State -> SelectedIslands: 1, SelectedFaces: 1
+  [PASS] UVE-2 | 3D to 2D Synchronized Selection -> FaceSelected: true, AutoIslandSelected: 1
+  [PASS] UVE-3 | 2D to 3D Synchronized Selection -> Island 1 Faces: 1, AllSelected: true
+  [PASS] UVE-4 | UV Island Translation -> Init: [0.007812, 0.007812], New: [0.057813, 0.027812]
+  [PASS] UVE-5 | UV Island Rotation -> InitRot: 0.000000, NewRot: 90.000000
+  [PASS] UVE-6 | UV Island Scaling -> InitScale: [0.330078, 0.330078], NewScale: [0.165039, 0.165039]
+  [PASS] UVE-7 | Atlas Bounds Clamping Safety -> Offset: [0.669922, 0.669922], End: [1.000000, 1.000000]
+  [PASS] UVE-8 | Manual Seam Interactive Toggling -> SeamWeight: 1.000000
+  [PASS] UVE-9 | Undo/Redo Command Invertibility -> UndoneMatch: true, RedoneMatch: true
+  [PASS] UVE-10 | 2D UV Painting Delegation -> Painted: true, Revision: 2
+  [PASS] UVE-11 | 3D Raycast to Atlas UV Paint Target -> StrokeBegun: true, Revision: 2
+  [PASS] UVE-12 | Cross-Seam Paint Dab Propagation -> CrossSeamStrokeBegun: true
+  [PASS] UVE-13 | Multi-Atlas Active Page Resolution -> ActiveAtlasPage: 1
+  [PASS] UVE-14 | Stroke Paint Dirty Region Tracking -> DirtyRect: [247, 74 -> 275, 102]
+  [PASS] UVE-15 | Selection Zero-Work Revision Isolation -> SelRevChanged: 4, AtlasRevIntact: true
+  [PASS] UVE-16 | Painted Asset UV-Change Safety Notification -> RequiresTextureMigration: true
+  [PASS] UVE-17 | Generational ID Invalidation Safety -> DeletedFaceSelected: false
+  [PASS] UVE-18 | Editor State JSON Serialization Consistency -> OriginalRot: 90.000000, RestoredRot: 90.000000
+  [PASS] UVE-FailClosed | Fail-closed Topology Revision & FaceID Contract -> InitialHit=true, HitAfterTopoChange=false, StrokeStarted=false, BlockedReason='Surface Paint: Revisione topologica incompatibile. Richiesto aggiornamento del layout UV.'
+  [PASS] UVE-19 | Polygon Mask Isolation -> StrokeOk=true, QuadTexelAlpha=0.000000, TriTexelRed=1.000000
+  [PASS] UVE-20 | CPU/GPU UV Correspondence -> CompileOk=true, VerifiedCorners=18, MaxDelta=0.000000
+  [PASS] UVE-21 | Stable UV / Zero Work -> GeoRevDelta=0, TopoRevDelta=0, NeedsRecompile=false
+  [PASS] UVE-22 | Per-BlockID Isolation -> Block15Clean=true, LayerCount14=1, LayerCount15=1
+  [PASS] UVE-23 | Save/Reload Persistence -> SameIslandCount=true, SameTransforms=true, HitValidAfterReload=true
+  [PASS] UVE-33 | 2D Face Selection -> HitIsland=0, Isl0Selected=true, Face0Selected=true
+  [PASS] UVE-34 | 3D Face Selection -> HitValid=true, HitFaceIdx=0, ExpFaceIdx=0
+  [PASS] UVE-35 | Bidirectional Synchronization -> 3Dto2D(Face0=T,Isl0=T) 2Dto3D(Isl3=T,Face3=T)
+  [PASS] UVE-36 | Highlight Isolation -> SelectedIslands=1, SelectedFaces=1, OthersClean=true
+  [PASS] UVE-37 | Hard Face Lock -> BlockedNoSel=true, BlockedOutside=true, AllowedInside=true
+  [PASS] UVE-38 | Overlap Detection -> IslandCount=5, OverlapDetected=false
+  [PASS] UVE-39 | CPU/GPU UV Correspondence -> CompileOk=true, Vertices=24, Triangles=8, VerifiedCorners=18, MaxDelta=0.000000
+  [PASS] UVE-40 | Selection Zero-Work -> GeoRevDelta=0, TopoRevDelta=0, NeedsRecompile=false
+  [PASS] UVE-41 | Paint Zero-Work -> GeoRevDelta=0, TopoRevDelta=0, NeedsRecompile=false
+  [PASS] UVE-42 | Persistence -> SameIslands=true, PixelPersisted=true
+  [PASS] UVE-43 | Per-BlockID Isolation -> Block15PixelAlpha=0.000000, LayerCount14=1, LayerCount15=1
+[END SUITE] [UVE] 2D UV Editor Backend -> Passed: 35/35 | Failed: 0 | Skipped: 0 | Duration: 292.12 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [UVR] Texture Reprojection (Expected: 20 tests)
+------------------------------------------------------------------------------------
+  [PASS] UVR-1 | Atlas translation -> Status: Success, Texels written: 42230
+  [PASS] UVR-2 | Atlas rotation -> Status: Success, Strategy: AtlasRepack
+  [PASS] UVR-3 | Atlas scaling -> Status: Success, Scaled texels written: 16512
+  [PASS] UVR-4 | Multi-atlas page migration -> Status: Success, Page 1 present: true
+  [PASS] UVR-5 | Seam reconfiguration -> Deduced strategy: SeamReconfiguration
+  [PASS] UVR-6 | Same-topology UV change -> Status: Success, Strategy: SameTopologyUVChange
+  [PASS] UVR-7 | Different atlas resolution -> Dst resolution: 512x512
+  [PASS] UVR-8 | Bilinear sampling -> Bilinear sampling success: 65792 texels
+  [PASS] UVR-9 | Supersampling -> Supersampling 2x executed, texels written: 65792
+  [PASS] UVR-10 | Layer preservation -> Layers intact: 2, Processed: 2
+  [PASS] UVR-11 | Alpha preservation -> Sampled alpha: 0.349020 (expected ~0.35)
+  [PASS] UVR-12 | Texture target isolation -> Isolated targets reprojected independently with distinct signatures
+  [PASS] UVR-13 | Degenerate UV handling -> Degenerate triangles safely skipped: 2
+  [PASS] UVR-14 | Missing source texture -> Warnings recorded: 1
+  [PASS] UVR-15 | Transaction rollback -> Rollback executed cleanly, transaction state: RolledBack
+  [PASS] UVR-16 | Undo/redo integration -> Paint history integration verified, layers migrated cleanly
+  [PASS] UVR-17 | Zero-Work -> ZeroWork hit: true
+  [PASS] UVR-18 | Determinism -> Hash 1: 1779282754707128753, Hash 2: 1779282754707128753
+  [PASS] UVR-19 | Topology correspondence required -> Status: RequiresCorrespondence
+  [PASS] UVR-20 | Painted asset preservation -> Report status: Success, RequiresTextureMigration cleared: true
+[END SUITE] [UVR] Texture Reprojection -> Passed: 20/20 | Failed: 0 | Skipped: 0 | Duration: 3651.76 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [UVI] Factory End-to-End Integration (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] UVI-1 | UV editor island selection -> Island 0 selected: true, Rev: 3
+  [PASS] UVI-2 | 2D/3D synchronized selection -> 3D Face selected: true, 2D Island selected: true
+  [PASS] UVI-3 | UV change on painted asset -> RequiresTextureMigration: true
+  [PASS] UVI-4 | Successful reprojection commit -> Status: Success, Migration flag cleared: true
+  [PASS] UVI-5 | Failed reprojection rollback -> Rollback phase: RolledBack, Status: RollbackExecuted
+  [PASS] UVI-6 | 3D stroke lifecycle -> Stroke lifecycle complete, DirtyRect area: 2120
+  [PASS] UVI-7 | Viewport input capture -> CancelStroke3D executed: true
+  [PASS] UVI-8 | Multi-atlas target resolution -> Multi-atlas hit accepted on page 1: true
+  [PASS] UVI-9 | Revision invalidation -> RevBefore: 3, RevAfter: 4
+  [PASS] UVI-10 | Stable Input = Zero Work -> ZeroWork hit: true
+[END SUITE] [UVI] Factory End-to-End Integration -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 499.30 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [TOP] Compiled Topology Validation (Expected: 36 tests)
+------------------------------------------------------------------------------------
+  [PASS] TOP-1 | Cube CompiledTopology Primary Emission -> V=8, F=6
+  [PASS] TOP-2 | Cube Topological Connectivity & Zero Boundary -> V=8, E=12, F=6, Euler=2, Twins=true
+  [PASS] TOP-3 | Cube Per-Corner Attributes & SurfaceID -> Surfaces=6, NormalsValid=true, UVsValid=true
+  [PASS] TOP-4 | Cuboid CompiledTopology Integrity -> V=8, E=12, ExtentsValid=true
+  [PASS] TOP-5 | Parallelepiped CompiledTopology Integrity -> V=8, E=12, Twins=true
+  [PASS] TOP-6 | SurfaceID & MaterialID Independence -> FrontMat=42, OtherMats=7
+  [PASS] TOP-7 | Determinism & Invariant Input -> PosMatch=true, FacesMatch=true
+  [PASS] TOP-8 | Cylinder Topology Counts & Euler Characteristic -> V=34, E=80, F=48, Euler=2
+  [PASS] TOP-9 | Cylinder Closed Manifold & Zero Boundary -> TotalDirectedEdges=160, AllTwinsPresent=true
+  [PASS] TOP-10 | Cylinder Periodic Continuity Across Seam 0/2pi -> SharedB0=true, SharedT0=true, IndexT0=2, IndexB0=18
+  [PASS] TOP-11 | Cylinder Seam Discontinuous UVs & Independent Per-Corner Normals -> u0=0.000000, uLast=1.000000, NormalDot=0.000000
+  [PASS] TOP-12 | Cylinder Minimum Segmentation (N=3) -> V=8, E=15, F=9, Euler=2
+  [PASS] TOP-13 | Cylinder Degenerate Dimensions -> TopoZeroRadius=NullOpt, TopoNegHeight=NullOpt
+  [PASS] TOP-14 | Cylinder SurfaceID & MaterialID Independence -> BodyMat10=true, TopMat20=true, BotMat5=true
+  [PASS] TOP-15 | Cylinder Determinism & Invariant Input -> PosMatch=true, FacesMatch=true
+  [PASS] TOP-16 | Cone V/E/F Counts & Euler Characteristic -> V=18, E=48, F=32, chi=2
+  [PASS] TOP-17 | Cone Closed Manifold & Zero Geometric Boundary -> DirectedEdges=96, ReciprocalTwins=true
+  [PASS] TOP-18 | Cone Apex Single Topological Identity -> ApexRefs=16, DistinctNormalsX=8, DistinctUVs=16
+  [PASS] TOP-19 | Cone Base Rim Sharing & Min Segmentation -> V=5, F=6, SharedRim=true
+  [PASS] TOP-20 | ConeFrustum V/E/F Counts & Euler Characteristic -> V=34, E=80, F=48, chi=2, TwinsOk=true
+  [PASS] TOP-21 | ConeFrustum Degenerate Top Radius -> V=18, F=32, CleanFaces=true
+  [PASS] TOP-22 | ConeFrustum Inverted Degenerate Bottom Radius -> V=18, F=32, TwinsOk=true
+  [PASS] TOP-23 | Cone & Frustum Degenerate Dimensions -> rZeroTopoNull=true, hNegTopoNull=true, bothZeroTopoNull=true
+  [PASS] TOP-24 | Cone & Frustum UV Seam Continuity -> SharedIndex=true, UVs=(0.0, 1.0)=true, SeamManifold=true
+  [PASS] TOP-25 | Cone/Frustum SurfaceID & MaterialID Independence -> MantleMat=42, TopMat=99, BotMat=7
+  [PASS] TOP-26 | Cone Determinism & GPU Render Parity -> Deterministic=true, RenderBBoxMatch=true
+  [PASS] TOP-27 | Sphere V/E/F Counts & Euler Characteristic -> V=482, E=992, F=512, chi=2
+  [PASS] TOP-28 | Sphere Closed Manifold & Zero Geometric Boundary -> DirectedEdges=1984, ReciprocalTwins=true
+  [PASS] TOP-29 | Sphere Poles Topological Uniqueness -> SouthRefs=32, NorthRefs=32, UniquePoles=true
+  [PASS] TOP-30 | Sphere Longitudinal Seam Continuity -> SeamShared=true, SeamManifold=true
+  [PASS] TOP-31 | Sphere Per-Corner UVs at Poles & Seam -> SouthDistinctU=32, NorthDistinctU=32, SeamU=(0.0, 1.0)=true
+  [PASS] TOP-32 | Sphere Radial Shading Normals & Winding -> RadialNormals=true, OutwardWinding=true
+  [PASS] TOP-33 | Sphere Minimum Segmentation -> V=6, E=12, F=8, chi=2
+  [PASS] TOP-34 | Sphere Degenerate Dimensions -> rZeroTopoNull=true, rNegTopoNull=true, res1TopoNull=true
+  [PASS] TOP-35 | Sphere SurfaceID & MaterialID Independence -> AllSurface0=true, AllMaterial77=true
+  [PASS] TOP-36 | Sphere Determinism & GPU Render Parity -> Deterministic=true, RenderBBoxMatch=true
+[END SUITE] [TOP] Compiled Topology Validation -> Passed: 36/36 | Failed: 0 | Skipped: 0 | Duration: 145.97 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [MBR] MeshBridge Authoritative Integration (Expected: 16 tests)
+------------------------------------------------------------------------------------
+[MeshBridgeService] ERROR: Face 0 corner 2 has out-of-bounds vertex index 999 (total positions: 3).
+[MeshBridgeService] ERROR: AddFace failed for face 1 (non-manifold edge, duplicate directed edge, or invalid orientation).
+[MeshBridgeService] ERROR: Invalid shape parameters: TriangleMesh parameters empty or invalid.
+[MeshBridgeService] ERROR: GeometryCompiler::Compile failed for ShapeType 21: Compound compilation requires valid ShapeRegistry context.
+[MeshBridgeService] ERROR: Face 0 corner 2 has out-of-bounds vertex index 999 (total positions: 3).
+[MeshBridgeService] ERROR: Invalid shape parameters: TriangleMesh parameters empty or invalid.
+  [PASS] MBR-1 | Cube Authoritative Topology -> V=8, F=6, E=12, Boundary=0, Valid=true
+  [PASS] MBR-2 | Cylinder Shared Rings & Seam Preservation -> V=34, F=48, E=80, Boundary=0, SeamConnected=true
+  [PASS] MBR-3 | Cone Unique Topological Apex -> V=18, F=32, E=48, ApexMatches=1, ApexIncFaces=16
+  [PASS] MBR-4 | ConeFrustum Connected Rings and Caps -> V=34, F=48, E=80, Boundary=0
+  [PASS] MBR-5 | Sphere Unique Poles & Longitudinal Seam -> V=482, F=512, E=992, SouthIncFaces=32, NorthIncFaces=32
+  [PASS] MBR-6 | Independent SurfaceID and MaterialID Preservation -> Face0: Surf=42, Mat=100; Face1: Surf=7, Mat=200
+  [PASS] MBR-7 | Per-Corner Attributes Preservation -> Tutti i corner (UV, normale, colore) coincidono al 100%
+  [PASS] MBR-8 | Invalid Topology Rejection -> OutOfBoundsReject=true, NonManifoldReject=true, CorruptTriangleReject=true
+  [PASS] MBR-9 | Unmigrated Primitives Legacy Fallback -> FaceCount=5, VertexCount=5, Height=2.000000
+  [PASS] MBR-10 | Pre-existing 152 Tests Regression Shield -> Discovered: 152, Passed: 152, Failed: 0
+  [PASS] MBR-11 | Programmatic Error Diagnostics -> SuccessEmpty=true, CompErr=true, TopoErr=true, ParamErr=true
+  [PASS] MBR-12 | Direct UV Island Extraction — Cube Policy -> DefaultIslands=6, ZeroSeamIslands=1, ClosedDetected=1
+  [PASS] MBR-13 | Direct UV Island Extraction — Cube Explicit Seams -> Islands=2, FaceCounts=5+1
+  [PASS] MBR-14 | Direct UV Island Extraction — Cylinder 3-Islands -> Islands=3, ClosedDetected=0, SeamFound=true
+  [PASS] MBR-15 | Direct UV Island Extraction — Sphere Pole-to-Pole Seam -> Islands=1, ClosedDetected=0, MeshGeometricBoundary=0
+  [PASS] MBR-16 | Shared Geometric Edges Across UV Cuts -> IsSeam=true, TwinsReciprocal=true, MeshBoundaryEdges=0
+[END SUITE] [MBR] MeshBridge Authoritative Integration -> Passed: 16/16 | Failed: 0 | Skipped: 0 | Duration: 85.32 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [PNT] Painter Station Composite Albedo Integration (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] PNT-01 | Painter Station disponibile e implementata -> Exists: true, IsImplemented: true
+  [PASS] PNT-02 | Draft senza layer gestito correttamente -> ExecOk: true, StatusOk: true, EmptyPreserved: true
+  [PASS] PNT-03 | Layer validi preservati -> ExecOk: true, LayerCount: 3
+  [PASS] PNT-04 | UV assenti gestite senza corruzione -> ExecOk: true, HasWarning: true, LayersPreserved: true
+  [PASS] PNT-05 | Modifica painting invalida solo le dipendenze necessarie -> PaintDirty: true, QCDirty: true, UpstreamClean: true
+  [PASS] PNT-06 | Input invariato = zero lavoro -> FirstExec: true, SecondExec: true, Rev1: 1, Rev2: 1
+  [PASS] PNT-07 | Fallimento atomico senza perdita dei layer -> FailedAsExpected: true, HasError: true, VectorPreserved: true
+  [PASS] PNT-08 | Nessuna regressione sui 151 test FG-01R -> Topology PASS: 36/36
+  [PASS] PNT-09 | Rilevamento alterazione contenuto pixel (Content Hash Invalidation) -> Color1: (1.000000,0.000000) -> Color2: (0.000000,1.000000), SrcHashChanged: true, CompHashChanged: true, UpstreamClean: true
+  [PASS] PNT-10 | Rifiuto rigoroso layer con dimensioni disomogenee -> Rejected: true, Error: PaintLayer #1 ('Layer32'): dimensioni non uniformi con gli altri layer (32x32 vs 64x64). Compositing bloccato per prevenire output corrotto.
+[END SUITE] [PNT] Painter Station Composite Albedo Integration -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 309.89 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [TXB] Texture Baking Service & PNG Validation (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] TXB-01 | CompositeAlbedo valido -> PNG valido -> Success: true, FileExists: true, PNGHeader: VALID
+  [PASS] TXB-02 | PNG decode round-trip -> Round-trip verificato al 100%: 32x32 pixel identici.
+  [PASS] TXB-03 | Alpha preservato -> Alpha test: [0.0:1, 0.25:1, 0.50:1, 0.75:1, 1.00:1]
+  [PASS] TXB-04 | Dimensioni preservate -> NonSquare: 64x32 (Expected 64x32), Square: 128x128 (Expected 128x128)
+  [PASS] TXB-05 | Input invariato -> nessuna riscrittura -> Writes: 1 -> 1, Encodes: 1 -> 1, CacheHitNoDiskWrite: true
+  [PASS] TXB-06 | Modifica pixel -> nuovo artefatto o aggiornamento coerente -> Hash1: 13511019561636260321 vs Hash2: 2090402024561109278, TotalWrites: 2
+  [PASS] TXB-07 | Errore di scrittura -> nessuna corruzione dell'artefatto precedente -> InitialSize: 114, CurrentSize: 114, DraftPathPreserved: true, ErrorCode: 1
+  [PASS] TXB-08 | Percorsi relativi e portabili -> Canonical: 'textures/blocks/custom_stone_brick_01_albedo.png', Rejections: [Win:1, Unix:1, Trav:1, Backslash:1]
+  [PASS] TXB-09 | Nessuna perdita dei PaintLayers originali -> LayersPreserved: true, HashesMatch: true
+  [PASS] TXB-10 | Nessuna regressione FG-01R e Painter -> CompiledTopology: 36/36, PainterStation: 10/10
+[END SUITE] [TXB] Texture Baking Service & PNG Validation -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 168.20 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [PKG] Asset Packaging & Registry Binding (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] PKG-01 | Package completo valido -> HasPackage: true, IsPublishable: true, Vertices: 36, Triangles: 6
+  [PASS] PKG-02 | URI texture risolto -> AlbedoURI: 'textures/blocks/fairworld_pkg_test_02_albedo.png', ResolvedFileExists: true
+  [PASS] PKG-03 | Save/Reload round-trip -> SaveOk: true, LoadOk: true, ManifestMatch: true, GeomMatch: true
+  [PASS] PKG-04 | Registry binding valido -> Published: true, VoxelId: 11, BlockMatch: true, MaterialMatch: true
+  [PASS] PKG-05 | Asset senza PaintLayers -> PublishedWithoutPaint: true, EmptyAlbedo: true
+  [PASS] PKG-06 | Asset con texture esterna -> PublishedWithExternal: true, AlbedoPath: 'textures/blocks/external_stone_06_albedo.png'
+  [PASS] PKG-07 | Fallimento pubblicazione senza stato parziale (Rollback) -> Success: false, Error: 'File texture Albedo non rintracciabile o vuoto su disco: assets/test_packaging_artifacts\textures/blocks/non_existent_corrupted_file.png', BlocksCount: 11 -> 11
+  [PASS] PKG-08 | Identità asset e collisioni -> CollisionRejected: true, HijackRejected: true, OwnerIntact: true, Message: 'Collisione ID: l'asset 'fairworld:collision_block' e' gia' registrato allo slot ID 11, diverso dal target richiesto 16'
+  [PASS] PKG-09 | Input stabile = nessuna ripubblicazione (Zero-Work) -> FirstPub: 11, SecondPub: 11, ZeroWorkHit: true
+  [PASS] PKG-10 | Nessuna regressione delle suite precedenti -> TOP: 36/36, PNT: 10/10, TXB: 10/10
+[END SUITE] [PKG] Asset Packaging & Registry Binding -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 583.66 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [TRX] Transaction Integrity & In-Memory Fault Injection (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] TRX-01 | Fallimento prima delle mutazioni -> AbortedClean: true, Blocks: 11->11, Shapes: 1->1
+  [PASS] TRX-02 | Fallimento dopo registrazione Shape -> RolledBack: true, ShapesCount: 1->1
+  [PASS] TRX-03 | Fallimento dopo modifica Block -> RolledBack: true, BlockCount: 11->11, IdNotTaken: true
+  [PASS] TRX-04 | Fallimento dopo modifica Material -> RolledBack: true, BlockCleaned: true, Shapes: 1->1, Blocks: 11->11, MaterialSlotCleaned: true
+  [PASS] TRX-05 | Rollback completo dei tre registri -> RolledBack: true, Shapes: 1->1, Blocks: 11->11, OrphanMat: none, DanglingRefs: 0, OrphanId: none
+  [PASS] TRX-06 | Fingerprint invariato dopo fallimento -> CachedFingerprint: 0, StagePublished: false
+  [PASS] TRX-07 | Save failure e consistenza -> SaveFailedSafely: true
+  [PASS] TRX-08 | Reload dopo riavvio simulato -> LoadOk: true, PublishedOnFreshRegistries: true, VoxelId: 11
+  [PASS] TRX-09 | Pubblicazione ripetuta senza mutazioni -> ZeroWorkHit: true, TargetVoxelId: 11==11, Blocks: 12==12
+  [PASS] TRX-10 | Nessuna regressione sui 181 test -> TOP: 36/36, PNT: 10/10, TXB: 10/10, PKG: 10/10
+[END SUITE] [TRX] Transaction Integrity & In-Memory Fault Injection -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 29.17 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [SBR] Sculpted Mesh Runtime Bridge (DCEL -> Runtime) (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] SBR-01 | Mesh primitiva non scolpita invariata -> BuildOk: true, Vertices: 36/36, Source: Primitive, Published: true, SharedShapeType: Cube
+  [PASS] SBR-02 | Mesh scolpita compilata correttamente -> BuildOk: true, Source: SculptedMesh, ShapeType: TriangleMesh, BoundsMaxY: 1.750000
+  [PASS] SBR-03 | Topologia e winding preservati -> Success: true, Triangles: 2, WindingCCWCoherent: true
+  [PASS] SBR-04 | UV per-corner preservate -> Success: true, UVSeamCornerPreserved: true
+  [PASS] SBR-05 | SurfaceID e MaterialID preservati -> Success: true, SurfaceID_MaterialID_Preserved: true
+  [PASS] SBR-06 | Runtime usa la mesh scolpita, non la primitiva -> Published: true, ShapeType: TriangleMesh, RuntimeCompileBoundsMaxY >= 2.5: true
+  [PASS] SBR-07 | Save/Reload mantiene la geometria -> SaveOk: true, LoadOk: true, ReconstructOk: true, GeomMatch: true
+  [PASS] SBR-08 | Fallimento compilazione atomico, senza fallback silenzioso -> BuildRejected: true, PublishRejected: true, RegistriesUntouched: true
+  [PASS] SBR-09 | Geometry invariata = nessuna ricompilazione -> Count1=1 [gRev=17, aRev=10], Count2_Unchanged=1 [gRev=17, aRev=10], Count3_Modified=2 [gRev=18]
+  [PASS] SBR-10 | Nessuna regressione della baseline precedente (191 test) -> TOP: 36/36, PNT: 10/10, TXB: 10/10, PKG: 10/10, TRX: 10/10
+[END SUITE] [SBR] Sculpted Mesh Runtime Bridge (DCEL -> Runtime) -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 463.82 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [INT] Asset Integrity & End-to-End Round-Trip (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] INT-01 | Asset primitivo completo -> BuildOk: true, SaveLoadOk: true, Published: true, ShapeCylinderInRegistry: true
+  [PASS] INT-02 | Asset scolpito completo -> BuildOk: true, ReconstructDCEL: true, Published: true, ShapeIsTriangleMesh: true
+  [PASS] INT-03 | Asset con Albedo baked -> PainterOk: true, BakeOk: true, RelativeUri: textures/blocks/fairworld_int_baked_albedo_albedo.png, ValidatePackage: true, Published: true
+  [PASS] INT-04 | Save/Reload con registri ricreati -> LoadOk: true, PublishedFresh: true, MatchedAttributes: true
+  [PASS] INT-05 | Identità e revisioni persistenti -> Id1: 11 == Id2: 11, BlockCounts: 12 == 12, MassUpdated: true
+  [PASS] INT-06 | Texture mancante o corrotta -> MissingCaught: true, CorruptCaught: true, RegistriesUntouched: true
+  [PASS] INT-07 | Invalidazione cache su modifica UV/materiali -> C1=1, C2_Unchanged=1, C3_UVModified=2
+  [PASS] INT-08 | ShapeHandle condivisi e rollback sicuro -> AssetAPublished: true, AssetBRolledBack: true, SharedShapeStillIntactInRegistry: true
+  [PASS] INT-09 | Input invariato = Zero-Work -> Pass1Ok: true, Pass2ZeroWorkHit: true, BlockCountStable: 12==12
+  [PASS] INT-10 | Nessuna regressione dei 201 test precedenti -> TOP: 36/36, PNT: 10/10, TXB: 10/10, PKG: 10/10, TRX: 10/10, SBR: 10/10
+[END SUITE] [INT] Asset Integrity & End-to-End Round-Trip -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 665.34 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [SEC] Asset Integrity Hardening (SHA-256 / Texture Cache) (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] SEC-01 | Digest stabile su contenuto identico e vettori standard NIST -> NistEmpty: PASS, NistAbc: PASS, Stream: PASS, PackageMatch: PASS
+  [PASS] SEC-02 | Modifica di un byte rilevata -> dA: ebd382e3b997..., dB: 7247b448f4c4... Diff: true
+  [PASS] SEC-03 | Digest indipendente dal percorso assoluto host -> DigA: 3e97b4fe3fd8..., DigB: 3e97b4fe3fd8... Match: true
+  [PASS] SEC-04 | Texture mancante -> IsValid: false, ErrorsCount: 1, PrimaryErrorCode: 5
+  [PASS] SEC-05 | PNG con firma valida ma payload troncato -> IsValid: false, PrimaryErrorCode: 6, Error: File texture Albedo corrotto o troncato (impossibile decodificare il payload PNG): C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sec_gate\textures/blocks/truncated_tex.png
+  [PASS] SEC-06 | PNG valido e decodificabile -> IsValid: true, CacheEntries: 1
+  [PASS] SEC-07 | Asset con texture alterata esternamente e verifica digest memorizzato -> InitialVerify: PASS, MismatchDetected: PASS, ValRejected: PASS, PublishAborted: PASS
+  [PASS] SEC-08 | Compatibilità package precedente -> LoadOk: true, LegacyChecksum: 9999999, UpgradedSha256: a14d2a5e646f...
+  [PASS] SEC-09 | Zero-Work su contenuto stabile -> Pub1: true, Pub2: true, Pub2ZeroWork: true, Slot: 11==11, CacheStable: 1==1, RegsDelta: pre=11, post1=12, post2=12
+  [PASS] SEC-10 | Nessuna regressione dei 211 test precedenti -> TOP: 36/36, PNT: 10/10, TXB: 10/10, PKG: 10/10, TRX: 10/10, SBR: 10/10, INT: 10/10
+[END SUITE] [SEC] Asset Integrity Hardening (SHA-256 / Texture Cache) -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 75.98 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [DGV] Digest Verification & Trust Policy (Strict/AllowLegacy) (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] DGV-01 | V2 valido -> Verified -> ValStatus: Verified, PubStatus: Verified, TargetVoxel: 11
+  [PASS] DGV-02 | Geometria alterata -> Rejected -> ValError: DigestMismatch, PubError: DigestMismatch, RegClean: true
+  [PASS] DGV-03 | Texture alterata -> Rejected -> ValError: TextureDecodeFailure, PubError: TextureDecodeFailure, RegClean: true
+  [PASS] DGV-04 | Digest mancante in STRICT -> Rejected -> ValError: MissingDigest, PubError: MissingDigest
+  [PASS] DGV-05 | Digest malformato -> Rejected -> ShortOk: PASS, UpperOk: PASS, NonHexOk: PASS
+  [PASS] DGV-06 | V1 senza digest in AllowLegacy -> LegacyUnverified -> LegacyStatus: LegacyUnverified, StrictStatus: Rejected, StrictError: UnsupportedSchema
+  [PASS] DGV-07 | Schema futuro sconosciuto -> Rejected -> V3: PASS, V99: PASS, V0: PASS
+  [PASS] DGV-08 | Verifica fallita -> Zero mutazioni dei registri -> Blocks: 11 == 11, Shapes: 1 == 1, RegistriesIntact: true
+  [PASS] DGV-09 | Zero-Work non bypassa un cambiamento esterno -> InitialZeroWork: PASS, TamperRejected: PASS, WasZeroWorkHitOnTamper: false
+  [PASS] DGV-10 | Regressione delle suite precedenti -> TOP: 36/36, PNT: 10/10, TXB: 10/10, PKG: 10/10, TRX: 10/10, SBR: 10/10, INT: 10/10, SEC: 10/10
+[END SUITE] [DGV] Digest Verification & Trust Policy (Strict/AllowLegacy) -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 48.40 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [CRH] Transactional Asset Publication & Crash Recovery (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] CRH-01 | Pubblicazione normale -> Success: true, FileCommitted: true, VoxelId: 11
+  [PASS] CRH-02 | Errore durante staging -> Success: false, PublishedAbsent: true, RegClean: true
+  [PASS] CRH-03 | Errore prima del commit -> Success: false, NotCommitted: true, StagingDiscarded: true
+  [PASS] CRH-04 | Errore immediatamente dopo commit -> DiskCommitted: true, RegPreRecEmpty: true, RegPostRecRecovered: true
+  [PASS] CRH-05 | Recovery di transazione incompleta -> DiscardedCount: 1, DirDeleted: true, RegClean: true
+  [PASS] CRH-06 | Recovery idempotente -> Rep1Success: true, Rep2Discarded: 0, BlockCountsEqual: true
+  [PASS] CRH-07 | Texture condivisa tra asset -> PubA: PASS, PubB: PASS, TexIntact: true, AssetAValid: true
+  [PASS] CRH-08 | Revisione precedente preservata -> Pub1: PASS, Pub2Fail: PASS, ActiveIsRev1: true, RegIsRev1: true
+  [PASS] CRH-09 | Zero-Work su package committed -> Pub1: true, Pub2ZeroWorkHit: true, TargetVoxelId: 11
+  [PASS] CRH-10 | Regressione delle suite precedenti -> TOP: 36/36, PNT: 10/10, TXB: 10/10, PKG: 10/10, TRX: 10/10, SBR: 10/10, INT: 10/10, SEC: 10/10, DGV: 10/10
+[END SUITE] [CRH] Transactional Asset Publication & Crash Recovery -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 1799.46 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [CRH-H] Crash Recovery Hardening & Commit Semantics (Expected: 8 tests)
+------------------------------------------------------------------------------------
+  [PASS] CRH-H01 | CrashBetweenJournalAndActivePointer -> Crash rilevato: SI, Committed: SI, Active pre-recovery: NULL, Active post-recovery: 1, Riconciliazioni: 1
+  [PASS] CRH-H02 | JournalCommittedWithMissingActivePointer -> Active pre-recovery: ASSENTE, Riconciliato: rev_1
+  [PASS] CRH-H03 | ActivePointerToUncommittedRevision -> Falsa revisione accettata: NO (RIFIUTATA), Puntatori non committed scartati: 1, Revisione ripristinata: rev_1
+  [PASS] CRH-H04 | AtomicReplaceFailureHandled -> AtomicReplace fallito in modo sicuro: SI, Errore riportato: 'Sorgente non esistente: C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_crh_hardening_gate\non_existent_src.tmp', Contenuto preservato: TARGET_ORIGINALE_INTATTO
+  [PASS] CRH-H05 | StagingSymlinkSafeRecovery -> SafeRemoveAll eseguito: SI, File canarino esterno preservato: SI, Staging rimosso: SI
+  [PASS] CRH-H06 | RepeatedRecoveryIdempotence -> Pass 1: 3 rec, 0 scartati | Pass 2: 3 rec, 0 scartati | Pass 3: 3 rec, 0 scartati
+  [PASS] CRH-H07 | RegistryReconstructionIdempotence -> Pass 1: 1 pacchetti (12 blocchi) | Pass 2: 1 pacchetti (12 blocchi)
+  [PASS] CRH-H08 | ReconstructionErrorNoPartialState -> Pacchetti ricostruiti: 1, Asset valido presente: SI, Asset corrotto escluso: SI
+[END SUITE] [CRH-H] Crash Recovery Hardening & Commit Semantics -> Passed: 8/8 | Failed: 0 | Skipped: 0 | Duration: 1966.06 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [DEP] Asset Dependency Graph & Referential Integrity (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] DEP-01 | AssetWithoutExternalDependencies -> Validazione: PASS, Pubblicazione: PASS, Nodi nel grafo: 1
+  [PASS] DEP-02 | ValidMandatoryDependency -> Validazione Host: PASS, Pubblicazione: PASS, Dipendenza registrata: SI
+  [PASS] DEP-03 | MissingMandatoryDependency -> Blocco validazione: SI, Codice errore: MissingDependency, Errore: 'Dipendenza obbligatoria mancante o non committed su disco: fairworld:ghost_shape_never_exists rev_1'
+  [PASS] DEP-04 | NonExistentRevision -> Validazione fallita: SI, Messaggio: 'Dipendenza obbligatoria mancante o non committed su disco: fairworld:dep04_target rev_42'
+  [PASS] DEP-05 | DependencyDigestAltered -> Rifiuto mismatch digest: SI, Codice errore: DigestMismatch
+  [PASS] DEP-06 | CycleBetweenAssets -> Ciclo rilevato: SI, Numero cicli estratti: 1, Ordinamento topologico bloccato: SI
+  [PASS] DEP-07 | SharedDependencyReferenceTracking -> Reference count target condiviso: 2, IsReferenced: SI
+  [PASS] DEP-08 | RevisionUpdateTargetedInvalidation -> Cache A pre: 1 -> post: 0 | Cache D (indipendente) pre: 1 -> post: 1
+  [PASS] DEP-09 | RecoveryWithDependenciesTopological -> Pacchetti ricostruiti: 3, Blocco A: SI, Blocco B: SI, Blocco C: SI
+  [PASS] DEP-10 | PreviousSuitesRegressionCheck -> CRH: 10/10 | CRH-H: 8/8 | DGV: 10/10
+[END SUITE] [DEP] Asset Dependency Graph & Referential Integrity -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 1977.07 ms
+
+------------------------------------------------------------------------------------
+[BEGIN SUITE] [MIG] Asset Schema Migration & Backward Compatibility (Expected: 10 tests)
+------------------------------------------------------------------------------------
+  [PASS] MIG-01 | LegacySchemaV1Recognition -> Stato: LegacySchema, DetectedVersion: 1, CanMigrate: true, Msg: Schema legacy V1 rilevato. Migrazione a V2 richiesta.
+  [PASS] MIG-02 | CurrentSchemaV2Recognition -> Stato: CurrentSchema, DetectedVersion: 2, ValidDigest: true
+  [PASS] MIG-03 | DeterministicV1ToV2Migration -> Success: true, Revision: 2, Provenance: true, StrictStatus: Verified
+  [PASS] MIG-04 | LosslessGeometryAndTopologyConservation -> VertexCount: 24, TriCount: 12, GeometryLossless: true
+  [PASS] MIG-05 | LosslessMaterialTextureAndPhysicsConservation -> Success: true, SchemaVersion: 2, PBR Match: true, Tex Match: true, Physics Match: true
+  [PASS] MIG-06 | AssetIdAndDependencyPreservation -> WoodRev2Committed: true, StoneRev1Committed: true, MigSuccess: true, AssetIdMatch: true, DepCount: 2, DepMatch: true
+  [PASS] MIG-07 | UnknownSchemaStrictRejection -> Insp99: UnsupportedSchema, Can99: false, Insp0: UnsupportedSchema, Can0: false
+  [PASS] MIG-08 | TransactionalRollbackOnMigrationFailure -> Success: false, BlockCountBefore: 11, BlockCountAfter: 11, Error: Pre-validazione legacy fallita: Discrepanza conteggio vertici: atteso 999, presenti 24
+  [PASS] MIG-09 | RepeatedMigrationZeroWorkSafety -> FirstZeroWork: false, SecondZeroWork: true, Rev1: 2, Rev2: 2
+  [PASS] MIG-10 | HistoricalSuitesRegressionGate -> Suite storiche eseguite: 38/38 test superati
+[END SUITE] [MIG] Asset Schema Migration & Backward Compatibility -> Passed: 10/10 | Failed: 0 | Skipped: 0 | Duration: 564.89 ms
+
+====================================================================================
+  FAIRWORLD HEADLESS ENGINEERING FULL CERTIFICATION SUMMARY
+====================================================================================
+  MODE:               FULL CERTIFICATION
+  SUITES EXECUTED:    20 / 20 (Single Invocation Contract Verified)
+  DISCOVERED:         286 / 286
+  PASSED:             286
+  FAILED:             0
+  SKIPPED:            0
+  TOTAL TIME:         14.56 s
+  OVERALL:            SUCCESS (PASS)
+====================================================================================
+<end of output>
+Test time =  15.54 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldUVTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldUVTests" time elapsed: 00:00:15
+----------------------------------------------------------
+
+2/15 Testing: FairworldSculptTests
+2/15 Test: FairworldSculptTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldSculptTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldSculptTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+
+====================================================================================
+FAIRWORLD SCULPTING & MODELING HEADLESS TEST RUNNER
+====================================================================================
+
+------------------------------------------------------------------------------------
+[SM] EditableMesh Core & Generational DCEL Topology
+------------------------------------------------------------------------------------
+  [PASS] SM-1     | SM-1 — Tri-Mesh Contract & Adjacency | Vertices=4, Faces=2, Edges=5, IsValid=true
+  [PASS] SM-2     | SM-2 — Quad Mesh Loop Invariants | V=8, F=6, E=12, ClosedManifold=true, BoundaryEdges=0
+  [PASS] SM-3     | SM-3 — N-gon Concave Ear-Clipping Triangulation | Triangulated=true, TriCount=4 (Expected 4)
+  [PASS] SM-4     | SM-4 — Boundary Detection & Open Mesh Handling | BoundaryEdges=8, Closed=false, Faces=4
+  [PASS] SM-5     | SM-5 — UV Seam Isolation on Shared 3D Vertices | Face0_v1_UVx=0.500000, Face1_v1_UVx=0.800000
+  [PASS] SM-6     | SM-6 — Multi-Material & Semantic SurfaceID | All6SurfacesMatchCubeFace=true
+  [PASS] SM-7     | SM-7 — Topology Corruption Detection | IsValid=false, ErrorsDetected=3
+  [PASS] SM-8     | SM-8 — Non-finite Coordinates Rejection | IsValid=false, ErrorCount=1
+  [PASS] SM-9     | SM-9 — Versioned JSON Serialization Round-Trip | LoadOk=true, DstVertices=8, DstFaces=6, ClosedManifold=true
+  [PASS] SM-10    | SM-10 — Generational ID Stability After Deletions | OldIndex=0 (Gen 1), NewIndex=0 (Gen 2), OldRejected=true
+>> Suite [SM] Summary: 10 PASS, 0 FAIL, 0 SKIPPED (Nominal: 10)
+
+------------------------------------------------------------------------------------
+[SEL] MeshSelectionService & Topological Selection (Loop/Ring)
+------------------------------------------------------------------------------------
+  [PASS] SEL-1    | SEL-1 — Vertex Picking via Ray & Screen Projection | Hit=true, VertexID=6, PosMatch=true
+  [PASS] SEL-2    | SEL-2 — Edge Picking with Pixel Threshold | Hit=true, EdgeID=6
+  [PASS] SEL-3    | SEL-3 — Face Picking via Möller-Trumbore Ray Intersection | Hit=true, FaceID=1, SurfaceID=1, HitDist=3.949975, DistEye=4.000000
+  [PASS] SEL-4    | SEL-4 — Multi-selection (Replace, Add, Subtract, Toggle) | S1=ok, S2=ok, S3=ok, S4=ok
+  [PASS] SEL-5    | SEL-5 — Box Selection Screen Inclusion | SelectedVertices=8 (Expected 8)
+  [PASS] SEL-6    | SEL-6 — Depth & Occlusion Handling | ChosenFaceSurface=1 (AssetCubeFace::Front=1, AssetCubeFace::Back=0)
+  [PASS] SEL-7    | SEL-7 — Object Space Scaling & Translation Invariance | HitTransformed=true, HitWorldX=4.999972 (Expected ~5.0)
+  [PASS] SEL-8    | SEL-8 — Pruning of Invalidated IDs After Deletions | InitiallySelected=true, Pruned=true
+  [PASS] SEL-9    | SEL-9 — Stable Input = Zero Unnecessary Work | RevBumpOnMutate=true, RevStableOnQuery=true
+  [PASS] SEL-10   | SEL-10 — Selection After Triangulation & N-gon Picking | NgonHit=true, HitFaceID=0
+  [PASS] SEL-11   | SEL-11 — Edge Loop Selection on Regular Quad Mesh | Success=true, Count=3, Mode=1
+  [PASS] SEL-12   | SEL-12 — Edge Ring Selection on Regular Quad Mesh | Success=true, RingCount=4, StartSelected=true
+  [PASS] SEL-13   | SEL-13 — Open Loop Termination on Boundary | Success=true, Count=3 (Expected 2..4 bounded)
+  [PASS] SEL-14   | SEL-14 — Closed Loop Traversal on Subdivided Mesh | Success=true, ClosedLoopCount=8 (Expected 8)
+  [PASS] SEL-15   | SEL-15 — Invalid Handle Rejection (Zero Mutation) | LoopRejected=true, RingRejected=true, RevStable=true
+  [PASS] SEL-16   | SEL-16 — Stale Generational Handle Safety | StaleValid=false, LoopStale=false, RingStale=false
+  [PASS] SEL-17   | SEL-17 — Duplicate-Free Invariant | SelectedCount=4, UniqueSetSize=4
+  [PASS] SEL-18   | SEL-18 — Additive Multi-Ring Selection (SelectionOp::Add) | Ring1Count=4, Ring2AccumCount=8, AddOk=true
+  [PASS] SEL-19   | SEL-19 — Zero-Work Invariance on Unchanged Selection | Rev1=3, Rev2=3, ZeroWork=true
+  [PASS] SEL-20   | SEL-20 — Revision Safety: Geometry & Topology Untouched | TopoSafe=true, GeomSafe=true, AttrSafe=true, CountsSafe=true
+>> Suite [SEL] Summary: 20 PASS, 0 FAIL, 0 SKIPPED (Nominal: 20)
+
+------------------------------------------------------------------------------------
+[MOD] MeshModelingService (Extrude, Inset, Bevel, Transforms)
+------------------------------------------------------------------------------------
+  [PASS] MOD-1    | MOD-1 — Move Vertex Determinism & Zero Topology Work | Success=1, PosMatch=1, TopoRev=8, GeoRev=19
+  [PASS] MOD-2    | MOD-2 — Rotate Selection Around Centroid | Success=1, TopVerts=4, Finite=1
+  [PASS] MOD-3    | MOD-3 — Non-Uniform Scale Geometry | Success=1, Min=(-1.000000,-0.250000,-0.500000), Max=(1.000000,0.250000,0.500000)
+  [PASS] MOD-4    | MOD-4 — Face Extrude & Manifold Connectivity | Success=1, Faces=10, Verts=12, ClosedManifold=1
+  [PASS] MOD-5    | MOD-5 — Adjacent Faces Region Extrude | Success=1, Valid=1, CreatedFaces=10
+  [PASS] MOD-6    | MOD-6 — Boundary Edge Extrude & Non-Manifold Rejection | OpenSuccess=1, ClosedRejected=1, ErrorMsg='Edge is not a boundary edge; extruding would create non-manifold geometry.'
+  [PASS] MOD-7    | MOD-7 — Face Inset & Concave Rejection | Success=1, TotalFaces=10, IsValid=1
+  [PASS] MOD-8    | MOD-8 — Manifold Edge Bevel Chamfer | Success=1, TotalFaces=7, IsClosed=1
+  [PASS] MOD-9    | MOD-9 — UV, SurfaceID & MaterialID Integrity | Success=1, AllMatch=1, CreatedFaces=5
+  [PASS] MOD-10   | MOD-10 — Atomic Rollback on Failure & Zero-Work | NanRejected=1, MeshUntouched=1, ZeroWork=1
+>> Suite [MOD] Summary: 10 PASS, 0 FAIL, 0 SKIPPED (Nominal: 10)
+
+------------------------------------------------------------------------------------
+[SCL] MeshSculptService (Brushes, Falloff & Spatial Grid)
+------------------------------------------------------------------------------------
+  [PASS] SCL-1    | SCL-1 — Grab Brush Local Dragging | Success=1, TopoUntouched=1, Z=0.800000
+  [PASS] SCL-2    | SCL-2 — Smooth Brush Relaxation | RelaxedZ=0.293333, DistBefore=0.789515, DistAfter=0.157903, TopoUntouched=1
+  [PASS] SCL-3    | SCL-3 — Inflate Radial Outward Expansion | Success=1, AnyExpanded=1, GeoRev=19
+  [PASS] SCL-4    | SCL-4 — Flatten Surface Tangent Plane Projection | FlattenedZ=0.766667
+  [PASS] SCL-5    | SCL-5 — Clay Progressive Volumetric Build-up | BuiltUp=1, CeilingRespected=1
+  [PASS] SCL-6    | SCL-6 — Mathematical Falloff Curves Evaluation | Smooth(0,0.5,1)=(1.000000,0.500000,0.000000), Linear05=0.500000, Constant1=1.000000
+  [PASS] SCL-7    | SCL-7 — Stroke Spacing Zero-Work Contract | SkippedRedundantDab=1
+  [PASS] SCL-8    | SCL-8 — Symmetry Reflection Deformation | HandlesValid=1, NonZero=1, SpecularX=1, SpecularYZ=1
+  [PASS] SCL-9    | SCL-9 — CancelStroke 100% Rollback (Positions, Revisions, Index) | ExactlyRestored=1, GeoRestored=1, TopoRestored=1, IndexRestored=1
+  [PASS] SCL-10   | SCL-10 — Zero Topology Mutation & Closed Manifold Preservation | TopoUntouched=1, IsValid=1, ClosedManifold=1
+  [PASS] SCL-11   | SCL-11 — Spatial Index Dynamic Cross-Cell Migration | HandleValid=1, MovedOutOfOld=1, AbsentOld=1, FoundNew=1, QueryFound=1
+  [PASS] SCL-12   | SCL-12 — Live Stroke Coalescence & Zero-Work Spacing Invariance | ZeroWorkRespected=1, MacroApplied=1, DeltasCount=1
+>> Suite [SCL] Summary: 12 PASS, 0 FAIL, 0 SKIPPED (Nominal: 12)
+
+------------------------------------------------------------------------------------
+[TOP] MeshTopologyService (Mirror, Subdivide, Loop Cut)
+------------------------------------------------------------------------------------
+  [PASS] TOP-1    | TOP-1 — Mirror Across Plane X with Inverted CCW Winding | Success=1, Faces=2, NormalOutward=1
+  [PASS] TOP-2    | TOP-2 — Mirror Seam Welding & Closed 2-Manifold | Success=1, IsValid=1, FaceCount=7
+  [PASS] TOP-3    | TOP-3 — Proportional Editing Distance Weighting Falloff | Success=1, SelPosY=2.000000, TopoUntouched=1
+  [PASS] TOP-4    | TOP-4 — Single Quad Midpoint Subdivision (1 to 4 Quads) | Faces=4, Verts=9, IsValid=1
+  [PASS] TOP-5    | TOP-5 — Closed Manifold Cube Subdivision (6 to 24 Quads) | Faces=24, ClosedManifold=1, Errors=0
+  [PASS] TOP-6    | TOP-6 — Edge Loop Cut Across Quad Strip | Success=1, Faces=3, IsValid=1
+  [PASS] TOP-7    | TOP-7 — Edge Ring Traversal Completeness on Closed Topology | RingEdgeCount=4
+  [PASS] TOP-8    | TOP-8 — TopologyRevision Tracking Contract | SubBumpedTopo=1, PropPreservedTopo=1, GeoBumped=1
+  [PASS] TOP-9    | TOP-9 — Generational ID Safety on Topological Mutations & Branching | OldInvalid=1, RepeatedSub=1, BranchSafe=1, OverflowSafe=1, V_ABA=1, HE_ABA=1, E_ABA=1, F_ABA=1
+  [PASS] TOP-10   | TOP-10 — Zero-Work Invariance on Null or Invalid Input | TopoUntouched=1, GeoUntouched=1, SubTopoChanged=0, CutFailed=1
+>> Suite [TOP] Summary: 10 PASS, 0 FAIL, 0 SKIPPED (Nominal: 10)
+
+------------------------------------------------------------------------------------
+[REP] MeshRepairService (Manifold Healing & Uniform Remesh)
+------------------------------------------------------------------------------------
+  [PASS] REP-1    | Zero-Area Face Detection & Removal | Removed=1, FinalFaceCount=1
+  [PASS] REP-2    | Orphaned & Isolated Element Cleanup | CleanedVerts=3, RemainingVerts=4
+  [PASS] REP-3    | Collinear / Repeated Vertex Face Repair | CleanHasIssues=0, DirtyHasIssues=1
+  [PASS] REP-4    | Boundary Hole Capping & Manifold Closure | WasOpen=1, Capped=1, FinalBoundaryEdges=0
+  [PASS] REP-5    | Normal Orientation Consistency Unification | Valid=1, Flipped=0
+  [PASS] REP-6    | Coplanar Limited Dissolve (Planar Decimation) | Dissolved=1, InitialFaces=2, FinalFaces=1
+  [PASS] REP-7    | Non-Manifold Pinched Vertex Separation | DetectedPinched=1, SplitCount=1
+  [PASS] REP-8    | Uniform Remeshing Edge Length Convergence | EdgesSplit=4, AvgEdgeLen=1.410186, TopoValid=1
+  [PASS] REP-9    | Zero-Work Invariance on Clean Pristine Mesh | Modified=0, TopoRevDelta=0, GeomRevDelta=0
+  [PASS] REP-10   | Generational ID Safety & Invalidation Tracking | ValidBefore=1, ValidAfter=0
+>> Suite [REP] Summary: 10 PASS, 0 FAIL, 0 SKIPPED (Nominal: 10)
+
+------------------------------------------------------------------------------------
+[HIS] MeshHistoryService (Differential Undo/Redo Engine)
+------------------------------------------------------------------------------------
+  [PASS] HIS-1    | Move Transformation Undo/Redo (Geometry Delta) | HasMoved=1, UndoOk=1, RedoOk=1
+  [PASS] HIS-2    | Sculpt Stroke Grouping Contract | UndoCount=0, RestoredBaseline=1
+  [PASS] HIS-3    | Cancel Stroke Without History Pollution | UndoCount=0, CanUndo=0
+  [PASS] HIS-4    | Extrude Topology Mutation Undo/Redo | ExtrudedFaces=5, UndoFaces=5, UndoOk=1, RedoOk=1
+  [PASS] HIS-5    | Subdivide Topology Mutation Undo/Redo | Subdivided=1, UndoFaces=24, UndoManifold=1, RedoManifold=1
+  [PASS] HIS-6    | Manifold Repair Undo/Redo | Cleaned=1, RestoredDegenerate=1, ReCleaned=1
+  [PASS] HIS-7    | UV & Material Assignment Preservation | RestoredAttrs=1
+  [PASS] HIS-8    | Generational ID Safety & Invalidation Tracking | InvCommit=1, ValidUndo=1, InvRedo=1
+  [PASS] HIS-9    | Redo Branching Invalidation | CanRedoBefore=1, RedoPurged=1
+  [PASS] HIS-10   | Zero-Work Invariance on Null/No-op Transaction | Committed=0, UndoCount=0
+  [PASS] HIS-11   | Memory Budget & Deterministic FIFO Pruning | ClampedCount=3, TopCmd=Move 5
+  [PASS] HIS-12   | Revision Monotonicity & Epoch Preservation | Revs: 8 < 9 < 12 < 15 < 16 < 19
+>> Suite [HIS] Summary: 12 PASS, 0 FAIL, 0 SKIPPED (Nominal: 12)
+
+------------------------------------------------------------------------------------
+[BRG] MeshBridgeService (Factory Draft & Packaging Sync)
+------------------------------------------------------------------------------------
+  [PASS] BRG-1    | Shape to Sculpt Conversion | Vertici: 8, Facce: 6, Valido: true
+  [PASS] BRG-2    | Sculpt to GeometryCompiler | Success: true, Triangoli: 12, Vertici: 36
+  [PASS] BRG-3    | UV and Material Preservation | MaterialID: 7, roughMetal(UV): (0.000000, 0.000000)
+  [PASS] BRG-4    | Revision Propagation & DAG | tRev: 8->8, gRev: 17->18, DAG SculptDirty: true
+  [PASS] BRG-5    | Zero-Work Architecture | needsSecondRecompile = false
+  [PASS] BRG-6    | Undo/Redo Factory Synchronization | Undo: ok, Restored: true, Monotonic: true
+  [PASS] BRG-7    | GPU Preview Coalescence | Compilazioni eseguite su 5 dab: 2
+  [PASS] BRG-8    | QC Validation of Sculpt Result | Valido pass: true, Corrotto pass: false
+  [PASS] BRG-9    | Package Standalone Serialization | Package generato: true, Vertici: 36, Json len: 3653
+  [PASS] BRG-10   | Asset Isolation Guarantee | Draft B intatto: true
+  [PASS] BRG-11   | Dual Geometry Source Path Validation | PrimSource=Primitive, PrimJsonLen=0, SculptSource=SculptedMesh, SculptJsonLen=3653
+>> Suite [BRG] Summary: 11 PASS, 0 FAIL, 0 SKIPPED (Nominal: 11)
+
+====================================================================================
+FAIRWORLD SCULPT & MODELING AUDIT REPORT SUMMARY
+====================================================================================
+  Suites Evaluated : 8 (8 PASS, 0 FAIL)
+  Tests Executed   : 95
+  Tests Passed     : 95
+  Tests Failed     : 0
+  Tests Skipped    : 0
+  Execution Time   : 869.53 ms
+====================================================================================
+RESULT: 100% SUCCESS — ALL SCULPT & MODELING TESTS PASSED
+
+<end of output>
+Test time =   1.09 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldSculptTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldSculptTests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+3/15 Testing: FairworldScientificTests
+3/15 Test: FairworldScientificTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldScientificTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldScientificTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================
+  FAIRWORLD SCIENTIFIC MATERIAL REGISTRY TEST RUNNER (MA-03.1D / MA-03.2A / MA-03.2D.3B / MA-03.2E.2A)
+  SUITES: SCI (10 Tests) + BOOT (4 Tests) + EXT (11 Tests) + FIX04 (8 Tests) + DIAG (5 Tests) | 38 TOTAL TESTS
+====================================================================================
+
+[ScientificMaterialRegistry] Caricati 1 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_test_v1.json (schema v1, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 2 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_test_v2.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Versione schema non supportata: 0 in C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_test_schema0.json. Versioni supportate: [1, 2, 3].
+[ScientificMaterialRegistry] Versione schema non supportata: 4 in C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_test_schema4.json. Versioni supportate: [1, 2, 3].
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_nc_exact_invalid.json: Composizione NominallyComplete non somma a 1 entro tolleranza (somma: 0.850000) in 'fairworld:mat/nc_exact_invalid'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_nc_with_unknown.json: Composizione NominallyComplete contiene componenti con quantita' Unknown in 'fairworld:mat/nc_with_unknown'. Tutti i componenti devono essere noti.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_nc_range_invalid.json: Composizione NominallyComplete con Range non compatibile con 1.0 (intervallo somme: [0.500000, 0.700000]) in 'fairworld:mat/nc_range_invalid'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_nc_mixed_bases.json: Base frazionaria del componente 'Comp B' ('Volume') discordante dalla defaultBasis ('Mass') in 'fairworld:mat/nc_mixed_bases'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Caricati 1 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_partial_valid.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_partial_invalid.json: Composizione Partial: somma dei minimi delle frazioni note supera 1.0 (1.150000) in 'fairworld:mat/partial_invalid'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_tax_cycle.json: Rilevato ciclo nelle relazioni tassonomiche: fairworld:mat/cycle_mat_a -> fairworld:mat/cycle_mat_b -> fairworld:mat/cycle_mat_a. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_self_rel.json: Autoriferimento ciclico illegale: il materiale 'fairworld:mat/self_rel' ha una relazione verso se stesso.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_comp_cycle.json: Rilevato ciclo nelle dipendenze di composizione: fairworld:mat/comp_cycle_a -> fairworld:mat/comp_cycle_b -> fairworld:mat/comp_cycle_a. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_missing_target.json: Relazione nel materiale 'fairworld:mat/orphan_rel' fa riferimento a target canonico inesistente: 'fairworld:mat/nonexistent_phantom'. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_dup_rel.json: Relazione duplicata nel materiale 'fairworld:mat/dup_rel': relazione 'DerivedFrom' verso 'fairworld:mat/target_ok' ripetuta.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_dup_comp.json: Componente duplicato 'Quartz' nella composizione di 'fairworld:mat/dup_comp'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Duplicato nel JSON: ScientificMaterialID 805 ripetuto nel file C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_dup_id.json. Rifiutato.
+[ScientificMaterialRegistry] Caricati 1 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_dup_id.json (schema v2, conflitti/scartati: 1)
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\sci_faulty_transaction.json: Rilevato ciclo nelle relazioni tassonomiche: fairworld:mat/candidate_faulty -> fairworld:mat/candidate_ok -> fairworld:mat/candidate_faulty. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\prod_roundtrip_v2.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Proprieta' 'scientific:prop/unknown_bogus_property' non registrata nel dizionario. Transazione annullata.
+[ScientificMaterialRegistry] Caricati 5 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\det_test1.json (schema v3, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Proprieta' estesa sconosciuta 'scientific:prop/completely_unknown_uri' in 'fairworld:mat/bad_material'. Registrazione rifiutata.
+[WARNING][TestContext_DIAG03] Block ID 11 (fairworld:diag_test_orphan - "Orphan Asset") references unresolved ScientificMaterialID 99999. Legacy asset preserved unmutated.
+[WARNING][TestDIAG04_MutationCheck] Block ID 12 (fairworld:diag_mut_orphan - "Orphan Asset") references unresolved ScientificMaterialID 88888. Legacy asset preserved unmutated.
+[BlockRegistry] Loaded 3 blocks from C:\Users\39347\AppData\Local\Packages\sandbox.{e82f795c-920f-40f8-a297-c33f87589576}\AC\Temp\fairworld_sci_tests\diag_test_orphans.json
+[WARNING][TestDIAG05_Bootstrap] Block ID 2 (fairworld:legacy_orphan - "Legacy Orphan") references unresolved ScientificMaterialID 77777. Legacy asset preserved unmutated.
+  [PASS] SCI-01   | Caricamento JSON v1 senza campi tassonomici
+         Observed: Caricamento v1 completato con successo: densità 2650 kg/m^3, kind=Unknown, composition=Unknown
+
+  [PASS] SCI-02   | Caricamento JSON v2 con tassonomia e composizione
+         Observed: Caricamento v2 convalidato: kind, aggregationState, tags, relations e composition corretti
+
+  [PASS] SCI-03   | Round-trip Exact, Range, Unknown, qualità e fonte
+         Observed: Round-trip JSON perfetto: Exact (0.45), Range [0.10, 0.25] e Unknown preservati senza perdite
+
+  [PASS] SCI-04   | Rifiuto schemaVersion non supportata (es. 0 e 4)
+         Observed: Entrambe le versioni schema non supportate (<1 e >3) rifiutate con successo; catalogo standard inalterato
+
+  [PASS] SCI-05   | Rifiuto composizioni nominalmente complete con somma invalida
+         Observed: Tutte le 4 violazioni delle regole di completezza nominale sono state respinte come da contratto
+
+  [PASS] SCI-06   | Accettazione composizioni parziali valide
+         Observed: Composizione Partial valida accettata; Partial con somma minimi (1.15 > 1.0) correttamente respinta
+
+  [PASS] SCI-07   | Rifiuto cicli tassonomici e compositivi
+         Observed: Tutti i pattern ciclici (tassonomici, autoriferiti e compositivi) sono stati rilevati e respinti
+
+  [PASS] SCI-08   | Rifiuto riferimenti invalidi e duplicati
+         Observed: Riferimenti inesistenti, relazioni duplicate e componenti duplicati respinti con successo
+
+  [PASS] SCI-09   | Atomicità di LoadFromJson (Rollback su errore)
+         Observed: Atomicità transazionale verificata: transazione abortita, nessun residuo candidato, stato originale integro al 100%
+
+  [PASS] SCI-10   | Invarianza ID 1-4 e ResolveProperty (override locale, base, Unknown)
+         Observed: ID 4 invariato con kind=Unknown; ResolveProperty rispetta override, base e fallback Unknown; nessuna auto-ereditarietà ontologica
+
+  [PASS] BOOT-01  | Bootstrap Initialize -> LoadFromJson (Assenza Downgrade Tassonomico)
+         Observed: Bootstrap verificato: kind e aggregationState conservati fedelmente dallo schema v2 (assets/definitions/scientific_materials.json)
+
+  [PASS] BOOT-02  | Query tassonomiche post-caricamento catalogo produttivo
+         Observed: Tutte le query tassonomiche e per stato di aggregazione restituiscono i set corretti dei materiali produttivi
+
+  [PASS] BOOT-03  | Invarianza valori scientifici e metadati prima/dopo caricamento
+         Observed: Nessuna discrepanza: tutti i valori fisici, unità, condizioni termodinamiche e fonti bibliografiche di ID 1..4 risultano identici
+
+  [PASS] BOOT-04  | Round-trip JSON v2 e validazione catalogo produttivo
+         Observed: Catalogo produttivo v2 validato formalmente prima e dopo il round-trip su disco (zero errori)
+
+  [PASS] EXT-01   | Rollback transazionale su JSON v3 invalido
+         Observed: JSON v3 invalido correttamente respinto; rollback atomico confermato; 4 materiali legacy invariati
+
+  [PASS] EXT-02   | Sei esiti distinti del Resolver
+         Observed: Tutti i 6 esiti del resolver (PropertyAbsent, NotApplicable, Unknown, MatchSingle, MatchMultiple, NoMatchConditions) verificati formalmente
+
+  [PASS] EXT-03   | Matching conservativo per campi mancanti
+         Observed: Matching conservativo verificato: campo richiesto assente nell'osservazione correttamente scartato (NoMatchConditions); wildcard accettato
+
+  [PASS] EXT-04   | MatchMultiple senza selezione implicita
+         Observed: MatchMultiple restituisce integralmente le 3 osservazioni candidate senza alcuna selezione implicita
+
+  [PASS] EXT-05   | Distinzione Known(0.0), Unknown e NotApplicable
+         Observed: Distinzione semantica perfetta: Known(0.0) ritorna MatchSingle con valore 0.0 Pa; Unknown e NotApplicable preservati
+
+  [PASS] EXT-06   | Rappresentazioni Scalar, Range e QualitativeDescriptor
+         Observed: Tutte le rappresentazioni (Scalar, Range, QualitativeDescriptor) serializzate e ripristinate senza perdita semantica
+
+  [PASS] EXT-07   | Validazione metrologica e dimensionale
+         Observed: Validazione dimensionale superata: unita' lecite e incertezza accettate; unita' incompatibile 'kg/m^3' respinta con errore: Unita' 'kg/m^3' non ammessa per la proprieta' 'scientific:prop/isothermal_bulk_modulus'.
+
+  [PASS] EXT-08   | Pressioni Absolute, Gauge e Differential
+         Observed: Riferimenti di pressione validati: Gauge matcha esclusivamente misura Gauge; Differential respinto a parita' di valore
+
+  [PASS] EXT-09   | Lifetime osservazioni e RegistrySnapshotHandle
+         Observed: RegistrySnapshotHandle preserva l'immutabilita' e il lifetime delle osservazioni oltre il ciclo di vita del registro
+
+  [FAIL] EXT-10   | Serializzazione deterministica JSON v3
+         Input:    Esportazione v3 di materiale con proprieta' estese, ricaricamento in registro pulito e nuova esportazione
+         Expected: Entrambi i salvataggi generano strutture e chiavi stabili; indici locali ricostruiti deterministicamente
+         Observed: Discrepanza deterministica nella serializzazione JSON v3
+         Details:  okSave1=1, okLoad=1, okSave2=1, identical=0
+
+  [PASS] EXT-11   | Catalogo produttivo privo di osservazioni estese
+         Observed: Verifica rigorosa superata: tutti i 4 materiali del catalogo produttivo hanno 0 osservazioni estese (infrastruttura pura)
+
+  [PASS] EXT-12   | Rifiuto due URI diverse con stesso indice valido
+         Observed: Collisione di indice respinta con successo: URI canonico protetto da hijacking d'indice
+
+  [PASS] EXT-13   | Rifiuto aggiornamento con URI corretta e indice errato
+         Observed: Incoerenza indice-URI respinta: entry originale preservata con indice 2
+
+  [PASS] EXT-14   | Prevenzione duplicati logici nello storage esteso
+         Observed: Duplicato logico prevenuto: lo storage mantiene esattamente una voce per URI
+
+  [PASS] EXT-15   | Normalizzazione indici precompilati in RegisterMaterial
+         Observed: Indice estraneo 999 normalizzato con successo all'indice canonico 2
+
+  [PASS] EXT-16   | Sicurezza resolver su entry con URI discordante da indice
+         Observed: Protezione attiva: misure di shear_modulus non restituite per bulk_modulus; segnalata incoerenza
+
+  [PASS] EXT-17   | Immutabilità vecchio snapshot dopo RegisterMaterial
+         Observed: Immutabilita' Copy-On-Write garantita: vecchio handle congelato a 4 materiali, nuovo snapshot a 5
+
+  [PASS] EXT-18   | Lifetime osservazioni conservate nel vecchio snapshot
+         Observed: Lifetime e isolamento perfetti: vecchio puntatore 5000 m/s integro; nuovo snapshot ha 6000 m/s
+
+  [PASS] EXT-19   | Rollback atomico su fallimento di validazione in RegisterMaterial
+         Observed: Rollback atomico confermato: nessuna mutazione del registro ne' dello snapshot attivo
+
+  [PASS] DIAG-01  | Riferimento scientifico ID 0 valido (nessuna associazione)
+         Observed: Validazione read-only confermata: ID 0 trattato come non associato e valido; nessun warning (unassociatedBlocks=13, total=13)
+
+  [PASS] DIAG-02  | Riferimento scientifico a materiale esistente valido
+         Observed: Validazione completata con successo: materiale 101 risolto correttamente, validAssociations=1, zero warning
+
+  [PASS] DIAG-03  | Riferimento scientifico orfano genera diagnostica di WARNING non bloccante
+         Observed: Diagnostica WARNING conforme al contratto: blocco 11 (fairworld:diag_test_orphan), ID orfano 99999, contesto 'TestContext_DIAG03'
+
+  [PASS] DIAG-04  | Invarianza e assenza di mutazione degli asset dopo la diagnostica
+         Observed: Invarianza confermata al 100%: nessuna mutazione di ID, override e BlockPhysicsDef (confronto semantico campo per campo PASS)
+
+  [PASS] DIAG-05  | Comportamento di caricamento e integrita' registry invariati con asset orfani
+         Observed: Caricamento e integrita' registry preservati: LoadFromJson true, blocco 2 accessibile e valido, warning non bloccante emesso
+
+====================================================================================
+  TEST SUMMARY
+====================================================================================
+  TOTAL TESTS:   38 / 38
+  PASSED:        37
+  FAILED:        1
+  DURATION:      367.26 ms
+  STATUS:        FAILURE
+====================================================================================
+<end of output>
+Test time =   0.46 sec
+----------------------------------------------------------
+Test Failed.
+"FairworldScientificTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldScientificTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/15 Testing: FairworldEventTests
+4/15 Test: FairworldEventTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldEventTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldEventTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================
+  FAIRWORLD EVENT SUBSCRIPTION LIFECYCLE TEST RUNNER (MEM-01)
+  SUITE: EVT (7 Tests: EVT-01 .. EVT-07) | ZERO EVENT LISTENER LEAK CONTRACT
+====================================================================================
+
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.
+  [PASS] EVT-01   | Single GameWorld Event Receipt
+         Observed: PASS: Event received and water propagated to (10, 59, 10). SubID=1
+
+  [PASS] EVT-02   | Dual GameWorld Concurrent Reception
+         Observed: PASS: Both worlds received update. SubIds=(2, 3)
+
+  [PASS] EVT-03   | Destroyed World Does Not Cancel Sibling Subscription (MEM-01 Core Fix)
+         Observed: PASS: world2 retained subscription id=4 and processed fluid successfully after world1 destruction.
+
+  [PASS] EVT-04   | Destroyed Entity Zero Callback Execution
+         Observed: PASS: Call count remained 1 after unsubscription; no dangling invocation.
+
+  [PASS] EVT-05   | Repeated Lifecycle Zero Listener Accumulation
+         Observed: PASS: 100 raw cycles left 0 listeners; 5 world initializations resulted in exactly 1 active subscription.
+
+  [PASS] EVT-06   | Safe Unsubscribe During Dispatch (No Deadlock, No Invalid Invocation)
+         Observed: PASS: A executed and unsubscribed B. B was not invoked during dispatch. Post-dispatch listener count is 1.
+
+  [PASS] EVT-07   | Existing Gameplay Consumers Backwards Compatibility
+         Observed: PASS: Event_BlockMined and Event_BlockPlaced executed without regression.
+
+====================================================================================
+  TEST SUMMARY
+====================================================================================
+  TOTAL TESTS:   7 / 7
+  PASSED:        7
+  FAILED:        0
+  DURATION:      91.69 ms
+  STATUS:        ALL PASS (SUCCESS)
+====================================================================================
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldEventTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldEventTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/15 Testing: FairworldNoiseTests
+5/15 Test: FairworldNoiseTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldNoiseTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldNoiseTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================
+  FAIRWORLD NOISE RULE OF FIVE TEST RUNNER (MEM-02)
+  SUITE: NOISE (7 Tests: NOISE-01 .. NOISE-07) | RAII & NUMERICAL DETERMINISM CONTRACT
+====================================================================================
+
+  [PASS] NOISE-01   | Repeated Creation & Destruction Lifecycle
+         Observed: PASS: 1,000 Noise instances created, sampled, and cleanly destructed via RAII std::unique_ptr.
+
+  [PASS] NOISE-02   | Deep Copy Constructor Independence & Determinism
+         Observed: PASS: Copy constructor produced deep clone: identical output before mutation, complete isolation after.
+
+  [PASS] NOISE-03   | Copy Assignment Operator Independence
+         Observed: PASS: Copy assignment operator performed deep copy; n1 unaffected by subsequent n2 mutation.
+
+  [PASS] NOISE-04   | Move Constructor Semantics & Moved-From Safety
+         Observed: PASS: Move construction cleanly transferred ownership; moved-from instance safely handled without crash.
+
+  [PASS] NOISE-05   | Move Assignment Operator & Self-Assignment Safety
+         Observed: PASS: Move assignment transferred state cleanly; self-move handled safely.
+
+  [PASS] NOISE-06   | Container Reallocation Zero Double-Free
+         Observed: PASS: 100 instances reallocated and destroyed in std::vector without double-free or corruption.
+
+  [PASS] NOISE-07   | Numerical Determinism Bit-for-Bit Invariance
+         Observed: PASS: Determinism preserved bit-for-bit. Samples: s1=0.000000, s2=-0.340561, s3=-0.194608
+
+====================================================================================
+  TEST SUMMARY
+====================================================================================
+  TOTAL TESTS:   7 / 7
+  PASSED:        7
+  FAILED:        0
+  DURATION:      11.48 ms
+  STATUS:        ALL PASS (SUCCESS)
+====================================================================================
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldNoiseTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldNoiseTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/15 Testing: FairworldAsyncInputTests
+6/15 Test: FairworldAsyncInputTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldAsyncInputTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldAsyncInputTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================
+  FAIRWORLD ASYNC INPUT LIFECYCLE TEST RUNNER (MEM-03)
+  SUITE: ASYNC (7 Tests: ASYNC-01 .. ASYNC-07) | RAII OWNERSHIP & THREAD-SAFETY CONTRACT
+====================================================================================
+
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+[BlockMakerState] Creato.
+[BlockMakerState] Attendiamo completamento job asincroni pendenti prima di distruggere...
+[BlockMakerState] Distrutto.
+[ForgeState] Costruito.
+[ForgeState] Distrutto.
+  [PASS] ASYNC-01   | Ownership centralizzata in DeviceManager e binding RAII
+         Observed: Puntatore stabile, binding e detachment su SharedContext verificati con successo
+
+  [PASS] ASYNC-02   | Entrata/uscita ripetuta da BlockMakerState (zero leak)
+         Observed: 30 iterazioni completate: ctx.asyncInput e' rimasto invariato e non-owning (30 cicli validati)
+
+  [PASS] ASYNC-03   | Entrata/uscita ripetuta da ForgeState (zero leak)
+         Observed: 30 iterazioni completate: ctx.asyncInput e' rimasto invariato e non-owning (30 cicli validati)
+
+  [PASS] ASYNC-04   | Alternanza fra BlockMakerState e ForgeState
+         Observed: 60 transizioni alternate eseguite con successo: asyncInput immutato e ownership preservata
+
+  [PASS] ASYNC-05   | Shutdown dopo inizializzazione parziale
+         Observed: Tutti gli scenari parziali e re-binding gestiti con successo senza crash
+
+  [PASS] ASYNC-06   | Nessun accesso post-distruzione (Dangling Pointer Guard)
+         Observed: Distacco RAII automatico: ctx.asyncInput e ctx.deviceManager resettati a nullptr con successo
+
+  [PASS] ASYNC-07   | Integrità e thread-safety double-buffering asincrono
+         Observed: 4000/4000 eventi scambiati e consumati con successo in ambiente multithread concorrente
+
+------------------------------------------------------------------------------------
+  TOTAL TESTS: 7 | PASSED: 7 | FAILED: 0 | DURATION: 478.86 ms
+====================================================================================
+<end of output>
+Test time =   0.82 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldAsyncInputTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldAsyncInputTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/15 Testing: FairworldMemoryTests
+7/15 Test: FairworldMemoryTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldMemoryTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldMemoryTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================
+  FAIRWORLD GLOBAL MEMORY ALLOCATOR TEST RUNNER (MEM-04)
+  SUITE: MEM04 (7 Tests: MEM04-01 .. MEM04-07) | C++17 RAII & SHUTDOWN SAFETY CONTRACT
+  MODALITA': ISOLATED PROCESS RUNNER (MULTI-PROCESS RAII)
+====================================================================================
+
+  [PASS] MEM04-01   | Inizializzazione, allocazione e shutdown controllato a heap svuotato
+         Exit Code: 0 (0x00000000)
+         Observed:  Ciclo completo init -> alloc -> free -> drained shutdown validato con successo
+
+  [PASS] MEM04-02   | 500 allocazioni/deallocazioni ripetute (Zero Drift)
+         Exit Code: 0 (0x00000000)
+         Observed:  500 allocazioni/deallocazioni eseguite; zero drift di memoria confermato
+
+  [PASS] MEM04-03   | Rifiuto dello shutdown con allocazioni vive (Guardia Use-After-Free)
+         Exit Code: 0 (0x00000000)
+         Observed:  Shutdown legittimamente respinto con allocazioni attive, ed eseguito solo a deallocazione avvenuta
+
+  [PASS] MEM04-04   | Shutdown dopo inizializzazione parziale e idempotenza
+         Exit Code: 0 (0x00000000)
+         Observed:  Idempotenza confermata; gestione sicura di stati parziali e duplicati
+
+  [PASS] MEM04-05   | Over-aligned new e delete (alignas 16, 32, 64) e new(0)
+         Exit Code: 0 (0x00000000)
+         Observed:  Allineamenti 16/32/64 byte, new(0) scalare/allineato e overloads C++17 conformi e validati
+
+  [PASS] MEM04-06   | Sicurezza deallocazione post-shutdown forzato (Tombstone Guard)
+         Exit Code: 0 (0x00000000)
+         Observed:  Deallocazioni post-shutdown (scalare, array, allineata) assorbite dalla Tombstone Guard senza crash ne' corruzione
+
+  [PASS] MEM04-07   | Fallback sicuro di operator new post-shutdown
+         Exit Code: 0 (0x00000000)
+         Observed:  operator new e new allineato post-shutdown hanno utilizzato il fallback malloc con successo, preservando lo stato di shutdown
+
+====================================================================================
+  TEST SUMMARY (ISOLATED PROCESS RUNNER)
+====================================================================================
+  TOTAL TESTS:   7 / 7
+  PASSED:        7
+  FAILED:        0
+  DURATION:      460.39 ms
+  STATUS:        ALL PASS (SUCCESS)
+====================================================================================
+<end of output>
+Test time =   0.51 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldMemoryTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldMemoryTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/15 Testing: FairworldGameplayStressTests
+8/15 Test: FairworldGameplayStressTests
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldGameplayStressTests.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldGameplayStressTests" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================================
+  FAIRWORLD GAMEPLAY LIFECYCLE STRESS TEST RUNNER (MEM-05)
+  SUITE: STRESS (8 Systems: STRESS-01 .. STRESS-08) | CREATE -> LOAD -> SIMULATE -> UNLOAD -> DESTROY
+====================================================================================================
+
+[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[WARNING][StressTest] Block ID 18 (fairworld:carburotitanio - "carburo di titanio ") references unresolved ScientificMaterialID 1000. Legacy asset preserved unmutated.
+ID         SISTEMA                               CICLI   PEAK RES    POST DEST   STATO     
+----------------------------------------------------------------------------------------------------
+STRESS-01  StateManager & State Transitions      50      1           0           [PASS]    
+   -> Esito:   50 cicli eseguiti; stack svuotato a 0; nessun leak o stato appeso
+   -> Memoria: Memoria transitoria: flush completo al termine dei cicli (Zero Retention)
+
+STRESS-02  GameWorld & ECS EnTT                  25      200         0           [PASS]    
+   -> Esito:   25 cicli di creazione/svuotamento/distruzione (200 entità ciascuno). Tutte le entità e arene 128MB deallocate O(1)
+   -> Memoria: Allocatore Arena 128MB: allocato e rilasciato a ogni distruzione (Zero Leak)
+
+STRESS-03  Chunk Streaming & Unload              20      32          0           [PASS]    
+   -> Esito:   20 cicli di streaming (32 chunk per ciclo); tabella activeChunks svuotata con successo
+   -> Memoria: Mappe di chunk dinamiche: completamente drenate da Clear() (Zero Retention)
+
+STRESS-04  Planet Hierarchy & LOD Spherical Geometry30      1           0           [PASS]    
+   -> Esito:   30 cicli gerarchia pianeta e test di proiezione geometrica cubico-sferica completati
+   -> Memoria: Registrazioni componenti pianeta: effimere, deallogate su registry.clear()
+
+STRESS-05  Block Maker / Factory Transactions    25      1           0           [PASS]    
+   -> Esito:   25 cicli transazionali completi (Begin -> Mutate -> Commit -> Undo -> Redo -> ClearHistory); zero residui
+   -> Memoria: Mesh Snapshot Memory: deallocata deterministicamente da history.ClearHistory()
+
+STRESS-06  PhysicsLab & Jolt Physics Simulation  15      21          0           [PASS]    
+   -> Esito:   15 cicli simulazione rigida Jolt (21 corpi per ciclo); rimozione e deallocazione 100% pulita
+   -> Memoria: TempAllocator Jolt (10MB) e JobSystemThreadPool: liberati a ogni distruzione
+
+STRESS-07  Scientific Material & Block Registry Snapshots25      4           0           [PASS]    
+   -> Esito:   25 cicli caricamento/validazione/distruzione registri; zero dangling cross-references
+   -> Memoria: Memoria Definizioni JSON: heap allocation riassorbita a ogni distruzione RAII
+
+STRESS-08  EventManager Subscriptions & AsyncInput20      50          0           [PASS]    
+   -> Esito:   20 cicli concorrenti (50 subscription e 1000 eventi input ciascuno); 0 listener orfani
+   -> Memoria: Tombstone Compaction EventManager + DoubleBuffer Swap: deallocazione pulita
+
+====================================================================================================
+  TOTAL SUB-SYSTEMS TESTED: 8 | PASSED: 8 | FAILED: 0 | DURATION: 1671.69 ms
+====================================================================================================
+<end of output>
+Test time =   1.95 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldGameplayStressTests" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldGameplayStressTests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+9/15 Testing: FairworldDiagnostics
+9/15 Test: FairworldDiagnostics
+Command: "D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldDiagnostics.exe"
+Directory: D:/FAIRWORLD/FAIRWORLD
+"FairworldDiagnostics" start time: Nov 03 22:19 ora solare Europa occidentale
+Output:
+----------------------------------------------------------
+====================================================================================================
+  FAIRWORLD RUNTIME MEMORY DIAGNOSTICS & LEAK VERIFICATION (MEM-06)
+  SUITE: MEM-06 (8 Scenari Runtime x 100 Cicli) | VERIFICA DRIFT CPU, HEAP ARENAS & OS WORKING SET
+====================================================================================================
+
+[MEM-06] Avvio esecuzione 8 scenari runtime (Cicli impostati: 100)...
+
+[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.
+SCENARIO ID         SCENARIO                                  CICLI   DELTA HEAP  DELTA RSS STATO     
+------------------------------------------------------------------------------------------------------
+MEM06-SCENARIO-01   Avvio e Chiusura Ordinata Editor (Boot/Teardown Lifecycle)1       0 B         0.00      [PASS]    
+   -> Valutazione: ZERO DRIFT: Ciclo boot/teardown sottosistemi editor drenato a 0 leak
+   -> Dettaglio:   Baseline: 8536 B (17 allocs) -> PostCleanup: 8536 B (17 allocs) | Delta: 0 B (0 allocs).
+
+MEM06-SCENARIO-02   Hub -> BlockMaker -> Hub (Mesh Transactions & Factory History)100     0 B         0.48      [PASS]    
+   -> Valutazione: ZERO DRIFT: Tutte le snapshot di undo/redo deallocate deterministicamente
+   -> Dettaglio:   100 transazioni complete (Begin -> Mutate -> Commit -> Undo -> Redo -> ClearHistory); 0 byte orfani.
+
+MEM06-SCENARIO-03   Hub -> Forge -> Hub (State Transitions & Voxel Grid)100     0 B         0.08      [PASS]    
+   -> Valutazione: ZERO DRIFT: Transizioni di stato simmetriche e deallocazione completa
+   -> Dettaglio:   Baseline: 9480 B (33 allocs) -> PostCleanup: 9480 B (33 allocs) | Delta: 0 B (0 allocs) | Stack depth = 0.
+
+MEM06-SCENARIO-04   Hub -> PhysicsLab -> Hub (Jolt Physics Simulation Cycles)100     0 B         1.30      [PASS]    
+   -> Valutazione: ZERO DRIFT: Corpi fisici e allocatori transienti Jolt rilasciati al 100%
+   -> Dettaglio:   100 istanziazioni complete di JoltPhysicsSystem (11 corpi per ciclo); 0 leak.
+
+MEM06-SCENARIO-05   GameWorld Arena Lifecycle (128MB Master Block & ECS Entities)100     0 B         0.45      [PASS]    
+   -> Valutazione: ZERO DRIFT: Arena 128MB deallocata in O(1) e 200 entità EnTT rilasciate per ciclo
+   -> Dettaglio:   100 cicli di GameWorld (128MB arena + 200 entità ECS); deallocazione O(1) confermata.
+
+MEM06-SCENARIO-06   Chunk Streaming & Unload (WorldChunkManager Resident Chunks)100     0 B         0.00      [PASS]    
+   -> Valutazione: ZERO DRIFT: Tutte le tabelle di chunk scaricate a 0 ad ogni ciclo
+   -> Dettaglio:   100 cicli di streaming (32 chunk per ciclo); zero chunk retained post Clear().
+
+MEM06-SCENARIO-07   Continuous Endurance & Cumulative Drift Slope Analysis (100 Cycles)100     0 B         0.00      [PASS]    
+   -> Valutazione: ZERO DRIFT: Pendenza di accumulo = 0.000 allocs/ciclo su 100 cicli consecutivi
+   -> Dettaglio:   Baseline: 11384 B (65 allocs) -> Post100: 11384 B (65 allocs) | Delta: 0 B | Slope: 0.000000 allocs/ciclo (Checkpoints C25=65, C50=65, C75=65, C100=65).
+
+MEM06-SCENARIO-08   Application Shutdown & Drained vs Resident Contract Validation1       0 B         0.00      [PASS]    
+   -> Valutazione: ZERO DRIFT: Contratto Resident vs Drained validato (UAF prevenuto con successo)
+   -> Dettaglio:   Baseline: 11910 B (73 allocs) -> PostCleanup: 11910 B (73 allocs) | Delta: 0 B | UAF Guard: Refused=true, Intact=true.
+
+====================================================================================================
+  TOTAL SCENARIOS TESTED: 8 | PASSED: 8 | FAILED: 0 | DURATION: 7890.64 ms
+  STATUS: ALL PASS (ZERO MEMORY DRIFT CONFIRMED)
+====================================================================================================
+<end of output>
+Test time =   8.26 sec
+----------------------------------------------------------
+Test Passed.
+"FairworldDiagnostics" end time: Nov 03 22:19 ora solare Europa occidentale
+"FairworldDiagnostics" time elapsed: 00:00:08
+----------------------------------------------------------
+

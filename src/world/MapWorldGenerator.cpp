@@ -12,6 +12,9 @@
 #include "GameWorld.h"
 #include <glm/gtx/quaternion.hpp>
 #include "core/utils/ChunkDimensions.h"
+#include "PlanetGridCompatibility.h"
+#include "PlanetRadialMapping.h"
+#include "CubeSphereMapping.h"
 
 namespace fw {
 
@@ -66,6 +69,19 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
     }
 
     auto generateChunk = [&](int global_cx, int global_cz, int local_cx, int local_cz, int face, const glm::vec3& pos, const glm::quat& rot) {
+        int canonicalRow = -1;
+        if (face >= 0 && face <= 5) {
+            const int faceResolution = static_cast<int>(fw::PlanetMath::GetFaceResolution(planet.planetSize));
+            const int legacyRow = local_cz + fw::PlanetMath::GetEditorCanvasExtents(planet.planetSize);
+            if (!fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+                    legacyRow, faceResolution, canonicalRow)) {
+                std::cerr << "[MapWorldGenerator] Rifiutata riga legacy fuori intervallo: row="
+                          << legacyRow << ", resolution=" << faceResolution
+                          << "; chunk planetario saltato.\n";
+                return;
+            }
+        }
+
         const ChunkMetadata* meta = dimManager.GetChunkMetadata(global_cx, global_cz);
         ChunkMetadata defaultMeta;
         const ChunkMetadata& activeMeta = meta ? *meta : defaultMeta;
@@ -75,7 +91,11 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
         entt::entity chunkEnt = targetWorld.GetChunkManager().GetChunkEntity(global_cx, global_cz);
         if (chunkEnt == entt::null || !targetWorld.GetRegistry().valid(chunkEnt)) {
             std::string chunkName = "WorldChunk_" + std::to_string(global_cx) + "_" + std::to_string(global_cz);
-            chunkEnt = targetWorld.CreateChunkEntity(chunkName, {pos.x, pos.y, pos.z});
+            if (face >= 0 && face <= 5) {
+                chunkEnt = targetWorld.CreateChunkEntity(chunkName, {pos.x, pos.y, pos.z}, global_cx, global_cz);
+            } else {
+                chunkEnt = targetWorld.CreateChunkEntity(chunkName, {pos.x, pos.y, pos.z});
+            }
         }
         
         // APPLICA LA ROTAZIONE SFERICA E LA GERARCHIA
@@ -92,7 +112,7 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
             chunk.planetCoord.planet = fw::PlanetID{(uint32_t)planetIndex};
             chunk.planetCoord.face = static_cast<fw::CubeFace>(face);
             chunk.planetCoord.col = local_cx + fw::PlanetMath::GetEditorCanvasExtents(planet.planetSize);
-            chunk.planetCoord.row = local_cz + fw::PlanetMath::GetEditorCanvasExtents(planet.planetSize);
+            chunk.planetCoord.row = canonicalRow;
             chunk.planetCoord.layer = 0;
             
             if (targetWorld.GetRegistry().all_of<fw::TransformComponent>(chunkEnt)) {
@@ -236,54 +256,34 @@ void MapWorldGenerator::Generate(const MapDocument& doc, int planetIndex, GameWo
 }
 
 bool MapWorldGenerator::GetSphericalChunkTransform(PlanetSize pSize, int global_cx, int global_cz, glm::vec3& outPos, glm::quat& outRot) {
-    int N = fw::PlanetMath::GetEditorCanvasExtents(pSize); // Es: 5 per Medium
-    float R = fw::PlanetMath::GetPlanetRadius(pSize);      // Es: 88.0f
-    float S = fw::ChunkDimensions::HorizontalWorldExtent;  // Rigorosamente 16.0f
-
-    int stride = fw::PlanetMath::GetFaceResolution(pSize); // Es: 11
-    
-    // Reverse mapping using 3x2 grid (Face 0..5)
-    int face_col = global_cx / stride;
-    int face_row = global_cz / stride;
-
-    if (face_col >= 0 && face_col < 3 && face_row >= 0 && face_row < 2) {
-        int face = face_col + face_row * 3;
-        
-        // Offset dal centro della faccia (da -N a +N)
-        int cx = (global_cx % stride) - N; 
-        int cy = (global_cz % stride) - N;
-
-        // Proiezione cubica base (piano 3D)
-        glm::vec3 localPos(0.0f);
-        if (face == 0) localPos = glm::vec3(cx * S, cy * S, R);         // +Z
-        else if (face == 1) localPos = glm::vec3(-cx * S, cy * S, -R);  // -Z
-        else if (face == 2) localPos = glm::vec3(R, cy * S, -cx * S);   // +X
-        else if (face == 3) localPos = glm::vec3(-R, cy * S, cx * S);   // -X
-        else if (face == 4) localPos = glm::vec3(cx * S, R, -cy * S);   // +Y
-        else if (face == 5) localPos = glm::vec3(cx * S, -R, cy * S);   // -Y
-        
-        // Normalizzazione (proiezione sferica) e riscalamento sul raggio esatto
-        glm::vec3 normal = glm::normalize(localPos);
-        outPos = normal * R;
-
-        glm::vec3 forwardBase;
-        if (face == 0 || face == 1 || face == 2 || face == 3) {
-            forwardBase = glm::vec3(0, 1, 0);
-        } else if (face == 4) {
-            forwardBase = glm::vec3(0, 0, -1);
-        } else if (face == 5) {
-            forwardBase = glm::vec3(0, 0, 1);
-        }
-
-        glm::vec3 forward = glm::normalize(forwardBase - normal * glm::dot(forwardBase, normal));
-        glm::vec3 right = glm::normalize(glm::cross(forward, normal));
-
-        glm::mat3 rotMat(right, normal, forward);
-        outRot = glm::quat_cast(rotMat);
-
-        return true;
+    const int resolution = static_cast<int>(fw::PlanetMath::GetFaceResolution(pSize));
+    const float radius = fw::PlanetMath::GetPlanetRadius(pSize);
+    fw::PlanetChunkCoord coordinate{};
+    if (!fw::planet_grid_compat::TryLegacyNetToPlanetChunkCoord(
+            global_cx, global_cz, resolution, fw::PlanetID::Invalid(), 0, coordinate)) {
+        return false;
     }
-    return false;
+
+    const glm::vec2 uv = fw::CubeSphereMapping::GridToUV(
+        coordinate.col, coordinate.row, resolution);
+    const glm::vec3 normal = fw::CubeSphereMapping::FaceUVToDirection(coordinate.face, uv);
+    outPos = normal * radius;
+
+    glm::vec3 forwardBase;
+    const int face = static_cast<int>(coordinate.face);
+    if (face <= 3) {
+        forwardBase = glm::vec3(0, 1, 0);
+    } else if (face == 4) {
+        forwardBase = glm::vec3(0, 0, -1);
+    } else {
+        forwardBase = glm::vec3(0, 0, 1);
+    }
+
+    const glm::vec3 forward = glm::normalize(forwardBase - normal * glm::dot(forwardBase, normal));
+    const glm::vec3 right = glm::normalize(glm::cross(forward, normal));
+    const glm::mat3 rotMat(right, normal, forward);
+    outRot = glm::quat_cast(rotMat);
+    return true;
 }
 
 bool MapWorldGenerator::GetTrueSphericalPosition(PlanetSize pSize, bool isFlat, int global_cx, int global_cz, float local_x, float local_y, float local_z, glm::vec3& outWorldPos) {
@@ -292,40 +292,26 @@ bool MapWorldGenerator::GetTrueSphericalPosition(PlanetSize pSize, bool isFlat, 
         return true;
     }
 
-    int N = fw::PlanetMath::GetEditorCanvasExtents(pSize);
     float R = fw::PlanetMath::GetPlanetRadius(pSize);
     float S = fw::ChunkDimensions::HorizontalWorldExtent;
-    int stride = fw::PlanetMath::GetFaceResolution(pSize);
-    
-    int face_col = global_cx / stride;
-    int face_row = global_cz / stride;
-
-    if (face_col >= 0 && face_col < 3 && face_row >= 0 && face_row < 2) {
-        int face = face_col + face_row * 3;
-        int cx = (global_cx % stride) - N;
-        int cy = (global_cz % stride) - N;
-
-        float dx = (local_x - (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f));
-        float dz = (local_z - (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f));
-        
-        float faceX = cx * S + dx;
-        float faceY = cy * S + dz;
-
-        glm::vec3 localPos(0.0f);
-        if (face == 0) localPos = glm::vec3(faceX, faceY, R);         // +Z
-        else if (face == 1) localPos = glm::vec3(-faceX, faceY, -R);  // -Z
-        else if (face == 2) localPos = glm::vec3(R, faceY, -faceX);   // +X
-        else if (face == 3) localPos = glm::vec3(-R, faceY, faceX);   // -X
-        else if (face == 4) localPos = glm::vec3(faceX, R, -faceY);   // +Y
-        else if (face == 5) localPos = glm::vec3(faceX, -R, faceY);   // -Y
-        
-        glm::vec3 normal = glm::normalize(localPos);
-        float radiusAtY = R + (local_y - 25.0f);
-        
-        outWorldPos = normal * radiusAtY;
-        return true;
+    const int resolution = static_cast<int>(fw::PlanetMath::GetFaceResolution(pSize));
+    fw::CubeFace face{};
+    glm::vec2 uv(0.0f);
+    if (!fw::planet_grid_compat::TryLegacyNetCellToFaceUV(
+            global_cx, global_cz, local_x / S, local_z / S, resolution, face, uv)) {
+        return false;
     }
-    return false;
+
+    const glm::vec3 normal = fw::CubeSphereMapping::FaceUVToDirection(face, uv);
+    // The legacy mesh/biome inputs use localY=25 as the reference shell.
+    // Adapt that coordinate origin to PlanetRadialMapping's canonical
+    // ReferenceVoxelOffset without changing the historical world position.
+    const float canonicalLocalY = local_y +
+        static_cast<float>(PlanetRadialMapping::ReferenceVoxelOffset - 25);
+    const float radialOffset = PlanetRadialMapping::GetGlobalRadialOffset(0, canonicalLocalY);
+    const float radiusAtY = PlanetRadialMapping::GetRadialDistance(radialOffset, R);
+    outWorldPos = normal * radiusAtY;
+    return true;
 }
 
 void MapWorldGenerator::WorldToVoxelCoord(PlanetSize pSize, bool isFlat, const glm::vec3& worldPos, float& out_flatX, float& out_localY, float& out_flatZ) {
@@ -338,39 +324,31 @@ void MapWorldGenerator::WorldToVoxelCoord(PlanetSize pSize, bool isFlat, const g
 
     float distance = glm::length(worldPos);
     float R = fw::PlanetMath::GetPlanetRadius(pSize);
-    out_localY = (distance - R) + 25.0f;
+    out_localY = PlanetRadialMapping::GetVoxelCellCoordinateFromDistance(distance, R);
 
     if (distance < 0.001f) {
         out_flatX = 0; out_flatZ = 0; return;
     }
     
-    glm::vec3 normal = worldPos / distance;
-    glm::vec3 absNormal = glm::abs(normal);
-    int face = 0;
-    if (absNormal.z >= absNormal.x && absNormal.z >= absNormal.y) face = normal.z > 0 ? 0 : 1;
-    else if (absNormal.x >= absNormal.y && absNormal.x >= absNormal.z) face = normal.x > 0 ? 2 : 3;
-    else face = normal.y > 0 ? 4 : 5;
+    const glm::vec3 normal = worldPos / distance;
+    fw::CubeFace face{};
+    glm::vec2 uv(0.0f);
+    fw::CubeSphereMapping::DirectionToFaceUV(normal, face, uv);
+    const glm::vec2 chart = fw::CubeSphereMapping::FaceUVToChartCoordinates(uv);
+    const int resolution = static_cast<int>(fw::PlanetMath::GetFaceResolution(pSize));
+    float globalCellX = 0.0f;
+    float globalCellZ = 0.0f;
+    if (!fw::planet_grid_compat::TryFaceChartToLegacyNetContinuous(
+            face, chart.x, chart.y, resolution, globalCellX, globalCellZ)) {
+        out_flatX = 0.0f;
+        out_flatZ = 0.0f;
+        return;
+    }
 
-    float factor = R / fw::ChunkDimensions::HorizontalWorldExtent;
-    float local_cx = 0, local_cy = 0;
-
-    if (face == 0) { local_cx = (normal.x / normal.z) * factor; local_cy = (normal.y / normal.z) * factor; }
-    else if (face == 1) { local_cx = (normal.x / -normal.z) * -factor; local_cy = (normal.y / -normal.z) * factor; }
-    else if (face == 2) { local_cx = (normal.z / normal.x) * -factor; local_cy = (normal.y / normal.x) * factor; }
-    else if (face == 3) { local_cx = (normal.z / -normal.x) * factor; local_cy = (normal.y / -normal.x) * factor; }
-    else if (face == 4) { local_cx = (normal.x / normal.y) * factor; local_cy = (normal.z / normal.y) * -factor; }
-    else if (face == 5) { local_cx = (normal.x / -normal.y) * factor; local_cy = (normal.z / -normal.y) * factor; }
-
-    int stride = fw::PlanetMath::GetFaceResolution(pSize);
-    int face_col = face % 3;
-    int face_row = face / 3;
-
-    int N = fw::PlanetMath::GetEditorCanvasExtents(pSize);
-    float global_cx_continuous = local_cx + N + face_col * stride;
-    float global_cy_continuous = local_cy + N + face_row * stride;
-
-    out_flatX = global_cx_continuous * fw::ChunkDimensions::HorizontalWorldExtent + (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
-    out_flatZ = global_cy_continuous * fw::ChunkDimensions::HorizontalWorldExtent + (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
+    out_flatX = globalCellX * fw::ChunkDimensions::HorizontalWorldExtent +
+        (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
+    out_flatZ = globalCellZ * fw::ChunkDimensions::HorizontalWorldExtent +
+        (fw::ChunkDimensions::HorizontalWorldExtent * 0.5f);
 }
 
 void MapWorldGenerator::GetChunkCoordFromPosition(PlanetSize pSize, bool isFlat, const glm::vec3& worldPos, int& out_cx, int& out_cz) {
@@ -380,27 +358,20 @@ void MapWorldGenerator::GetChunkCoordFromPosition(PlanetSize pSize, bool isFlat,
         return;
     }
 
-    glm::vec3 normal = glm::normalize(worldPos);
-    glm::vec3 absNormal = glm::abs(normal);
-    int face = 0;
-    if (absNormal.z >= absNormal.x && absNormal.z >= absNormal.y) {
-        face = normal.z > 0 ? 0 : 1;
-    } else if (absNormal.x >= absNormal.y && absNormal.x >= absNormal.z) {
-        face = normal.x > 0 ? 2 : 3;
-    } else {
-        face = normal.y > 0 ? 4 : 5;
-    }
+    // DirectionToFaceUV projects by the dominant component, so the input scale
+    // cancels out. Avoid normalizing first: sqrt-based normalization can move an
+    // exact grid boundary to opposite sides under Debug and /fp:fast Release.
+    const glm::vec3 normal = worldPos;
+    fw::CubeFace canonicalFace{};
+    glm::vec2 uv(0.0f);
+    fw::CubeSphereMapping::DirectionToFaceUV(normal, canonicalFace, uv);
+    const glm::vec2 chart = fw::CubeSphereMapping::FaceUVToChartCoordinates(uv);
+    const int face = static_cast<int>(canonicalFace);
 
     float R = fw::PlanetMath::GetPlanetRadius(pSize);
     float factor = R / fw::ChunkDimensions::HorizontalWorldExtent;
-    float local_cx = 0, local_cy = 0;
-
-    if (face == 0) { local_cx = (normal.x / normal.z) * factor; local_cy = (normal.y / normal.z) * factor; }
-    else if (face == 1) { local_cx = (normal.x / -normal.z) * -factor; local_cy = (normal.y / -normal.z) * factor; }
-    else if (face == 2) { local_cx = (normal.z / normal.x) * -factor; local_cy = (normal.y / normal.x) * factor; }
-    else if (face == 3) { local_cx = (normal.z / -normal.x) * factor; local_cy = (normal.y / -normal.x) * factor; }
-    else if (face == 4) { local_cx = (normal.x / normal.y) * factor; local_cy = (normal.z / normal.y) * -factor; }
-    else if (face == 5) { local_cx = (normal.x / -normal.y) * factor; local_cy = (normal.z / -normal.y) * factor; }
+    const float local_cx = chart.x * factor;
+    const float local_cy = chart.y * factor;
 
     int cx = 0, cy = 0;
     if (face == 0) { cx = (int)std::floor(local_cx); cy = (int)std::ceil(local_cy); }

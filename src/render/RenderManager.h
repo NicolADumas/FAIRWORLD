@@ -10,8 +10,11 @@
 #include <fstream>
 #include <string>
 #include <mutex>
+#include <atomic>
+#include <array>
 #include "vulkan/VulkanCore.h"
 #include "vulkan/VulkanMemory.h"
+#include "FrameSubmissionRecovery.h"
 #include "World.h"  // Per la struct Vertex
 #include "TexturePacker.h"
 #include "apps/BlockMakerRenderer.h"
@@ -93,6 +96,7 @@ static_assert(offsetof(ForgePushConstantData, cameraPos) == 112, "cameraPos offs
 
 class RenderManager {
 public:
+    enum class ShutdownState { NotStarted, CleanupComplete, CleanupDeferred, DeviceLostCleanupComplete };
     RenderManager();
     ~RenderManager();
 
@@ -113,6 +117,7 @@ public:
     VkDevice GetDevice() const { return m_core ? m_core->GetDevice() : VK_NULL_HANDLE; }
     VkQueue GetTransferQueue() const { return m_core ? m_core->GetTransferQueue() : VK_NULL_HANDLE; }
     VkCommandPool GetTransferCommandPool() const { return m_transferCommandPool; }
+    std::mutex* GetTransferCommandPoolMutex() { return &m_transferCommandPoolMutex; }
     VkBuffer GetStagingRingBuffer() const { return m_memory ? m_memory->GetStagingRingBuffer() : VK_NULL_HANDLE; }
     VkDeviceMemory GetStagingDeviceMemory() const;
     void* GetMappedStagingData() const { return m_memory ? m_memory->GetMappedStagingData() : nullptr; }
@@ -123,7 +128,10 @@ public:
     }
     std::mutex* GetQueueMutex() { return m_core ? m_core->GetQueueMutex() : nullptr; }
 
-    void AddVramCompartment() { if (m_memory) m_memory->AddVramCompartment(); }
+    bool AddVramCompartment() { return m_memory && m_memory->AddVramCompartment(); }
+    uint64_t GetLastSubmittedGraphicsSerial() const { return m_lastSubmittedGraphicsSerial.load(); }
+    uint64_t GetCompletedGraphicsSerial() const { return m_completedGraphicsSerial.load(); }
+    VkResult WaitForGraphicsIdle();
 
     VkPipeline GetGLBPipeline() const { return m_glbPipeline; }
     VkPipelineLayout GetGLBPipelineLayout() const { return m_glbPipelineLayout; }
@@ -144,6 +152,11 @@ private:
     bool m_isVRMode;
     bool m_isFullyInitialized{ false }; // Protegge RecreateSwapchain durante l'init
     bool m_deviceLost{ false }; // Segnala la perdita irreversibile del device Vulkan
+    bool m_renderingDisabled{ false }; // Errore di submission non recuperabile senza dichiarare device lost
+    bool m_shutdownIncomplete{ false }; // Evita di distruggere device/allocator dopo cleanup sospeso
+    bool m_acquireSemaphoreQuarantined{ false }; // Non riutilizzare un acquire semaphore non consumato
+    bool m_frameFenceMayBeUnsignaled{ false }; // Recovery submit fallito dopo vkResetFences
+    ShutdownState m_shutdownState{ ShutdownState::NotStarted };
     void* m_hwnd{ nullptr };
     
     
@@ -352,6 +365,8 @@ public:
     VkDescriptorSet GetPainterPreviewImGuiDescriptor() const { return m_painterPreviewImGuiDescriptor; }
     bool CleanupPainterPreviewResources();
     bool HasPendingPainterCleanup() const { return m_painterPreviewCleanupPending; }
+    ShutdownState GetShutdownState() const { return m_shutdownState; }
+    static void RetainDeferredCleanup(std::unique_ptr<RenderManager> manager);
 
     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
     struct VulkanChunkBuffer {
@@ -405,6 +420,7 @@ public:
     uint64_t m_currentOffset = 0; // Il cursore 'Head'
     VkCommandBuffer m_transferCommandBuffer{ VK_NULL_HANDLE };
     VkCommandPool m_transferCommandPool{ VK_NULL_HANDLE };
+    std::mutex m_transferCommandPoolMutex;
     
     // --- VmaPool dedicato per Chunk ---
     
@@ -423,6 +439,10 @@ public:
     std::vector<VkSemaphore> m_imageAvailableSemaphores;
     std::vector<VkSemaphore> m_renderFinishedSemaphores;
     std::vector<VkFence> m_inFlightFences;
+    std::array<uint64_t, MAX_FRAMES_IN_FLIGHT> m_frameGraphicsSerial{};
+    std::atomic<uint64_t> m_lastSubmittedGraphicsSerial{0};
+    std::atomic<uint64_t> m_completedGraphicsSerial{0};
+    uint64_t m_lastGraphicsWaitedTransferValue = 0;
 
     // Gestione Validation Layers (Attivi solo in configurazione Debug)
 

@@ -167,6 +167,7 @@ int main(int argc, char* argv[]) {
     // ── CLI Parsing (Step C4.7, OPT-01 & OPT-04) ──────────────
     fw::LifecycleStressMode stressMode = fw::LifecycleStressMode::None;
     bool validateTerrain = false;
+    bool validateD12 = false;
     bool enableVr = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--lifecycle-stress") {
@@ -179,6 +180,9 @@ int main(int argc, char* argv[]) {
         } else if (std::string(argv[i]) == "--validate-terrain") {
             validateTerrain = true;
             std::cout << "[TERRAIN] Opzione esplicita --validate-terrain attivata da CLI.\n";
+        } else if (std::string(argv[i]) == "--validate-d12") {
+            validateD12 = true;
+            std::cout << "[D1.2] Esecuzione mirata delle convenzioni planetarie.\n";
         } else if (std::string(argv[i]) == "--vr") {
             enableVr = true;
             std::cout << "[VR] Opzione esplicita --vr attivata da CLI.\n";
@@ -203,6 +207,11 @@ int main(int argc, char* argv[]) {
         }
     }
     // ─────────────────────────────────────────────────────────
+
+    if (validateD12) {
+        const bool d12Pass = fw::TerrainValidation::RunD12ConventionTests();
+        return d12Pass ? 0 : 1;
+    }
 
     std::cout << "==========================================\n";
     std::cout << "    FAIRWORLD ENGINE - BOOT SEQUENCE   \n";

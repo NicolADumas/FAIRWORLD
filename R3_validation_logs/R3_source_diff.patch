@@ -1,0 +1,612 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fdad80296e..70a5997ebb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -64,6 +64,7 @@ list(REMOVE_ITEM CORE_SOURCES
+     "${CMAKE_SOURCE_DIR}/src/blocks/custom_scientific_tests_main.cpp"
+     "${CMAKE_SOURCE_DIR}/src/blocks/binding_tests_main.cpp"
+     "${CMAKE_SOURCE_DIR}/src/blocks/authoring_tests_main.cpp"
++    "${CMAKE_SOURCE_DIR}/src/render/FrameSubmissionRecoveryTests.cpp"
+ )
+ file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
+ 
+@@ -329,6 +330,10 @@ add_custom_command(TARGET FairworldAuthoringTests POST_BUILD
+         $<TARGET_FILE_DIR:FairworldAuthoringTests>
+ )
+ 
++# --- 18. TEST RUNNER VULKAN FRAME-SUBMIT RECOVERY POLICY (R3-B) ---
++add_executable(FairworldVulkanRecoveryTests src/render/FrameSubmissionRecoveryTests.cpp)
++target_link_libraries(FairworldVulkanRecoveryTests PRIVATE Vulkan::Vulkan)
++
+ # ==============================================================================
+ # 16. REGISTRAZIONE SUITE CTEST (Gate CTEST-01: Discovery e Standalone Runners)
+ # ==============================================================================
+@@ -374,6 +379,9 @@ set_tests_properties(FairworldBindingTests PROPERTIES WORKING_DIRECTORY "${CMAKE
+ add_test(NAME FairworldAuthoringTests COMMAND $<TARGET_FILE:FairworldAuthoringTests>)
+ set_tests_properties(FairworldAuthoringTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+ 
++add_test(NAME FairworldVulkanRecoveryTests COMMAND $<TARGET_FILE:FairworldVulkanRecoveryTests>)
++set_tests_properties(FairworldVulkanRecoveryTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
++
+ 
+ # --- 3. I MODULI DINAMICI (Hot-Reloading) ---
+ # Compiliamo ogni workspace come libreria condivisa (.dll / .so)
+diff --git a/assets/test_packaging_artifacts/pkg_roundtrip_03.json b/assets/test_packaging_artifacts/pkg_roundtrip_03.json
+index 3fbb42c965..4e7741715e 100644
+--- a/assets/test_packaging_artifacts/pkg_roundtrip_03.json
++++ b/assets/test_packaging_artifacts/pkg_roundtrip_03.json
+@@ -1073,9 +1073,9 @@
+     "manifest": {
+         "assetId": "fairworld:pkg_roundtrip_03",
+         "author": "LocalAuthor",
+-        "creationTimestamp": 1793667422,
++        "creationTimestamp": 1793726217,
+         "displayName": "PKG Roundtrip 03",
+-        "lastModifiedTimestamp": 1793667422,
++        "lastModifiedTimestamp": 1793726217,
+         "revision": 1,
+         "schemaVersion": 2,
+         "stage": 2,
+diff --git a/src/core/app/FAIRWORLD.cpp b/src/core/app/FAIRWORLD.cpp
+index 36e6a30d06..1c428ac5ea 100644
+--- a/src/core/app/FAIRWORLD.cpp
++++ b/src/core/app/FAIRWORLD.cpp
+@@ -1949,7 +1949,7 @@ void FairWorldEngine::renderTab_Engine() {
+     if (ImGui::Button("-> PAUSA"))      transitionTo(GameState::PAUSE_MENU);
+ }
+ 
+-void FairWorldEngine::Shutdown() {
++void FairWorldEngine::Shutdown(bool runtimeLifecycleExpected) {
+     if (m_hasShutdown) return;
+     m_hasShutdown = true;
+ 
+@@ -1983,7 +1983,15 @@ void FairWorldEngine::Shutdown() {
+     //            PRIMA di RenderManager::Shutdown() -> semaphore RenderManager
+     //            ancora legittimamente vivi (NON inclusi in questo gate)
+     // Legge RuntimeShutdownResult: nessun nullptr == PASS implicito.
+-    fw::LifecycleFreezeGate::RunRuntimeGate(m_sharedContext);
++    if (runtimeLifecycleExpected) {
++        fw::LifecycleFreezeGate::RunRuntimeGate(m_sharedContext);
++    } else {
++        std::cout << "\n====================================================\n"
++                  << " FAIRWORLD RUNTIME LIFECYCLE GATE\n"
++                  << "====================================================\n"
++                  << " RUNTIME LIFECYCLE: NOT APPLICABLE (explicit headless test)\n"
++                  << "====================================================\n\n";
++    }
+     // ─────────────────────────────────────────────────────────
+ 
+     m_webView.Shutdown();
+@@ -1992,6 +2000,12 @@ void FairWorldEngine::Shutdown() {
+         m_xrManager->Shutdown();
+     }
+     m_renderManager->Shutdown();
++    const auto renderShutdownState = m_renderManager->GetShutdownState();
++    const bool deferredVulkanCleanup = renderShutdownState == RenderManager::ShutdownState::CleanupDeferred;
++    const bool deviceLostDuringVulkanCleanup = renderShutdownState == RenderManager::ShutdownState::DeviceLostCleanupComplete;
++    if (deferredVulkanCleanup) {
++        RenderManager::RetainDeferredCleanup(std::move(m_renderManager));
++    }
+     m_windowManager->Shutdown();
+     // A questo punto i semaphore del RenderManager sono stati distrutti
+     // e TrackDestroy e' stato chiamato per ciascuno.
+@@ -2000,7 +2014,7 @@ void FairWorldEngine::Shutdown() {
+     // Posizione: DOPO RenderManager::Shutdown() -> tutti i semaphore FAIRWORLD distrutti
+     //            PRIMA di VulkanResourceTracker::Shutdown() -> tracker ancora vivo
+     // Verifica: GetLiveSemaphoreCount() == 0
+-    fw::LifecycleFreezeGate::RunVulkanFinalGate();
++    fw::LifecycleFreezeGate::RunVulkanFinalGate(deferredVulkanCleanup, deviceLostDuringVulkanCleanup);
+     // ─────────────────────────────────────────────────────────
+ 
+     // VulkanResourceTracker::Shutdown() stampa il report dettagliato finale
+diff --git a/src/core/app/FAIRWORLD.h b/src/core/app/FAIRWORLD.h
+index 416a0ba634..9a2d64e31e 100644
+--- a/src/core/app/FAIRWORLD.h
++++ b/src/core/app/FAIRWORLD.h
+@@ -62,7 +62,7 @@ public:
+ 
+     bool Init(bool enableVr = false);
+     void Run();
+-    void Shutdown();
++    void Shutdown(bool runtimeLifecycleExpected = true);
+     void SetRenderCallback(std::function<void()> callback);
+ 
+     // Nuovi metodi per la State Machine Data-Driven (Fase 1.3)
+diff --git a/src/core/app/LifecycleFreezeGate.cpp b/src/core/app/LifecycleFreezeGate.cpp
+index 008758821d..defbe641dc 100644
+--- a/src/core/app/LifecycleFreezeGate.cpp
++++ b/src/core/app/LifecycleFreezeGate.cpp
+@@ -224,9 +224,11 @@ bool LifecycleFreezeGate::RunRuntimeGate(SharedContext* context)
+ //   - Tutti i semaphore RenderManager sono stati distrutti
+ //   - VulkanResourceTracker::Shutdown() NON ancora chiamato (stamperebbe solo dopo)
+ // ─────────────────────────────────────────────────────────────
+-VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal()
++VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal(bool cleanupDeferred, bool deviceLostAfterCleanup)
+ {
+     VulkanFinalSnapshot snap;
++    snap.cleanupDeferred = cleanupDeferred;
++    snap.deviceLostAfterCleanup = deviceLostAfterCleanup;
+     snap.liveSemaphores = VulkanResourceTracker::Get().GetLiveSemaphoreCount();
+     snap.validationErrors = fw::forensic::GetValidationErrorCount();
+     return snap;
+@@ -237,7 +239,7 @@ VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal()
+ // ─────────────────────────────────────────────────────────────
+ bool LifecycleFreezeGate::EvaluateVulkanFinal(const VulkanFinalSnapshot& snap)
+ {
+-    return snap.liveSemaphores == 0 && snap.validationErrors == 0;
++    return !snap.cleanupDeferred && snap.liveSemaphores == 0 && snap.validationErrors == 0;
+ }
+ 
+ // ─────────────────────────────────────────────────────────────
+@@ -252,6 +254,13 @@ void LifecycleFreezeGate::PrintVulkanFinalReport(const VulkanFinalSnapshot& snap
+     std::cout << " (post RenderManager::Shutdown)\n";
+     std::cout << "====================================================\n\n";
+ 
++    if (snap.cleanupDeferred) {
++        std::cout << "      Vulkan cleanup state             DEFERRED [FAIL] (resources still owned; not destroyed)\n";
++    } else if (snap.deviceLostAfterCleanup) {
++        std::cout << "      Vulkan cleanup state             DEVICE LOST; teardown completed [WARN]\n";
++    } else {
++        std::cout << "      Vulkan cleanup state             COMPLETED [PASS]\n";
++    }
+     PrintRow("Tracked Semaphores LIVE", snap.liveSemaphores, snap.liveSemaphores == 0);
+     PrintRow("Validation Layer Errors", snap.validationErrors, snap.validationErrors == 0);
+     std::cout << "\n";
+@@ -268,9 +277,9 @@ void LifecycleFreezeGate::PrintVulkanFinalReport(const VulkanFinalSnapshot& snap
+ // ─────────────────────────────────────────────────────────────
+ //  FINAL VULKAN OWNERSHIP GATE — Run (helper combinato)
+ // ─────────────────────────────────────────────────────────────
+-bool LifecycleFreezeGate::RunVulkanFinalGate()
++bool LifecycleFreezeGate::RunVulkanFinalGate(bool cleanupDeferred, bool deviceLostAfterCleanup)
+ {
+-    VulkanFinalSnapshot snap = CollectVulkanFinal();
++    VulkanFinalSnapshot snap = CollectVulkanFinal(cleanupDeferred, deviceLostAfterCleanup);
+     PrintVulkanFinalReport(snap);
+     return EvaluateVulkanFinal(snap);
+ }
+diff --git a/src/core/app/LifecycleFreezeGate.h b/src/core/app/LifecycleFreezeGate.h
+index c4823a82a2..eaaf7b3f10 100644
+--- a/src/core/app/LifecycleFreezeGate.h
++++ b/src/core/app/LifecycleFreezeGate.h
+@@ -69,6 +69,8 @@ struct VulkanFinalSnapshot
+ {
+     uint32_t liveSemaphores = 0;
+     uint32_t validationErrors = 0;
++    bool cleanupDeferred = false;
++    bool deviceLostAfterCleanup = false;
+     // In futuro: altri handle Vulkan tracciati (pipeline, descriptor pool, ecc.)
+ };
+ 
+@@ -88,11 +90,11 @@ public:
+ 
+     // ── FINAL VULKAN OWNERSHIP GATE ───────────────────────────
+     // Chiamato DOPO RenderManager::Shutdown(), PRIMA di VulkanResourceTracker::Shutdown()
+-    static VulkanFinalSnapshot CollectVulkanFinal();
++    static VulkanFinalSnapshot CollectVulkanFinal(bool cleanupDeferred = false, bool deviceLostAfterCleanup = false);
+     static bool EvaluateVulkanFinal(const VulkanFinalSnapshot& snap);
+     static void PrintVulkanFinalReport(const VulkanFinalSnapshot& snap);
+     // Helper combinato: Collect + Evaluate + Print
+-    static bool RunVulkanFinalGate();
++    static bool RunVulkanFinalGate(bool cleanupDeferred = false, bool deviceLostAfterCleanup = false);
+ 
+ private:
+     LifecycleFreezeGate() = delete;
+diff --git a/src/core/app/LifecycleRemediationContractTests.cpp b/src/core/app/LifecycleRemediationContractTests.cpp
+index 54d8aa5294..df07492288 100644
+--- a/src/core/app/LifecycleRemediationContractTests.cpp
++++ b/src/core/app/LifecycleRemediationContractTests.cpp
+@@ -378,7 +378,9 @@ LifecycleTestResult LifecycleRemediationContractTests::Test04_ShutdownWithRegist
+             }
+ 
+             // Esegui Shutdown dell'engine
+-            engine.Shutdown();
++            // This contract test intentionally has no SharedContext/RuntimeManager.
++            // Event ownership is tested here; the runtime gate is not applicable.
++            engine.Shutdown(false);
+ 
+             if (engine.GetSubBlockMined() != INVALID_SUBSCRIPTION_ID || 
+                 engine.GetSubBlockPlaced() != INVALID_SUBSCRIPTION_ID) {
+diff --git a/src/render/RenderManager.cpp b/src/render/RenderManager.cpp
+index dd9bf304dc..2c30a69eca 100644
+--- a/src/render/RenderManager.cpp
++++ b/src/render/RenderManager.cpp
+@@ -25,6 +25,19 @@
+ #include <fstream>
+ #include <sstream>
+ 
++namespace {
++// Keep the whole renderer as the explicit owner when GPU quiescence cannot be
++// proven. This deliberately defers cleanup; it is never reported as destruction.
++std::vector<std::unique_ptr<RenderManager>>& GetDeferredRenderManagers() {
++    static auto* managers = new std::vector<std::unique_ptr<RenderManager>>();
++    return *managers;
++}
++std::mutex& GetDeferredRenderManagersMutex() {
++    static auto* mutex = new std::mutex();
++    return *mutex;
++}
++}
++
+ 
+ 
+ 
+@@ -48,6 +61,13 @@ RenderManager::~RenderManager() {
+     Shutdown();
+ }
+ 
++void RenderManager::RetainDeferredCleanup(std::unique_ptr<RenderManager> manager) {
++    if (!manager) return;
++    std::lock_guard<std::mutex> lock(GetDeferredRenderManagersMutex());
++    GetDeferredRenderManagers().push_back(std::move(manager));
++    std::cerr << "[VULKAN CRITICAL] Cleanup DEFERRED: ownership completa del RenderManager, handle Vulkan, allocator e device mantenuta fino al termine del processo; nessuna distruzione dichiarata.\n";
++}
++
+ bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* hinstance) {
+     fw::forensic::SetPhase(fw::forensic::Phase::Startup);
+     m_isVRMode = isVRMode;
+@@ -1482,7 +1502,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
+ }
+ 
+ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
+-    if (m_deviceLost) return;
++    if (m_deviceLost || m_renderingDisabled) return;
+     if (m_core == nullptr || m_core->GetDevice() == VK_NULL_HANDLE || m_core->GetSwapchain() == VK_NULL_HANDLE) return;
+     if (m_renderPass == VK_NULL_HANDLE || m_framebuffers.empty() || m_imageAvailableSemaphores.empty() || m_inFlightFences.empty()) return;
+     
+@@ -1668,15 +1688,20 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
+         }
+ 
+         VkResult submitResult = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]);
+-        if (submitResult == VK_ERROR_DEVICE_LOST) {
++        const auto primaryDecision = fw::DecideFrameSubmissionRecovery(submitResult);
++        if (primaryDecision.state == fw::FrameSubmissionRecoveryState::DeviceLost) {
+             std::cerr << "[VULKAN FATAL] Device perso durante vkQueueSubmit!" << std::endl;
+             m_deviceLost = true;
+             return;
+         } else if (submitResult != VK_SUCCESS) {
+             std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer! Codice: " << submitResult << std::endl;
+ 
+-            // Non tentare recovery se il device e' perso
+-            if (m_deviceLost) return;
++            // vkQueueSubmit garantisce che gli oggetti/sincronizzazioni passati non siano
++            // stati consumati su errori recuperabili. Un device perso invece non va ritentato.
++            if (submitResult == VK_ERROR_DEVICE_LOST || m_deviceLost) {
++                m_deviceLost = true;
++                return;
++            }
+ 
+             // La sottomissione principale e' fallita senza consumare m_imageAvailableSemaphores.
+             // Eseguiamo una submission di recupero vuota che attende su m_imageAvailableSemaphores (consumandolo)
+@@ -1687,16 +1712,51 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
+             recoverySubmit.waitSemaphoreCount = 1;
+             recoverySubmit.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrame];
+             recoverySubmit.pWaitDstStageMask = waitStagesRecovery;
+-
+-            VkResult recoveryRes = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &recoverySubmit, m_inFlightFences[m_currentFrame]);
+-            if (recoveryRes == VK_ERROR_DEVICE_LOST) {
++            recoverySubmit.signalSemaphoreCount = 1;
++            recoverySubmit.pSignalSemaphores = &m_renderFinishedSemaphores[imageIndex];
++
++            VkResult recoveryRes = VK_SUCCESS;
++            const auto recoveryDecision = fw::RunFrameSubmissionRecovery(submitResult, [&]() {
++                recoveryRes = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &recoverySubmit, m_inFlightFences[m_currentFrame]);
++                return recoveryRes;
++            });
++            if (recoveryDecision.state == fw::FrameSubmissionRecoveryState::DeviceLost) {
+                 std::cerr << "[VULKAN FATAL] Device perso durante recovery vkQueueSubmit!\n";
+                 m_deviceLost = true;
+-            } else if (recoveryRes != VK_SUCCESS) {
+-                std::cerr << "[VULKAN FATAL] Sottomissione di recupero fallita con codice " << recoveryRes << "! Imposto device lost per prevenire attese indefinite.\n";
++            } else if (recoveryDecision.state == fw::FrameSubmissionRecoveryState::RecoveryFailed) {
++                std::cerr << "[VULKAN FATAL] Sottomissione di recupero fallita con codice " << recoveryRes << ". Rendering disabilitato; fence e semaforo acquisizione non verranno riutilizzati.\n";
++                m_renderingDisabled = true;
++                m_acquireSemaphoreQuarantined = true;
++                m_frameFenceMayBeUnsignaled = true;
++                return;
++            }
++            if (m_deviceLost) return;
++
++            // La submission vuota consuma imageAvailable, segnala renderFinished e rende
++            // presentabile l'immagine acquisita, evitando di lasciarla trattenuta dalla swapchain.
++            VkPresentInfoKHR recoveryPresent{};
++            recoveryPresent.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
++            recoveryPresent.waitSemaphoreCount = 1;
++            recoveryPresent.pWaitSemaphores = &m_renderFinishedSemaphores[imageIndex];
++            VkSwapchainKHR recoverySwapchain = m_core->GetSwapchain();
++            recoveryPresent.swapchainCount = 1;
++            recoveryPresent.pSwapchains = &recoverySwapchain;
++            recoveryPresent.pImageIndices = &imageIndex;
++            VkResult recoveryPresentRes;
++            {
++                std::lock_guard<std::mutex> presentLock((*m_core->GetQueueMutex()));
++                recoveryPresentRes = vkQueuePresentKHR(m_core->GetPresentQueue(), &recoveryPresent);
++            }
++            if (recoveryPresentRes == VK_ERROR_DEVICE_LOST) {
+                 m_deviceLost = true;
++            } else if (recoveryPresentRes == VK_ERROR_OUT_OF_DATE_KHR || recoveryPresentRes == VK_SUBOPTIMAL_KHR || recoveryPresentRes == VK_ERROR_SURFACE_LOST_KHR) {
++                RecreateSwapchain();
++            } else if (recoveryPresentRes != VK_SUCCESS) {
++                std::cerr << "[VULKAN ERROR] Present di recupero fallita con codice " << recoveryPresentRes << ". Rendering disabilitato.\n";
++                m_renderingDisabled = true;
+             }
+-            return; // Interrompi: non presentare l'immagine non renderizzata
++            if (!m_deviceLost && !m_renderingDisabled) m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
++            return;
+         }
+     }
+ 
+@@ -2215,9 +2275,34 @@ void RenderManager::Shutdown() {
+     m_isFullyInitialized = false; // Blocca RecreateSwapchain durante lo shutdown
+     fw::forensic::SetPhase(fw::forensic::Phase::Shutdown);
+     if (m_core && m_core->GetDevice() != VK_NULL_HANDLE) {
+-        vkDeviceWaitIdle(m_core->GetDevice());
+-        if (!m_inFlightFences.empty()) {
+-            vkWaitForFences(m_core->GetDevice(), static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
++        const VkResult shutdownIdle = vkDeviceWaitIdle(m_core->GetDevice());
++        if (shutdownIdle == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
++
++        // Painter mantiene ownership delle sue risorse finché la GPU non è quiescente
++        // o il device è lost (in tal caso Vulkan considera le risorse non più in uso).
++        if (!CleanupPainterPreviewResources()) {
++            std::cerr << "[VULKAN CRITICAL] Shutdown sospeso: risorse Painter ancora possedute perché la sincronizzazione GPU è fallita.\n";
++            m_shutdownIncomplete = true;
++            m_shutdownState = ShutdownState::CleanupDeferred;
++            return;
++        }
++        if (shutdownIdle != VK_SUCCESS && !m_deviceLost) {
++            m_shutdownIncomplete = true;
++            m_shutdownState = ShutdownState::CleanupDeferred;
++            return;
++        }
++        // A successful device idle proves no work is executing. In the recovery
++        // failure path the reset frame fence is intentionally unsignaled, so it
++        // must never be waited on, even though device idle itself succeeded.
++        if (!m_inFlightFences.empty() && !m_deviceLost && !m_frameFenceMayBeUnsignaled) {
++            VkResult shutdownFenceWait = vkWaitForFences(m_core->GetDevice(), static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
++            if (shutdownFenceWait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
++            else if (shutdownFenceWait != VK_SUCCESS) {
++                std::cerr << "[VULKAN CRITICAL] Shutdown sospeso: fence non completate (" << shutdownFenceWait << ").\n";
++                m_shutdownIncomplete = true;
++                m_shutdownState = ShutdownState::CleanupDeferred;
++                return;
++            }
+         }
+ 
+         if (m_blockPropertiesBuffer != VK_NULL_HANDLE) {
+@@ -2225,7 +2310,6 @@ void RenderManager::Shutdown() {
+             m_blockPropertiesBuffer = VK_NULL_HANDLE;
+         }
+ 
+-        CleanupPainterPreviewResources();
+         CleanupImGuiTextureDescriptors();
+         ImGui_ImplVulkan_Shutdown();
+         ImGui_ImplWin32_Shutdown();
+@@ -2251,6 +2335,11 @@ void RenderManager::Shutdown() {
+         m_core->DestroySwapchain();
+ 
+         // 2. Distruzione semafori e fence a swapchain inattiva
++        // Se il recovery submit è fallito, imageAvailable può essere ancora
++        // signaled: è quarantined e viene distrutto solo dopo idle + swapchain.
++        if (m_acquireSemaphoreQuarantined) {
++            std::cerr << "[VULKAN INFO] Acquire semaphore quarantined fino alla distruzione della swapchain; non sarà riutilizzato.\n";
++        }
+         for (auto sem : m_imageAvailableSemaphores) {
+             if (sem != VK_NULL_HANDLE) {
+                 fw::forensic::InterceptDestroySemaphore("RenderManager::Shutdown:imageAvailable", m_core->GetDevice(), sem, nullptr);
+@@ -2354,6 +2443,8 @@ void RenderManager::Shutdown() {
+         fw::forensic::DestroyDebugMessenger(instance);
+         m_core.reset();
+     }
++    m_shutdownIncomplete = false;
++    m_shutdownState = m_deviceLost ? ShutdownState::DeviceLostCleanupComplete : ShutdownState::CleanupComplete;
+ }
+ 
+ void RenderManager::InitImGui(void* hwnd) {
+@@ -3165,19 +3256,39 @@ bool RenderManager::CleanupPainterPreviewResources() {
+ 
+     // 1. Sincronizzazione GPU: attendi il completamento dei frame in volo che utilizzano le risorse Painter
+     bool syncSuccess = true;
+-    if (!m_inFlightFences.empty()) {
++    if (m_deviceLost) {
++        // DEVICE_LOST rende le risorse non in uso ai fini della loro distruzione.
++    } else if (m_renderingDisabled) {
++        // Dopo un recovery submit fallito la fence del frame può essere unsignaled
++        // senza una submission che la segnali. Attendere quella fence può bloccare
++        // per sempre: usa l'idle del device per provare che non restano comandi attivi.
++        VkResult idleRes = vkDeviceWaitIdle(device);
++        if (idleRes == VK_ERROR_DEVICE_LOST) {
++            m_deviceLost = true;
++        } else if (idleRes != VK_SUCCESS) {
++            std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: vkDeviceWaitIdle fallito dopo recovery non riuscito (" << idleRes << ").\n";
++            syncSuccess = false;
++        }
++    } else if (!m_inFlightFences.empty()) {
+         VkResult waitRes = vkWaitForFences(device, static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
+         if (waitRes != VK_SUCCESS) {
+             std::cerr << "[VULKAN ERROR] CleanupPainterPreviewResources: vkWaitForFences failed with code " << waitRes << ". Tentativo fallback vkDeviceWaitIdle...\n";
+-            VkResult idleRes = vkDeviceWaitIdle(device);
+-            if (idleRes != VK_SUCCESS) {
+-                std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: anche fallback vkDeviceWaitIdle fallito con codice " << idleRes << "!\n";
+-                syncSuccess = false;
+-                if (waitRes == VK_ERROR_DEVICE_LOST || idleRes == VK_ERROR_DEVICE_LOST) {
+-                    m_deviceLost = true;
+-                }
++            if (waitRes == VK_ERROR_DEVICE_LOST) {
++                // La specifica Vulkan considera non più in uso le risorse dopo un
++                // comando che ritorna DEVICE_LOST; possiamo rilasciarle durante teardown.
++                m_deviceLost = true;
+             } else {
+-                std::cout << "[VULKAN INFO] CleanupPainterPreviewResources: sincronizzazione GPU completata con successo tramite fallback vkDeviceWaitIdle.\n";
++                VkResult idleRes = vkDeviceWaitIdle(device);
++                if (idleRes != VK_SUCCESS) {
++                    std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: anche fallback vkDeviceWaitIdle fallito con codice " << idleRes << "!\n";
++                    if (idleRes == VK_ERROR_DEVICE_LOST) {
++                        m_deviceLost = true;
++                    } else {
++                        syncSuccess = false;
++                    }
++                } else {
++                    std::cout << "[VULKAN INFO] CleanupPainterPreviewResources: sincronizzazione GPU completata con successo tramite fallback vkDeviceWaitIdle.\n";
++                }
+             }
+         }
+     }
+@@ -3191,7 +3302,7 @@ bool RenderManager::CleanupPainterPreviewResources() {
+     // Se la sincronizzazione GPU e' fallita durante l'esecuzione attiva (runtime valido),
+     // non distruggere le risorse GPU immediatamente per evitare crash hardware / access violation.
+     // L'ownership rimane esplicita in RenderManager (m_painterPreviewCleanupPending = true) per la distruzione differita a Shutdown.
+-    if (!syncSuccess && m_isFullyInitialized) {
++    if (!syncSuccess) {
+         std::cerr << "[VULKAN WARN] CleanupPainterPreviewResources: distruzione immediata interrotta per sicurezza. Risorse trattenute per shutdown (m_painterPreviewCleanupPending=true).\n";
+         m_painterPreviewCleanupPending = true;
+         return false;
+diff --git a/src/render/RenderManager.h b/src/render/RenderManager.h
+index 09fa6fb401..aff5cb1fea 100644
+--- a/src/render/RenderManager.h
++++ b/src/render/RenderManager.h
+@@ -12,6 +12,7 @@
+ #include <mutex>
+ #include "vulkan/VulkanCore.h"
+ #include "vulkan/VulkanMemory.h"
++#include "FrameSubmissionRecovery.h"
+ #include "World.h"  // Per la struct Vertex
+ #include "TexturePacker.h"
+ #include "apps/BlockMakerRenderer.h"
+@@ -93,6 +94,7 @@ static_assert(offsetof(ForgePushConstantData, cameraPos) == 112, "cameraPos offs
+ 
+ class RenderManager {
+ public:
++    enum class ShutdownState { NotStarted, CleanupComplete, CleanupDeferred, DeviceLostCleanupComplete };
+     RenderManager();
+     ~RenderManager();
+ 
+@@ -144,6 +146,11 @@ private:
+     bool m_isVRMode;
+     bool m_isFullyInitialized{ false }; // Protegge RecreateSwapchain durante l'init
+     bool m_deviceLost{ false }; // Segnala la perdita irreversibile del device Vulkan
++    bool m_renderingDisabled{ false }; // Errore di submission non recuperabile senza dichiarare device lost
++    bool m_shutdownIncomplete{ false }; // Evita di distruggere device/allocator dopo cleanup sospeso
++    bool m_acquireSemaphoreQuarantined{ false }; // Non riutilizzare un acquire semaphore non consumato
++    bool m_frameFenceMayBeUnsignaled{ false }; // Recovery submit fallito dopo vkResetFences
++    ShutdownState m_shutdownState{ ShutdownState::NotStarted };
+     void* m_hwnd{ nullptr };
+     
+     
+@@ -352,6 +359,8 @@ public:
+     VkDescriptorSet GetPainterPreviewImGuiDescriptor() const { return m_painterPreviewImGuiDescriptor; }
+     bool CleanupPainterPreviewResources();
+     bool HasPendingPainterCleanup() const { return m_painterPreviewCleanupPending; }
++    ShutdownState GetShutdownState() const { return m_shutdownState; }
++    static void RetainDeferredCleanup(std::unique_ptr<RenderManager> manager);
+ 
+     // --- CHUNK BUFFERS (Mappa RPG Veloce) ---
+     struct VulkanChunkBuffer {warning: in the working copy of 'src/render/FrameSubmissionRecovery.h', LF will be replaced by CRLF the next time Git touches it
+diff --git a/src/render/FrameSubmissionRecovery.h b/src/render/FrameSubmissionRecovery.h
+new file mode 100644
+index 0000000000..a91292d055
+--- /dev/null
++++ b/src/render/FrameSubmissionRecovery.h
+@@ -0,0 +1,47 @@
++#pragma once
++
++#include <vulkan/vulkan.h>
++
++namespace fw {
++
++enum class FrameSubmissionRecoveryState {
++    DeviceLost,
++    RecoverySucceeded,
++    RecoveryFailed
++};
++
++struct FrameSubmissionRecoveryDecision {
++    FrameSubmissionRecoveryState state;
++    bool attemptRecovery;
++    bool acquireSemaphoreConsumed;
++    bool frameFenceWillSignal;
++    bool mayWaitForFrameFence;
++};
++
++inline FrameSubmissionRecoveryDecision DecideFrameSubmissionRecovery(
++    VkResult primarySubmitResult,
++    VkResult recoverySubmitResult = VK_SUCCESS) {
++    if (primarySubmitResult == VK_ERROR_DEVICE_LOST || recoverySubmitResult == VK_ERROR_DEVICE_LOST) {
++        return { FrameSubmissionRecoveryState::DeviceLost, false, false, false, false };
++    }
++    if (primarySubmitResult == VK_SUCCESS) {
++        return { FrameSubmissionRecoveryState::RecoverySucceeded, false, true, true, true };
++    }
++    if (recoverySubmitResult == VK_SUCCESS) {
++        return { FrameSubmissionRecoveryState::RecoverySucceeded, true, true, true, true };
++    }
++    return { FrameSubmissionRecoveryState::RecoveryFailed, true, false, false, false };
++}
++
++template <typename RecoverySubmit>
++inline FrameSubmissionRecoveryDecision RunFrameSubmissionRecovery(
++    VkResult primarySubmitResult,
++    RecoverySubmit&& submitRecovery) {
++    if (primarySubmitResult == VK_SUCCESS || primarySubmitResult == VK_ERROR_DEVICE_LOST) {
++        return DecideFrameSubmissionRecovery(primarySubmitResult);
++    }
++
++    return DecideFrameSubmissionRecovery(primarySubmitResult, submitRecovery());
++}
++
++} // namespace fw
+warning: in the working copy of 'src/render/FrameSubmissionRecoveryTests.cpp', LF will be replaced by CRLF the next time Git touches it
+diff --git a/src/render/FrameSubmissionRecoveryTests.cpp b/src/render/FrameSubmissionRecoveryTests.cpp
+new file mode 100644
+index 0000000000..cb9c39ffcc
+--- /dev/null
++++ b/src/render/FrameSubmissionRecoveryTests.cpp
+@@ -0,0 +1,49 @@
++#include "FrameSubmissionRecovery.h"
++
++#include <iostream>
++
++namespace {
++bool Check(bool condition, const char* name) {
++    std::cout << (condition ? "[PASS] " : "[FAIL] ") << name << '\n';
++    return condition;
++}
++}
++
++int main() {
++    int failed = 0;
++
++    int deviceLostRecoveryCalls = 0;
++    const auto deviceLost = fw::RunFrameSubmissionRecovery(VK_ERROR_DEVICE_LOST, [&]() {
++        ++deviceLostRecoveryCalls;
++        return VK_SUCCESS;
++    });
++    failed += !Check(deviceLost.state == fw::FrameSubmissionRecoveryState::DeviceLost &&
++                     !deviceLost.attemptRecovery && !deviceLost.mayWaitForFrameFence &&
++                     deviceLostRecoveryCalls == 0,
++                     "device lost skips recovery and fence wait");
++
++    int successfulRecoveryCalls = 0;
++    const auto recoverySucceeded = fw::RunFrameSubmissionRecovery(VK_ERROR_OUT_OF_HOST_MEMORY, [&]() {
++        ++successfulRecoveryCalls;
++        return VK_SUCCESS;
++    });
++    failed += !Check(recoverySucceeded.state == fw::FrameSubmissionRecoveryState::RecoverySucceeded &&
++                     recoverySucceeded.attemptRecovery && recoverySucceeded.acquireSemaphoreConsumed &&
++                     recoverySucceeded.frameFenceWillSignal && recoverySucceeded.mayWaitForFrameFence &&
++                     successfulRecoveryCalls == 1,
++                     "successful recovery consumes acquire semaphore and signals fence");
++
++    int failedRecoveryCalls = 0;
++    const auto recoveryFailed = fw::RunFrameSubmissionRecovery(VK_ERROR_OUT_OF_HOST_MEMORY, [&]() {
++        ++failedRecoveryCalls;
++        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
++    });
++    failed += !Check(recoveryFailed.state == fw::FrameSubmissionRecoveryState::RecoveryFailed &&
++                     recoveryFailed.attemptRecovery && !recoveryFailed.acquireSemaphoreConsumed &&
++                     !recoveryFailed.frameFenceWillSignal && !recoveryFailed.mayWaitForFrameFence &&
++                     failedRecoveryCalls == 1,
++                     "failed recovery quarantines acquire semaphore and skips unsignaled fence");
++
++    std::cout << "TOTAL: 3, PASSED: " << (3 - failed) << ", FAILED: " << failed << '\n';
++    return failed == 0 ? 0 : 1;
++}

@@ -2,6 +2,7 @@
 #include "MeshGenerators.h"
 #include "SharedContext.h"
 #include "MaterialRegistry.h"
+#include "VoxelFaceUV.h"
 #include <cmath>
 #include <vector>
 #include <iostream>
@@ -26,12 +27,13 @@ MeshComponent MeshGenerators::MakeCube(float size) {
     fw::Vec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
     
     auto addFace = [&](fw::Vec3 v0, fw::Vec3 v1, fw::Vec3 v2, fw::Vec3 v3, fw::Vec3 n) {
-        m.vertices.push_back({v0, color, {0.5f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
-        m.vertices.push_back({v1, color, {0.5f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
-        m.vertices.push_back({v2, color, {0.5f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
-        m.vertices.push_back({v0, color, {0.5f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
-        m.vertices.push_back({v2, color, {0.5f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
-        m.vertices.push_back({v3, color, {0.5f, 0.0f}, 0, n, 1.0f, 1.0f, 0.0f});
+        const auto uv = [&](const fw::Vec3& p) { return fw::VoxelFaceUV(glm::vec3(p.x, p.y, p.z) / (2.0f * h), glm::vec3(n.x, n.y, n.z)); };
+        m.vertices.push_back({v0, color, uv(v0), 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v1, color, uv(v1), 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v2, color, uv(v2), 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v0, color, uv(v0), 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v2, color, uv(v2), 0, n, 1.0f, 1.0f, 0.0f});
+        m.vertices.push_back({v3, color, uv(v3), 0, n, 1.0f, 1.0f, 0.0f});
     };
 
     // Front (-Z)
@@ -61,23 +63,23 @@ MeshComponent MeshGenerators::MakeVoxelPreview(int blockId, SharedContext* ctx) 
     }
 
     fw::Vec4 color = mat ? fw::Vec4{mat->baseColorFallback.x, mat->baseColorFallback.y, mat->baseColorFallback.z, 1.0f} : fw::Vec4{1,1,1,1};
-    float rough = mat ? mat->roughnessFallback : 0.5f;
-    float metal = mat ? mat->metallicFallback : 0.0f;
     float emissive = mat ? mat->emissiveStrength : 0.0f;
+    float h = 0.505f;
 
     auto addFace = [&](const fw::Vec3& p1, const fw::Vec3& p2, const fw::Vec3& p3, const fw::Vec3& p4, const fw::Vec3& norm) {
         float light = 1.0f;
         float ao = 1.0f;
         uint32_t materialID = blockId;
-        m.vertices.push_back({p1, color, {rough, metal}, materialID, norm, ao, light, emissive});
-        m.vertices.push_back({p2, color, {rough, metal}, materialID, norm, ao, light, emissive});
-        m.vertices.push_back({p3, color, {rough, metal}, materialID, norm, ao, light, emissive});
-        m.vertices.push_back({p1, color, {rough, metal}, materialID, norm, ao, light, emissive});
-        m.vertices.push_back({p3, color, {rough, metal}, materialID, norm, ao, light, emissive});
-        m.vertices.push_back({p4, color, {rough, metal}, materialID, norm, ao, light, emissive});
+        const float uvScale = 2.0f * h;
+        const auto uv = [&](const fw::Vec3& p) { return fw::VoxelFaceUV(glm::vec3(p.x, p.y, p.z) / uvScale, glm::vec3(norm.x, norm.y, norm.z)); };
+        m.vertices.push_back({p1, color, uv(p1), materialID, norm, ao, light, emissive});
+        m.vertices.push_back({p2, color, uv(p2), materialID, norm, ao, light, emissive});
+        m.vertices.push_back({p3, color, uv(p3), materialID, norm, ao, light, emissive});
+        m.vertices.push_back({p1, color, uv(p1), materialID, norm, ao, light, emissive});
+        m.vertices.push_back({p3, color, uv(p3), materialID, norm, ao, light, emissive});
+        m.vertices.push_back({p4, color, uv(p4), materialID, norm, ao, light, emissive});
     };
 
-    float h = 0.505f;
     // Front (+Z)
     addFace({-h,-h, h}, { h,-h, h}, { h, h, h}, {-h, h, h}, {0, 0, 1});
     // Back (-Z)
@@ -112,7 +114,7 @@ MeshComponent MeshGenerators::MakeSphere(int segs, int rings, float r) {
             v.color = {1.0f, 1.0f, 1.0f, 1.0f};
             v.materialID = 0;
             v.normal = v.position.norm();
-            v.roughMetal = {0.5f, 0.0f};
+            v.roughMetal = {static_cast<float>(si) / static_cast<float>(segs), static_cast<float>(ri) / static_cast<float>(rings)};
             v.ao = 1.0f;
             v.light = 1.0f;
             v.emissive = 0.0f;
@@ -180,7 +182,7 @@ MeshComponent MeshGenerators::MakeSuperSphere(float n, float radius, int resolut
             Vertex v;
             v.position = {x, y, z};
             v.color = {1.0f, 1.0f, 1.0f, 1.0f};
-            v.roughMetal = {0.4f, 0.0f};
+            v.roughMetal = {static_cast<float>(s) / static_cast<float>(segs), static_cast<float>(r) / static_cast<float>(rings)};
             v.materialID = 0;
             v.normal = normVec;
             v.ao = 1.0f;

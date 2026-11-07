@@ -70,6 +70,7 @@ void RuntimeManager::ShutdownGpuRuntime() {
 
     // 3. Sequenza di distruzione controllata dei sottosistemi GPU e JobSystem
     double jobSystemShutdownMs = 0.0;
+    bool dmaCleanupComplete = true;
     if (m_context) {
         if (m_context->jobSystem) {
             std::cout << "\n[RuntimeShutdown]\nStop accepting jobs\n";
@@ -100,9 +101,9 @@ void RuntimeManager::ShutdownGpuRuntime() {
         if (m_context->dmaManager) {
             std::cout << "[RuntimeManager] [Thread " << std::this_thread::get_id()
                       << "] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...\n";
-            m_context->dmaManager->Drain();
+            const VkResult drainResult = m_context->dmaManager->Drain();
             std::cout << "[RuntimeManager] [Thread " << std::this_thread::get_id()
-                      << "] [Phase: Shutdown] VulkanDmaManager Drain completato.\n";
+                      << "] [Phase: Shutdown] VulkanDmaManager Drain VkResult=" << drainResult << ".\n";
             m_shutdownResult.dmaDrainCalled = true;
 
             m_shutdownResult.pendingDmaTransfers   = m_context->dmaManager->GetPendingTransferCount();
@@ -112,20 +113,42 @@ void RuntimeManager::ShutdownGpuRuntime() {
                       << "Pending DMA transfers     : " << m_shutdownResult.pendingDmaTransfers   << "\n"
                       << "Live DMA command buffers  : " << m_shutdownResult.liveDmaCommandBuffers << "\n";
 
-            delete m_context->dmaManager;
-            m_context->dmaManager = nullptr;
+            dmaCleanupComplete = drainResult == VK_SUCCESS &&
+                m_shutdownResult.pendingDmaTransfers == 0 && m_shutdownResult.liveDmaCommandBuffers == 0;
+            if (dmaCleanupComplete && m_context->vramAllocator &&
+                m_context->vramAllocator->GetAllocatedBytes() != 0) {
+                auto* renderManager = m_context->engine ? m_context->engine->GetRenderManager() : nullptr;
+                const VkResult graphicsIdle = renderManager
+                    ? renderManager->WaitForGraphicsIdle()
+                    : VK_ERROR_INITIALIZATION_FAILED;
+                std::cout << "[RuntimeManager] Graphics idle VkResult=" << graphicsIdle << ".\n";
+                if (graphicsIdle == VK_SUCCESS) {
+                    m_context->vramAllocator->CollectRetired(renderManager->GetCompletedGraphicsSerial());
+                } else {
+                    dmaCleanupComplete = false;
+                    std::cerr << "[RuntimeManager] ERROR: graphics completion not confirmed; DMA manager and allocator ownership retained.\n";
+                }
+            }
+            if (dmaCleanupComplete) {
+                m_context->dmaManager->Cleanup();
+                delete m_context->dmaManager;
+                m_context->dmaManager = nullptr;
+            } else {
+                std::cerr << "[RuntimeManager] ERROR: DMA cleanup incomplete; manager and allocator ownership retained.\n";
+            }
         }
 
-        if (m_context->vramAllocator) {
+        if (dmaCleanupComplete && m_context->vramAllocator) {
             delete m_context->vramAllocator;
             m_context->vramAllocator = nullptr;
         }
     }
 
-    m_shutdownResult.completed = true;
+    m_shutdownResult.completed = dmaCleanupComplete;
     auto tShutdownEnd = std::chrono::high_resolution_clock::now();
     double totalShutdownMs = std::chrono::duration<double, std::milli>(tShutdownEnd - tShutdownStart).count();
-    std::cout << "[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=" 
+    std::cout << "[RuntimeShutdown] GPU cleanup " << (dmaCleanupComplete ? "completed" : "incomplete; ownership retained")
+              << ". Tempi di Shutdown: [WorkerJoin="
               << workerJoinMs << " ms, JobSystemStop=" << jobSystemShutdownMs 
               << " ms, Totale=" << totalShutdownMs << " ms]\n";
 }
@@ -418,7 +441,8 @@ bool RuntimeManager::CommitGpuGlobalVRAM() {
                 rm->GetMappedStagingData(),
                 rm->GetStagingBufferSize(),
                 VK_NULL_HANDLE,
-                rm->GetQueueMutex()
+                rm->GetQueueMutex(),
+                rm->GetTransferCommandPoolMutex()
             );
         }
     }
@@ -426,16 +450,21 @@ bool RuntimeManager::CommitGpuGlobalVRAM() {
     if (m_context && !m_context->vramAllocator) {
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL); 
         m_context->vramAllocator->SetAllocateCompartmentCallback([this](uint32_t compIdx) {
-            if (m_context && m_context->engine && m_context->engine->GetRenderManager()) {
-                m_context->engine->GetRenderManager()->AddVramCompartment();
-                if (m_context->dmaManager) {
-                    m_context->dmaManager->UpdateStagingBuffer(
-                        m_context->engine->GetRenderManager()->GetStagingRingBuffer(),
-                        m_context->engine->GetRenderManager()->GetStagingDeviceMemory(),
-                        m_context->engine->GetRenderManager()->GetMappedStagingData()
-                    );
-                }
+            auto* renderManager = m_context && m_context->engine ? m_context->engine->GetRenderManager() : nullptr;
+            if (!renderManager || renderManager->GetVramCompartments().size() != compIdx) return false;
+            if (!renderManager->AddVramCompartment()) return false;
+            const auto& compartments = renderManager->GetVramCompartments();
+            if (compartments.size() != static_cast<size_t>(compIdx) + 1 || compartments[compIdx] == VK_NULL_HANDLE) {
+                std::cerr << "[RuntimeManager] Compartment callback reported success without a matching VkBuffer.\n";
+                return false;
             }
+            if (m_context->dmaManager) {
+                m_context->dmaManager->UpdateStagingBuffer(
+                    renderManager->GetStagingRingBuffer(),
+                    renderManager->GetStagingDeviceMemory(),
+                    renderManager->GetMappedStagingData());
+            }
+            return true;
         });
     }
 

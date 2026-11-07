@@ -61,6 +61,11 @@ struct CameraComponent {
     glm::vec3 right   = glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
+    // Persistent tangent reference transported with the planetary surface normal.
+    glm::vec3 planetaryFrameUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 planetaryFrameForward = glm::vec3(0.0f, 0.0f, -1.0f);
+    bool planetaryFrameInitialized = false;
+
     // Parametri input
     float movementSpeed   = 5.0f;
     float mouseSensitivity = 0.1f;
@@ -80,6 +85,7 @@ struct PlayerControllerComponent {
     float jumpForce = 5.5f;
     float velocityY = 0.0f;
     bool isGrounded = false;
+    bool planetarySpawnPending = false;
 };
 
 // Componente per la simulazione fisica

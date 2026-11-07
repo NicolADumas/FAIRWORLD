@@ -26,6 +26,15 @@ public:
     // B. Forward Mapping: (g, PlanetRadius) -> radial distance r
     static float GetRadialDistance(float g, float planetRadius);
 
+    // Radial distance to the continuous cell coordinate consumed by floor().
+    // Voxel samples are centered on integer localY coordinates, so their cells
+    // span [localY - 0.5, localY + 0.5); the returned value includes that half-cell.
+    static float GetVoxelCellCoordinateFromDistance(float radialDistance, float planetRadius);
+
+    // Radial center and outer face of a voxel cell, in world units.
+    static float GetCellCenterRadius(int32_t layer, int32_t localCellY, float planetRadius);
+    static float GetCellOuterRadius(int32_t layer, int32_t localCellY, float planetRadius);
+
     // C. Physical Domain validation
     static bool IsValidRadialDistance(float r);
 

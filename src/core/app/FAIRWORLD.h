@@ -62,7 +62,7 @@ public:
 
     bool Init(bool enableVr = false);
     void Run();
-    void Shutdown();
+    void Shutdown(bool runtimeLifecycleExpected = true);
     void SetRenderCallback(std::function<void()> callback);
 
     // Nuovi metodi per la State Machine Data-Driven (Fase 1.3)

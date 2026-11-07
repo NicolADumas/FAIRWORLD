@@ -1,0 +1,163 @@
+====================================================================================
+  FAIRWORLD SCIENTIFIC MATERIAL REGISTRY TEST RUNNER (MA-03.1D / MA-03.2A / MA-03.2D.3B / MA-03.2E.2A)
+  SUITES: SCI (10 Tests) + BOOT (4 Tests) + EXT (11 Tests) + FIX04 (8 Tests) + DIAG (5 Tests) | 38 TOTAL TESTS
+====================================================================================
+
+[ScientificMaterialRegistry] Caricati 1 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_test_v1.json (schema v1, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 2 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_test_v2.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Versione schema non supportata: 0 in C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_test_schema0.json. Versioni supportate: [1, 2, 3].
+[ScientificMaterialRegistry] Versione schema non supportata: 4 in C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_test_schema4.json. Versioni supportate: [1, 2, 3].
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_nc_exact_invalid.json: Composizione NominallyComplete non somma a 1 entro tolleranza (somma: 0.850000) in 'fairworld:mat/nc_exact_invalid'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_nc_with_unknown.json: Composizione NominallyComplete contiene componenti con quantita' Unknown in 'fairworld:mat/nc_with_unknown'. Tutti i componenti devono essere noti.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_nc_range_invalid.json: Composizione NominallyComplete con Range non compatibile con 1.0 (intervallo somme: [0.500000, 0.700000]) in 'fairworld:mat/nc_range_invalid'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_nc_mixed_bases.json: Base frazionaria del componente 'Comp B' ('Volume') discordante dalla defaultBasis ('Mass') in 'fairworld:mat/nc_mixed_bases'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Caricati 1 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_partial_valid.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_partial_invalid.json: Composizione Partial: somma dei minimi delle frazioni note supera 1.0 (1.150000) in 'fairworld:mat/partial_invalid'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_tax_cycle.json: Rilevato ciclo nelle relazioni tassonomiche: fairworld:mat/cycle_mat_a -> fairworld:mat/cycle_mat_b -> fairworld:mat/cycle_mat_a. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_self_rel.json: Autoriferimento ciclico illegale: il materiale 'fairworld:mat/self_rel' ha una relazione verso se stesso.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_comp_cycle.json: Rilevato ciclo nelle dipendenze di composizione: fairworld:mat/comp_cycle_a -> fairworld:mat/comp_cycle_b -> fairworld:mat/comp_cycle_a. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_missing_target.json: Relazione nel materiale 'fairworld:mat/orphan_rel' fa riferimento a target canonico inesistente: 'fairworld:mat/nonexistent_phantom'. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_dup_rel.json: Relazione duplicata nel materiale 'fairworld:mat/dup_rel': relazione 'DerivedFrom' verso 'fairworld:mat/target_ok' ripetuta.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_dup_comp.json: Componente duplicato 'Quartz' nella composizione di 'fairworld:mat/dup_comp'.. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Duplicato nel JSON: ScientificMaterialID 805 ripetuto nel file C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_dup_id.json. Rifiutato.
+[ScientificMaterialRegistry] Caricati 1 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_dup_id.json (schema v2, conflitti/scartati: 1)
+[ScientificMaterialRegistry] Validazione catalogo fallita per C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\sci_faulty_transaction.json: Rilevato ciclo nelle relazioni tassonomiche: fairworld:mat/candidate_faulty -> fairworld:mat/candidate_ok -> fairworld:mat/candidate_faulty. Transazione annullata: stato e indici invariati.
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\prod_roundtrip_v2.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Proprieta' 'scientific:prop/unknown_bogus_property' non registrata nel dizionario. Transazione annullata.
+[ScientificMaterialRegistry] Caricati 5 materiali scientifici da C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\det_test1.json (schema v3, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[ScientificMaterialRegistry] Proprieta' estesa sconosciuta 'scientific:prop/completely_unknown_uri' in 'fairworld:mat/bad_material'. Registrazione rifiutata.
+[WARNING][TestContext_DIAG03] Block ID 11 (fairworld:diag_test_orphan - "Orphan Asset") references unresolved ScientificMaterialID 99999. Legacy asset preserved unmutated.
+[WARNING][TestDIAG04_MutationCheck] Block ID 12 (fairworld:diag_mut_orphan - "Orphan Asset") references unresolved ScientificMaterialID 88888. Legacy asset preserved unmutated.
+[BlockRegistry] Loaded 3 blocks from C:\Users\39347\AppData\Local\Packages\sandbox.{68cf2975-171e-4811-8934-c27a0215d749}\AC\Temp\fairworld_sci_tests\diag_test_orphans.json
+[WARNING][TestDIAG05_Bootstrap] Block ID 2 (fairworld:legacy_orphan - "Legacy Orphan") references unresolved ScientificMaterialID 77777. Legacy asset preserved unmutated.
+  [PASS] SCI-01   | Caricamento JSON v1 senza campi tassonomici
+         Observed: Caricamento v1 completato con successo: densità 2650 kg/m^3, kind=Unknown, composition=Unknown
+
+  [PASS] SCI-02   | Caricamento JSON v2 con tassonomia e composizione
+         Observed: Caricamento v2 convalidato: kind, aggregationState, tags, relations e composition corretti
+
+  [PASS] SCI-03   | Round-trip Exact, Range, Unknown, qualità e fonte
+         Observed: Round-trip JSON perfetto: Exact (0.45), Range [0.10, 0.25] e Unknown preservati senza perdite
+
+  [PASS] SCI-04   | Rifiuto schemaVersion non supportata (es. 0 e 4)
+         Observed: Entrambe le versioni schema non supportate (<1 e >3) rifiutate con successo; catalogo standard inalterato
+
+  [PASS] SCI-05   | Rifiuto composizioni nominalmente complete con somma invalida
+         Observed: Tutte le 4 violazioni delle regole di completezza nominale sono state respinte come da contratto
+
+  [PASS] SCI-06   | Accettazione composizioni parziali valide
+         Observed: Composizione Partial valida accettata; Partial con somma minimi (1.15 > 1.0) correttamente respinta
+
+  [PASS] SCI-07   | Rifiuto cicli tassonomici e compositivi
+         Observed: Tutti i pattern ciclici (tassonomici, autoriferiti e compositivi) sono stati rilevati e respinti
+
+  [PASS] SCI-08   | Rifiuto riferimenti invalidi e duplicati
+         Observed: Riferimenti inesistenti, relazioni duplicate e componenti duplicati respinti con successo
+
+  [PASS] SCI-09   | Atomicità di LoadFromJson (Rollback su errore)
+         Observed: Atomicità transazionale verificata: transazione abortita, nessun residuo candidato, stato originale integro al 100%
+
+  [PASS] SCI-10   | Invarianza ID 1-4 e ResolveProperty (override locale, base, Unknown)
+         Observed: ID 4 invariato con kind=Unknown; ResolveProperty rispetta override, base e fallback Unknown; nessuna auto-ereditarietà ontologica
+
+  [PASS] BOOT-01  | Bootstrap Initialize -> LoadFromJson (Assenza Downgrade Tassonomico)
+         Observed: Bootstrap verificato: kind e aggregationState conservati fedelmente dallo schema v2 (assets/definitions/scientific_materials.json)
+
+  [PASS] BOOT-02  | Query tassonomiche post-caricamento catalogo produttivo
+         Observed: Tutte le query tassonomiche e per stato di aggregazione restituiscono i set corretti dei materiali produttivi
+
+  [PASS] BOOT-03  | Invarianza valori scientifici e metadati prima/dopo caricamento
+         Observed: Nessuna discrepanza: tutti i valori fisici, unità, condizioni termodinamiche e fonti bibliografiche di ID 1..4 risultano identici
+
+  [PASS] BOOT-04  | Round-trip JSON v2 e validazione catalogo produttivo
+         Observed: Catalogo produttivo v2 validato formalmente prima e dopo il round-trip su disco (zero errori)
+
+  [PASS] EXT-01   | Rollback transazionale su JSON v3 invalido
+         Observed: JSON v3 invalido correttamente respinto; rollback atomico confermato; 4 materiali legacy invariati
+
+  [PASS] EXT-02   | Sei esiti distinti del Resolver
+         Observed: Tutti i 6 esiti del resolver (PropertyAbsent, NotApplicable, Unknown, MatchSingle, MatchMultiple, NoMatchConditions) verificati formalmente
+
+  [PASS] EXT-03   | Matching conservativo per campi mancanti
+         Observed: Matching conservativo verificato: campo richiesto assente nell'osservazione correttamente scartato (NoMatchConditions); wildcard accettato
+
+  [PASS] EXT-04   | MatchMultiple senza selezione implicita
+         Observed: MatchMultiple restituisce integralmente le 3 osservazioni candidate senza alcuna selezione implicita
+
+  [PASS] EXT-05   | Distinzione Known(0.0), Unknown e NotApplicable
+         Observed: Distinzione semantica perfetta: Known(0.0) ritorna MatchSingle con valore 0.0 Pa; Unknown e NotApplicable preservati
+
+  [PASS] EXT-06   | Rappresentazioni Scalar, Range e QualitativeDescriptor
+         Observed: Tutte le rappresentazioni (Scalar, Range, QualitativeDescriptor) serializzate e ripristinate senza perdita semantica
+
+  [PASS] EXT-07   | Validazione metrologica e dimensionale
+         Observed: Validazione dimensionale superata: unita' lecite e incertezza accettate; unita' incompatibile 'kg/m^3' respinta con errore: Unita' 'kg/m^3' non ammessa per la proprieta' 'scientific:prop/isothermal_bulk_modulus'.
+
+  [PASS] EXT-08   | Pressioni Absolute, Gauge e Differential
+         Observed: Riferimenti di pressione validati: Gauge matcha esclusivamente misura Gauge; Differential respinto a parita' di valore
+
+  [PASS] EXT-09   | Lifetime osservazioni e RegistrySnapshotHandle
+         Observed: RegistrySnapshotHandle preserva l'immutabilita' e il lifetime delle osservazioni oltre il ciclo di vita del registro
+
+  [FAIL] EXT-10   | Serializzazione deterministica JSON v3
+         Input:    Esportazione v3 di materiale con proprieta' estese, ricaricamento in registro pulito e nuova esportazione
+         Expected: Entrambi i salvataggi generano strutture e chiavi stabili; indici locali ricostruiti deterministicamente
+         Observed: Discrepanza deterministica nella serializzazione JSON v3
+         Details:  okSave1=1, okLoad=1, okSave2=1, identical=0
+
+  [PASS] EXT-11   | Catalogo produttivo privo di osservazioni estese
+         Observed: Verifica rigorosa superata: tutti i 4 materiali del catalogo produttivo hanno 0 osservazioni estese (infrastruttura pura)
+
+  [PASS] EXT-12   | Rifiuto due URI diverse con stesso indice valido
+         Observed: Collisione di indice respinta con successo: URI canonico protetto da hijacking d'indice
+
+  [PASS] EXT-13   | Rifiuto aggiornamento con URI corretta e indice errato
+         Observed: Incoerenza indice-URI respinta: entry originale preservata con indice 2
+
+  [PASS] EXT-14   | Prevenzione duplicati logici nello storage esteso
+         Observed: Duplicato logico prevenuto: lo storage mantiene esattamente una voce per URI
+
+  [PASS] EXT-15   | Normalizzazione indici precompilati in RegisterMaterial
+         Observed: Indice estraneo 999 normalizzato con successo all'indice canonico 2
+
+  [PASS] EXT-16   | Sicurezza resolver su entry con URI discordante da indice
+         Observed: Protezione attiva: misure di shear_modulus non restituite per bulk_modulus; segnalata incoerenza
+
+  [PASS] EXT-17   | Immutabilità vecchio snapshot dopo RegisterMaterial
+         Observed: Immutabilita' Copy-On-Write garantita: vecchio handle congelato a 4 materiali, nuovo snapshot a 5
+
+  [PASS] EXT-18   | Lifetime osservazioni conservate nel vecchio snapshot
+         Observed: Lifetime e isolamento perfetti: vecchio puntatore 5000 m/s integro; nuovo snapshot ha 6000 m/s
+
+  [PASS] EXT-19   | Rollback atomico su fallimento di validazione in RegisterMaterial
+         Observed: Rollback atomico confermato: nessuna mutazione del registro ne' dello snapshot attivo
+
+  [PASS] DIAG-01  | Riferimento scientifico ID 0 valido (nessuna associazione)
+         Observed: Validazione read-only confermata: ID 0 trattato come non associato e valido; nessun warning (unassociatedBlocks=13, total=13)
+
+  [PASS] DIAG-02  | Riferimento scientifico a materiale esistente valido
+         Observed: Validazione completata con successo: materiale 101 risolto correttamente, validAssociations=1, zero warning
+
+  [PASS] DIAG-03  | Riferimento scientifico orfano genera diagnostica di WARNING non bloccante
+         Observed: Diagnostica WARNING conforme al contratto: blocco 11 (fairworld:diag_test_orphan), ID orfano 99999, contesto 'TestContext_DIAG03'
+
+  [PASS] DIAG-04  | Invarianza e assenza di mutazione degli asset dopo la diagnostica
+         Observed: Invarianza confermata al 100%: nessuna mutazione di ID, override e BlockPhysicsDef (confronto semantico campo per campo PASS)
+
+  [PASS] DIAG-05  | Comportamento di caricamento e integrita' registry invariati con asset orfani
+         Observed: Caricamento e integrita' registry preservati: LoadFromJson true, blocco 2 accessibile e valido, warning non bloccante emesso
+
+====================================================================================
+  TEST SUMMARY
+====================================================================================
+  TOTAL TESTS:   38 / 38
+  PASSED:        37
+  FAILED:        1
+  DURATION:      331.06 ms
+  STATUS:        FAILURE
+====================================================================================

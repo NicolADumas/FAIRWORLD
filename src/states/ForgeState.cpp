@@ -47,16 +47,13 @@ bool ForgeState::Init() {
         // Alloca un "VRAM monolite" logico da 512MB per i Chunk
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
         m_context->vramAllocator->SetAllocateCompartmentCallback([ctx = m_context](uint32_t compIdx) {
-            if (ctx && ctx->engine && ctx->engine->GetRenderManager()) {
-                ctx->engine->GetRenderManager()->AddVramCompartment();
-                if (ctx->dmaManager) {
-                    ctx->dmaManager->UpdateStagingBuffer(
-                        ctx->engine->GetRenderManager()->GetStagingRingBuffer(),
-                        ctx->engine->GetRenderManager()->GetStagingDeviceMemory(),
-                        ctx->engine->GetRenderManager()->GetMappedStagingData()
-                    );
-                }
-            }
+            auto* rm = ctx && ctx->engine ? ctx->engine->GetRenderManager() : nullptr;
+            if (!rm || rm->GetVramCompartments().size() != compIdx || !rm->AddVramCompartment()) return false;
+            const auto& compartments = rm->GetVramCompartments();
+            if (compartments.size() != static_cast<size_t>(compIdx) + 1 || compartments[compIdx] == VK_NULL_HANDLE) return false;
+            if (ctx->dmaManager) ctx->dmaManager->UpdateStagingBuffer(
+                rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData());
+            return true;
         });
     }
     
@@ -73,7 +70,8 @@ bool ForgeState::Init() {
                     rm->GetMappedStagingData(),
                     rm->GetStagingBufferSize(),
                     VK_NULL_HANDLE,
-                    rm->GetQueueMutex()
+                    rm->GetQueueMutex(),
+                    rm->GetTransferCommandPoolMutex()
                 );
             }
         }

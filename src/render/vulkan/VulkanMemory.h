@@ -17,7 +17,7 @@ public:
 
     bool Initialize();
     void Cleanup();
-    void AddVramCompartment();
+    bool AddVramCompartment();
     
     VmaAllocator GetAllocator() const { return m_vmaAllocator; }
     VkBuffer& GetStagingRingBuffer() { return m_stagingRingBuffer; }

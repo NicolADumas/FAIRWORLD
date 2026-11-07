@@ -1949,7 +1949,7 @@ void FairWorldEngine::renderTab_Engine() {
     if (ImGui::Button("-> PAUSA"))      transitionTo(GameState::PAUSE_MENU);
 }
 
-void FairWorldEngine::Shutdown() {
+void FairWorldEngine::Shutdown(bool runtimeLifecycleExpected) {
     if (m_hasShutdown) return;
     m_hasShutdown = true;
 
@@ -1983,7 +1983,15 @@ void FairWorldEngine::Shutdown() {
     //            PRIMA di RenderManager::Shutdown() -> semaphore RenderManager
     //            ancora legittimamente vivi (NON inclusi in questo gate)
     // Legge RuntimeShutdownResult: nessun nullptr == PASS implicito.
-    fw::LifecycleFreezeGate::RunRuntimeGate(m_sharedContext);
+    if (runtimeLifecycleExpected) {
+        fw::LifecycleFreezeGate::RunRuntimeGate(m_sharedContext);
+    } else {
+        std::cout << "\n====================================================\n"
+                  << " FAIRWORLD RUNTIME LIFECYCLE GATE\n"
+                  << "====================================================\n"
+                  << " RUNTIME LIFECYCLE: NOT APPLICABLE (explicit headless test)\n"
+                  << "====================================================\n\n";
+    }
     // ─────────────────────────────────────────────────────────
 
     m_webView.Shutdown();
@@ -1991,7 +1999,24 @@ void FairWorldEngine::Shutdown() {
     if (m_isVrMode) {
         m_xrManager->Shutdown();
     }
-    m_renderManager->Shutdown();
+    const bool runtimeGpuCleanupIncomplete = m_sharedContext && m_sharedContext->runtimeManager &&
+        !m_sharedContext->runtimeManager->GetShutdownResult().completed;
+    bool deferredVulkanCleanup = false;
+    bool deviceLostDuringVulkanCleanup = m_renderManager && m_renderManager->IsDeviceLost();
+    if (runtimeGpuCleanupIncomplete) {
+        // DMA may still own command buffers allocated from this RenderManager's
+        // transfer pool. Keep the pool/device owner alive with that manager.
+        deferredVulkanCleanup = true;
+        RenderManager::RetainDeferredCleanup(std::move(m_renderManager));
+    } else {
+        m_renderManager->Shutdown();
+        const auto renderShutdownState = m_renderManager->GetShutdownState();
+        deferredVulkanCleanup = renderShutdownState == RenderManager::ShutdownState::CleanupDeferred;
+        deviceLostDuringVulkanCleanup = renderShutdownState == RenderManager::ShutdownState::DeviceLostCleanupComplete;
+    }
+    if (deferredVulkanCleanup && m_renderManager) {
+        RenderManager::RetainDeferredCleanup(std::move(m_renderManager));
+    }
     m_windowManager->Shutdown();
     // A questo punto i semaphore del RenderManager sono stati distrutti
     // e TrackDestroy e' stato chiamato per ciascuno.
@@ -2000,7 +2025,7 @@ void FairWorldEngine::Shutdown() {
     // Posizione: DOPO RenderManager::Shutdown() -> tutti i semaphore FAIRWORLD distrutti
     //            PRIMA di VulkanResourceTracker::Shutdown() -> tracker ancora vivo
     // Verifica: GetLiveSemaphoreCount() == 0
-    fw::LifecycleFreezeGate::RunVulkanFinalGate();
+    fw::LifecycleFreezeGate::RunVulkanFinalGate(deferredVulkanCleanup, deviceLostDuringVulkanCleanup);
     // ─────────────────────────────────────────────────────────
 
     // VulkanResourceTracker::Shutdown() stampa il report dettagliato finale

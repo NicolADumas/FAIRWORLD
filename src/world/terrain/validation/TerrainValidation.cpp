@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "TerrainValidation.h"
 #include "world/CubeSphereMapping.h"
+#include "world/PlanetGridCompatibility.h"
+#include "world/PlanetaryMeshGenerator.h"
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -10,9 +12,16 @@
 #include <cstring>
 #include <atomic>
 #include <future>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+#include <cstdint>
+#include <limits>
+#include <sstream>
 #include "systems/TerrainSolverSystem.h"
 #include "world/TerrainSolver.h"
 #include "world/MapDocument.h"
+#include "world/WorldProjectManager.h"
 #include "core/utils/PlanetMath.h"
 #include "components/ForgeComponents.h"
 #include "components/BiomeComponents.h"
@@ -23,6 +32,8 @@
 #endif
 
 namespace fw {
+
+static const float kD4MappingEpsilon = 1e-5f;
 
 static size_t GetTotalAllocatedBytes() {
 #if defined(_WIN32) && defined(_DEBUG)
@@ -606,6 +617,7 @@ bool TerrainValidation::RunAll() {
     pass &= RunD2CoordinateContractTest();
     pass &= RunD3CubeSphereSSOTGateTest();
     pass &= RunD4MappingDeterminismGateTest();
+    pass &= RunD12ConventionTests();
 
     std::cout << "\n====================================================\n";
     if (pass) {
@@ -613,6 +625,695 @@ bool TerrainValidation::RunAll() {
     } else {
         std::cout << " FREEZE STATUS: UNSTABLE (FAIL)\n";
     }
+    std::cout << "====================================================\n";
+    return pass;
+}
+
+bool TerrainValidation::TestD12ChartRoundTrips() {
+    bool pass = true;
+    const glm::vec2 samples[] = {
+        {0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f},
+        {0.5f, 0.0f}, {0.5f, 1.0f}, {0.0f, 0.5f}, {1.0f, 0.5f},
+        {0.5f, 0.5f}, {0.25f, 0.25f}, {0.75f, 0.25f},
+        {0.25f, 0.75f}, {0.75f, 0.75f}
+    };
+
+    for (int faceIndex = 0; faceIndex < 6; ++faceIndex) {
+        const auto face = static_cast<fw::CubeFace>(faceIndex);
+        for (const glm::vec2& uv : samples) {
+            const glm::vec2 chart = fw::CubeSphereMapping::FaceUVToChartCoordinates(uv);
+            const glm::vec2 expectedChart(2.0f * uv.x - 1.0f, 1.0f - 2.0f * uv.y);
+            if (glm::distance(chart, expectedChart) > kD4MappingEpsilon) pass = false;
+
+            const glm::vec3 expectedDir = fw::CubeSphereMapping::FaceUVToDirection(face, uv);
+            const glm::vec3 chartDir = fw::CubeSphereMapping::FaceChartToDirection(face, chart);
+            if (glm::distance(expectedDir, chartDir) > kD4MappingEpsilon) pass = false;
+
+            const float spawnRadius = fw::PlanetMath::GetPlanetRadius(fw::PlanetSize::Medium);
+            fw::SpawnPoint newSpawn;
+            newSpawn.faceIndex = faceIndex;
+            newSpawn.localX = chart.x * spawnRadius;
+            newSpawn.localZ = chart.y * spawnRadius;
+            const glm::vec3 newSpawnDir = fw::CubeSphereMapping::FaceChartToDirection(
+                newSpawn.faceIndex,
+                glm::vec2(newSpawn.localX / spawnRadius, newSpawn.localZ / spawnRadius));
+            if (glm::distance(expectedDir, newSpawnDir) > kD4MappingEpsilon) pass = false;
+
+            fw::CubeFace roundTripFace;
+            glm::vec2 roundTripUV;
+            fw::CubeSphereMapping::DirectionToFaceUV(chartDir, roundTripFace, roundTripUV);
+            const glm::vec3 roundTripDir = fw::CubeSphereMapping::FaceUVToDirection(roundTripFace, roundTripUV);
+            if (glm::distance(expectedDir, roundTripDir) > kD4MappingEpsilon) pass = false;
+            if (uv.x > 0.0f && uv.x < 1.0f && uv.y > 0.0f && uv.y < 1.0f) {
+                if (roundTripFace != face || glm::distance(roundTripUV, uv) > kD4MappingEpsilon) pass = false;
+            }
+        }
+    }
+
+    struct TieBreakCase { glm::vec3 direction; fw::CubeFace expectedFace; };
+    const TieBreakCase ties[] = {
+        {{1.0f, 0.0f, 1.0f}, fw::CubeFace::PositiveZ},
+        {{-1.0f, 0.0f, 1.0f}, fw::CubeFace::PositiveZ},
+        {{1.0f, 1.0f, 0.0f}, fw::CubeFace::PositiveX},
+        {{-1.0f, 1.0f, 0.0f}, fw::CubeFace::NegativeX},
+        {{1.0f, 1.0f, 1.0f}, fw::CubeFace::PositiveZ},
+        {{-1.0f, 1.0f, -1.0f}, fw::CubeFace::NegativeZ}
+    };
+    for (const auto& test : ties) {
+        fw::CubeFace face0;
+        glm::vec2 uv0;
+        fw::CubeSphereMapping::DirectionToFaceUV(test.direction, face0, uv0);
+        if (face0 != test.expectedFace) pass = false;
+        for (int repeat = 0; repeat < 8; ++repeat) {
+            fw::CubeFace faceN;
+            glm::vec2 uvN;
+            fw::CubeSphereMapping::DirectionToFaceUV(test.direction, faceN, uvN);
+            if (faceN != face0 || uvN != uv0) pass = false;
+        }
+    }
+    return pass;
+}
+
+bool TerrainValidation::TestD12GridRowsAndBounds() {
+    bool pass = true;
+    auto formatFloatBits = [](float value) {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        std::ostringstream formatted;
+        formatted << std::setprecision(std::numeric_limits<float>::max_digits10)
+                  << value << " (0x" << std::hex << std::uppercase << bits << ")";
+        return formatted.str();
+    };
+    auto planetSizeName = [](fw::PlanetSize size) -> const char* {
+        switch (size) {
+            case fw::PlanetSize::Tiny: return "Tiny";
+            case fw::PlanetSize::Micro: return "Micro";
+            case fw::PlanetSize::Small: return "Small";
+            case fw::PlanetSize::Medium: return "Medium";
+            case fw::PlanetSize::Large: return "Large";
+            case fw::PlanetSize::Huge: return "Huge";
+            default: return "Unknown";
+        }
+    };
+    auto printFailureHeader = [&](const char* control, fw::PlanetSize size, int resolution) {
+        std::cout << "[D1.2 GRID FAIL] control=" << control
+                  << " PlanetSize=" << planetSizeName(size)
+                  << " N=" << resolution
+                  << " face=n/a";
+    };
+    auto printGridFailure = [&](const char* control, fw::PlanetSize size, int resolution,
+                                const glm::vec2& uv, int expectedCol, int expectedRow,
+                                int actualCol, int actualRow) {
+        printFailureHeader(control, size, resolution);
+        std::cout << " UV=(" << formatFloatBits(uv.x) << ", " << formatFloatBits(uv.y) << ")"
+                  << " expected(col,row)=(" << expectedCol << "," << expectedRow << ")"
+                  << " actual(col,row)=(" << actualCol << "," << actualRow << ")"
+                  << " tolerance=n/a colDifference=" << (actualCol - expectedCol)
+                  << " rowDifference=" << (actualRow - expectedRow) << "\n";
+    };
+    const fw::PlanetSize sizes[] = {
+        fw::PlanetSize::Tiny, fw::PlanetSize::Micro, fw::PlanetSize::Small,
+        fw::PlanetSize::Medium, fw::PlanetSize::Large, fw::PlanetSize::Huge
+    };
+
+    for (fw::PlanetSize size : sizes) {
+        const int resolution = static_cast<int>(fw::PlanetMath::GetFaceResolution(size));
+        const int extent = fw::PlanetMath::GetEditorCanvasExtents(size);
+        if (resolution <= 0 || 2 * extent + 1 != resolution) {
+            printFailureHeader("A.dimension_extent_consistency", size, resolution);
+            std::cout << " UV=n/a expectedN(2*E+1)=" << (2 * extent + 1)
+                      << " actualN=" << resolution << " E=" << extent
+                      << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a difference="
+                      << (resolution - (2 * extent + 1)) << "\n";
+            pass = false;
+            continue;
+        }
+
+        for (int localCz = -extent; localCz <= extent; ++localCz) {
+            const int legacyRow = localCz + extent;
+            int canonicalRow = -1;
+            if (!fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+                    legacyRow, resolution, canonicalRow)) {
+                printFailureHeader("B.valid_row_conversion_rejected", size, resolution);
+                std::cout << " UV=n/a local_cz=" << localCz
+                          << " legacyRow=" << legacyRow
+                          << " expectedCanonicalRow=" << (resolution - 1 - legacyRow)
+                          << " actualCanonicalRow=" << canonicalRow
+                          << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a difference=n/a"
+                          << " adapterAccepted=false\n";
+                pass = false;
+                continue;
+            }
+            if (legacyRow < 0 || legacyRow >= resolution ||
+                canonicalRow < 0 || canonicalRow >= resolution ||
+                canonicalRow != resolution - 1 - legacyRow) {
+                const int expectedCanonicalRow = resolution - 1 - legacyRow;
+                printFailureHeader("B.valid_row_bounds_or_reflection", size, resolution);
+                std::cout << " UV=n/a local_cz=" << localCz
+                          << " legacyRow=" << legacyRow
+                          << " expectedCanonicalRow=" << expectedCanonicalRow
+                          << " actualCanonicalRow=" << canonicalRow
+                          << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a rowDifference="
+                          << (canonicalRow - expectedCanonicalRow) << "\n";
+                pass = false;
+            }
+
+            int legacyRoundTrip = -1;
+            if (!fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+                    canonicalRow, resolution, legacyRoundTrip) || legacyRoundTrip != legacyRow) {
+                printFailureHeader("B.valid_row_round_trip", size, resolution);
+                std::cout << " UV=n/a legacyRow=" << legacyRow
+                          << " canonicalRow=" << canonicalRow
+                          << " expectedLegacyRow=" << legacyRow
+                          << " actualLegacyRow=" << legacyRoundTrip
+                          << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a rowDifference="
+                          << (legacyRoundTrip - legacyRow) << "\n";
+                pass = false;
+            }
+        }
+
+        int ignoredNegOne = -1;
+        const bool acceptedNegOne = fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+            -1, resolution, ignoredNegOne);
+        int ignoredN = -1;
+        const bool acceptedN = fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+            resolution, resolution, ignoredN);
+        int ignoredZeroResolution = -1;
+        const bool acceptedZeroResolution = fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+            0, 0, ignoredZeroResolution);
+        if (acceptedNegOne) {
+            printFailureHeader("C.reject_legacy_row_minus_one", size, resolution);
+            std::cout << " UV=n/a legacyRow=-1 expectedAccepted=false actualAccepted=true"
+                      << " expectedCanonicalRow=n/a actualCanonicalRow=" << ignoredNegOne
+                      << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a difference=n/a\n";
+        }
+        if (acceptedN) {
+            printFailureHeader("C.reject_legacy_row_N", size, resolution);
+            std::cout << " UV=n/a legacyRow=" << resolution
+                      << " expectedAccepted=false actualAccepted=true"
+                      << " expectedCanonicalRow=n/a actualCanonicalRow=" << ignoredN
+                      << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a difference=n/a\n";
+        }
+        if (acceptedZeroResolution) {
+            printFailureHeader("C.reject_zero_resolution", size, 0);
+            std::cout << " UV=n/a legacyRow=0 expectedAccepted=false actualAccepted=true"
+                      << " expectedCanonicalRow=n/a actualCanonicalRow=" << ignoredZeroResolution
+                      << " expected(col,row)=n/a actual(col,row)=n/a tolerance=n/a difference=n/a\n";
+        }
+        if (acceptedNegOne || acceptedN || acceptedZeroResolution) {
+            pass = false;
+        }
+
+        for (int row = 0; row < resolution; ++row) {
+            for (int col = 0; col < resolution; ++col) {
+                const glm::vec2 uv = fw::CubeSphereMapping::GridToUV(col, row, resolution);
+                int outCol = -1, outRow = -1;
+                fw::CubeSphereMapping::UVToGrid(uv, resolution, outCol, outRow);
+                if (outCol != col || outRow != row) {
+                    printGridFailure("D.cell_center_round_trip", size, resolution,
+                                     uv, col, row, outCol, outRow);
+                    pass = false;
+                }
+            }
+        }
+
+        int col = -1, row = -1;
+        const glm::vec2 uv00(0.0f, 0.0f);
+        fw::CubeSphereMapping::UVToGrid(uv00, resolution, col, row);
+        if (col != 0 || row != 0) {
+            printGridFailure("E.uv_endpoint_00", size, resolution, uv00, 0, 0, col, row);
+            pass = false;
+        }
+        const glm::vec2 uv11(1.0f, 1.0f);
+        fw::CubeSphereMapping::UVToGrid(uv11, resolution, col, row);
+        if (col != resolution - 1 || row != resolution - 1) {
+            printGridFailure("E.uv_endpoint_11", size, resolution, uv11,
+                             resolution - 1, resolution - 1, col, row);
+            pass = false;
+        }
+
+        const int centerCell = resolution / 2;
+        for (int axis = 0; axis < 2; ++axis) {
+            for (int edge = 1; edge < resolution; ++edge) {
+                const float boundary = static_cast<float>(edge) / static_cast<float>(resolution);
+                const float below = std::nextafter(boundary, 0.0f);
+                const float above = std::nextafter(boundary, 1.0f);
+                const glm::vec2 boundaryUV = axis == 0
+                    ? glm::vec2(boundary, 0.5f) : glm::vec2(0.5f, boundary);
+                const glm::vec2 belowUV = axis == 0
+                    ? glm::vec2(below, 0.5f) : glm::vec2(0.5f, below);
+                const glm::vec2 aboveUV = axis == 0
+                    ? glm::vec2(above, 0.5f) : glm::vec2(0.5f, above);
+
+                fw::CubeSphereMapping::UVToGrid(boundaryUV, resolution, col, row);
+                const int boundaryExpectedCol = axis == 0 ? edge : centerCell;
+                const int boundaryExpectedRow = axis == 0 ? centerCell : edge;
+                if (col != boundaryExpectedCol || row != boundaryExpectedRow) {
+                    printGridFailure(axis == 0 ? "F.u_boundary_tie_break" : "F.v_boundary_tie_break",
+                                     size, resolution, boundaryUV,
+                                     boundaryExpectedCol, boundaryExpectedRow, col, row);
+                    pass = false;
+                }
+
+                fw::CubeSphereMapping::UVToGrid(belowUV, resolution, col, row);
+                const int belowExpectedCol = axis == 0 ? edge - 1 : centerCell;
+                const int belowExpectedRow = axis == 0 ? centerCell : edge - 1;
+                if (col != belowExpectedCol || row != belowExpectedRow) {
+                    printGridFailure(axis == 0 ? "F.u_nextafter_below" : "F.v_nextafter_below",
+                                     size, resolution, belowUV,
+                                     belowExpectedCol, belowExpectedRow, col, row);
+                    pass = false;
+                }
+
+                fw::CubeSphereMapping::UVToGrid(aboveUV, resolution, col, row);
+                const int aboveExpectedCol = axis == 0 ? edge : centerCell;
+                const int aboveExpectedRow = axis == 0 ? centerCell : edge;
+                if (col != aboveExpectedCol || row != aboveExpectedRow) {
+                    printGridFailure(axis == 0 ? "F.u_nextafter_above" : "F.v_nextafter_above",
+                                     size, resolution, aboveUV,
+                                     aboveExpectedCol, aboveExpectedRow, col, row);
+                    pass = false;
+                }
+            }
+        }
+
+        const glm::vec2 uZero(0.0f, 0.5f);
+        fw::CubeSphereMapping::UVToGrid(uZero, resolution, col, row);
+        if (col != 0 || row != centerCell) {
+            printGridFailure("E.u_zero_endpoint", size, resolution, uZero,
+                             0, centerCell, col, row);
+            pass = false;
+        }
+        const glm::vec2 uOne(1.0f, 0.5f);
+        fw::CubeSphereMapping::UVToGrid(uOne, resolution, col, row);
+        if (col != resolution - 1 || row != centerCell) {
+            printGridFailure("E.u_one_endpoint", size, resolution, uOne,
+                             resolution - 1, centerCell, col, row);
+            pass = false;
+        }
+        const glm::vec2 vZero(0.5f, 0.0f);
+        fw::CubeSphereMapping::UVToGrid(vZero, resolution, col, row);
+        if (col != centerCell || row != 0) {
+            printGridFailure("E.v_zero_endpoint", size, resolution, vZero,
+                             centerCell, 0, col, row);
+            pass = false;
+        }
+        const glm::vec2 vOne(0.5f, 1.0f);
+        fw::CubeSphereMapping::UVToGrid(vOne, resolution, col, row);
+        if (col != centerCell || row != resolution - 1) {
+            printGridFailure("E.v_one_endpoint", size, resolution, vOne,
+                             centerCell, resolution - 1, col, row);
+            pass = false;
+        }
+
+        for (int edge = 1; edge < resolution; ++edge) {
+            const float boundary = static_cast<float>(edge) / static_cast<float>(resolution);
+            const glm::vec2 edgeUV(boundary, boundary);
+            fw::CubeSphereMapping::UVToGrid(edgeUV, resolution, col, row);
+            if (col != edge || row != edge) {
+                printFailureHeader("F.internal_edge_tie_break", size, resolution);
+                std::cout << " UV=(" << formatFloatBits(edgeUV.x) << ", " << formatFloatBits(edgeUV.y) << ")"
+                          << " edgeIndex=" << edge
+                          << " expected(col,row)=(" << edge << "," << edge << ")"
+                          << " actual(col,row)=(" << col << "," << row << ")"
+                          << " tolerance=n/a colDifference=" << (col - edge)
+                          << " rowDifference=" << (row - edge) << "\n";
+                pass = false;
+            }
+        }
+    }
+    return pass;
+}
+
+bool TerrainValidation::TestD12TerrainAndMeshRowFlow() {
+    bool pass = true;
+    const fw::PlanetSize sizes[] = {
+        fw::PlanetSize::Tiny, fw::PlanetSize::Micro, fw::PlanetSize::Small,
+        fw::PlanetSize::Medium, fw::PlanetSize::Large, fw::PlanetSize::Huge
+    };
+    fw::TerrainSolver solver;
+
+    for (fw::PlanetSize size : sizes) {
+        const int resolution = static_cast<int>(fw::PlanetMath::GetFaceResolution(size));
+        const int extent = fw::PlanetMath::GetEditorCanvasExtents(size);
+        const float radius = fw::PlanetMath::GetPlanetRadius(size);
+        const int rowsToCheck[] = {0, resolution / 2, resolution - 1};
+
+        for (int faceIndex = 0; faceIndex < 6; ++faceIndex) {
+            const auto face = static_cast<fw::CubeFace>(faceIndex);
+            for (int col : {0, resolution / 2, resolution - 1}) {
+                for (int legacyRow : rowsToCheck) {
+                    int canonicalRow = -1;
+                    if (!fw::planet_grid_compat::TryLegacyFaceRowToCanonicalRow(
+                            legacyRow, resolution, canonicalRow)) {
+                        pass = false;
+                        continue;
+                    }
+
+                    // A legacy chunk center has chart coordinates derived from its
+                    // centered local grid coordinate. The adapter must make the
+                    // canonical row center map to the same direction exactly once.
+                    const glm::vec2 legacyChart(
+                        2.0f * static_cast<float>(col - extent) / resolution,
+                        2.0f * static_cast<float>(legacyRow - extent) / resolution);
+                    const glm::vec3 expected = fw::CubeSphereMapping::FaceChartToDirection(face, legacyChart);
+
+                    fw::TerrainGenerationContext ctx{};
+                    ctx.faceIndex = faceIndex;
+                    ctx.chunkCoord = {col, canonicalRow};
+                    ctx.faceGridResolution = resolution * fw::ChunkDimensions::VoxelsX;
+                    ctx.voxelResolutionX = fw::ChunkDimensions::VoxelsX;
+                    ctx.voxelResolutionY = fw::ChunkDimensions::VoxelsY;
+                    ctx.voxelResolutionZ = fw::ChunkDimensions::VoxelsZ;
+                    ctx.planetRadius = radius;
+                    ctx.isFlat = false;
+                    const glm::vec3 terrainPos = solver.GetVoxelSpherePos(ctx, 8, 0, 8);
+                    if (glm::distance(terrainPos, expected * radius) > 2e-3f) pass = false;
+
+                    fw::PlanetChunkCoord coord{{1}, face, col, canonicalRow, 0};
+                    std::vector<fw::Vertex> vertices(3);
+                    for (auto& vertex : vertices) {
+                        vertex.position = fw::Vec3(8.0f, 64.0f, 8.0f);
+                        vertex.normal = fw::Vec3(0.0f, 1.0f, 0.0f);
+                    }
+                    fw::PlanetaryMeshGenerator::ConvertToPlanetaryPositions(vertices, coord, size);
+                    if (vertices.size() != 3) {
+                        pass = false;
+                    } else {
+                        const glm::vec3 meshPos(vertices[0].position.x, vertices[0].position.y, vertices[0].position.z);
+                        if (glm::distance(meshPos, expected * radius) > 2e-3f) pass = false;
+                    }
+                }
+            }
+        }
+    }
+    return pass;
+}
+
+bool TerrainValidation::TestD12SpawnPersistenceCompatibility() {
+    bool pass = true;
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto base = std::filesystem::temp_directory_path() /
+        ("fairworld_d12_spawn_" + std::to_string(token));
+    const auto jsonPath = base.string() + ".json";
+    const auto binaryPath = base.string() + ".fwb";
+    struct TempFileCleanup {
+        std::string jsonPath;
+        std::string binaryPath;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            std::filesystem::remove(jsonPath, ec);
+            ec.clear();
+            std::filesystem::remove(binaryPath, ec);
+        }
+    } cleanup{jsonPath, binaryPath};
+
+    fw::MapDocument source;
+    fw::PlanetMap planet{};
+    planet.type = ::PlanetType::EarthPrime;
+    planet.name = "D1.2 Spawn Compatibility";
+    planet.planetSize = fw::PlanetSize::Medium;
+    for (int faceIndex = 0; faceIndex < 6; ++faceIndex) {
+        fw::SpawnPoint oldSpawn;
+        oldSpawn.name = "Legacy hit spawn " + std::to_string(faceIndex);
+        oldSpawn.faceIndex = faceIndex;
+        oldSpawn.localX = 12.25f + faceIndex;
+        oldSpawn.localZ = -44.0f + 2.0f * faceIndex; // Retain old serialized numeric values.
+        oldSpawn.heightOffset = 17.5f + faceIndex;
+        planet.spawnPoints.push_back(oldSpawn);
+    }
+    source.planets.push_back(planet);
+
+    const float radius = fw::PlanetMath::GetPlanetRadius(planet.planetSize);
+
+    auto verifyLoaded = [&](const fw::MapDocument& loaded) {
+        if (loaded.planets.size() != 1 || loaded.planets[0].spawnPoints.size() != 6) return false;
+        for (size_t i = 0; i < source.planets[0].spawnPoints.size(); ++i) {
+            const auto& oldSpawn = source.planets[0].spawnPoints[i];
+            const auto& loadedSpawn = loaded.planets[0].spawnPoints[i];
+            if (loadedSpawn.faceIndex != oldSpawn.faceIndex ||
+                loadedSpawn.localX != oldSpawn.localX ||
+                loadedSpawn.localZ != oldSpawn.localZ ||
+                loadedSpawn.heightOffset != oldSpawn.heightOffset) return false;
+            const glm::vec3 oldDirection = fw::CubeSphereMapping::FaceChartToDirection(
+                oldSpawn.faceIndex, glm::vec2(oldSpawn.localX / radius, oldSpawn.localZ / radius));
+            const glm::vec3 loadedDirection = fw::CubeSphereMapping::FaceChartToDirection(
+                loadedSpawn.faceIndex, glm::vec2(loadedSpawn.localX / radius, loadedSpawn.localZ / radius));
+            if (glm::distance(oldDirection, loadedDirection) > kD4MappingEpsilon) return false;
+        }
+        return true;
+    };
+
+    fw::MapDocument jsonLoaded;
+    if (!source.SaveJSON(jsonPath) || !jsonLoaded.LoadJSON(jsonPath) || !verifyLoaded(jsonLoaded)) pass = false;
+
+    fw::MapDocument binaryLoaded;
+    if (!source.SaveBinary(binaryPath) || !binaryLoaded.LoadBinary(binaryPath) || !verifyLoaded(binaryLoaded)) pass = false;
+    return pass;
+}
+
+bool TerrainValidation::TestP03D1FwbSemanticParity() {
+    namespace fs = std::filesystem;
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path testDir = fs::current_path() / ("p03d1_fwb_test_" + std::to_string(token));
+    std::error_code ec;
+    if (!fs::create_directory(testDir, ec) || ec) return false;
+
+    const fs::path jsonPath = testDir / "semantic.json";
+    const fs::path binaryPath = testDir / "semantic.fwb";
+    const fs::path binaryJsonPath = testDir / "from_binary.json";
+    const fs::path projectPath = testDir / "project.json";
+    const fs::path corruptPath = testDir / "truncated.fwb";
+    const fs::path badVersionPath = testDir / "bad_version.fwb";
+
+    fw::MapDocument source;
+    fw::TerrainTemplate terrain;
+    terrain.id = "p03d1_semantic_template";
+    terrain.name = "P03d1 Semantic Template";
+    terrain.planetSize = fw::PlanetSize::Tiny;
+    terrain.seed = 0x1234abcd;
+    terrain.baseAngularRadius = 0.37f;
+    terrain.baseRules.layers.coreBlockName = "fairworld:basalt";
+    terrain.baseRules.layers.layers = {
+        fw::TerrainLayer{"fairworld:grass", 0.0f, 2.0f, 0.1f, 0.03f, fw::MapLayerBlendMode::Solid},
+        fw::TerrainLayer{"fairworld:blue_crystal", 2.0f, 7.0f, 0.4f, 0.07f, fw::MapLayerBlendMode::Noise}
+    };
+
+    fw::MapRegion subA;
+    subA.label = "override layer region";
+    subA.influence = 0.35f;
+    subA.seed = 7123u;
+    subA.isGridAligned = true;
+    subA.faceIndex = 4;
+    subA.gridX = 1;
+    subA.gridY = 2;
+    subA.isBackgroundFill = true;
+    fw::LayerRuleOverrides layerOverride;
+    layerOverride.coreBlockName = "fairworld:deep_stone";
+    layerOverride.layers = std::vector<fw::TerrainLayer>{
+        fw::TerrainLayer{"fairworld:gold_ore", 4.0f, 6.0f, 0.0f, 0.03f, fw::MapLayerBlendMode::Dithered}
+    };
+    subA.overrides.layers = layerOverride;
+
+    fw::MapRegion subB;
+    subB.label = "height override region";
+    subB.influence = 0.82f;
+    subB.angularRadius = 0.14f;
+    fw::HeightRuleOverrides heightOverride;
+    heightOverride.common.baseHeight = 19.5f;
+    heightOverride.common.amplitude = 8.25f;
+    subB.overrides.height = heightOverride;
+    terrain.subRegions = {subA, subB};
+    source.terrainLibrary.push_back(terrain);
+
+    fw::PlanetMap planet{};
+    planet.type = ::PlanetType::EarthPrime;
+    planet.name = "P03d1 Semantic Planet";
+    planet.planetSize = fw::PlanetSize::Tiny;
+    planet.isFlat = false;
+    planet.axialTilt = 11.75f;
+    planet.yearLength = 408.5f;
+    planet.planetaryReliefScale = 1.65f;
+    planet.baseTerrain.biome = fw::MapRegionType::Tundra;
+    planet.baseTerrain.seed = 0x76543210;
+    planet.baseTerrain.resolvedSurfaceBlock = 99; // runtime-derived; deliberately not persisted
+    planet.baseTerrain.baseRules.layers.coreBlockName = "fairworld:planet_core";
+
+    fw::MapRegion planetRegion = subA;
+    planetRegion.label = "planet region override";
+    planetRegion.isBackgroundFill = false;
+    planet.regions.push_back(planetRegion);
+
+    fw::PlanetChunkInstance instance;
+    instance.name = "fixture instance";
+    instance.templateId = terrain.id;
+    instance.eulerAngles = glm::vec3(12.0f, 34.0f, 5.0f);
+    instance.angularRadius = 0.23f;
+    instance.isGridAligned = true;
+    instance.faceIndex = 0;
+    instance.gridX = 1;
+    instance.gridY = 1;
+    instance.isActive = true;
+    planet.chunkInstances.push_back(instance);
+
+    fw::SpawnPoint spawn;
+    spawn.name = "persisted spawn";
+    spawn.faceIndex = 5;
+    spawn.localX = 3.5f;
+    spawn.localZ = -7.25f;
+    spawn.heightOffset = 12.0f;
+    spawn.color = glm::vec4(0.2f, 0.3f, 0.4f, 1.0f);
+    planet.spawnPoints.push_back(spawn);
+
+    fw::ChunkDataExport chunkOverride;
+    chunkOverride.coord.x = 3;
+    chunkOverride.coord.z = -2;
+    chunkOverride.meta.biomeID = 17;
+    chunkOverride.meta.canSpawnMobs = false;
+    chunkOverride.meta.isDestructible = true;
+    planet.chunkOverrides.push_back(chunkOverride);
+    source.planets.push_back(planet);
+
+    auto equivalent = [&](const fw::MapDocument& doc) {
+        if (doc.terrainLibrary.size() != 1 || doc.planets.size() != 1) return false;
+        const auto& gotT = doc.terrainLibrary[0];
+        const auto& gotP = doc.planets[0];
+        if (gotT.id != terrain.id || gotT.name != terrain.name || gotT.planetSize != terrain.planetSize ||
+            gotT.seed != terrain.seed || gotT.baseAngularRadius != terrain.baseAngularRadius ||
+            gotT.baseRules.layers.coreBlockName != terrain.baseRules.layers.coreBlockName ||
+            gotT.baseRules.layers.layers.size() != 2 || gotT.baseRules.layers.layers[1].blockName != "fairworld:blue_crystal" ||
+            gotT.subRegions.size() != 2) return false;
+        const auto& a = gotT.subRegions[0];
+        const auto& b = gotT.subRegions[1];
+        if (a.influence != subA.influence || a.label != subA.label || a.seed != subA.seed ||
+            !a.isGridAligned || a.faceIndex != 4 || a.gridX != 1 || a.gridY != 2 || !a.isBackgroundFill ||
+            !a.overrides.layers || !a.overrides.layers->coreBlockName ||
+            *a.overrides.layers->coreBlockName != "fairworld:deep_stone" || !a.overrides.layers->layers ||
+            a.overrides.layers->layers->size() != 1 || a.overrides.layers->layers->front().blockName != "fairworld:gold_ore") return false;
+        if (b.influence != subB.influence || b.label != subB.label || !b.overrides.height ||
+            !b.overrides.height->common.baseHeight || *b.overrides.height->common.baseHeight != 19.5f ||
+            !b.overrides.height->common.amplitude || *b.overrides.height->common.amplitude != 8.25f) return false;
+        if (gotP.name != planet.name || gotP.planetSize != planet.planetSize || gotP.isFlat != planet.isFlat ||
+            gotP.axialTilt != planet.axialTilt || gotP.yearLength != planet.yearLength ||
+            gotP.planetaryReliefScale != planet.planetaryReliefScale || gotP.baseTerrain.biome != planet.baseTerrain.biome ||
+            gotP.baseTerrain.seed != planet.baseTerrain.seed || gotP.regions.size() != 1 ||
+            gotP.regions[0].influence != planetRegion.influence || !gotP.regions[0].overrides.layers ||
+            !gotP.regions[0].isGridAligned || gotP.regions[0].isBackgroundFill ||
+            gotP.chunkInstances.size() != 1 || gotP.chunkInstances[0].templateId != terrain.id ||
+            !gotP.chunkInstances[0].isGridAligned || gotP.chunkInstances[0].faceIndex != 0 ||
+            gotP.chunkInstances[0].gridX != 1 || gotP.chunkInstances[0].gridY != 1 ||
+            gotP.spawnPoints.size() != 1 || gotP.spawnPoints[0].faceIndex != 5 ||
+            gotP.spawnPoints[0].localX != spawn.localX || gotP.spawnPoints[0].localZ != spawn.localZ ||
+            gotP.chunkOverrides.size() != 1 || gotP.chunkOverrides[0].coord.x != 3 ||
+            gotP.chunkOverrides[0].coord.z != -2 || gotP.chunkOverrides[0].meta.biomeID != 17 ||
+            gotP.chunkOverrides[0].meta.canSpawnMobs) return false;
+        return true;
+    };
+
+    fw::MapDocument jsonLoaded;
+    fw::MapDocument binaryLoaded;
+    if (!source.SaveJSON(jsonPath.string()) || !jsonLoaded.LoadJSON(jsonPath.string()) || !equivalent(jsonLoaded) ||
+        !jsonLoaded.SaveBinary(binaryPath.string()) || !binaryLoaded.LoadBinary(binaryPath.string()) ||
+        !equivalent(binaryLoaded) || binaryLoaded.planets[0].baseTerrain.resolvedSurfaceBlock != 1 ||
+        !binaryLoaded.SaveJSON(binaryJsonPath.string())) return false;
+    fw::MapDocument binaryToJson;
+    if (!binaryToJson.LoadJSON(binaryJsonPath.string()) || !equivalent(binaryToJson) ||
+        binaryToJson.planets[0].baseTerrain.resolvedSurfaceBlock != 1) return false;
+    {
+        std::ifstream versionCheck(binaryPath, std::ios::binary);
+        uint32_t magic = 0, version = 0;
+        if (!versionCheck.read(reinterpret_cast<char*>(&magic), sizeof(magic)) ||
+            !versionCheck.read(reinterpret_cast<char*>(&version), sizeof(version)) ||
+            magic != 0x46574231u || version != 8u) return false;
+    }
+
+    // Exercise the exact ProjectManager preference path with binary newer than JSON.
+    fw::WorldProjectManager saver(projectPath.string());
+    saver.GetDocumentMutable() = source;
+    if (!saver.SaveProject(projectPath.string())) return false;
+    const fs::path projectBinary = testDir / "project.fwb";
+    if (!fs::exists(projectBinary)) return false;
+    fs::last_write_time(projectPath, fs::file_time_type::clock::now() - std::chrono::seconds(3));
+    fs::last_write_time(projectBinary, fs::file_time_type::clock::now());
+    fw::WorldProjectManager loader(projectPath.string());
+    if (!loader.LoadProject(projectPath.string()) || !equivalent(loader.GetDocument())) return false;
+
+    // Verify v7 readability using the preserved P03d v7 fixture, copied only into this run's sandbox output.
+    fs::path v7Fixture = fs::current_path() / "p03d-roundtrip" / "p03d_roundtrip.fwb";
+    if (const char* configured = std::getenv("FAIRWORLD_P03D1_V7_FIXTURE")) v7Fixture = configured;
+    if (!fs::exists(v7Fixture)) return false;
+    const fs::path v7Copy = testDir / "legacy_v7.fwb";
+    fs::copy_file(v7Fixture, v7Copy, fs::copy_options::none, ec);
+    if (ec) return false;
+    fw::MapDocument legacyV7;
+    if (!legacyV7.LoadBinary(v7Copy.string())) return false;
+    if (!legacyV7.terrainLibrary.empty() && !legacyV7.terrainLibrary.front().subRegions.empty()) {
+        const auto& oldRegion = legacyV7.terrainLibrary.front().subRegions.front();
+        if (oldRegion.influence != 1.0f || oldRegion.overrides.layers || oldRegion.isBackgroundFill) return false;
+    }
+
+    // When a v7 cache is newer than a complete JSON sidecar, LoadSmart must
+    // prefer the semantic JSON and replace the incomplete cache with v8.
+    const fs::path legacyProjectJson = testDir / "legacy_project.json";
+    const fs::path legacyProjectFwb = testDir / "legacy_project.fwb";
+    if (!source.SaveJSON(legacyProjectJson.string())) return false;
+    fs::copy_file(v7Fixture, legacyProjectFwb, fs::copy_options::none, ec);
+    if (ec) return false;
+    fs::last_write_time(legacyProjectJson, fs::file_time_type::clock::now() - std::chrono::seconds(5));
+    fs::last_write_time(legacyProjectFwb, fs::file_time_type::clock::now());
+    fw::WorldProjectManager legacyProjectLoader(legacyProjectJson.string());
+    if (!legacyProjectLoader.LoadProject(legacyProjectJson.string()) ||
+        !equivalent(legacyProjectLoader.GetDocument())) return false;
+    {
+        std::ifstream upgraded(legacyProjectFwb, std::ios::binary);
+        uint32_t magic = 0, version = 0;
+        if (!upgraded.read(reinterpret_cast<char*>(&magic), sizeof(magic)) ||
+            !upgraded.read(reinterpret_cast<char*>(&version), sizeof(version)) ||
+            magic != 0x46574231u || version != 8u) return false;
+    }
+
+    // Truncated/corrupt input is rejected without replacing the caller's existing document.
+    fs::copy_file(binaryPath, corruptPath, fs::copy_options::none, ec);
+    if (ec) return false;
+    fs::resize_file(corruptPath, fs::file_size(corruptPath) - 3);
+    fw::MapDocument sentinel;
+    sentinel.terrainLibrary.push_back(terrain);
+    if (sentinel.LoadBinary(corruptPath.string()) || sentinel.terrainLibrary.size() != 1 || sentinel.terrainLibrary[0].id != terrain.id) return false;
+
+    fs::copy_file(binaryPath, badVersionPath, fs::copy_options::none, ec);
+    if (ec) return false;
+    {
+        std::fstream bad(badVersionPath, std::ios::binary | std::ios::in | std::ios::out);
+        const uint32_t unsupported = 999;
+        bad.seekp(4);
+        bad.write(reinterpret_cast<const char*>(&unsupported), sizeof(unsupported));
+        if (!bad) return false;
+    }
+    if (sentinel.LoadBinary(badVersionPath.string()) || sentinel.terrainLibrary.size() != 1) return false;
+    return true;
+}
+
+bool TerrainValidation::RunP03D1FwbSemanticParityTest() {
+    const bool pass = TestP03D1FwbSemanticParity();
+    PrintResult("P03d.1 FWB v8 semantic parity, v7 compatibility and corruption rejection", pass);
+    return pass;
+}
+
+bool TerrainValidation::RunD12ConventionTests() {
+    std::cout << "\n====================================================\n";
+    std::cout << " FAIRWORLD - D1.2 SPATIAL CONVENTION TESTS\n";
+    std::cout << "====================================================\n";
+    const bool chart = TestD12ChartRoundTrips();
+    const bool grid = TestD12GridRowsAndBounds();
+    const bool flow = TestD12TerrainAndMeshRowFlow();
+    const bool persistence = TestD12SpawnPersistenceCompatibility();
+    const bool fwbParity = RunP03D1FwbSemanticParityTest();
+    PrintResult("UV/chart/direction round-trip, faces, edges, corners and ties", chart);
+    PrintResult("Six sizes, valid rows, cell centers, endpoints and U/V nextafter boundaries", grid);
+    PrintResult("Single row conversion through TerrainSolver and mesh mapping", flow);
+    PrintResult("Legacy spawn JSON/binary values and direction preserved", persistence);
+    const bool pass = chart && grid && flow && persistence && fwbParity;
+    std::cout << " D1.2 STATUS: " << (pass ? "PASS" : "FAIL") << "\n";
     std::cout << "====================================================\n";
     return pass;
 }
@@ -948,8 +1649,6 @@ bool TerrainValidation::RunD3CubeSphereSSOTGateTest() {
     
     return coreOk;
 }
-
-static const float kD4MappingEpsilon = 1e-5f;
 
 bool TerrainValidation::TestD4CanonicalCenters() {
     bool pass = true;

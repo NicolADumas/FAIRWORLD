@@ -68,7 +68,7 @@ struct PBRMaterialComponent {
 struct Vertex {
     Vec3 position;    // 12
     Vec4 color;       // 16
-    Vec2 roughMetal;  // 8
+    Vec2 roughMetal;  // 8; legacy ABI/persistence name, Forge location 2 is UV
     uint32_t materialID; // 4
     Vec3 normal;      // 12
     float ao;         // 4
@@ -205,6 +205,10 @@ struct VoxelChunkComponent {
     
     // Hash deterministico (FNV-1a) del contenuto voxel attuale (blocks)
     uint64_t voxelHash = 0;
+
+    // Runtime-only revision advanced whenever GameWorld invalidates this chunk's mesh.
+    // It is not part of the persisted chunk format.
+    uint64_t meshRevision = 0;
 };
 
 // Tag Component: indica che il VoxelChunkComponent associato è stato modificato
@@ -212,6 +216,7 @@ struct VoxelChunkComponent {
 struct ChunkDirtyComponent {
     bool pendingJob = false; // Se true, un Job è già in esecuzione per questo chunk
     bool needsRebuild = false; // Se true, è stato modificato di nuovo MENTRE il Job era in esecuzione
+    uint64_t activeRequestId = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

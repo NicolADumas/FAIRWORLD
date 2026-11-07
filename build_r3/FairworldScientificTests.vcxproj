@@ -1,0 +1,458 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{99FAFFEF-C905-3FFD-AC3F-E8B4136E7FF9}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <Platform>x64</Platform>
+    <ProjectName>FairworldScientificTests</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">D:\FAIRWORLD\FAIRWORLD\bin\Debug\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">FairworldScientificTests.dir\Debug\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">FairworldScientificTests</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">D:\FAIRWORLD\FAIRWORLD\bin\Release\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">FairworldScientificTests.dir\Release\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">FairworldScientificTests</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">D:\FAIRWORLD\FAIRWORLD\bin\MinSizeRel\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">FairworldScientificTests.dir\MinSizeRel\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">FairworldScientificTests</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">D:\FAIRWORLD\FAIRWORLD\bin\RelWithDebInfo\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">FairworldScientificTests.dir\RelWithDebInfo\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">FairworldScientificTests</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</GenerateManifest>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "D:/VulkanSDK/include" /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>Disabled</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;GLM_ENABLE_EXPERIMENTAL;_DEBUG;JPH_FLOATING_POINT_EXCEPTIONS_ENABLED;JPH_DEBUG_RENDERER;JPH_PROFILE_ENABLED;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;GLM_ENABLE_EXPERIMENTAL;JPH_FLOATING_POINT_EXCEPTIONS_ENABLED;JPH_DEBUG_RENDERER;JPH_PROFILE_ENABLED;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <PostBuildEvent>
+      <Message></Message>
+      <Command>setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+if %errorlevel% neq 0 goto :cmEnd
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Debug
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+    </PostBuildEvent>
+    <Link>
+      <AdditionalDependencies>Debug\FairworldCore.lib;D:\VulkanSDK\Lib\vulkan-1.lib;_deps\joltphysics-build\Debug\Jolt.lib;Shell32.lib;Psapi.lib;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>D:/FAIRWORLD/FAIRWORLD/build_r3/Debug/FairworldScientificTests.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>D:/FAIRWORLD/FAIRWORLD/bin/Debug/FairworldScientificTests.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "D:/VulkanSDK/include" /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;GLM_ENABLE_EXPERIMENTAL;JPH_FLOATING_POINT_EXCEPTIONS_ENABLED;JPH_DEBUG_RENDERER;JPH_PROFILE_ENABLED;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;GLM_ENABLE_EXPERIMENTAL;JPH_FLOATING_POINT_EXCEPTIONS_ENABLED;JPH_DEBUG_RENDERER;JPH_PROFILE_ENABLED;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <PostBuildEvent>
+      <Message></Message>
+      <Command>setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Release
+if %errorlevel% neq 0 goto :cmEnd
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/Release
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+    </PostBuildEvent>
+    <Link>
+      <AdditionalDependencies>Release\FairworldCore.lib;D:\VulkanSDK\Lib\vulkan-1.lib;_deps\joltphysics-build\Release\Jolt.lib;Shell32.lib;Psapi.lib;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>D:/FAIRWORLD/FAIRWORLD/build_r3/Release/FairworldScientificTests.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <ProgramDataBaseFile>D:/FAIRWORLD/FAIRWORLD/bin/Release/FairworldScientificTests.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "D:/VulkanSDK/include" /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>MinSpace</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;GLM_ENABLE_EXPERIMENTAL;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;GLM_ENABLE_EXPERIMENTAL;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <PostBuildEvent>
+      <Message></Message>
+      <Command>setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/MinSizeRel
+if %errorlevel% neq 0 goto :cmEnd
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/MinSizeRel
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+    </PostBuildEvent>
+    <Link>
+      <AdditionalDependencies>MinSizeRel\FairworldCore.lib;D:\VulkanSDK\Lib\vulkan-1.lib;_deps\joltphysics-build\MinSizeRel\Jolt.lib;Shell32.lib;Psapi.lib;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>D:/FAIRWORLD/FAIRWORLD/build_r3/MinSizeRel/FairworldScientificTests.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>D:/FAIRWORLD/FAIRWORLD/bin/MinSizeRel/FairworldScientificTests.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /external:I "D:/VulkanSDK/include" /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck></BufferSecurityCheck>
+      <CallingConvention></CallingConvention>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+      <FloatingPointModel></FloatingPointModel>
+      <ForceConformanceInForLoopScope></ForceConformanceInForLoopScope>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <MinimalRebuild></MinimalRebuild>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RemoveUnreferencedCodeData></RemoveUnreferencedCodeData>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SupportJustMyCode></SupportJustMyCode>
+      <TreatWChar_tAsBuiltInType></TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;GLM_ENABLE_EXPERIMENTAL;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;GLM_ENABLE_EXPERIMENTAL;JPH_USE_AVX2;JPH_USE_AVX;JPH_USE_SSE4_1;JPH_USE_SSE4_2;JPH_USE_LZCNT;JPH_USE_TZCNT;JPH_USE_F16C;JPH_USE_FMADD;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>D:\FAIRWORLD\FAIRWORLD\src;D:\FAIRWORLD\FAIRWORLD\src\states;D:\FAIRWORLD\FAIRWORLD\src\blocks;D:\FAIRWORLD\FAIRWORLD\src\blocks\factory;D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt;D:\FAIRWORLD\FAIRWORLD\src\blocks\texture;D:\FAIRWORLD\FAIRWORLD\src\blocks\uv;D:\FAIRWORLD\FAIRWORLD\src\world;D:\FAIRWORLD\FAIRWORLD\src\systems;D:\FAIRWORLD\FAIRWORLD\src\render;D:\FAIRWORLD\FAIRWORLD\src\hardware;D:\FAIRWORLD\FAIRWORLD\src\simulation;D:\FAIRWORLD\FAIRWORLD\src\modules;D:\FAIRWORLD\FAIRWORLD\src\ui;D:\FAIRWORLD\FAIRWORLD\src\components;D:\FAIRWORLD\FAIRWORLD\src\core;D:\FAIRWORLD\FAIRWORLD\src\core\app;D:\FAIRWORLD\FAIRWORLD\src\core\memory;D:\FAIRWORLD\FAIRWORLD\src\core\entities;D:\FAIRWORLD\FAIRWORLD\src\core\utils;D:\FAIRWORLD\FAIRWORLD\third_party;D:\FAIRWORLD\FAIRWORLD\third_party\imgui;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\include;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Headers.1.0.10.2\include;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src;D:\FAIRWORLD\FAIRWORLD\build\_deps\joltphysics-src\Build\..;D:\VulkanSDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <PostBuildEvent>
+      <Message></Message>
+      <Command>setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/OpenXR.Loader.1.0.10.2/native/x64/release/bin/openxr_loader.dll D:/FAIRWORLD/FAIRWORLD/bin/RelWithDebInfo
+if %errorlevel% neq 0 goto :cmEnd
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different D:/FAIRWORLD/FAIRWORLD/packages/Microsoft.Web.WebView2.1.0.4022.49/build/native/x64/WebView2Loader.dll D:/FAIRWORLD/FAIRWORLD/bin/RelWithDebInfo
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+    </PostBuildEvent>
+    <Link>
+      <AdditionalDependencies>RelWithDebInfo\FairworldCore.lib;D:\VulkanSDK\Lib\vulkan-1.lib;_deps\joltphysics-build\RelWithDebInfo\Jolt.lib;Shell32.lib;Psapi.lib;D:\FAIRWORLD\FAIRWORLD\packages\Microsoft.Web.WebView2.1.0.4022.49\build\native\x64\WebView2Loader.dll.lib;D:\FAIRWORLD\FAIRWORLD\packages\OpenXR.Loader.1.0.10.2\native\x64\release\lib\openxr_loader.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <DataExecutionPrevention></DataExecutionPrevention>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImageHasSafeExceptionHandlers></ImageHasSafeExceptionHandlers>
+      <ImportLibrary>D:/FAIRWORLD/FAIRWORLD/build_r3/RelWithDebInfo/FairworldScientificTests.lib</ImportLibrary>
+      <LinkErrorReporting></LinkErrorReporting>
+      <ProgramDataBaseFile>D:/FAIRWORLD/FAIRWORLD/bin/RelWithDebInfo/FairworldScientificTests.pdb</ProgramDataBaseFile>
+      <RandomizedBaseAddress></RandomizedBaseAddress>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\FAIRWORLD\FAIRWORLD\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\scientific_tests_main.cpp" />
+  </ItemGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\ZERO_CHECK.vcxproj">
+      <Project>{C32E9D3D-1020-3FAA-8DF2-CB17FCFE2CE3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldCore.vcxproj">
+      <Project>{A876F0A3-7AC7-3371-9DA4-F7525F558585}</Project>
+      <Name>FairworldCore</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\_deps\joltphysics-build\Jolt.vcxproj">
+      <Project>{DD639DF4-1D73-311F-9181-202553AE0E76}</Project>
+      <Name>Jolt</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

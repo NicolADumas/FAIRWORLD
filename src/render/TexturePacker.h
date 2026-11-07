@@ -3,6 +3,8 @@
 #include <vector>
 #include <cstdint>
 #include <atomic>
+#include <array>
+#include <filesystem>
 #include "MaterialRegistry.h" // Per PBRMaterialDef
 
 namespace fw {
@@ -23,7 +25,7 @@ struct PackedTextureData {
 
 class TexturePacker {
 public:
-    TexturePacker(int targetResolution = 512);
+    TexturePacker(int targetResolution = 512, std::filesystem::path assetRoot = ".");
     
     // Itererà sull'array dei materiali registrati e impacchetterà tutto.
     // cancelRequested è un token atomico opzionale per la cancellazione cooperativa.
@@ -34,6 +36,12 @@ public:
 
 private:
     int m_targetResolution;
+    std::filesystem::path m_assetRoot;
+
+    bool BuildCacheInputDigest(
+        const std::vector<PBRMaterialDef>& materials,
+        std::array<uint8_t, 32>& outDigest
+    ) const;
     
     // Helper per caricare, ridimensionare (se serve) e concatenare i pixel in coda al destBuffer
     void LoadAndAppendTexture(const std::string& path, std::vector<uint8_t>& destBuffer, const std::vector<uint8_t>& fallbackColorRGBA);

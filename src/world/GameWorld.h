@@ -15,6 +15,7 @@
 #include <mutex>
 #include <vector>
 #include <unordered_map>
+#include <atomic>
 #include <glm/glm.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
@@ -48,6 +49,28 @@ struct SharedContext;
 
 namespace fw {
 
+enum class PlanetarySpawnResolveStatus : uint8_t {
+    Ready,
+    TerrainPending,
+    NoSolidSurface,
+    InvalidInput
+};
+
+enum class WorldVoxelQueryStatus : uint8_t {
+    SolidVoxel,
+    Air,
+    PassableVoxel,
+    OutOfBounds,
+    TerrainPending,
+    InvalidInput
+};
+
+struct WorldVoxelQueryResult {
+    WorldVoxelQueryStatus status = WorldVoxelQueryStatus::InvalidInput;
+    BlockType block = BlockType::OutOfBounds;
+    glm::ivec3 voxelCoord{0};
+};
+
 class JobSystem;
 
 class GameWorld {
@@ -63,13 +86,16 @@ public:
     void ClearWorld(bool saveToDisk = false);
     void CancelJobs();
     void TeardownResources();
+    bool IsAcceptingMeshJobs() const { return m_meshJobsAccepting.load(); }
     void Update(float dt);
     std::shared_ptr<std::atomic<bool>> GetCancelToken() const { return m_cancelToken; }
     
 #ifdef _MSC_VER
     __declspec(noinline) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position);
+    __declspec(noinline) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position, int chunkX, int chunkZ);
 #else
     __attribute__((noinline)) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position);
+    __attribute__((noinline)) entt::entity CreateChunkEntity(const std::string& name, const Vec3& position, int chunkX, int chunkZ);
 #endif
     
     entt::entity CreatePrimitive(const std::string& name, const Vec3& position, const std::string& type);
@@ -77,6 +103,10 @@ public:
     entt::entity CreateEmptyEntity(const std::string& name);
 
     BlockType GetBlockCartesian(const glm::vec3& worldPos) const;
+    WorldVoxelQueryResult QueryBlockCartesian(const glm::vec3& worldPos) const;
+    PlanetarySpawnResolveStatus TryResolvePlanetarySpawn(
+        const glm::vec3& unitDirection, float heightOffset, float colliderRadius,
+        glm::vec3& outBodyPosition, float* outSurfaceRadius = nullptr) const;
     BlockType GetBlock(int x, int y, int z) const;
     BlockType GetBlockFlat(int flatX, int y, int flatZ) const;
     void SetBlockFlat(int flatX, int y, int flatZ, BlockType type);
@@ -139,6 +169,9 @@ public:
     bool HasMasterMemoryBlock() const { return m_masterMemoryBlock != nullptr; }
 
 private:
+    entt::entity CreateChunkEntityWithCoordinates(const std::string& name, const Vec3& position, int chunkX, int chunkZ);
+    void QuarantineVramAllocation(VramAllocationHandle handle, uint64_t timelineTarget);
+
     void InitPlanetSingleton();
 
     SubscriptionId m_blockUpdatedSubId = INVALID_SUBSCRIPTION_ID;
@@ -149,6 +182,7 @@ private:
     PerlinNoise m_noiseGen;
 
     std::shared_ptr<std::atomic<bool>> m_cancelToken;
+    std::atomic<bool> m_meshJobsAccepting{true};
 
     WorldChunkManager m_chunkManager;
     WorldStructureManager m_structureManager;
@@ -163,14 +197,31 @@ private:
     void* m_masterMemoryBlock = nullptr;
     
     struct DeferredMeshSpawn {
+        enum class JobOutcome : uint8_t { NotTracked, Completed, Cancelled, Failed };
         std::string name;
         glm::vec3 position;
         MeshComponent mesh;
         std::shared_ptr<VoxelChunkComponent> chunkData = nullptr;
         entt::entity targetEntity = entt::null;
         bool isNewlyGenerated = false;
+        bool trackedJob = false;
+        uint64_t jobRequestId = 0;
+        uint64_t sourceMeshRevision = 0;
+        int sourceCx = 0;
+        int sourceCz = 0;
+        fw::PlanetChunkCoord sourcePlanetCoord{fw::PlanetID::Invalid(), fw::CubeFace::PositiveZ, 0, 0, 0};
+        JobOutcome jobOutcome = JobOutcome::NotTracked;
+        bool dmaPendingUnconfirmed = false;
+        uint64_t dmaTimelineTarget = 0;
+    };
+    struct QuarantinedDmaAllocation {
+        VramAllocationHandle handle = INVALID_VRAM_HANDLE;
+        uint64_t timelineTarget = 0;
     };
     std::vector<DeferredMeshSpawn> m_deferredMeshes;
+    // Keeps slab handles reserved when a submitted DMA could not be confirmed.
+    // They are deliberately not recycled; allocator teardown owns final release.
+    std::vector<QuarantinedDmaAllocation> m_unconfirmedDmaAllocations;
     std::mutex m_deferredMutex;
     
     std::vector<entt::entity> m_dirtyTerrainChunks;

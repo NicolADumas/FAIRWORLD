@@ -1,0 +1,357 @@
+[VULKAN FORENSIC PHASE] -> Startup
+[VULKAN FORENSIC] VkDebugUtilsMessengerEXT successfully registered on VkInstance: 0x27f27af2c70
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+
+[VULKAN FORENSIC][vkCreateFramebuffer #1]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x90000000009
+    [1] ImageView: 0x560000000056
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x570000000057
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #2]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xa000000000a
+    [1] ImageView: 0x560000000056
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x580000000058
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #3]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xb000000000b
+    [1] ImageView: 0x560000000056
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x590000000059
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #1]
+  Handle      : 0x5a000000005a
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : ImageAvailableSem_0
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x2e8
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #2]
+  Handle      : 0x5c000000005c
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : ImageAvailableSem_1
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x2e8
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #3]
+  Handle      : 0x5e000000005e
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_0
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #4]
+  Handle      : 0x5f000000005f
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_1
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #5]
+  Handle      : 0x600000000060
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_2
+  Phase       : Startup
+  Device      : 0x27f3a79ee80
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x845
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[ASSETS] Nessun biomes.json trovato, uso biomi di default.
+[VULKAN FORENSIC PHASE] -> Resize
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x570000000057
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x580000000058
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x590000000059
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+
+[VULKAN FORENSIC][vkCreateFramebuffer #4]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x27f3a79ee80
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xad00000000ad
+    [1] ImageView: 0xb200000000b2
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1be6
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xc500000000c5
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #5]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x27f3a79ee80
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xae00000000ae
+    [1] ImageView: 0xb200000000b2
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1be6
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xc600000000c6
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #6]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x27f3a79ee80
+  RenderPass  : 0xc000000000c
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xaf00000000af
+    [1] ImageView: 0xb200000000b2
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1be6
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xc700000000c7
+
+[VULKAN FORENSIC PHASE] -> Runtime
+
+[VULKAN FORENSIC][vkCreateSemaphore #6]
+  Handle      : 0xd200000000d2
+  Caller      : VulkanDmaManager::Initialize
+  Owner       : VulkanDmaManager
+  Name        : DMATransferTimeline
+  Phase       : Runtime
+  Device      : 0x27f3a79ee80
+  Result      : 0
+  Callstack:
+    [0] fw::VulkanDmaManager::Initialize + 0x1a6
+    [1] fw::RuntimeManager::CommitGpuGlobalVRAM + 0x212
+    [2] fw::RuntimeManager::ProcessGpuCommits + 0x24e
+    [3] main + 0x1bd8
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkDestroySemaphore #1]
+  Handle      : 0xd200000000d2
+  Caller      : VulkanDmaManager::~VulkanDmaManager
+  Phase       : Runtime
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Owner: VulkanDmaManager, Name: DMATransferTimeline, CreateID: #6)
+[VULKAN FORENSIC PHASE] -> Shutdown
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xc500000000c5
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xc600000000c6
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xc700000000c7
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroySemaphore #2]
+  Handle      : 0x5a000000005a
+  Caller      : RenderManager::Shutdown:imageAvailable
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: ImageAvailableSem_0, CreateID: #1)
+
+[VULKAN FORENSIC][vkDestroySemaphore #3]
+  Handle      : 0x5c000000005c
+  Caller      : RenderManager::Shutdown:imageAvailable
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: ImageAvailableSem_1, CreateID: #2)
+
+[VULKAN FORENSIC][vkDestroySemaphore #4]
+  Handle      : 0x5e000000005e
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_0, CreateID: #3)
+
+[VULKAN FORENSIC][vkDestroySemaphore #5]
+  Handle      : 0x5f000000005f
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_1, CreateID: #4)
+
+[VULKAN FORENSIC][vkDestroySemaphore #6]
+  Handle      : 0x600000000060
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x27f3a79ee80
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_2, CreateID: #5)
+
+============================================================
+ [VULKAN FORENSIC AUDIT] FINAL REPORT AT vkDestroyDevice
+============================================================
+Caller               : RenderManager::Shutdown
+Device               : 0x27f3a79ee80
+Total Semaphores Cr. : 6
+Total Semaphores Des.: 6
+LIVE SEMAPHORES REMAINING: 0
+All tracked semaphores were cleanly destroyed!
+============================================================
+
+[VULKAN FORENSIC] VkDebugUtilsMessengerEXT cleanly destroyed on instance 0x27f27af2c70
+
+[VULKAN FORENSIC AUDIT] Intermediate Report:
+  Phase: Shutdown
+  Framebuffers created: 6, currently live: 0
+  Semaphores created: 6, destroyed: 6, currently live: 0
+  Validation Layer Errors: 0
+[VULKAN FORENSIC PHASE] -> Shutdown

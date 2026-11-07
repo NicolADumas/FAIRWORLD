@@ -1,0 +1,220 @@
+[VULKAN] Esclusione selettiva layer Twitch: impostato VK_LOADER_LAYERS_DISABLE=*twitch*.
+==========================================
+    FAIRWORLD ENGINE - BOOT SEQUENCE   
+==========================================
+
+[SYSTEM] AI Server Python avviato in background.
+
+Seleziona la modalita' di avvio:
+0. HUB (Hub Principale)
+1. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)
+2. LA FORGE (Editor Strutture e Minivoxel)
+3. PHYSICS LAB (Test Fisica e Materiali)
+4. CHUNK EDITOR (Modellazione Terreni 2D/3D)
+5. PLANET MAPPER (Configura Globo & Sistema)
+6. BLOCK MAKER (Editor Blocchi e Materiali PBR)
+7. SOLAR SYSTEM (Mappa Spaziale)
+8. MATERIAL ATLAS (Catalogo Scientifico PBR)
+Scelta [0-8] (predefinito 0): ==========================================
+    FAIRWORLD ENGINE - INIZIALIZZAZIONE   
+==========================================
+
+[SYSTEM] Inizializzazione Finestra Principale...
+[SYSTEM] Finestra Desktop creata con successo.
+[SYSTEM] Avvio in MODALITA' DESKTOP (Probing OpenXR disabilitato per avvio rapido).
+[VULKAN] Istanza creata con successo (Validation Layers: ATTIVI).
+[VULKAN] Surface Win32 creata con successo.
+[VULKAN] GPU Selezionata: NVIDIA GeForce GTX 1660 Ti
+[VULKAN] Logical Device e Code (Graphics, Present, Transfer) configurate.
+[VMA] VmaAllocator inizializzato con successo.
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] RenderPass creato (con Depth Buffer).
+[VULKAN] GLB Graphics Pipeline creata con successo!
+[VULKAN] Depth Buffer creato (126).
+[VULKAN] Motore Grafico pronto. Pronti a renderizzare!
+[ASSETS] Caricati 19 blocchi, 3 mob e 1 biomi.
+[VULKAN] Nessun modello trovato in models/goblin.obj
+[VULKAN] Nessun modello trovato in models/skeleton.obj
+[VULKAN] Nessun modello trovato in models/golem.obj
+[PERF] Ingresso in main -> prima finestra creata: 5162.72 ms
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[MaterialRegistry] Caricati 21 materiali da assets/definitions/materials.json
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[SYSTEM] Catalogo materiali custom caricato con successo da disco.
+[CacheManager] Inizializzazione Gestore Cache CPU & GPU...
+[WorldProjectManager] Inizializzato con percorso predefinito: saves/map/world_map.json
+[MapDocument] Caricamento da JSON: saves/map/world_map.json
+[WorldProjectManager] File progetto non trovato o non valido in: saves/map/world_map.json. Inizializzazione predefinita.
+[WorldProjectManager] Nessun salvataggio pianeti trovato. Creato nuovo 'Fairworld Prime'.
+[WorldProjectManager] Libreria terreni vuota. Creato 'Terreno Standard' con strati.
+[WorldProjectManager] Validazione BlockRegistry completata con successo.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 10208] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[CacheManager] Sincronizzazione globale di tutti i materiali su GPU...
+[AppBaseState] Costruttore Architettura Madre invocato.
+[PlanetMapperState] Costruito come estensione di AppBaseState.
+[SYSTEM] Avviato PlanetMapperState...
+
+[SYSTEM] Entro nel main loop guidato dalla State Machine...
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[RuntimeManager] [Thread 20332] [RequireFeaturesAsync] Registrate richieste CPU: 0x7 -> pendingMask=0x7 (m_workerActive=true).
+[RuntimeManager] [Thread 10208] [Phase: Dedicated Worker] Estratto batch: 0x7 (m_workerActive=true).
+[RuntimeManager] [CPU Prep] Inizializzazione Pool Thread Asincroni...
+[JobSystem] Avvio Thread Pool con 5 worker threads.
+[RuntimeManager] [CPU Prep] Esecuzione TexturePacker PBR in RAM...
+[TexturePacker] CACHE BINARIA TROVATA! Caricamento ultra-rapido...
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] Depth Buffer creato (126).
+[VULKAN] GLB Graphics Pipeline creata con successo!
+[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (1264x681)
+[RuntimeManager] [CPU Prep] Texture PBR preparate in CPU RAM (476.67 ms).
+[RuntimeManager] [Thread 10208] [Phase: Dedicated Worker] Batch completato, nessun lavoro pendente (m_workerActive=false).
+[PERF] Ingresso in main -> primo frame presentato:     5776.51 ms
+[PERF] Ingresso in main -> prima interazione effettiva: 5776.51 ms
+       (Bootstrap motore netto: 5193.12 ms)
+[RuntimeManager] [GPU Commit] Inizializzazione Lazy VRAM Allocator e DMA...
+[Vulkan DMA] Inizializzazione Macro Staging Buffer e Timeline Semaphore...
+[Vulkan DMA] Transfer Timeline Semaphore creato e inizializzato a 0.
+[RuntimeManager] [GPU Commit] Feature 1 committata con successo (98.80 ms).
+[RuntimeManager] [GPU Commit] Feature 2 committata con successo (0.00 ms).
+[RuntimeManager] [GPU Commit] Upload Texture PBR su Vulkan VRAM...
+[RuntimeManager] [GPU Commit] Textures PBR caricate su VkImage con successo.
+[RuntimeManager] [GPU Commit] Feature 4 committata con successo (1027.59 ms).
+[WorldProjectManager] Validazione BlockRegistry completata con successo.
+[GameWorld] Arena di memoria di 128MB allocata e partizionata con successo.
+[SYSTEM] PLANET MAPPER caricato con successo e pronto all'uso!
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 21 (Snapshot 1/5)
+[VRAM] Allocazione dinamica nuovo compartimento: 0 (256MB)
+[VulkanMemory] AddVramCompartment: Allocazione Compartimento da 256MB...
+[VulkanMemory] Staging Buffer 128MB allocato.
+[VulkanMemory] Compartimento VRAM 0 da 256MB allocato.
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 62 (Snapshot 2/5)
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 12 (Snapshot 3/5)
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 6 (Snapshot 4/5)
+[D7.4F.6L-R1] GameWorld consuming deferred queue of size 2 (Snapshot 5/5)
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 118.3 | FPS: 118.3 | FixedTicks/s: 45.2 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.1 | FPS: 200.1 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.9 | FPS: 199.9 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.6 | FPS: 199.6 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.1 | FPS: 200.1 | FixedTicks/s: 60.2 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 199.9 | FPS: 199.9 | FixedTicks/s: 59.9 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.1 | FPS: 200.1 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 60.0 | Minimized: NO
+[WorldProjectManager] Progetto salvato con successo su: saves/map/world_map.json
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 185.4 | FPS: 185.4 | FixedTicks/s: 58.6 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 59.9 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 60.1 | Minimized: NO
+[LOOP-BENCHMARK] Mode: 3D_SCENE | Iters/s: 200.0 | FPS: 200.0 | FixedTicks/s: 59.9 | Minimized: NO
+[SYSTEM] Main loop terminato.
+[SYSTEM] Svuotamento StateManager e distruzione stati attivi...
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.
+[PlanetMapperState] Distrutto.
+[AppBaseState] Distruttore Architettura Madre: memoria isolata del previewWorld rilasciata in sicurezza.
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[SYSTEM] Chiusura del motore completata.
+[WorldChunkManager] Salvati 0 chunk su disco (saves/world).
+[RuntimeManager] [Thread 20332] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 10208] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 20332] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 0.3 ms).
+
+[RuntimeShutdown]
+Stop accepting jobs
+[RuntimeManager] [Thread 20332] [Phase: Shutdown] Attesa terminazione thread pool JobSystem (Shutdown join)...
+[RuntimeManager] [Thread 20332] [Phase: Shutdown] JobSystem workers terminati con successo (tempo arresto JobSystem: 1.6 ms).
+
+[RuntimeShutdown]
+Workers joined
+Pending jobs   : 0
+Active workers : 0
+[RuntimeManager] [Thread 20332] [Phase: Shutdown] Attesa svuotamento comandi DMA (Drain)...
+
+[DMA]
+Drain begin
+Pending transfers : 1
+
+[DMA]
+Transfer queue idle
+Pending transfers : 0
+[RuntimeManager] [Thread 20332] [Phase: Shutdown] VulkanDmaManager Drain completato.
+
+[RuntimeShutdown]
+DMA drained
+Pending DMA transfers     : 0
+Live DMA command buffers  : 0
+
+[DMA]
+Destroy timeline semaphore
+Timeline semaphore destroyed
+[VramSlabAllocator] Distrutto. 14190336 bytes rimasti allocati.
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=0.3 ms, JobSystemStop=1.6 ms, Totale=2.7 ms]
+
+====================================================
+ FAIRWORLD RUNTIME LIFECYCLE GATE
+====================================================
+
+[1/3] PRODUCERS
+      CPU StopAcceptingJobs called    YES   [PASS]
+      DMA Drain called                YES   [PASS]
+
+[2/3] ASYNC SUBSYSTEMS (captured before delete)
+      Pending CPU jobs                  0   [PASS]
+      Active workers                    0   [PASS]
+      Pending DMA transfers             0   [PASS]
+      Live DMA command buffers          0   [PASS]
+
+[3/3] RUNTIME STATE
+      Runtime shutdown complete       YES   [PASS]
+      Cache invalidated               N/A   [WARN] not observable (CacheManager has no flush flag)
+      GameWorld released              YES   [PASS]
+
+====================================================
+ RUNTIME LIFECYCLE: FROZEN (100% APPLICABLE CHECKS PASS)
+====================================================
+
+[VMA] VmaAllocator distrutto.
+
+====================================================
+ FAIRWORLD FINAL VULKAN OWNERSHIP GATE
+ (post RenderManager::Shutdown)
+====================================================
+
+      Vulkan cleanup state             COMPLETED [PASS]
+      Tracked Semaphores LIVE           0   [PASS]
+      Validation Layer Errors           0   [PASS]
+
+====================================================
+ VULKAN OWNERSHIP: CLEAN (PASS)
+====================================================
+
+
+====================================================
+ [VulkanResourceTracker][Semaphore]
+====================================================
+CREATED   : 6
+DESTROYED : 6
+LIVE      : 0
+
+BY OWNER:
+  RenderManager
+    Created   : 5
+    Destroyed : 5
+    Live      : 0
+
+  VulkanDmaManager
+    Created   : 1
+    Destroyed : 1
+    Live      : 0
+
+====================================================
+
+[SYSTEM] AI Server Python chiuso.
+[SYSTEM] Memoria globale mantenuta residente (5977 allocazioni attive, 9362286 bytes) per garantire terminazione CRT esente da Use-After-Free.
+[WorldProjectManager] Distrutto.
+[RuntimeManager] Distrutto.

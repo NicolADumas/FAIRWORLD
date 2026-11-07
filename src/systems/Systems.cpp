@@ -7,7 +7,10 @@
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
 #include "PhysicsEngine.h"
+#include "PlanetaryCameraFrame.h"
+#include "PlanetaryMovementMath.h"
 #include "../components/Skeleton.h"
+#include <cmath>
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -17,7 +20,6 @@ namespace fw {
         bool rawLogicalSphere = false;
         bool planetEntityFound = false;
         glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
-        glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
 
         if (context && context->forgeWorld) {
             auto planetEnt = context->forgeWorld->GetPlanetEntity();
@@ -30,7 +32,6 @@ namespace fw {
                 
                 // planet center ownership will migrate to the future SolarSystem/root-transform architecture
                 planetCenter = glm::vec3(0.0f, 0.0f, 0.0f);
-                planetNorth = glm::vec3(0.0f, 1.0f, 0.0f);
             }
         }
 
@@ -48,23 +49,22 @@ namespace fw {
             }
             glm::vec3 initialLocalUp = up;
 
-            // Calcolo del Front basato su Yaw (rotazione attorno a UP) e Pitch (rotazione locale X)
-            glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up); 
-            
-            // Front base "nord" fittizio (tangente alla sfera rispetto al polo nord del pianeta)
-            glm::vec3 baseForward;
-            if (std::abs(glm::dot(up, planetNorth)) < 0.99f) {
-                baseForward = glm::normalize(glm::cross(up, planetNorth));
-            } else {
-                baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0,0,-1) : glm::vec3(0,0,1);
-            }
-            
-            glm::vec3 front = qYaw * baseForward;
-            glm::vec3 right = glm::normalize(glm::cross(front, up));
-            
-            glm::quat qPitch = glm::angleAxis(glm::radians(cam.pitch), right);
-            front = qPitch * front;
-            up = glm::normalize(glm::cross(right, front));
+            PlanetaryCameraFrame::State frame{
+                cam.planetaryFrameUp, cam.planetaryFrameForward, cam.planetaryFrameInitialized};
+            if (!PlanetaryCameraFrame::TransportTo(frame, up)) continue;
+            cam.planetaryFrameUp = frame.up;
+            cam.planetaryFrameForward = frame.forward;
+            cam.planetaryFrameInitialized = frame.initialized;
+
+            PlanetaryCameraFrame::Basis basis;
+            if (!PlanetaryCameraFrame::BuildBasis(frame, cam.yaw, cam.pitch, basis)) continue;
+            glm::vec3 front = basis.forward;
+            glm::vec3 right = basis.right;
+            up = basis.up;
+            cam.front = front;
+            cam.right = right;
+            cam.up = up;
+            cam.worldUp = frame.up;
             
             glm::mat3 rotMat;
             rotMat[0] = right;
@@ -126,9 +126,9 @@ namespace fw {
 
     void PlayerMovementSystem::Update(entt::registry& registry, SharedContext* context, float dt) {
         using namespace entt::literals;
+        if (!context) return;
         bool usePlanetaryFrame = false;
         glm::vec3 planetCenter(0.0f, 0.0f, 0.0f);
-        glm::vec3 planetNorth(0.0f, 1.0f, 0.0f);
 
         if (context && context->forgeWorld) {
             auto planetEnt = context->forgeWorld->GetPlanetEntity();
@@ -139,46 +139,44 @@ namespace fw {
                 
                 // planet center ownership will migrate to the future SolarSystem/root-transform architecture
                 planetCenter = glm::vec3(0.0f, 0.0f, 0.0f);
-                planetNorth = glm::vec3(0.0f, 1.0f, 0.0f);
             }
         }
 
-        auto view = registry.view<::PlayerControllerComponent, ::TransformComponent, ::CameraComponent, ::RigidBodyComponent>();
-        for (auto [entity, player, transform, cam, rbComp] : view.each()) {
-            if (context->deviceManager->requireFreeCursor) continue;
+        auto view = registry.view<::PlayerControllerComponent, ::CameraComponent, ::RigidBodyComponent>();
+        for (auto [entity, player, cam, rbComp] : view.each()) {
+            if (player.planetarySpawnPending) continue;
 
-            auto& input = context->deviceManager->GetInput();
-
-            float mouseSens = cam.mouseSensitivity;
-            float dx = input.lookYaw;
-            float dy = input.lookPitch;
-            cam.yaw += dx * mouseSens;
-            cam.pitch -= dy * mouseSens;
-            if (cam.pitch > 89.0f) cam.pitch = 89.0f;
-            if (cam.pitch < -89.0f) cam.pitch = -89.0f;
-
-            float moveSpeed = input.isRunning ? player.runSpeed : player.walkSpeed;
+            const bool inputEnabled = context->deviceManager && !context->deviceManager->requireFreeCursor;
+            InputState emptyInput{};
+            auto& input = inputEnabled ? context->deviceManager->GetInput() : emptyInput;
 
             glm::vec3 up(0.0f, 1.0f, 0.0f);
             if (usePlanetaryFrame) {
-                float dist = glm::length(rbComp.body.position - planetCenter);
-                if (dist > 0.01f) up = glm::normalize(rbComp.body.position - planetCenter);
+                const glm::vec3 bodyOffset = rbComp.body.position - planetCenter;
+                if (!PlanetaryCameraFrame::Normalize(bodyOffset, up)) up = glm::vec3(0.0f, 1.0f, 0.0f);
             }
 
-            // Stessa logica della camera per trovare "avanti" e "destra" sulla superficie
-            glm::quat qYaw = glm::angleAxis(glm::radians(-cam.yaw), up);
-            
-            glm::vec3 baseForward;
-            if (std::abs(glm::dot(up, planetNorth)) < 0.99f) {
-                baseForward = glm::normalize(glm::cross(up, planetNorth));
-            } else {
-                baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0,0,-1) : glm::vec3(0,0,1);
-            }
-            
-            glm::vec3 surfaceFront = qYaw * baseForward;
-            glm::vec3 surfaceRight = glm::normalize(glm::cross(surfaceFront, up));
+            PlanetaryCameraFrame::State frame{
+                cam.planetaryFrameUp, cam.planetaryFrameForward, cam.planetaryFrameInitialized};
+            if (!PlanetaryCameraFrame::TransportTo(frame, up)) continue;
+            cam.planetaryFrameUp = frame.up;
+            cam.planetaryFrameForward = frame.forward;
+            cam.planetaryFrameInitialized = frame.initialized;
 
-            rbComp.body.isFlying = context->engine->GetPlayer().isCreativeMode;
+            if (inputEnabled) {
+                PlanetaryCameraFrame::ApplyLookDelta(
+                    cam.yaw, cam.pitch, input.lookYaw, input.lookPitch, cam.mouseSensitivity);
+            }
+
+            float moveSpeed = input.isRunning ? player.runSpeed : player.walkSpeed;
+            const glm::vec2 moveInput(input.moveRight, input.moveForward);
+
+            PlanetaryCameraFrame::Basis movementBasis;
+            if (!PlanetaryCameraFrame::BuildBasis(frame, cam.yaw, 0.0f, movementBasis)) continue;
+            const glm::vec3 surfaceFront = movementBasis.forward;
+            const glm::vec3 surfaceRight = movementBasis.right;
+
+            if (context->engine) rbComp.body.isFlying = context->engine->GetPlayer().isCreativeMode;
 
             glm::vec3 targetVelocity(0.0f);
             
@@ -188,24 +186,28 @@ namespace fw {
                 canMove = false;
             }
             
-            if (canMove) {
+            if (canMove && inputEnabled) {
                 if (rbComp.body.isFlying) {
-                    if (input.moveForward != 0.0f) targetVelocity += surfaceFront * input.moveForward * moveSpeed;
-                    if (input.moveRight != 0.0f) targetVelocity += surfaceRight * input.moveRight * moveSpeed;
+                    targetVelocity = PlanetaryMovementMath::DesiredTangentVelocity(
+                        surfaceFront, surfaceRight, moveInput, moveSpeed);
                     if (input.isJumping) targetVelocity += up * moveSpeed;
                     if (context->deviceManager->IsActionActive(entt::hashed_string("CROUCH"))) targetVelocity -= up * moveSpeed;
                     
                     rbComp.body.velocity = targetVelocity;
                 } else {
-                    if (input.moveForward != 0.0f) targetVelocity += surfaceFront * input.moveForward * moveSpeed;
-                    if (input.moveRight != 0.0f) targetVelocity += surfaceRight * input.moveRight * moveSpeed;
+                    targetVelocity = PlanetaryMovementMath::DesiredTangentVelocity(
+                        surfaceFront, surfaceRight, moveInput, moveSpeed);
                     
                     // Modifica la velocità planare senza toccare quella verticale (lungo l'Up)
                     float verticalVel = glm::dot(rbComp.body.velocity, up);
                     
                     if (input.isJumping) {
                         if (rbComp.body.isGrounded) {
-                            verticalVel = player.jumpForce; 
+                            const float localGravity = glm::length(rbComp.body.dbg_gravityAccel);
+                            const float jumpScale = std::isfinite(localGravity) && localGravity > 0.0f
+                                ? std::sqrt(localGravity / PhysicsEngine::G_EARTH)
+                                : 1.0f;
+                            verticalVel = player.jumpForce * jumpScale;
                         }
                         input.ConsumeJump(); 
                     }
@@ -214,11 +216,6 @@ namespace fw {
                 }
             }
             
-            // Camera position matches the rigid body position + eye offset
-            glm::vec3 camPos = rbComp.body.position + (up * rbComp.body.eyeOffset);
-            transform.x = camPos.x;
-            transform.y = camPos.y;
-            transform.z = camPos.z;
         }
     }
 
@@ -234,11 +231,37 @@ namespace fw {
         auto view = registry.view<::RigidBodyComponent>();
         for (auto [entity, rbComp] : view.each()) {
             bool isPlayer = registry.all_of<::PlayerControllerComponent>(entity);
+            if (isPlayer && registry.get<::PlayerControllerComponent>(entity).planetarySpawnPending) continue;
             
             glm::vec3 preVel = rbComp.body.velocity;
             glm::vec3 prePos = rbComp.body.position;
             
-            engine.StepSimulation(rbComp.body, dt, *context->forgeWorld);
+            const glm::vec3* preferredPlanetaryForward = nullptr;
+            if (isPlayer) {
+                const auto* camera = registry.try_get<::CameraComponent>(entity);
+                if (camera && camera->planetaryFrameInitialized) {
+                    preferredPlanetaryForward = &camera->planetaryFrameForward;
+                }
+            }
+            engine.StepSimulation(rbComp.body, dt, *context->forgeWorld, preferredPlanetaryForward);
+
+            if (isPlayer) {
+                if (auto* transform = registry.try_get<::TransformComponent>(entity)) {
+                    glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);
+                    auto planetView = context->forgeWorld->GetRegistry().view<fw::PlanetGeometryComponent>();
+                    if (!planetView.empty()) {
+                        const auto& geometry = planetView.get<fw::PlanetGeometryComponent>(*planetView.begin());
+                        if (geometry.isLogicalSphere) {
+                            glm::vec3 radialUp;
+                            if (PlanetaryCameraFrame::Normalize(rbComp.body.position, radialUp)) cameraUp = radialUp;
+                        }
+                    }
+                    const glm::vec3 cameraPosition = rbComp.body.position + cameraUp * rbComp.body.eyeOffset;
+                    transform->x = cameraPosition.x;
+                    transform->y = cameraPosition.y;
+                    transform->z = cameraPosition.z;
+                }
+            }
             
             if (isPlayer && shouldLog) {
                 std::cout << "[D7.4L][PLAYER PHYSICS]\n";
@@ -259,7 +282,23 @@ namespace fw {
                 std::cout << "- Velocity before/after integration: (" << preVel.x << ", " << preVel.y << ", " << preVel.z << ") -> (" << rbComp.body.velocity.x << ", " << rbComp.body.velocity.y << ", " << rbComp.body.velocity.z << ")\n";
                 std::cout << "- Position before/after integration: (" << prePos.x << ", " << prePos.y << ", " << prePos.z << ") -> (" << rbComp.body.position.x << ", " << rbComp.body.position.y << ", " << rbComp.body.position.z << ")\n";
                 std::cout << "- Grounded: " << (rbComp.body.isGrounded ? "YES" : "NO") << "\n";
-                std::cout << "- Number of solid voxel contacts: " << rbComp.body.dbg_voxelContacts << "\n";
+                const char* planetarySampleStatus = "None";
+                switch (rbComp.body.dbg_lastPlanetarySample) {
+                    case PlanetaryCollisionSampleStatus::SolidVoxel: planetarySampleStatus = "SolidVoxel"; break;
+                    case PlanetaryCollisionSampleStatus::Air: planetarySampleStatus = "Air"; break;
+                    case PlanetaryCollisionSampleStatus::PassableVoxel: planetarySampleStatus = "PassableVoxel"; break;
+                    case PlanetaryCollisionSampleStatus::OutOfBounds: planetarySampleStatus = "OutOfBounds"; break;
+                    case PlanetaryCollisionSampleStatus::TerrainPending: planetarySampleStatus = "TerrainPending"; break;
+                    case PlanetaryCollisionSampleStatus::InvalidInput: planetarySampleStatus = "InvalidInput"; break;
+                    default: break;
+                }
+                std::cout << "- Distinct solid voxel contacts: " << rbComp.body.dbg_voxelContacts << "\n";
+                std::cout << "- Air / passable samples: " << rbComp.body.dbg_airSamples << " / "
+                          << rbComp.body.dbg_passableVoxelSamples << "\n";
+                std::cout << "- OutOfBounds / TerrainPending samples: " << rbComp.body.dbg_outOfBoundsSamples << " / "
+                          << rbComp.body.dbg_terrainPendingSamples << "\n";
+                std::cout << "- Terrain pending: " << (rbComp.body.dbg_terrainPending ? "YES" : "NO") << "\n";
+                std::cout << "- Last planetary collision sample: " << planetarySampleStatus << "\n";
                 std::cout << "- Last voxel lookup coordinates: (" << rbComp.body.dbg_lastLookupCoord.x << ", " << rbComp.body.dbg_lastLookupCoord.y << ", " << rbComp.body.dbg_lastLookupCoord.z << ")\n";
                 std::cout << "- Last voxel lookup solid/empty: " << (rbComp.body.dbg_lastLookupSolid ? "SOLID" : "EMPTY") << "\n";
             }

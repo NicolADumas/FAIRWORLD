@@ -1,0 +1,47 @@
+====================================================================================
+  FAIRWORLD MATERIAL AUTHORING CONTRACT TEST RUNNER (P0.3C1/P0.3C2)
+  SUITE: AUTH (11 Tests: AUTH-01..11) | TRANSACTIONAL WORKFLOW & PERSISTENCE GATE
+====================================================================================
+
+  [PASS] AUTH-01  | Custom Material Creation and Initial Field Integrity
+         Observed: Committed ID=1000, Canonical='fairworld:mat/titanium_carbide', Density=4930.000000 kg/m^3, Lifecycle=Draft
+
+  [PASS] AUTH-02  | Physical Quantity SI Validation and Boundary Rules
+         Observed: NegDensityRejected=1, HighRestitutionRejected=1, NegPorosityRejected=1, NegMeltingRejected=1, ValidWorkingCopy=true
+
+  [PASS] AUTH-03  | Transactional Draft Modification and Snapshot Isolation
+         Observed: PreCommitIsolation=1, DiscardOk=1, FinalCommittedDensity=130.000000, RevisionProgression: 5 -> 6
+
+  [PASS] AUTH-04  | Atomic Custom Catalog Persistence and Clean Reload
+         Observed: SaveOk=1, LoadOk=1, Mat1Loaded=1, Mat2Loaded=1, AllFieldsMatch=1
+
+  [PASS] AUTH-05  | Formal Lifecycle State Transition to Published
+         Observed: InitialDraft=1, PublishOk=1, StateInReg=Published, IdempotentRepetition=1
+
+  [PASS] AUTH-06  | Formal Lifecycle Deprecation and Historical Preservation
+         Observed: DeprecateOk=1, DeprecatedState=Deprecated, EnabledInBM=false, HistoricPreservation=true, RepublishRejected=true
+
+  [PASS] AUTH-07  | Independent Block Maker Availability Attribute Toggle
+         Observed: DisableOk=1, EnableOk=1, RejectedOnDeprecated=1
+
+  [PASS] AUTH-08  | Optimistic Concurrency Lost Update Conflict Detection and Resolution
+         Observed: BSaveOk=1, ASaveWithoutForceRejected=1, ASaveWithForceOk=1
+
+  [PASS] AUTH-09  | Absolute Protection of Built-In Materials (< 1000) Against Mutation and Deprecation
+         Observed: EditBuiltInRejected=1, CloneOk=1, CloneIsCustom=1, OriginalIronIntact=1
+
+  [PASS] AUTH-10  | Existing Surface Binding Integrity and PBR Visual Orthogonality
+         Observed: SurfaceResolvedId=1000, IsOverridden=false, IsOrphan=false, VisualOrthogonalityVerified=true
+
+  [PASS] AUTH-11  | Celsius-First UI Boundary, Kelvin Persistence and Full Lifecycle Verification
+         Observed: MathOk=1, FirstGeneration=1, SecondGeneration=2, SecondCommitOk=1, SecondSaveOk=1, BuiltInPresent=1, BuiltInEditRejected=1, BuiltInUnchanged=1, ReloadMatch=1, DiscardRollbackOk=1, VisualOrthogonalityOk=1
+
+====================================================================================
+  TEST SUMMARY
+====================================================================================
+  TOTAL TESTS:   11 / 11
+  PASSED:        11
+  FAILED:        0
+  DURATION:      322.90 ms
+  STATUS:        ALL PASS (SUCCESS)
+====================================================================================

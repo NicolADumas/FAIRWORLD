@@ -6,26 +6,41 @@
 #include <queue>
 #include <vector>
 #include <iostream>
+#include <atomic>
+#include <cstdlib>
+#include <exception>
 
 namespace fw {
 
+namespace {
+bool JobTraceEnabled() {
+    const char* value = std::getenv("FAIRWORLD_JOB_TRACE");
+    return value && value[0] != '\0' && value[0] != '0';
+}
+}
+
 class JobQueueImpl {
 public:
-    JobQueueImpl() : m_shutdown(false), m_activeJobs(0) {}
+    JobQueueImpl() : m_shutdown(true), m_accepting(false), m_activeJobs(0) {}
     
     ~JobQueueImpl() {
         Shutdown();
     }
 
-    void Initialize() {
-        m_shutdown = false;
-        m_workers.clear();
-        
-        unsigned int numThreads = std::thread::hardware_concurrency();
-        if (numThreads == 0) numThreads = 4; // Fallback
-        
-        // Lasciamo un core (o due) liberi per OS/Renderer.
-        unsigned int poolSize = std::max(1u, numThreads - 1);
+    void Initialize(size_t requestedWorkerCount) {
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            if (!m_workers.empty()) return;
+            m_shutdown = false;
+            m_accepting = false;
+        }
+
+        unsigned int poolSize = static_cast<unsigned int>(requestedWorkerCount);
+        if (poolSize == 0) {
+            unsigned int numThreads = std::thread::hardware_concurrency();
+            if (numThreads == 0) numThreads = 4;
+            poolSize = std::max(1u, numThreads - 1);
+        }
         
         std::cout << "[JobSystem] Avvio Thread Pool con " << poolSize << " worker threads.\n";
         
@@ -34,11 +49,16 @@ public:
                 WorkerLoop();
             });
         }
+
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_accepting = true;
+        }
     }
 
     void StopAcceptingJobs() {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_shutdown = true;
+        m_accepting = false;
     }
 
     size_t GetPendingJobCount() {
@@ -53,13 +73,14 @@ public:
 
     bool IsAcceptingJobs() {
         std::unique_lock<std::mutex> lock(m_mutex);
-        return !m_shutdown;
+        return m_accepting && !m_shutdown;
     }
 
     void Shutdown() {
         {
             std::unique_lock<std::mutex> lock(m_mutex);
             m_shutdown = true;
+            m_accepting = false;
         }
         m_condition.notify_all();
         
@@ -71,14 +92,20 @@ public:
         m_workers.clear();
     }
 
-    void Enqueue(std::function<void()> job) {
+    JobSubmission Enqueue(std::function<void(uint64_t)> job, bool tracked) {
+        if (!job) return {0, JobSubmissionStatus::RejectedInvalid};
+        uint64_t requestId = 0;
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            if (m_shutdown) return;
-            m_jobs.push(std::move(job));
-            // std::cout << "[JobSystem] Job accodato. Coda attuale: " << m_jobs.size() << " job.\n";
+            if (!m_accepting || m_shutdown) return {0, JobSubmissionStatus::RejectedShutdown};
+            requestId = ++m_nextRequestId;
+            m_jobs.push(QueuedJob{requestId, std::move(job), tracked});
+            if (tracked && JobTraceEnabled()) {
+                std::cout << "[JobTrace] request=" << requestId << " state=accepted\n";
+            }
         }
         m_condition.notify_one();
+        return {requestId, JobSubmissionStatus::Accepted};
     }
 
     void WaitAll() {
@@ -89,9 +116,15 @@ public:
     }
 
 private:
+    struct QueuedJob {
+        uint64_t requestId;
+        std::function<void(uint64_t)> run;
+        bool tracked;
+    };
+
     void WorkerLoop() {
         while (true) {
-            std::function<void()> job;
+            QueuedJob job{};
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
                 m_condition.wait(lock, [this]() {
@@ -108,9 +141,17 @@ private:
             }
             
             // Execute the job outside the lock
-            if (job) {
-                // std::cout << "[Worker Thread] Risvegliato! Esecuzione job in corso...\n";
-                job();
+            if (job.run) {
+                if (job.tracked && JobTraceEnabled()) {
+                    std::cout << "[JobTrace] request=" << job.requestId << " state=started\n";
+                }
+                try {
+                    job.run(job.requestId);
+                } catch (...) {
+                    if (job.tracked && JobTraceEnabled()) {
+                        std::cerr << "[JobTrace] request=" << job.requestId << " state=failed exception=unhandled\n";
+                    }
+                }
                 {
                     std::unique_lock<std::mutex> lock(m_mutex);
                     m_activeJobs--;
@@ -123,12 +164,14 @@ private:
     }
 
     std::vector<std::thread> m_workers;
-    std::queue<std::function<void()>> m_jobs;
+    std::queue<QueuedJob> m_jobs;
     std::mutex m_mutex;
     std::condition_variable m_condition;
     std::condition_variable m_waitCondition;
     bool m_shutdown;
+    bool m_accepting;
     int m_activeJobs;
+    uint64_t m_nextRequestId = 0;
 };
 
 JobSystem::JobSystem() : m_queueImpl(std::make_unique<JobQueueImpl>()) {
@@ -137,8 +180,8 @@ JobSystem::JobSystem() : m_queueImpl(std::make_unique<JobQueueImpl>()) {
 JobSystem::~JobSystem() {
 }
 
-void JobSystem::Initialize() {
-    m_queueImpl->Initialize();
+void JobSystem::Initialize(size_t workerCount) {
+    m_queueImpl->Initialize(workerCount);
 }
 
 void JobSystem::StopAcceptingJobs() {
@@ -166,7 +209,37 @@ void JobSystem::WaitAll() {
 }
 
 void JobSystem::Execute(std::function<void()> job) {
-    m_queueImpl->Enqueue(std::move(job));
+    m_queueImpl->Enqueue([job = std::move(job)](uint64_t) { job(); }, false);
+}
+
+JobSubmission JobSystem::ExecuteTracked(
+    std::function<JobExecutionStatus(uint64_t)> job,
+    std::function<void(const JobExecutionResult&)> onFinished) {
+    if (!job) return {0, JobSubmissionStatus::RejectedInvalid};
+    return m_queueImpl->Enqueue([job = std::move(job), onFinished = std::move(onFinished)](uint64_t requestId) {
+        JobExecutionResult result;
+        result.requestId = requestId;
+        try {
+            result.status = job(requestId);
+        } catch (...) {
+            result.status = JobExecutionStatus::Failed;
+            result.exception = std::current_exception();
+        }
+        if (JobTraceEnabled()) {
+            const char* state = result.status == JobExecutionStatus::Completed ? "completed" :
+                result.status == JobExecutionStatus::Cancelled ? "cancelled" : "failed";
+            std::cout << "[JobTrace] request=" << requestId << " state=" << state << '\n';
+        }
+        if (onFinished) {
+            try {
+                onFinished(result);
+            } catch (...) {
+                if (JobTraceEnabled()) {
+                    std::cerr << "[JobTrace] request=" << requestId << " state=completion-callback-failed\n";
+                }
+            }
+        }
+    }, true);
 }
 
 } // namespace fw

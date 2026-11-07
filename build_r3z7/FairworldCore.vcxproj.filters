@@ -1,0 +1,541 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\BlockRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\CustomScientificMaterialContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\MaterialAppearance.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\MaterialAppearanceContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\MaterialAppearanceRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\MaterialAuthoringContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\MaterialAuthoringWorkflow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\MaterialRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\ScientificBindingContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\ScientificMaterialRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\ScientificMaterialRegistryContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\ShapeRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\ZoneRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetCrashRecoveryHardeningTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetCrashRecoveryTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetDependencyContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetDependencyGraph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetDigestTrustTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetIntegrityHardeningTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetIntegrityRoundTripTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetPackagingContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetPackagingService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetSchemaMigrationService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\AssetSchemaMigrationTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\FactoryOrchestrator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\PainterStationContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\SculptedMeshRuntimeBridgeTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\TextureBakingContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\TextureBakingService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\factory\TransactionIntegrityAuditTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\EditableMesh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshBridgeService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshHistoryService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshModelingService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshRepairService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshSculptService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshSelectionService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\sculpt\MeshTopologyService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\ImageBitmap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\PBRTexturePack.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\PaintContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\PaintLayer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\SurfacePaintContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\SurfacePaintingAdapter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\TextureAsset.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\TextureContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\texture\TexturePaintingService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\AtlasUVContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\CompiledTopologyTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\GeneralUVContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\GeneralUVMapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\LSCMParameterizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\MeshBridgeContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\PrimitiveUVContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\PrimitiveUVMapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\SeamGraph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\TexelDensityCalculator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\TextureReprojectionContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\TextureReprojectionService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\UVAtlasPacker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\UVEditorContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\UVEditorDocument.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\UVEditorPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\UVFactoryIntegrationTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\blocks\uv\UVIslandExtractor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\AssetManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\DiagnosticsManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\EventSubscriptionContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\FAIRWORLD.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\GameplayLifecycleStressTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\LifecycleFreezeGate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\LifecycleRemediationContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\RuntimeLifecycleContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\RuntimeManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\app\SharedContext.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\entities\Inventory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\entities\MobManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\entities\Player.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\CacheManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\FreeListAllocator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\GlobalMemoryLifecycleContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\LinearAllocator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\MemorySystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\PoolAllocator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\ProxyAllocator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\RuntimeMemoryDiagnostics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\StackAllocator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\memory\VmaUsage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\utils\World.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\utils\cgltf_impl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\utils\dllmain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\core\utils\pch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\hardware\AsyncInput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\hardware\AsyncInputLifecycleContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\hardware\DeviceManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\hardware\WindowManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\hardware\XrManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\modules\ModelEditor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\Camera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\RenderManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\TexturePacker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\VramSlabAllocator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\VulkanDmaManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\VulkanResourceTracker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\BlockMakerRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\ChunkEditorRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\ForgeRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\MapRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\PhysicsLabRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\PlanetMapperRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\PlayRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\apps\SolarSystemRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\stb_image_impl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\vulkan\VulkanCore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\vulkan\VulkanForensicAudit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\render\vulkan\VulkanMemory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\simulation\AstronomySystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\simulation\PlanetTimeSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\simulation\ThermodynamicsPipeline.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\simulation\TimeManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\AppBaseState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\BlockMakerState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\ChunkEditorState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\ForgeState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\HubState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\MapState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\MaterialAtlasState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\PhysicsLabState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\PlanetMapperState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\PlayState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\SolarSystemState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\components\PlanetMapperCamera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\components\PlanetMapperCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\states\components\PlanetMapperUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\BiomeSystems.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\JobSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\JobSystemContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\JoltPhysicsSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\PhysicsEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\PlanetSystems.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\PortalSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\RaycastSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\Systems.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\systems\TerrainSolverSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\ui\AIAssistant.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\ui\DeskarmWebView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\ui\EditorPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\ui\GlobalAssetBrowser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\CubeSphereMapping.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\DimensionsManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\ForgeWorld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\GameWorld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\GeometryCompiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\MapDocument.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\MapWorldGenerator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\MeshGenerators.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\PlanetRadialMapping.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\PlanetaryMeshGenerator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\SphericalLOD.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\TerrainAlgorithms.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\TerrainSolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\VoxelChunkMesher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\WorldChunkManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\WorldProjectManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\WorldStructureManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\noise\Noise.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\noise\NoiseContractTests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\src\world\terrain\validation\TerrainValidation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\ImGuizmo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_demo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_draw.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_impl_vulkan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_impl_win32.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_tables.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\FAIRWORLD\FAIRWORLD\third_party\imgui\imgui_widgets.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\FAIRWORLD\FAIRWORLD\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{2E47623B-356F-32E7-AC24-85047B01C5FC}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

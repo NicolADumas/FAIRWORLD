@@ -102,13 +102,13 @@ bool PhysicsLabState::Init() {
     // Genera un quad gigantesco (es. 200x200m)
     float halfSize = 100.0f;
     // Top-Left
-    fw::Vertex v0{}; v0.position = {-halfSize, 0.0f, -halfSize}; v0.normal = {0.0f, 1.0f, 0.0f}; v0.color = {0.2f, 0.2f, 0.2f, 1.0f}; v0.materialID = 0;
+    fw::Vertex v0{}; v0.position = {-halfSize, 0.0f, -halfSize}; v0.roughMetal = {0.0f, 0.0f}; v0.normal = {0.0f, 1.0f, 0.0f}; v0.color = {0.2f, 0.2f, 0.2f, 1.0f}; v0.materialID = 0;
     // Top-Right
-    fw::Vertex v1{}; v1.position = { halfSize, 0.0f, -halfSize}; v1.normal = {0.0f, 1.0f, 0.0f}; v1.color = {0.2f, 0.2f, 0.2f, 1.0f}; v1.materialID = 0;
+    fw::Vertex v1{}; v1.position = { halfSize, 0.0f, -halfSize}; v1.roughMetal = {1.0f, 0.0f}; v1.normal = {0.0f, 1.0f, 0.0f}; v1.color = {0.2f, 0.2f, 0.2f, 1.0f}; v1.materialID = 0;
     // Bottom-Right
-    fw::Vertex v2{}; v2.position = { halfSize, 0.0f,  halfSize}; v2.normal = {0.0f, 1.0f, 0.0f}; v2.color = {0.2f, 0.2f, 0.2f, 1.0f}; v2.materialID = 0;
+    fw::Vertex v2{}; v2.position = { halfSize, 0.0f,  halfSize}; v2.roughMetal = {1.0f, 1.0f}; v2.normal = {0.0f, 1.0f, 0.0f}; v2.color = {0.2f, 0.2f, 0.2f, 1.0f}; v2.materialID = 0;
     // Bottom-Left
-    fw::Vertex v3{}; v3.position = {-halfSize, 0.0f,  halfSize}; v3.normal = {0.0f, 1.0f, 0.0f}; v3.color = {0.2f, 0.2f, 0.2f, 1.0f}; v3.materialID = 0;
+    fw::Vertex v3{}; v3.position = {-halfSize, 0.0f,  halfSize}; v3.roughMetal = {0.0f, 1.0f}; v3.normal = {0.0f, 1.0f, 0.0f}; v3.color = {0.2f, 0.2f, 0.2f, 1.0f}; v3.materialID = 0;
     
     floorMesh.vertices = {v0, v1, v2, v3};
     floorMesh.faces.push_back({{0, 3, 1}, v0.normal, 0});

@@ -64,6 +64,13 @@ list(REMOVE_ITEM CORE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/blocks/custom_scientific_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/binding_tests_main.cpp"
     "${CMAKE_SOURCE_DIR}/src/blocks/authoring_tests_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/render/FrameSubmissionRecoveryTests.cpp"
+    "${CMAKE_SOURCE_DIR}/src/render/TextureCacheContractTests.cpp"
+    "${CMAKE_SOURCE_DIR}/src/render/ForgeVertexContractTests.cpp"
+    "${CMAKE_SOURCE_DIR}/src/render/DmaResultContractTests.cpp"
+    "${CMAKE_SOURCE_DIR}/src/render/VramAllocatorContractTests.cpp"
+    "${CMAKE_SOURCE_DIR}/src/render/TransferGraphicsSyncTests.cpp"
+    "${CMAKE_SOURCE_DIR}/src/world/PlanetaryVoxelE2ETests.cpp"
 )
 file(GLOB IMGUI_SOURCES CONFIGURE_DEPENDS "third_party/imgui/*.cpp")
 
@@ -329,6 +336,47 @@ add_custom_command(TARGET FairworldAuthoringTests POST_BUILD
         $<TARGET_FILE_DIR:FairworldAuthoringTests>
 )
 
+# --- 18. TEST RUNNER VULKAN FRAME-SUBMIT RECOVERY POLICY (R3-B) ---
+add_executable(FairworldVulkanRecoveryTests src/render/FrameSubmissionRecoveryTests.cpp)
+target_link_libraries(FairworldVulkanRecoveryTests PRIVATE Vulkan::Vulkan)
+
+# --- 19. TEST RUNNER PBR TEXTURE CACHE CORRECTNESS (D1.2.14a) ---
+add_executable(FairworldTextureCacheTests src/render/TextureCacheContractTests.cpp)
+target_link_libraries(FairworldTextureCacheTests PRIVATE FairworldCore)
+add_test(NAME FairworldTextureCacheTests COMMAND $<TARGET_FILE:FairworldTextureCacheTests>)
+set_tests_properties(FairworldTextureCacheTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(FairworldForgeVertexContractTests src/render/ForgeVertexContractTests.cpp)
+target_link_libraries(FairworldForgeVertexContractTests PRIVATE FairworldCore)
+add_test(NAME FairworldForgeVertexContractTests COMMAND $<TARGET_FILE:FairworldForgeVertexContractTests>)
+set_tests_properties(FairworldForgeVertexContractTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(FairworldDmaResultContractTests src/render/DmaResultContractTests.cpp)
+target_link_libraries(FairworldDmaResultContractTests PRIVATE FairworldCore)
+add_test(NAME FairworldDmaResultContractTests COMMAND $<TARGET_FILE:FairworldDmaResultContractTests>)
+set_tests_properties(FairworldDmaResultContractTests PROPERTIES WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+add_executable(FairworldVramAllocatorContractTests src/render/VramAllocatorContractTests.cpp)
+target_link_libraries(FairworldVramAllocatorContractTests PRIVATE FairworldCore)
+add_test(NAME FairworldVramAllocatorContractTests COMMAND $<TARGET_FILE:FairworldVramAllocatorContractTests>)
+set_tests_properties(FairworldVramAllocatorContractTests PROPERTIES WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+add_executable(FairworldTransferGraphicsSyncTests src/render/TransferGraphicsSyncTests.cpp)
+target_link_libraries(FairworldTransferGraphicsSyncTests PRIVATE FairworldCore)
+add_test(NAME FairworldTransferGraphicsSyncTests COMMAND $<TARGET_FILE:FairworldTransferGraphicsSyncTests>)
+set_tests_properties(FairworldTransferGraphicsSyncTests PROPERTIES WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+# Standalone CPU/headless diagnostic. Run manually with a sandbox fixture and
+# sandbox working directory; deliberately not registered in CTest, whose
+# project-root working directory is unsuitable for this data-flow gate.
+add_executable(FairworldPlanetaryVoxelE2ETests src/world/PlanetaryVoxelE2ETests.cpp)
+target_link_libraries(FairworldPlanetaryVoxelE2ETests PRIVATE FairworldCore)
+
+add_executable(FairworldJobSystemContractTests src/systems/JobSystemContractTests.cpp)
+target_link_libraries(FairworldJobSystemContractTests PRIVATE FairworldCore)
+add_test(NAME FairworldJobSystemContractTests COMMAND $<TARGET_FILE:FairworldJobSystemContractTests>)
+set_tests_properties(FairworldJobSystemContractTests PROPERTIES WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
 # ==============================================================================
 # 16. REGISTRAZIONE SUITE CTEST (Gate CTEST-01: Discovery e Standalone Runners)
 # ==============================================================================
@@ -373,6 +421,9 @@ set_tests_properties(FairworldBindingTests PROPERTIES WORKING_DIRECTORY "${CMAKE
 
 add_test(NAME FairworldAuthoringTests COMMAND $<TARGET_FILE:FairworldAuthoringTests>)
 set_tests_properties(FairworldAuthoringTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME FairworldVulkanRecoveryTests COMMAND $<TARGET_FILE:FairworldVulkanRecoveryTests>)
+set_tests_properties(FairworldVulkanRecoveryTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 
 # --- 3. I MODULI DINAMICI (Hot-Reloading) ---

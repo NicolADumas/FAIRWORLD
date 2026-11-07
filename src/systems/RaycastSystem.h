@@ -4,6 +4,7 @@
 #include <entt/entt.hpp>
 #include <limits>
 #include <cmath>
+#include <cstdint>
 
 struct SharedContext;
 
@@ -25,8 +26,18 @@ enum class RaycastHitType {
     Physics
 };
 
+enum class RaycastResultStatus : uint8_t {
+    Miss,
+    Hit,
+    Pending,
+    Missing,
+    OutOfBounds,
+    InvalidInput
+};
+
 struct RaycastHit {
     bool hit = false;
+    RaycastResultStatus status = RaycastResultStatus::Miss;
     float distance = 0.0f;
     glm::vec3 worldPosition{0.0f};
     glm::vec3 faceNormal{0.0f};

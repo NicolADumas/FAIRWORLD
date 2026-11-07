@@ -37,6 +37,10 @@ private:
     SharedContext* m_context;
     entt::registry m_registry;
     std::vector<std::unique_ptr<System>> m_systems;
+    bool m_pendingPlanetarySpawn = false;
+    bool m_pendingSpawnWaitLogged = false;
+    glm::vec3 m_pendingSpawnDirection = glm::vec3(0.0f, 1.0f, 0.0f);
+    float m_pendingSpawnHeightOffset = 0.0f;
     
     // --- LOD System (Pianeta a distanza) ---
     fw::SphericalLODSystem m_lodSystem;

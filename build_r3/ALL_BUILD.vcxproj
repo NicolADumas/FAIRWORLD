@@ -1,0 +1,265 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ResolveNugetPackages>false</ResolveNugetPackages>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{1CEFF3B4-C6DD-3071-BF5E-45CDB98B47EF}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <Platform>x64</Platform>
+    <ProjectName>ALL_BUILD</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\FAIRWORLD\FAIRWORLD\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule D:/FAIRWORLD/FAIRWORLD/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+"D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/FAIRWORLD/FAIRWORLD -BD:/FAIRWORLD/FAIRWORLD/build_r3 --check-stamp-file D:/FAIRWORLD/FAIRWORLD/build_r3/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeCXXCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeRCCompiler.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\4.3.1-msvc1\CMakeSystem.cmake;D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\cmake.verify_globs;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCXXInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeCommonLanguageInclude.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeGenericSystem.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeInitializeConfigs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeLanguageInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeRCInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\CMakeSystemSpecificInitialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\CMakeCommonCompilerMacros.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Compiler\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\ExternalProject\shared_internal_commands.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FetchContent.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageHandleStandardArgs.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindPackageMessage.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\FindVulkan.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCXXLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Internal\CMakeCommonLinkerInformation.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Linker\MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Linker\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-Initialize.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC-CXX.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows-MSVC.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\Windows.cmake;D:\Visual Code\vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-4.3\Modules\Platform\WindowsPaths.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">D:\FAIRWORLD\FAIRWORLD\build_r3\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\ZERO_CHECK.vcxproj">
+      <Project>{C32E9D3D-1020-3FAA-8DF2-CB17FCFE2CE3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldAppearanceTests.vcxproj">
+      <Project>{0A92C336-24A9-3560-9726-33D1F7636A8C}</Project>
+      <Name>FairworldAppearanceTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldAsyncInputTests.vcxproj">
+      <Project>{1A95722A-0C12-3183-A774-A765B050BAA9}</Project>
+      <Name>FairworldAsyncInputTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldAuthoringTests.vcxproj">
+      <Project>{A7DB1F5C-773E-34DB-A09A-C711F383CFE3}</Project>
+      <Name>FairworldAuthoringTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldBindingTests.vcxproj">
+      <Project>{0647BDED-34AE-3424-ACD1-6B2E4B020586}</Project>
+      <Name>FairworldBindingTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldCore.vcxproj">
+      <Project>{A876F0A3-7AC7-3371-9DA4-F7525F558585}</Project>
+      <Name>FairworldCore</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldCustomScientificTests.vcxproj">
+      <Project>{EA28EFF7-AB47-3DC0-AB6F-94F9D0D12C97}</Project>
+      <Name>FairworldCustomScientificTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldDiagnostics.vcxproj">
+      <Project>{FF988F0A-10E7-39AE-BD44-A08A808E8DBA}</Project>
+      <Name>FairworldDiagnostics</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldEditor.vcxproj">
+      <Project>{65ED4754-0968-334C-9BD5-183ECD6CBD4E}</Project>
+      <Name>FairworldEditor</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldEventTests.vcxproj">
+      <Project>{ECCF41E0-A850-312A-8827-1E81B6D811CB}</Project>
+      <Name>FairworldEventTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldGameplayStressTests.vcxproj">
+      <Project>{51F22206-B8FF-33D1-8E2F-F7C36C6DC04D}</Project>
+      <Name>FairworldGameplayStressTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldLifecycleTests.vcxproj">
+      <Project>{E0708237-5EED-3B74-8769-BDF3DBD267AB}</Project>
+      <Name>FairworldLifecycleTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldMemoryTests.vcxproj">
+      <Project>{7D428631-07EA-3D68-ACF8-D95508AFC6C7}</Project>
+      <Name>FairworldMemoryTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldNoiseTests.vcxproj">
+      <Project>{1621F979-7C67-339E-A7EB-652D9AEE701A}</Project>
+      <Name>FairworldNoiseTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldScientificTests.vcxproj">
+      <Project>{99FAFFEF-C905-3FFD-AC3F-E8B4136E7FF9}</Project>
+      <Name>FairworldScientificTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldSculptTests.vcxproj">
+      <Project>{EDBB276F-FAB5-37BA-B04B-E1C5CC76CE6B}</Project>
+      <Name>FairworldSculptTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldUVTests.vcxproj">
+      <Project>{BC12C8DB-DB91-3FC9-BDE9-6E7876684E10}</Project>
+      <Name>FairworldUVTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\FairworldVulkanRecoveryTests.vcxproj">
+      <Project>{3D6C71F8-084D-3FC0-BCAD-E3177A95654B}</Project>
+      <Name>FairworldVulkanRecoveryTests</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\_deps\joltphysics-build\Jolt.vcxproj">
+      <Project>{DD639DF4-1D73-311F-9181-202553AE0E76}</Project>
+      <Name>Jolt</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\Module_GeometryNodes.vcxproj">
+      <Project>{F4BE49BF-23D6-3C82-80C6-45191745740E}</Project>
+      <Name>Module_GeometryNodes</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\Module_Modeling.vcxproj">
+      <Project>{42D7C4DB-4489-35DC-B914-B795C7B439DA}</Project>
+      <Name>Module_Modeling</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\FAIRWORLD\FAIRWORLD\build_r3\Module_Sculpting.vcxproj">
+      <Project>{FD1471D1-AC3B-3C6D-AB71-E906E5252071}</Project>
+      <Name>Module_Sculpting</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

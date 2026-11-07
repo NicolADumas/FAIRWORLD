@@ -17,6 +17,8 @@
 #include "ForgeWorld.h"
 #include "ForgeComponents.h"
 #include "VulkanResourceTracker.h"
+#include "VulkanDmaManager.h"
+#include "TransferGraphicsSync.h"
 #include "vulkan/VulkanForensicAudit.h"
 #include <algorithm>
 #include <imgui.h>
@@ -24,6 +26,19 @@
 #include <imgui_impl_vulkan.h>
 #include <fstream>
 #include <sstream>
+
+namespace {
+// Keep the whole renderer as the explicit owner when GPU quiescence cannot be
+// proven. This deliberately defers cleanup; it is never reported as destruction.
+std::vector<std::unique_ptr<RenderManager>>& GetDeferredRenderManagers() {
+    static auto* managers = new std::vector<std::unique_ptr<RenderManager>>();
+    return *managers;
+}
+std::mutex& GetDeferredRenderManagersMutex() {
+    static auto* mutex = new std::mutex();
+    return *mutex;
+}
+}
 
 
 
@@ -46,6 +61,13 @@ VkDeviceMemory RenderManager::GetStagingDeviceMemory() const {
 
 RenderManager::~RenderManager() {
     Shutdown();
+}
+
+void RenderManager::RetainDeferredCleanup(std::unique_ptr<RenderManager> manager) {
+    if (!manager) return;
+    std::lock_guard<std::mutex> lock(GetDeferredRenderManagersMutex());
+    GetDeferredRenderManagers().push_back(std::move(manager));
+    std::cerr << "[VULKAN CRITICAL] Cleanup DEFERRED: ownership completa del RenderManager, handle Vulkan, allocator e device mantenuta fino al termine del processo; nessuna distruzione dichiarata.\n";
 }
 
 bool RenderManager::Init(bool isVRMode, XrManager* xrManager, void* hwnd, void* hinstance) {
@@ -554,7 +576,7 @@ bool RenderManager::CreateGraphicsPipeline() {
     attrDescs[1].location = 1;
     attrDescs[1].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
     attrDescs[1].offset   = offsetof(Vertex, color);
-    // location 2: roughMetal (vec2)
+    // location 2: UV (vec2), stored in the legacy fw::Vertex::roughMetal slot
     attrDescs[2].binding  = 0;
     attrDescs[2].location = 2;
     attrDescs[2].format   = VK_FORMAT_R32G32_SFLOAT;
@@ -971,6 +993,14 @@ struct CameraFrustum {
     }
 };
 
+static void PrintDiagnosticMatrix(const char* name, const glm::mat4& matrix) {
+    std::cout << name << " (rows; GLM column-major storage):\n";
+    for (int row = 0; row < 4; ++row) {
+        std::cout << "  [" << matrix[0][row] << ", " << matrix[1][row] << ", "
+                  << matrix[2][row] << ", " << matrix[3][row] << "]\n";
+    }
+}
+
 // --> QUESTA E' LA FUNZIONE CHE DISEGNA EFFETTIVAMENTE! <--
 #include <atomic>
 
@@ -999,6 +1029,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     int frame_other = 0;
     int frame_draw = 0;
     std::string first_draw_params = "";
+    static bool s_visibilityDiagnosticLogged = false;
 
     static int s_d74f6l_r1_rf_entry = 0;
     if (s_d74f6l_r1_rf_entry < 5) {
@@ -1243,12 +1274,43 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 
                 bool frustumResult = frustum.containsAABB(worldCenter - worldExtents, worldCenter + worldExtents);
                 
+                const bool visibilityProbeTarget = isTargetChunk && !s_visibilityDiagnosticLogged;
+                if (visibilityProbeTarget) {
+                    s_visibilityDiagnosticLogged = true;
+                    const glm::vec3 cameraPosition = context ? context->activeCameraView.cameraPosition : glm::vec3(0.0f);
+                    const glm::vec3 cameraForward = context ? context->activeCameraView.cameraFront : glm::vec3(0.0f, 0.0f, -1.0f);
+                    std::cout << "[D1.2.19D2][VISIBILITY PROBE]\n"
+                              << "entity=" << static_cast<uint32_t>(entity)
+                              << " vramHandle=" << mesh.vramAlloc
+                              << " vertices=" << mesh.vertices.size() << "\n"
+                              << "cameraPosition=" << cameraPosition.x << ',' << cameraPosition.y << ',' << cameraPosition.z
+                              << " cameraForward=" << cameraForward.x << ',' << cameraForward.y << ',' << cameraForward.z << "\n"
+                              << "cullingProjection: perspective fov=" << m_fov << " aspect=" << aspect
+                              << " near=0.1 far=2000; active projection includes Vulkan Y flip\n";
+                    PrintDiagnosticMatrix("View", viewMatrix);
+                    if (context) PrintDiagnosticMatrix("ActiveProjection", context->activeCameraView.projectionMatrix);
+                    PrintDiagnosticMatrix("CullingProjection", cullProj);
+                    PrintDiagnosticMatrix("GlobalModel", model);
+                }
+
                 if (isTargetChunk) {
                     std::cout << "Mesh local AABB min: " << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z << "\n";
                     std::cout << "Mesh local AABB max: " << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z << "\n";
                     std::cout << "World AABB min: " << (worldCenter.x - worldExtents.x) << ", " << (worldCenter.y - worldExtents.y) << ", " << (worldCenter.z - worldExtents.z) << "\n";
                     std::cout << "World AABB max: " << (worldCenter.x + worldExtents.x) << ", " << (worldCenter.y + worldExtents.y) << ", " << (worldCenter.z + worldExtents.z) << "\n";
                     std::cout << "FRUSTUM RESULT = " << (frustumResult ? "PASS" : "REJECT") << "\n\n";
+                    if (visibilityProbeTarget) {
+                        std::cout << "Frustum AABB positive-vertex signed distances (left/right/bottom/top/near/far):";
+                        for (int planeIndex = 0; planeIndex < 6; ++planeIndex) {
+                            const glm::vec3 positiveVertex(
+                                frustum.planes[planeIndex].x > 0.0f ? worldCenter.x + worldExtents.x : worldCenter.x - worldExtents.x,
+                                frustum.planes[planeIndex].y > 0.0f ? worldCenter.y + worldExtents.y : worldCenter.y - worldExtents.y,
+                                frustum.planes[planeIndex].z > 0.0f ? worldCenter.z + worldExtents.z : worldCenter.z - worldExtents.z);
+                            const float distance = glm::dot(glm::vec3(frustum.planes[planeIndex]), positiveVertex) + frustum.planes[planeIndex].w;
+                            std::cout << ' ' << distance;
+                        }
+                        std::cout << "\n";
+                    }
                 }
 
                 if (!frustumResult) {
@@ -1259,9 +1321,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                     continue;
                 }
                 
-                if (isTargetChunk) {
-                    frame_draw++;
-                }
+                const bool firstTargetDrawInFrame = isTargetChunk && frame_draw == 0;
 
                 pcData.mvp = viewProjMatrix * model;
                 pcData.useColorOverride = 0;
@@ -1281,7 +1341,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 pcData.curvatureRadius = curvatureRadius;
                 pcData.chunkWorldXZ = glm::vec2(trans.location.x, trans.location.z);
                 
-                if (isTargetChunk && frame_draw == 1) {
+                if (firstTargetDrawInFrame) {
                     first_draw_params = "\nFIRST DRAW PARAMS:\n";
                     first_draw_params += "Curvature Radius: " + std::to_string(curvatureRadius) + "\n";
                     first_draw_params += "Chunk World XZ: " + std::to_string(pcData.chunkWorldXZ.x) + ", " + std::to_string(pcData.chunkWorldXZ.y) + "\n";
@@ -1353,6 +1413,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
                 // Usa firstVertex al posto di ri-bindare il buffer
                 uint32_t firstVertex = allocInfo.offset / sizeof(fw::Vertex);
                 vkCmdDraw(cmd, (uint32_t)mesh.vertices.size(), 1, firstVertex, 0);
+                if (isTargetChunk) ++frame_draw;
             }
         }
         // RIPRISTINA LA PIPELINE ORIGINALE PER GLI ALTRI ELEMENTI DI FAIRWORLD
@@ -1365,17 +1426,69 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
     if (isPlayState && !s_d74f6m_printed) {
         s_playstate_frames++;
         if (g_d74f6l_ecs_committed.load() > 0 || s_playstate_frames > 600) {
+            size_t generatedVoxelChunks = 0;
+            size_t solidVoxelCount = 0;
+            size_t publishedVoxelMeshes = 0;
+            size_t cpuNonEmptyVoxelMeshes = 0;
+            size_t gpuValidVoxelMeshes = 0;
+            fw::GameWorld* diagnosticWorld = overrideWorld ? static_cast<fw::GameWorld*>(overrideWorld) : (context ? context->forgeWorld : nullptr);
+            if (diagnosticWorld) {
+                auto& diagnosticRegistry = diagnosticWorld->GetRegistry();
+                for (entt::entity chunkEntity : diagnosticRegistry.view<fw::VoxelChunkComponent>()) {
+                    const auto& chunk = diagnosticRegistry.get<fw::VoxelChunkComponent>(chunkEntity);
+                    if (chunk.isGenerated) ++generatedVoxelChunks;
+                    for (int x = 0; x < fw::CHUNK_SIZE; ++x) {
+                        for (int y = 0; y < fw::CHUNK_HEIGHT; ++y) {
+                            for (int z = 0; z < fw::CHUNK_SIZE; ++z) {
+                                const fw::BlockType block = static_cast<fw::BlockType>(chunk.blocks[x][y][z]);
+                                if (block != fw::BlockType::Air && block != fw::BlockType::Water &&
+                                    block != fw::BlockType::Lava && block != fw::BlockType::StargatePortal) {
+                                    ++solidVoxelCount;
+                                }
+                            }
+                        }
+                    }
+                }
+                for (entt::entity meshEntity : diagnosticRegistry.view<fw::VoxelChunkComponent, fw::MeshComponent>()) {
+                    const auto& mesh = diagnosticRegistry.get<fw::MeshComponent>(meshEntity);
+                    ++publishedVoxelMeshes;
+                    if (!mesh.vertices.empty()) ++cpuNonEmptyVoxelMeshes;
+                    if (context && context->vramAllocator && mesh.vramAlloc != fw::INVALID_VRAM_HANDLE &&
+                        context->vramAllocator->GetAllocation(mesh.vramAlloc).valid) ++gpuValidVoxelMeshes;
+                }
+            }
             std::cout << "\n============================================================\n";
             std::cout << "[D7.4F.6M-R2] PLANET MESH COMMIT & DRAW DIAGNOSTIC\n";
             std::cout << "GENERATION (NONZERO VERTICES): " << g_d74f6l_gen_nonzero.load() << "\n";
             std::cout << "DMA COMPLETED:                 " << g_d74f6l_dma_completed.load() << "\n";
             std::cout << "DEFERRED QUEUED:               " << g_d74f6l_deferred_queued.load() << "\n";
             std::cout << "ECS COMMITTED:                 " << g_d74f6l_ecs_committed.load() << "\n";
+            std::cout << "GENERATED VOXEL CHUNKS:        " << generatedVoxelChunks << "\n";
+            std::cout << "SOLID VOXELS:                  " << solidVoxelCount << "\n";
+            std::cout << "PUBLISHED VOXEL MESH COMPONENTS: " << publishedVoxelMeshes << "\n";
+            std::cout << "CPU NON-EMPTY VOXEL MESHES:    " << cpuNonEmptyVoxelMeshes << "\n";
+            std::cout << "GPU-VALID VOXEL MESHES:        " << gpuValidVoxelMeshes << "\n";
             std::cout << "VALID MESH COMPONENTS:         " << frame_valid_mesh << "\n";
             std::cout << "IN COMPARTMENTS:               " << frame_in_comp << "\n";
             std::cout << "FRUSTUM REJECTED:              " << frame_frust << "\n";
             std::cout << "OTHER REJECTED:                " << frame_other << "\n";
             std::cout << "DRAW REACHED:                  " << frame_draw << "\n";
+            std::cout << "DRAW COUNT MEANS vkCmdDraw RECORDED IN THIS COMMAND BUFFER; it does not prove submit or fence completion.\n";
+            if (context) {
+                std::cout << "[D1.2.19D2][CAMERA] position=" << context->activeCameraView.cameraPosition.x << ','
+                          << context->activeCameraView.cameraPosition.y << ',' << context->activeCameraView.cameraPosition.z
+                          << " forward=" << context->activeCameraView.cameraFront.x << ','
+                          << context->activeCameraView.cameraFront.y << ',' << context->activeCameraView.cameraFront.z << "\n";
+                PrintDiagnosticMatrix("[D1.2.19D2] View", context->activeCameraView.viewMatrix);
+                PrintDiagnosticMatrix("[D1.2.19D2] ActiveProjection", context->activeCameraView.projectionMatrix);
+                const VkExtent2D extent = m_core ? m_core->GetSwapchainExtent() : VkExtent2D{};
+                if (extent.height > 0) {
+                    const float cullAspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+                    const glm::mat4 diagnosticCullProjection = glm::perspective(
+                        glm::radians(m_fov), cullAspect, 0.1f, 2000.0f);
+                    PrintDiagnosticMatrix("[D1.2.19D2] CullingProjection", diagnosticCullProjection);
+                }
+            }
             
             if (frame_draw == 0) {
                 std::cout << "FIRST REJECTION REASON:        ";
@@ -1482,7 +1595,7 @@ void RenderManager::RenderFairworld(VkCommandBuffer cmd, glm::mat4 viewMatrix, g
 }
 
 void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, SharedContext* context, AssetManager* assets, MobManager* mobManager, Player* player) {
-    if (m_deviceLost) return;
+    if (m_deviceLost || m_renderingDisabled) return;
     if (m_core == nullptr || m_core->GetDevice() == VK_NULL_HANDLE || m_core->GetSwapchain() == VK_NULL_HANDLE) return;
     if (m_renderPass == VK_NULL_HANDLE || m_framebuffers.empty() || m_imageAvailableSemaphores.empty() || m_inFlightFences.empty()) return;
     
@@ -1491,6 +1604,16 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
         std::cerr << "[VULKAN FATAL] Device perso durante vkWaitForFences!" << std::endl;
         m_deviceLost = true;
         return;
+    }
+    if (waitResult != VK_SUCCESS) {
+        std::cerr << "[VULKAN ERROR] Fence frame non confermata; rendering e retirement rimandati: " << waitResult << "\n";
+        return;
+    }
+    const uint64_t completedSerial = std::max(m_completedGraphicsSerial.load(), m_frameGraphicsSerial[m_currentFrame]);
+    m_completedGraphicsSerial.store(completedSerial);
+    m_frameGraphicsSerial[m_currentFrame] = 0;
+    if (context && context->vramAllocator) {
+        context->vramAllocator->CollectRetired(completedSerial);
     }
 
     // imageAvailable[currentFrame]: protetto dal fence sopra => e' sicuro risegnalarlo
@@ -1640,19 +1763,48 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     }
 
     // Submit: attende imageAvailable[currentFrame], segnala renderFinished[imageIndex]
+    const uint64_t latestTransferValue = context && context->dmaManager
+        ? context->dmaManager->GetSubmittedTimelineValue() : 0;
+    const fw::TransferGraphicsWaitPlan transferWait = fw::MakeTransferGraphicsWaitPlan(
+        latestTransferValue, m_lastGraphicsWaitedTransferValue);
+    VkSemaphore waitSemaphores[2] = { m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE };
+    VkPipelineStageFlags waitStages[2] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        transferWait.destinationStages
+    };
+    uint64_t waitValues[2] = { 0, transferWait.timelineValue };
+    VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[imageIndex] };
+    uint64_t signalValues[] = { 0 };
+    VkTimelineSemaphoreSubmitInfo transferTimelineInfo{};
+    transferTimelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-    VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
 
+    const VkSemaphore transferTimeline = context && context->dmaManager
+        ? context->dmaManager->GetTimelineSemaphore() : VK_NULL_HANDLE;
+    if (transferWait.waitTimeline && transferTimeline == VK_NULL_HANDLE) {
+        std::cerr << "[VULKAN ERROR] Transfer timeline value " << transferWait.timelineValue
+                  << " has no live semaphore; graphics submit disabled and acquired semaphore quarantined.\n";
+        m_renderingDisabled = true;
+        m_acquireSemaphoreQuarantined = true;
+        return;
+    }
+    if (transferWait.waitTimeline && transferTimeline != VK_NULL_HANDLE) {
+        waitSemaphores[1] = transferTimeline;
+        submitInfo.waitSemaphoreCount = 2;
+        transferTimelineInfo.waitSemaphoreValueCount = 2; // Binary acquire value is zero.
+        transferTimelineInfo.pWaitSemaphoreValues = waitValues;
+        transferTimelineInfo.signalSemaphoreValueCount = 1; // Binary render-finished value is zero.
+        transferTimelineInfo.pSignalSemaphoreValues = signalValues;
+        submitInfo.pNext = &transferTimelineInfo;
+    }
+
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &m_commandBuffers[m_currentFrame];
 
-    VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[imageIndex] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -1666,17 +1818,23 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
             if (resetRes == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
             return;
         }
+        m_frameGraphicsSerial[m_currentFrame] = 0;
 
         VkResult submitResult = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]);
-        if (submitResult == VK_ERROR_DEVICE_LOST) {
+        const auto primaryDecision = fw::DecideFrameSubmissionRecovery(submitResult);
+        if (primaryDecision.state == fw::FrameSubmissionRecoveryState::DeviceLost) {
             std::cerr << "[VULKAN FATAL] Device perso durante vkQueueSubmit!" << std::endl;
             m_deviceLost = true;
             return;
         } else if (submitResult != VK_SUCCESS) {
             std::cerr << "[VULKAN ERROR] Impossibile sottomettere il Draw Command Buffer! Codice: " << submitResult << std::endl;
 
-            // Non tentare recovery se il device e' perso
-            if (m_deviceLost) return;
+            // vkQueueSubmit garantisce che gli oggetti/sincronizzazioni passati non siano
+            // stati consumati su errori recuperabili. Un device perso invece non va ritentato.
+            if (submitResult == VK_ERROR_DEVICE_LOST || m_deviceLost) {
+                m_deviceLost = true;
+                return;
+            }
 
             // La sottomissione principale e' fallita senza consumare m_imageAvailableSemaphores.
             // Eseguiamo una submission di recupero vuota che attende su m_imageAvailableSemaphores (consumandolo)
@@ -1687,17 +1845,59 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
             recoverySubmit.waitSemaphoreCount = 1;
             recoverySubmit.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrame];
             recoverySubmit.pWaitDstStageMask = waitStagesRecovery;
+            recoverySubmit.signalSemaphoreCount = 1;
+            recoverySubmit.pSignalSemaphores = &m_renderFinishedSemaphores[imageIndex];
 
-            VkResult recoveryRes = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &recoverySubmit, m_inFlightFences[m_currentFrame]);
-            if (recoveryRes == VK_ERROR_DEVICE_LOST) {
+            VkResult recoveryRes = VK_SUCCESS;
+            const auto recoveryDecision = fw::RunFrameSubmissionRecovery(submitResult, [&]() {
+                recoveryRes = vkQueueSubmit(m_core->GetGraphicsQueue(), 1, &recoverySubmit, m_inFlightFences[m_currentFrame]);
+                return recoveryRes;
+            });
+            if (recoveryDecision.state == fw::FrameSubmissionRecoveryState::DeviceLost) {
                 std::cerr << "[VULKAN FATAL] Device perso durante recovery vkQueueSubmit!\n";
                 m_deviceLost = true;
-            } else if (recoveryRes != VK_SUCCESS) {
-                std::cerr << "[VULKAN FATAL] Sottomissione di recupero fallita con codice " << recoveryRes << "! Imposto device lost per prevenire attese indefinite.\n";
-                m_deviceLost = true;
+            } else if (recoveryDecision.state == fw::FrameSubmissionRecoveryState::RecoveryFailed) {
+                std::cerr << "[VULKAN FATAL] Sottomissione di recupero fallita con codice " << recoveryRes << ". Rendering disabilitato; fence e semaforo acquisizione non verranno riutilizzati.\n";
+                m_renderingDisabled = true;
+                m_acquireSemaphoreQuarantined = true;
+                m_frameFenceMayBeUnsignaled = true;
+                return;
             }
-            return; // Interrompi: non presentare l'immagine non renderizzata
+            if (m_deviceLost) return;
+
+            // La submission vuota consuma imageAvailable, segnala renderFinished e rende
+            // presentabile l'immagine acquisita, evitando di lasciarla trattenuta dalla swapchain.
+            VkPresentInfoKHR recoveryPresent{};
+            recoveryPresent.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+            recoveryPresent.waitSemaphoreCount = 1;
+            recoveryPresent.pWaitSemaphores = &m_renderFinishedSemaphores[imageIndex];
+            VkSwapchainKHR recoverySwapchain = m_core->GetSwapchain();
+            recoveryPresent.swapchainCount = 1;
+            recoveryPresent.pSwapchains = &recoverySwapchain;
+            recoveryPresent.pImageIndices = &imageIndex;
+            VkResult recoveryPresentRes;
+            {
+                std::lock_guard<std::mutex> presentLock((*m_core->GetQueueMutex()));
+                recoveryPresentRes = vkQueuePresentKHR(m_core->GetPresentQueue(), &recoveryPresent);
+            }
+            if (recoveryPresentRes == VK_ERROR_DEVICE_LOST) {
+                m_deviceLost = true;
+            } else if (recoveryPresentRes == VK_ERROR_OUT_OF_DATE_KHR || recoveryPresentRes == VK_SUBOPTIMAL_KHR || recoveryPresentRes == VK_ERROR_SURFACE_LOST_KHR) {
+                RecreateSwapchain();
+            } else if (recoveryPresentRes != VK_SUCCESS) {
+                std::cerr << "[VULKAN ERROR] Present di recupero fallita con codice " << recoveryPresentRes << ". Rendering disabilitato.\n";
+                m_renderingDisabled = true;
+            }
+            if (!m_deviceLost && !m_renderingDisabled) m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+            return;
         }
+    }
+
+    // Questo seriale identifica la draw submission fence-verified corrente.
+    // Le allocazioni ritirate dopo questo punto attendono almeno questa fence.
+    m_frameGraphicsSerial[m_currentFrame] = ++m_lastSubmittedGraphicsSerial;
+    if (transferWait.waitTimeline && transferTimeline != VK_NULL_HANDLE) {
+        m_lastGraphicsWaitedTransferValue = transferWait.timelineValue;
     }
 
     // Presentazione dell'immagine sullo schermo
@@ -1731,6 +1931,26 @@ void RenderManager::RenderDesktop(glm::mat4 viewMatrix, glm::vec3 skyColor, Shar
     
     // Esegui il flush dei comandi asincroni (Voxel Meshes, etc)
     FlushTransferBatch();
+}
+
+VkResult RenderManager::WaitForGraphicsIdle() {
+    if (m_deviceLost) return VK_ERROR_DEVICE_LOST;
+    if (!m_core || m_core->GetDevice() == VK_NULL_HANDLE) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = VK_SUCCESS;
+    if (auto* queueMutex = m_core->GetQueueMutex()) {
+        std::lock_guard<std::mutex> lock(*queueMutex);
+        result = vkDeviceWaitIdle(m_core->GetDevice());
+    } else {
+        result = vkDeviceWaitIdle(m_core->GetDevice());
+    }
+    if (result == VK_SUCCESS) {
+        const uint64_t submitted = m_lastSubmittedGraphicsSerial.load();
+        m_completedGraphicsSerial.store(std::max(m_completedGraphicsSerial.load(), submitted));
+        m_frameGraphicsSerial.fill(0);
+    } else if (result == VK_ERROR_DEVICE_LOST) {
+        m_deviceLost = true;
+    }
+    return result;
 }
 
 // ---------------------------------------------------------
@@ -1925,11 +2145,14 @@ void RenderManager::FlushTransferBatch() {
 
     // Resetta l'offset (Tail raggiunge Head) e il command buffer per il prossimo batch
     m_currentOffset = 0;
-    vkResetCommandBuffer(m_transferCommandBuffer, 0);
-    
-    // Fai ripartire la registrazione del Command Buffer
-    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    vkBeginCommandBuffer(m_transferCommandBuffer, &beginInfo);
+    {
+        // vkResetCommandBuffer externally synchronizes access to its pool;
+        // DMA allocate/free operations use this same narrow mutex.
+        std::lock_guard<std::mutex> poolLock(m_transferCommandPoolMutex);
+        vkResetCommandBuffer(m_transferCommandBuffer, 0);
+        VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+        vkBeginCommandBuffer(m_transferCommandBuffer, &beginInfo);
+    }
 }
 
 
@@ -2215,9 +2438,34 @@ void RenderManager::Shutdown() {
     m_isFullyInitialized = false; // Blocca RecreateSwapchain durante lo shutdown
     fw::forensic::SetPhase(fw::forensic::Phase::Shutdown);
     if (m_core && m_core->GetDevice() != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(m_core->GetDevice());
-        if (!m_inFlightFences.empty()) {
-            vkWaitForFences(m_core->GetDevice(), static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
+        const VkResult shutdownIdle = vkDeviceWaitIdle(m_core->GetDevice());
+        if (shutdownIdle == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+
+        // Painter mantiene ownership delle sue risorse finché la GPU non è quiescente
+        // o il device è lost (in tal caso Vulkan considera le risorse non più in uso).
+        if (!CleanupPainterPreviewResources()) {
+            std::cerr << "[VULKAN CRITICAL] Shutdown sospeso: risorse Painter ancora possedute perché la sincronizzazione GPU è fallita.\n";
+            m_shutdownIncomplete = true;
+            m_shutdownState = ShutdownState::CleanupDeferred;
+            return;
+        }
+        if (shutdownIdle != VK_SUCCESS && !m_deviceLost) {
+            m_shutdownIncomplete = true;
+            m_shutdownState = ShutdownState::CleanupDeferred;
+            return;
+        }
+        // A successful device idle proves no work is executing. In the recovery
+        // failure path the reset frame fence is intentionally unsignaled, so it
+        // must never be waited on, even though device idle itself succeeded.
+        if (!m_inFlightFences.empty() && !m_deviceLost && !m_frameFenceMayBeUnsignaled) {
+            VkResult shutdownFenceWait = vkWaitForFences(m_core->GetDevice(), static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
+            if (shutdownFenceWait == VK_ERROR_DEVICE_LOST) m_deviceLost = true;
+            else if (shutdownFenceWait != VK_SUCCESS) {
+                std::cerr << "[VULKAN CRITICAL] Shutdown sospeso: fence non completate (" << shutdownFenceWait << ").\n";
+                m_shutdownIncomplete = true;
+                m_shutdownState = ShutdownState::CleanupDeferred;
+                return;
+            }
         }
 
         if (m_blockPropertiesBuffer != VK_NULL_HANDLE) {
@@ -2225,7 +2473,6 @@ void RenderManager::Shutdown() {
             m_blockPropertiesBuffer = VK_NULL_HANDLE;
         }
 
-        CleanupPainterPreviewResources();
         CleanupImGuiTextureDescriptors();
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
@@ -2251,6 +2498,11 @@ void RenderManager::Shutdown() {
         m_core->DestroySwapchain();
 
         // 2. Distruzione semafori e fence a swapchain inattiva
+        // Se il recovery submit è fallito, imageAvailable può essere ancora
+        // signaled: è quarantined e viene distrutto solo dopo idle + swapchain.
+        if (m_acquireSemaphoreQuarantined) {
+            std::cerr << "[VULKAN INFO] Acquire semaphore quarantined fino alla distruzione della swapchain; non sarà riutilizzato.\n";
+        }
         for (auto sem : m_imageAvailableSemaphores) {
             if (sem != VK_NULL_HANDLE) {
                 fw::forensic::InterceptDestroySemaphore("RenderManager::Shutdown:imageAvailable", m_core->GetDevice(), sem, nullptr);
@@ -2354,6 +2606,8 @@ void RenderManager::Shutdown() {
         fw::forensic::DestroyDebugMessenger(instance);
         m_core.reset();
     }
+    m_shutdownIncomplete = false;
+    m_shutdownState = m_deviceLost ? ShutdownState::DeviceLostCleanupComplete : ShutdownState::CleanupComplete;
 }
 
 void RenderManager::InitImGui(void* hwnd) {
@@ -3165,19 +3419,39 @@ bool RenderManager::CleanupPainterPreviewResources() {
 
     // 1. Sincronizzazione GPU: attendi il completamento dei frame in volo che utilizzano le risorse Painter
     bool syncSuccess = true;
-    if (!m_inFlightFences.empty()) {
+    if (m_deviceLost) {
+        // DEVICE_LOST rende le risorse non in uso ai fini della loro distruzione.
+    } else if (m_renderingDisabled) {
+        // Dopo un recovery submit fallito la fence del frame può essere unsignaled
+        // senza una submission che la segnali. Attendere quella fence può bloccare
+        // per sempre: usa l'idle del device per provare che non restano comandi attivi.
+        VkResult idleRes = vkDeviceWaitIdle(device);
+        if (idleRes == VK_ERROR_DEVICE_LOST) {
+            m_deviceLost = true;
+        } else if (idleRes != VK_SUCCESS) {
+            std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: vkDeviceWaitIdle fallito dopo recovery non riuscito (" << idleRes << ").\n";
+            syncSuccess = false;
+        }
+    } else if (!m_inFlightFences.empty()) {
         VkResult waitRes = vkWaitForFences(device, static_cast<uint32_t>(m_inFlightFences.size()), m_inFlightFences.data(), VK_TRUE, UINT64_MAX);
         if (waitRes != VK_SUCCESS) {
             std::cerr << "[VULKAN ERROR] CleanupPainterPreviewResources: vkWaitForFences failed with code " << waitRes << ". Tentativo fallback vkDeviceWaitIdle...\n";
-            VkResult idleRes = vkDeviceWaitIdle(device);
-            if (idleRes != VK_SUCCESS) {
-                std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: anche fallback vkDeviceWaitIdle fallito con codice " << idleRes << "!\n";
-                syncSuccess = false;
-                if (waitRes == VK_ERROR_DEVICE_LOST || idleRes == VK_ERROR_DEVICE_LOST) {
-                    m_deviceLost = true;
-                }
+            if (waitRes == VK_ERROR_DEVICE_LOST) {
+                // La specifica Vulkan considera non più in uso le risorse dopo un
+                // comando che ritorna DEVICE_LOST; possiamo rilasciarle durante teardown.
+                m_deviceLost = true;
             } else {
-                std::cout << "[VULKAN INFO] CleanupPainterPreviewResources: sincronizzazione GPU completata con successo tramite fallback vkDeviceWaitIdle.\n";
+                VkResult idleRes = vkDeviceWaitIdle(device);
+                if (idleRes != VK_SUCCESS) {
+                    std::cerr << "[VULKAN CRITICAL] CleanupPainterPreviewResources: anche fallback vkDeviceWaitIdle fallito con codice " << idleRes << "!\n";
+                    if (idleRes == VK_ERROR_DEVICE_LOST) {
+                        m_deviceLost = true;
+                    } else {
+                        syncSuccess = false;
+                    }
+                } else {
+                    std::cout << "[VULKAN INFO] CleanupPainterPreviewResources: sincronizzazione GPU completata con successo tramite fallback vkDeviceWaitIdle.\n";
+                }
             }
         }
     }
@@ -3191,7 +3465,7 @@ bool RenderManager::CleanupPainterPreviewResources() {
     // Se la sincronizzazione GPU e' fallita durante l'esecuzione attiva (runtime valido),
     // non distruggere le risorse GPU immediatamente per evitare crash hardware / access violation.
     // L'ownership rimane esplicita in RenderManager (m_painterPreviewCleanupPending = true) per la distruzione differita a Shutdown.
-    if (!syncSuccess && m_isFullyInitialized) {
+    if (!syncSuccess) {
         std::cerr << "[VULKAN WARN] CleanupPainterPreviewResources: distruzione immediata interrotta per sicurezza. Risorse trattenute per shutdown (m_painterPreviewCleanupPending=true).\n";
         m_painterPreviewCleanupPending = true;
         return false;

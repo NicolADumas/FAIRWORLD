@@ -1,0 +1,794 @@
+==========================================
+    FAIRWORLD ENGINE - BOOT SEQUENCE   
+==========================================
+
+[SYSTEM] AI Server Python avviato in background.
+
+Seleziona la modalita' di avvio:
+0. HUB (Hub Principale)
+1. FAIRWORLD (Mondo di Gioco, Esplorazione e Costruzione)
+2. LA FORGE (Editor Strutture e Minivoxel)
+3. PHYSICS LAB (Test Fisica e Materiali)
+4. CHUNK EDITOR (Modellazione Terreni 2D/3D)
+5. PLANET MAPPER (Configura Globo & Sistema)
+6. BLOCK MAKER (Editor Blocchi e Materiali PBR)
+7. SOLAR SYSTEM (Mappa Spaziale)
+8. MATERIAL ATLAS (Catalogo Scientifico PBR)
+Scelta [0-8] (predefinito 0): ==========================================
+    FAIRWORLD ENGINE - INIZIALIZZAZIONE   
+==========================================
+
+[SYSTEM] Inizializzazione Finestra Principale...
+[SYSTEM] Finestra Desktop creata con successo.
+[SYSTEM] Avvio in MODALITA' DESKTOP (Probing OpenXR disabilitato per avvio rapido).
+[VULKAN FORENSIC PHASE] -> Startup
+[VULKAN] Istanza creata con successo (Validation Layers: ATTIVI).
+[VULKAN] Surface Win32 creata con successo.
+[VULKAN] GPU Selezionata: NVIDIA GeForce GTX 1660 Ti
+[VULKAN] Logical Device e Code (Graphics, Present, Transfer) configurate.
+[VULKAN FORENSIC] VkDebugUtilsMessengerEXT successfully registered on VkInstance: 0x1b4ddb511e0
+[VMA] VmaAllocator inizializzato con successo.
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #1]
+============================================================
+  Message ID : UNASSIGNED-GeneralParameterError-RequiredHandle
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass is VK_NULL_HANDLE.
+  Phase      : Startup
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x11c130
+    [3] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [4] Twitch_GetDeviceProcAddr + 0x8513
+    [5] Twitch_GetDeviceProcAddr + 0x7aff
+    [6] Twitch_GetDeviceProcAddr + 0x1ece
+    [7] TwitchMessageProc + 0x604bc
+    [8] vkResetEvent + 0x61c05
+    [9] fw::VulkanCore::InitSwapchain + 0x1f2
+    [10] RenderManager::Init + 0x476
+    [11] FairWorldEngine::Init + 0x3df
+    [12] main + 0x783
+    [13] invoke_main + 0x39
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #2]
+============================================================
+  Message ID : VUID-VkFramebufferCreateInfo-renderPass-parameter
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass Invalid VkRenderPass Object 0x0.
+The Vulkan spec states: renderPass must be a valid VkRenderPass handle (https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-renderPass-parameter)
+  Phase      : Startup
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x297383
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x29e620
+    [4] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [5] Twitch_GetDeviceProcAddr + 0x8513
+    [6] Twitch_GetDeviceProcAddr + 0x7aff
+    [7] Twitch_GetDeviceProcAddr + 0x1ece
+    [8] TwitchMessageProc + 0x604bc
+    [9] vkResetEvent + 0x61c05
+    [10] fw::VulkanCore::InitSwapchain + 0x1f2
+    [11] RenderManager::Init + 0x476
+    [12] FairWorldEngine::Init + 0x3df
+    [13] main + 0x783
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #3]
+============================================================
+  Message ID : UNASSIGNED-GeneralParameterError-RequiredHandle
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass is VK_NULL_HANDLE.
+  Phase      : Startup
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x11c130
+    [3] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [4] Twitch_GetDeviceProcAddr + 0x8513
+    [5] Twitch_GetDeviceProcAddr + 0x7aff
+    [6] Twitch_GetDeviceProcAddr + 0x1ece
+    [7] TwitchMessageProc + 0x604bc
+    [8] vkResetEvent + 0x61c05
+    [9] fw::VulkanCore::InitSwapchain + 0x1f2
+    [10] RenderManager::Init + 0x476
+    [11] FairWorldEngine::Init + 0x3df
+    [12] main + 0x783
+    [13] invoke_main + 0x39
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #4]
+============================================================
+  Message ID : VUID-VkFramebufferCreateInfo-renderPass-parameter
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass Invalid VkRenderPass Object 0x0.
+The Vulkan spec states: renderPass must be a valid VkRenderPass handle (https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-renderPass-parameter)
+  Phase      : Startup
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x297383
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x29e620
+    [4] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [5] Twitch_GetDeviceProcAddr + 0x8513
+    [6] Twitch_GetDeviceProcAddr + 0x7aff
+    [7] Twitch_GetDeviceProcAddr + 0x1ece
+    [8] TwitchMessageProc + 0x604bc
+    [9] vkResetEvent + 0x61c05
+    [10] fw::VulkanCore::InitSwapchain + 0x1f2
+    [11] RenderManager::Init + 0x476
+    [12] FairWorldEngine::Init + 0x3df
+    [13] main + 0x783
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #5]
+============================================================
+  Message ID : UNASSIGNED-GeneralParameterError-RequiredHandle
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass is VK_NULL_HANDLE.
+  Phase      : Startup
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x11c130
+    [3] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [4] Twitch_GetDeviceProcAddr + 0x8513
+    [5] Twitch_GetDeviceProcAddr + 0x7aff
+    [6] Twitch_GetDeviceProcAddr + 0x1ece
+    [7] TwitchMessageProc + 0x604bc
+    [8] vkResetEvent + 0x61c05
+    [9] fw::VulkanCore::InitSwapchain + 0x1f2
+    [10] RenderManager::Init + 0x476
+    [11] FairWorldEngine::Init + 0x3df
+    [12] main + 0x783
+    [13] invoke_main + 0x39
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #6]
+============================================================
+  Message ID : VUID-VkFramebufferCreateInfo-renderPass-parameter
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass Invalid VkRenderPass Object 0x0.
+The Vulkan spec states: renderPass must be a valid VkRenderPass handle (https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-renderPass-parameter)
+  Phase      : Startup
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x297383
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x29e620
+    [4] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [5] Twitch_GetDeviceProcAddr + 0x8513
+    [6] Twitch_GetDeviceProcAddr + 0x7aff
+    [7] Twitch_GetDeviceProcAddr + 0x1ece
+    [8] TwitchMessageProc + 0x604bc
+    [9] vkResetEvent + 0x61c05
+    [10] fw::VulkanCore::InitSwapchain + 0x1f2
+    [11] RenderManager::Init + 0x476
+    [12] FairWorldEngine::Init + 0x3df
+    [13] main + 0x783
+============================================================
+
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] RenderPass creato (con Depth Buffer).
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN] GLB Graphics Pipeline creata con successo!
+[VULKAN] Depth Buffer creato (126).
+
+[VULKAN FORENSIC][vkCreateFramebuffer #1]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  RenderPass  : 0x1f000000001f
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x1c000000001c
+    [1] ImageView: 0x690000000069
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x6a000000006a
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #2]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  RenderPass  : 0x1f000000001f
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x1d000000001d
+    [1] ImageView: 0x690000000069
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x6b000000006b
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #3]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  RenderPass  : 0x1f000000001f
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0x1e000000001e
+    [1] ImageView: 0x690000000069
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::Init + 0x88d
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+  Result      : 0 -> Handle: 0x6c000000006c
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #1]
+  Handle      : 0x6d000000006d
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : ImageAvailableSem_0
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x2e8
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #2]
+  Handle      : 0x6f000000006f
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : ImageAvailableSem_1
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x2e8
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #3]
+  Handle      : 0x710000000071
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_0
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #4]
+  Handle      : 0x720000000072
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_1
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+
+[VULKAN FORENSIC][vkCreateSemaphore #5]
+  Handle      : 0x730000000073
+  Caller      : RenderManager::CreateSyncObjects
+  Owner       : RenderManager
+  Name        : RenderFinishedSem_2
+  Phase       : Startup
+  Device      : 0x1b4f0786950
+  Result      : 0
+  Callstack:
+    [0] RenderManager::CreateSyncObjects + 0x66f
+    [1] RenderManager::Init + 0x8d1
+    [2] FairWorldEngine::Init + 0x3df
+    [3] main + 0x783
+    [4] invoke_main + 0x39
+    [5] __scrt_common_main_seh + 0x132
+    [6] __scrt_common_main + 0xe
+    [7] mainCRTStartup + 0xe
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[VULKAN] Motore Grafico pronto. Pronti a renderizzare!
+[ASSETS] Nessun biomes.json trovato, uso biomi di default.
+[ASSETS] Caricati 19 blocchi, 3 mob e 1 biomi.
+[VULKAN] Nessun modello trovato in models/goblin.obj
+[VULKAN] Nessun modello trovato in models/skeleton.obj
+[VULKAN] Nessun modello trovato in models/golem.obj
+[PERF] Ingresso in main -> prima finestra creata: 2941.99 ms
+[BlockRegistry] Loaded 19 blocks from assets/definitions/blocks.json
+[MaterialRegistry] Caricati 21 materiali da assets/definitions/materials.json
+[ScientificMaterialRegistry] Caricati 4 materiali scientifici da assets/definitions/scientific_materials.json (schema v2, conflitti/scartati: 0)
+[SYSTEM] Catalogo materiali custom caricato con successo da disco.
+[CacheManager] Inizializzazione Gestore Cache CPU & GPU...
+[WorldProjectManager] Inizializzato con percorso predefinito: saves/map/world_map.json
+[MapDocument] Caricamento da JSON: saves/map/world_map.json
+[WorldProjectManager] File progetto non trovato o non valido in: saves/map/world_map.json. Inizializzazione predefinita.
+[WorldProjectManager] Nessun salvataggio pianeti trovato. Creato nuovo 'Fairworld Prime'.
+[WorldProjectManager] Libreria terreni vuota. Creato 'Terreno Standard' con strati.
+[WorldProjectManager] Validazione BlockRegistry completata con successo.
+[RuntimeManager] Creato. Architettura a due fasi (CPU Prep -> GPU Commit) attiva.
+[RuntimeManager] [Thread 20996] [Phase: Dedicated Worker] Worker thread avviato e in ascolto.
+[CacheManager] Sincronizzazione globale di tutti i materiali su GPU...
+[HubState] Costruito.
+[SYSTEM] Avviato HubState...
+
+[SYSTEM] Entro nel main loop guidato dalla State Machine...
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[HubState] Inizializzazione completata. Mostro il Menu Principale ImGui.
+[VULKAN FORENSIC PHASE] -> Resize
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x6a000000006a
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x6b000000006b
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0x6c000000006c
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Resize
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+[DEBUG] Chiamata a vkCreateSwapchainKHR in corso...
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #7]
+============================================================
+  Message ID : UNASSIGNED-GeneralParameterError-RequiredHandle
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass is VK_NULL_HANDLE.
+  Phase      : Resize
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x11c130
+    [3] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [4] Twitch_GetDeviceProcAddr + 0x8513
+    [5] Twitch_GetDeviceProcAddr + 0x7aff
+    [6] Twitch_GetDeviceProcAddr + 0x1ece
+    [7] TwitchMessageProc + 0x604bc
+    [8] vkResetEvent + 0x61c05
+    [9] fw::VulkanCore::InitSwapchain + 0x1f2
+    [10] RenderManager::RecreateSwapchain + 0x250
+    [11] RenderManager::NotifyResize + 0x21
+    [12] FairWorldEngine::BeginUIFrame + 0x72
+    [13] main + 0x1b24
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #8]
+============================================================
+  Message ID : VUID-VkFramebufferCreateInfo-renderPass-parameter
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass Invalid VkRenderPass Object 0x0.
+The Vulkan spec states: renderPass must be a valid VkRenderPass handle (https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-renderPass-parameter)
+  Phase      : Resize
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x297383
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x29e620
+    [4] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [5] Twitch_GetDeviceProcAddr + 0x8513
+    [6] Twitch_GetDeviceProcAddr + 0x7aff
+    [7] Twitch_GetDeviceProcAddr + 0x1ece
+    [8] TwitchMessageProc + 0x604bc
+    [9] vkResetEvent + 0x61c05
+    [10] fw::VulkanCore::InitSwapchain + 0x1f2
+    [11] RenderManager::RecreateSwapchain + 0x250
+    [12] RenderManager::NotifyResize + 0x21
+    [13] FairWorldEngine::BeginUIFrame + 0x72
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #9]
+============================================================
+  Message ID : UNASSIGNED-GeneralParameterError-RequiredHandle
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass is VK_NULL_HANDLE.
+  Phase      : Resize
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x11c130
+    [3] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [4] Twitch_GetDeviceProcAddr + 0x8513
+    [5] Twitch_GetDeviceProcAddr + 0x7aff
+    [6] Twitch_GetDeviceProcAddr + 0x1ece
+    [7] TwitchMessageProc + 0x604bc
+    [8] vkResetEvent + 0x61c05
+    [9] fw::VulkanCore::InitSwapchain + 0x1f2
+    [10] RenderManager::RecreateSwapchain + 0x250
+    [11] RenderManager::NotifyResize + 0x21
+    [12] FairWorldEngine::BeginUIFrame + 0x72
+    [13] main + 0x1b24
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #10]
+============================================================
+  Message ID : VUID-VkFramebufferCreateInfo-renderPass-parameter
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass Invalid VkRenderPass Object 0x0.
+The Vulkan spec states: renderPass must be a valid VkRenderPass handle (https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-renderPass-parameter)
+  Phase      : Resize
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x297383
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x29e620
+    [4] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [5] Twitch_GetDeviceProcAddr + 0x8513
+    [6] Twitch_GetDeviceProcAddr + 0x7aff
+    [7] Twitch_GetDeviceProcAddr + 0x1ece
+    [8] TwitchMessageProc + 0x604bc
+    [9] vkResetEvent + 0x61c05
+    [10] fw::VulkanCore::InitSwapchain + 0x1f2
+    [11] RenderManager::RecreateSwapchain + 0x250
+    [12] RenderManager::NotifyResize + 0x21
+    [13] FairWorldEngine::BeginUIFrame + 0x72
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #11]
+============================================================
+  Message ID : UNASSIGNED-GeneralParameterError-RequiredHandle
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass is VK_NULL_HANDLE.
+  Phase      : Resize
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x11c130
+    [3] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [4] Twitch_GetDeviceProcAddr + 0x8513
+    [5] Twitch_GetDeviceProcAddr + 0x7aff
+    [6] Twitch_GetDeviceProcAddr + 0x1ece
+    [7] TwitchMessageProc + 0x604bc
+    [8] vkResetEvent + 0x61c05
+    [9] fw::VulkanCore::InitSwapchain + 0x1f2
+    [10] RenderManager::RecreateSwapchain + 0x250
+    [11] RenderManager::NotifyResize + 0x21
+    [12] FairWorldEngine::BeginUIFrame + 0x72
+    [13] main + 0x1b24
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #12]
+============================================================
+  Message ID : VUID-VkFramebufferCreateInfo-renderPass-parameter
+  Details    : vkCreateFramebuffer(): pCreateInfo->renderPass Invalid VkRenderPass Object 0x0.
+The Vulkan spec states: renderPass must be a valid VkRenderPass handle (https://docs.vulkan.org/spec/latest/chapters/renderpass.html#VUID-VkFramebufferCreateInfo-renderPass-parameter)
+  Phase      : Resize
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x297383
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x29e620
+    [4] vkEnumerateInstanceExtensionProperties + 0x117d7
+    [5] Twitch_GetDeviceProcAddr + 0x8513
+    [6] Twitch_GetDeviceProcAddr + 0x7aff
+    [7] Twitch_GetDeviceProcAddr + 0x1ece
+    [8] TwitchMessageProc + 0x604bc
+    [9] vkResetEvent + 0x61c05
+    [10] fw::VulkanCore::InitSwapchain + 0x1f2
+    [11] RenderManager::RecreateSwapchain + 0x250
+    [12] RenderManager::NotifyResize + 0x21
+    [13] FairWorldEngine::BeginUIFrame + 0x72
+============================================================
+
+[VULKAN] Swapchain creata (3 immagini).
+[VULKAN] Depth Buffer creato (126).
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN VALIDATION WARNING] vkCreateGraphicsPipelines(): pCreateInfos[0].pVertexInputState Vertex attribute at location 7 not consumed by vertex shader.
+[VULKAN] GLB Graphics Pipeline creata con successo!
+
+[VULKAN FORENSIC][vkCreateFramebuffer #4]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x1b4f0786950
+  RenderPass  : 0x1f000000001f
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xd000000000d0
+    [1] ImageView: 0xd500000000d5
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xe800000000e8
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #5]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x1b4f0786950
+  RenderPass  : 0x1f000000001f
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xd100000000d1
+    [1] ImageView: 0xd500000000d5
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xe900000000e9
+
+
+[VULKAN FORENSIC][vkCreateFramebuffer #6]
+  Caller      : RenderManager::CreateFramebuffers
+  Phase       : Resize
+  Device      : 0x1b4f0786950
+  RenderPass  : 0x1f000000001f
+  Dimensions  : 1264x681 layers=1
+  Attachments : 2 attachments:
+    [0] ImageView: 0xd200000000d2
+    [1] ImageView: 0xd500000000d5
+  Callstack:
+    [0] RenderManager::CreateFramebuffers + 0x5f6
+    [1] RenderManager::RecreateSwapchain + 0x82f
+    [2] RenderManager::NotifyResize + 0x21
+    [3] FairWorldEngine::BeginUIFrame + 0x72
+    [4] main + 0x1b24
+    [5] invoke_main + 0x39
+    [6] __scrt_common_main_seh + 0x132
+    [7] __scrt_common_main + 0xe
+  Result      : 0 -> Handle: 0xea00000000ea
+
+[VULKAN FORENSIC PHASE] -> Runtime
+[VULKAN] Swapchain e Pipeline ricreate con successo per il ridimensionamento (1264x681)
+[PERF] Ingresso in main -> primo frame presentato:     3217.62 ms
+[PERF] Ingresso in main -> prima interazione effettiva: 3217.62 ms
+       (Bootstrap motore netto: 3156.71 ms)
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 76.2 | FPS: 76.2 | FixedTicks/s: 59.8 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 75.8 | FPS: 75.8 | FixedTicks/s: 60.2 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 72.6 | FPS: 72.6 | FixedTicks/s: 60.0 | Minimized: NO
+[LOOP-BENCHMARK] Mode: HUB | Iters/s: 67.8 | FPS: 67.8 | FixedTicks/s: 60.0 | Minimized: NO
+[SYSTEM] Main loop terminato.
+[SYSTEM] Svuotamento StateManager e distruzione stati attivi...
+[HubState] Distrutto. Isolamento memoria garantito.
+[CacheManager] Invalidation cache GPU (Vulkan Chunk Buffers & Staging Ring)...
+[CacheManager] Invalidation cache CPU (Deferred Meshes & Arenas)...
+[SYSTEM] Chiusura del motore completata.
+[WorldChunkManager] Salvati 0 chunk su disco (saves/world).
+[RuntimeManager] [Thread 16056] [Phase: Shutdown] Richiesta cancellazione worker e attesa join...
+[RuntimeManager] [Thread 20996] [Phase: Dedicated Worker] Worker thread terminato.
+[RuntimeManager] [Thread 16056] [Phase: Shutdown] m_workerThread terminato (tempo join worker: 1.0 ms).
+[RuntimeShutdown] GPU resources destroyed. Tempi di Shutdown: [WorkerJoin=1.0 ms, JobSystemStop=0.0 ms, Totale=1.1 ms]
+
+====================================================
+ FAIRWORLD RUNTIME LIFECYCLE GATE
+====================================================
+
+[1/3] PRODUCERS
+      CPU JobSystem                   N/A   [PASS] (not created)
+      DMA Manager                     N/A   [PASS] (not created)
+
+[2/3] ASYNC SUBSYSTEMS (captured before delete)
+      Pending CPU jobs                N/A   [PASS] (subsystem inactive)
+      Active workers                  N/A   [PASS] (subsystem inactive)
+      Pending DMA transfers           N/A   [PASS] (subsystem inactive)
+      Live DMA command buffers        N/A   [PASS] (subsystem inactive)
+
+[3/3] RUNTIME STATE
+      Runtime shutdown complete       YES   [PASS]
+      Cache invalidated               N/A   [WARN] not observable (CacheManager has no flush flag)
+      GameWorld released              YES   [PASS]
+
+====================================================
+ RUNTIME LIFECYCLE: FROZEN (100% APPLICABLE CHECKS PASS)
+====================================================
+
+[VULKAN FORENSIC PHASE] -> Shutdown
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xe800000000e8
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xe900000000e9
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroyFramebuffer]
+  Handle      : 0xea00000000ea
+  Caller      : RenderManager::CleanupSwapchain
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Caller: RenderManager::CreateFramebuffers)
+
+[VULKAN FORENSIC][vkDestroySemaphore #1]
+  Handle      : 0x6d000000006d
+  Caller      : RenderManager::Shutdown:imageAvailable
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: ImageAvailableSem_0, CreateID: #1)
+
+[VULKAN FORENSIC][vkDestroySemaphore #2]
+  Handle      : 0x6f000000006f
+  Caller      : RenderManager::Shutdown:imageAvailable
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: ImageAvailableSem_1, CreateID: #2)
+
+[VULKAN FORENSIC][vkDestroySemaphore #3]
+  Handle      : 0x710000000071
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_0, CreateID: #3)
+
+[VULKAN FORENSIC][vkDestroySemaphore #4]
+  Handle      : 0x720000000072
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_1, CreateID: #4)
+
+[VULKAN FORENSIC][vkDestroySemaphore #5]
+  Handle      : 0x730000000073
+  Caller      : RenderManager::Shutdown:renderFinished
+  Phase       : Shutdown
+  Device      : 0x1b4f0786950
+  Tracking    : MATCH FOUND (Original Owner: RenderManager, Name: RenderFinishedSem_2, CreateID: #5)
+[VMA] VmaAllocator distrutto.
+
+============================================================
+ [VULKAN FORENSIC AUDIT] FINAL REPORT AT vkDestroyDevice
+============================================================
+Caller               : RenderManager::Shutdown
+Device               : 0x1b4f0786950
+Total Semaphores Cr. : 5
+Total Semaphores Des.: 5
+LIVE SEMAPHORES REMAINING: 0
+All tracked semaphores were cleanly destroyed!
+============================================================
+
+
+============================================================
+ [VULKAN VALIDATION LAYER ERROR #13]
+============================================================
+  Message ID : VUID-vkDestroyDevice-device-05137
+  Details    : vkDestroyDevice(): VkDevice 0x1b4f0786950 has 4 leaked objects that have not been destroyed.
+VkSemaphore 0x1a000000001a, VkSemaphore 0x1b000000001b, VkSemaphore 0xce00000000ce, VkSemaphore 0xcf00000000cf.
+The Vulkan spec states: All child objects created on device that can be destroyed or freed must have been destroyed or freed prior to destroying device (https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html#VUID-vkDestroyDevice-device-05137)
+  Phase      : Shutdown
+  Real Callstack at Validation Fault:
+    [0] vkNegotiateLoaderLayerInterfaceVersion + 0x4a7a4c
+    [1] VkLayer_khronos_validation.dll!0x7ffa5b3169a4
+    [2] vkNegotiateLoaderLayerInterfaceVersion + 0x29ac35
+    [3] vkNegotiateLoaderLayerInterfaceVersion + 0x9ff36
+    [4] vkNegotiateLoaderLayerInterfaceVersion + 0x29b474
+    [5] VkLayer_khronos_validation.dll!0x7ffa5b2f4771
+    [6] Twitch_GetDeviceProcAddr + 0x1a97
+    [7] TwitchMessageProc + 0x60473
+    [8] vk_optimusGetInstanceProcAddr + 0x5f83
+    [9] DrvPresentBuffers + 0x36f417
+    [10] vkResetEvent + 0x3ed0e
+    [11] vkResetEvent + 0x5a67d
+    [12] fw::VulkanCore::DestroyDeviceOnly + 0x2c
+    [13] RenderManager::Shutdown + 0x1430
+============================================================
+
+[VULKAN FORENSIC] VkDebugUtilsMessengerEXT cleanly destroyed on instance 0x1b4ddb511e0
+
+====================================================
+ FAIRWORLD FINAL VULKAN OWNERSHIP GATE
+ (post RenderManager::Shutdown)
+====================================================
+
+      Vulkan cleanup state             COMPLETED [PASS]
+      Tracked Semaphores LIVE           0   [PASS]
+      Validation Layer Errors          13   [FAIL]
+
+====================================================
+ VULKAN OWNERSHIP: LEAK DETECTED (FAIL)
+====================================================
+
+
+====================================================
+ [VulkanResourceTracker][Semaphore]
+====================================================
+CREATED   : 5
+DESTROYED : 5
+LIVE      : 0
+
+BY OWNER:
+  RenderManager
+    Created   : 5
+    Destroyed : 5
+    Live      : 0
+
+====================================================
+
+
+[VULKAN FORENSIC AUDIT] Intermediate Report:
+  Phase: Shutdown
+  Framebuffers created: 6, currently live: 0
+  Semaphores created: 5, destroyed: 5, currently live: 0
+  Validation Layer Errors: 13
+[SYSTEM] AI Server Python chiuso.
+[SYSTEM] Memoria globale mantenuta residente (6082 allocazioni attive, 9367198 bytes) per garantire terminazione CRT esente da Use-After-Free.
+[WorldProjectManager] Distrutto.
+[RuntimeManager] Distrutto.
+[VULKAN FORENSIC PHASE] -> Shutdown
+[GameWorld] O(1) Memory Destruction. Tutta l'arena liberata.

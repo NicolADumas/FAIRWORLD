@@ -7,6 +7,10 @@
 
 namespace fw {
 
+#if defined(_MSC_VER)
+#pragma float_control(precise, on, push)
+#pragma fp_contract(off)
+#endif
 void PlanetaryMeshGenerator::ConvertToPlanetaryPositions(
     std::vector<Vertex>& inOutVertices,
     const fw::PlanetChunkCoord& planetCoord,
@@ -94,5 +98,8 @@ void PlanetaryMeshGenerator::ConvertToPlanetaryPositions(
         inOutVertices.resize(writeIdx);
     }
 }
+#if defined(_MSC_VER)
+#pragma float_control(pop)
+#endif
 
 } // namespace fw

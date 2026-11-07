@@ -20,11 +20,15 @@
 #include "PortalSystem.h"
 #include "ForgeComponents.h"
 #include "ForgeWorld.h"
+#include "GameWorld.h"
 #include "RenderManager.h"
 #include "AsyncInput.h"
 #include "MapDocument.h"
 #include "WorldProjectManager.h"
 #include "MapWorldGenerator.h"
+#include "PlanetarySpawnPolicy.h"
+#include "CubeSphereMapping.h"
+#include "PlanetaryCameraFrame.h"
 #include "JobSystem.h"
 #include "VulkanDmaManager.h"
 #include "../core/app/RuntimeManager.h"
@@ -72,16 +76,13 @@ bool PlayState::Init() {
     if (!m_context->vramAllocator) {
         m_context->vramAllocator = new fw::VramSlabAllocator(2048ULL * 1024ULL * 1024ULL);
         m_context->vramAllocator->SetAllocateCompartmentCallback([ctx = m_context](uint32_t compIdx) {
-            if (ctx && ctx->engine && ctx->engine->GetRenderManager()) {
-                ctx->engine->GetRenderManager()->AddVramCompartment();
-                if (ctx->dmaManager) {
-                    ctx->dmaManager->UpdateStagingBuffer(
-                        ctx->engine->GetRenderManager()->GetStagingRingBuffer(),
-                        ctx->engine->GetRenderManager()->GetStagingDeviceMemory(),
-                        ctx->engine->GetRenderManager()->GetMappedStagingData()
-                    );
-                }
-            }
+            auto* rm = ctx && ctx->engine ? ctx->engine->GetRenderManager() : nullptr;
+            if (!rm || rm->GetVramCompartments().size() != compIdx || !rm->AddVramCompartment()) return false;
+            const auto& compartments = rm->GetVramCompartments();
+            if (compartments.size() != static_cast<size_t>(compIdx) + 1 || compartments[compIdx] == VK_NULL_HANDLE) return false;
+            if (ctx->dmaManager) ctx->dmaManager->UpdateStagingBuffer(
+                rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData());
+            return true;
         });
     }
     if (!m_context->dmaManager) {
@@ -90,7 +91,8 @@ bool PlayState::Init() {
             m_context->dmaManager->Initialize(
                 rm->GetDevice(), rm->GetTransferQueue(), rm->GetTransferCommandPool(),
                 rm->GetStagingRingBuffer(), rm->GetStagingDeviceMemory(), rm->GetMappedStagingData(),
-                rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex()
+                rm->GetStagingBufferSize(), VK_NULL_HANDLE, rm->GetQueueMutex(),
+                rm->GetTransferCommandPoolMutex()
             );
         }
     }
@@ -155,74 +157,77 @@ bool PlayState::Init() {
     auto cameraEntity = m_registry.create();
     m_registry.emplace<NameComponent>(cameraEntity, "MainCamera");
     
-    float spawnY = 150.0f;
-    glm::vec3 spawnPos(0.0f, spawnY, 0.0f);
+    fw::PlanetarySpawnPlan fallbackSpawn = fw::MakePlanetaryFallbackSpawn(fw::PlanetSize::Medium);
+    float spawnY = fallbackSpawn.temporaryBodyPosition.y;
+    glm::vec3 spawnPos = fallbackSpawn.temporaryBodyPosition;
+    m_pendingPlanetarySpawn = fallbackSpawn.pending;
+    m_pendingSpawnDirection = fallbackSpawn.direction;
+    m_pendingSpawnHeightOffset = fallbackSpawn.heightOffset;
+    m_pendingSpawnWaitLogged = false;
     
     if (mapDocLoaded && !mapDoc.planets.empty()) {
         auto& p = mapDoc.planets[0];
-        if (!p.isFlat) {
-            spawnY = fw::PlanetMath::GetPlanetRadius(p.planetSize) + 150.0f; // Default fallback su raggio
-            spawnPos = glm::vec3(0.0f, spawnY, 0.0f);
-        }
+        // PlayState is always a logical sphere, including legacy documents whose
+        // isFlat flag is retained only for document compatibility.
+        fallbackSpawn = fw::MakePlanetaryFallbackSpawn(p.planetSize);
+        spawnPos = fallbackSpawn.temporaryBodyPosition;
+        spawnY = spawnPos.y;
+        m_pendingPlanetarySpawn = fallbackSpawn.pending;
+        m_pendingSpawnDirection = fallbackSpawn.direction;
+        m_pendingSpawnHeightOffset = fallbackSpawn.heightOffset;
         
         if (!p.spawnPoints.empty()) {
             auto& sp = p.spawnPoints[0];
             float R = fw::PlanetMath::GetPlanetRadius(p.planetSize);
-            float cx = sp.localX / R;
-            float cy = sp.localZ / R;
-            glm::vec3 dir(0.0f);
-            switch (sp.faceIndex) {
-                case 0: dir = glm::vec3(cx, cy, 1.0f); break; // Nord
-                case 1: dir = glm::vec3(-cx, cy, -1.0f); break; // Sud
-                case 2: dir = glm::vec3(1.0f, cy, -cx); break; // Est
-                case 3: dir = glm::vec3(-1.0f, cy, cx); break; // Ovest
-                case 4: dir = glm::vec3(cx, 1.0f, -cy); break; // Top
-                case 5: dir = glm::vec3(cx, -1.0f, cy); break; // Bottom
+            if (sp.faceIndex < 0 || sp.faceIndex > 5 || !std::isfinite(R) || R <= 0.0f ||
+                !std::isfinite(sp.localX) || !std::isfinite(sp.localZ) || !std::isfinite(sp.heightOffset)) {
+                std::cerr << "[PlayState] Spawn planetario ignorato: coordinate documentali non valide.\n";
+            } else {
+                const glm::vec2 chart(sp.localX / R, sp.localZ / R);
+                glm::vec3 dir = fw::CubeSphereMapping::FaceChartToDirection(sp.faceIndex, chart);
+                // Terrain chunks are generated below and solved asynchronously during
+                // GameWorld::Update. Keep the player above the existing safe fallback
+                // until the actual voxel surface and collider footprint are queryable.
+                m_pendingPlanetarySpawn = true;
+                m_pendingSpawnDirection = dir;
+                m_pendingSpawnHeightOffset = sp.heightOffset;
+                spawnPos = dir * (R + 150.0f);
+                spawnY = spawnPos.y; // Update for rigidity below
+                std::cout << "[PlayState] Spawn custom '" << sp.name
+                          << "' in attesa della superficie voxel; posizione temporanea sicura: "
+                          << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << "\n";
             }
-            dir = glm::normalize(dir);
-            spawnPos = dir * (R + sp.heightOffset);
-            spawnY = spawnPos.y; // Update for rigidity below
-            std::cout << "[PlayState] Utilizzo Spawn Point custom '" << sp.name << "' a posizione: " << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << "\n";
         }
     }
     
     // Posizione iniziale
-    m_registry.emplace<TransformComponent>(cameraEntity, spawnPos.x, spawnPos.y, spawnPos.z);
+    auto& cameraTransform = m_registry.emplace<TransformComponent>(cameraEntity, spawnPos.x, spawnPos.y, spawnPos.z);
     auto& cam = m_registry.emplace<CameraComponent>(cameraEntity);
     
-    // --- CAMERA ORIENTATION MICRO-FIX ---
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-    if (glm::length(spawnPos) > 0.01f) {
-        up = glm::normalize(spawnPos);
+    glm::vec3 initialUp(0.0f, 1.0f, 0.0f);
+    if (!fw::PlanetaryCameraFrame::Normalize(spawnPos, initialUp)) initialUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    const auto initialCameraFrame = fw::PlanetaryCameraFrame::MakeInitial(initialUp);
+    cam.planetaryFrameUp = initialCameraFrame.up;
+    cam.planetaryFrameForward = initialCameraFrame.forward;
+    cam.planetaryFrameInitialized = initialCameraFrame.initialized;
+    cam.yaw = 0.0f;
+    cam.pitch = 0.0f;
+    fw::PlanetaryCameraFrame::Basis initialCameraBasis;
+    if (fw::PlanetaryCameraFrame::BuildBasis(initialCameraFrame, cam.yaw, cam.pitch, initialCameraBasis)) {
+        cam.front = initialCameraBasis.forward;
+        cam.right = initialCameraBasis.right;
+        cam.up = initialCameraBasis.up;
+        cam.worldUp = initialCameraFrame.up;
+        glm::mat3 cameraRotation;
+        cameraRotation[0] = initialCameraBasis.right;
+        cameraRotation[1] = initialCameraBasis.up;
+        cameraRotation[2] = -initialCameraBasis.forward;
+        cameraTransform.rotation = glm::quat_cast(cameraRotation);
+        cameraTransform.prev_rotation = cameraTransform.rotation;
     }
-    
-    glm::vec3 planetNorth = glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::vec3 baseForward;
-    if (std::abs(glm::dot(up, planetNorth)) < 0.99f) {
-        baseForward = glm::normalize(glm::cross(up, planetNorth));
-    } else {
-        baseForward = (glm::dot(up, planetNorth) > 0.0f) ? glm::vec3(0.0f, 0.0f, -1.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
-    }
-    
-    glm::vec3 desiredForward = baseForward;
-    
-    float derivedPitch = glm::degrees(std::asin(glm::clamp(glm::dot(desiredForward, up), -1.0f, 1.0f)));
-    
-    glm::vec3 tangentFront = desiredForward - up * glm::dot(desiredForward, up);
-    float derivedYaw = 0.0f;
-    if (glm::length(tangentFront) > 0.001f) {
-        tangentFront = glm::normalize(tangentFront);
-        glm::vec3 baseRight = glm::normalize(glm::cross(baseForward, up));
-        float cosYaw = glm::dot(tangentFront, baseForward);
-        float sinYaw = glm::dot(tangentFront, baseRight);
-        derivedYaw = glm::degrees(-std::atan2(sinYaw, cosYaw));
-    }
-    
-    cam.yaw = derivedYaw;
-    cam.pitch = derivedPitch;
-    // ------------------------------------
 
-    m_registry.emplace<PlayerControllerComponent>(cameraEntity);
+    auto& playerController = m_registry.emplace<PlayerControllerComponent>(cameraEntity);
+    playerController.planetarySpawnPending = m_pendingPlanetarySpawn;
     
     // Inizializza il RigidBody per la fisica
     auto& rbOpt = m_registry.emplace<RigidBodyComponent>(cameraEntity);
@@ -363,8 +368,8 @@ bool PlayState::Init() {
     m_systems.push_back(std::make_unique<fw::InventorySyncSystem>()); // AGGIORNA ARMA EQUIPAGGIATA DALL'HOTBAR
     m_systems.push_back(std::make_unique<fw::MeleeCombatSystem>()); // GESTISCE CARICA E ATTACCHI
     m_systems.push_back(std::make_unique<fw::PlayerMovementSystem>()); // MODIFICA LO STATO (Fisica Input)
-    m_systems.push_back(std::make_unique<fw::CameraSystem>()); // AGGIORNA TELECAMERA
     m_systems.push_back(std::make_unique<fw::PhysicsSystem>()); // AGGIORNA FISICA
+    m_systems.push_back(std::make_unique<fw::CameraSystem>()); // ORIENTAMENTO DOPO POSIZIONE FISICA
     
     // Generiamo l'anteprima in VRAM per la sfera di Brush (se serve)
     auto previewMesh = fw::MeshGenerators::MakeVoxelPreview(1, m_context);
@@ -482,6 +487,50 @@ void PlayState::Update(float dt) {
         }
         
         m_context->forgeWorld->Update(dt);
+
+        if (m_pendingPlanetarySpawn) {
+            auto playerView = m_registry.view<PlayerControllerComponent, TransformComponent,
+                                               CameraComponent, RigidBodyComponent>();
+            for (auto entity : playerView) {
+                auto& player = playerView.get<PlayerControllerComponent>(entity);
+                if (!player.planetarySpawnPending) continue;
+
+                glm::vec3 resolvedBodyPosition(0.0f);
+                const auto status = m_context->forgeWorld->TryResolvePlanetarySpawn(
+                    m_pendingSpawnDirection, m_pendingSpawnHeightOffset,
+                    playerView.get<RigidBodyComponent>(entity).body.radius, resolvedBodyPosition);
+                if (status == fw::PlanetarySpawnResolveStatus::Ready) {
+                    auto& body = playerView.get<RigidBodyComponent>(entity).body;
+                    body.position = resolvedBodyPosition;
+                    body.velocity = glm::vec3(0.0f);
+                    body.isGrounded = false;
+
+                    auto& transform = playerView.get<TransformComponent>(entity);
+                    const glm::vec3 eyePosition = resolvedBodyPosition +
+                        m_pendingSpawnDirection * body.eyeOffset;
+                    transform.x = eyePosition.x;
+                    transform.y = eyePosition.y;
+                    transform.z = eyePosition.z;
+                    transform.prev_x = transform.x;
+                    transform.prev_y = transform.y;
+                    transform.prev_z = transform.z;
+
+                    player.planetarySpawnPending = false;
+                    m_pendingPlanetarySpawn = false;
+                    std::cout << "[PlayState] Spawn planetario risolto sulla superficie voxel: body=("
+                              << resolvedBodyPosition.x << ',' << resolvedBodyPosition.y << ','
+                              << resolvedBodyPosition.z << ") radius=" << glm::length(resolvedBodyPosition)
+                              << " clearance=" << m_pendingSpawnHeightOffset << '\n';
+                } else if (!m_pendingSpawnWaitLogged &&
+                           status != fw::PlanetarySpawnResolveStatus::TerrainPending) {
+                    std::cerr << "[PlayState] Spawn planetario ancora pending (surface query status="
+                              << static_cast<unsigned>(status)
+                              << "); il player resta fermo alla posizione temporanea sicura.\n";
+                    m_pendingSpawnWaitLogged = true;
+                }
+                break;
+            }
+        }
         
         if (s_d74f6l_r1_gw_update < 5) {
             std::cout << "[D7.4F.6L-R1] PlayState after GameWorld::Update (Snapshot " << (s_d74f6l_r1_gw_update + 1) << "/5)\n";
@@ -607,34 +656,53 @@ void PlayState::Render() {
                     if (ImGui::Button(label.c_str(), ImVec2(200, 30))) {
                         // Calcola la posizione 3D globale partendo dalle coordinate sferiche locali
                         float R = fw::PlanetMath::GetPlanetRadius(planet.planetSize);
-                        float cx = sp.localX / R;
-                        float cy = sp.localZ / R;
-                        glm::vec3 dir(0.0f);
-                        switch (sp.faceIndex) {
-                            case 0: dir = glm::vec3(cx, cy, 1.0f); break;
-                            case 1: dir = glm::vec3(-cx, cy, -1.0f); break;
-                            case 2: dir = glm::vec3(1.0f, cy, -cx); break;
-                            case 3: dir = glm::vec3(-1.0f, cy, cx); break;
-                            case 4: dir = glm::vec3(cx, 1.0f, -cy); break;
-                            case 5: dir = glm::vec3(cx, -1.0f, cy); break;
+                        const glm::vec2 chart(sp.localX / R, sp.localZ / R);
+                        glm::vec3 dir = fw::CubeSphereMapping::FaceChartToDirection(sp.faceIndex, chart);
+                        glm::vec3 worldPos(0.0f);
+                        float colliderRadius = 0.3f;
+                        auto playerView = m_registry.view<CameraComponent, TransformComponent,
+                                                           PlayerControllerComponent, RigidBodyComponent>();
+                        for (auto playerEntity : playerView) {
+                            colliderRadius = playerView.get<RigidBodyComponent>(playerEntity).body.radius;
+                            break;
                         }
-                        if (glm::length(dir) > 0.001f) dir = glm::normalize(dir);
-                        glm::vec3 worldPos = dir * (R + sp.heightOffset);
+                        const auto spawnStatus = m_context->forgeWorld
+                            ? m_context->forgeWorld->TryResolvePlanetarySpawn(dir, sp.heightOffset, colliderRadius, worldPos)
+                            : fw::PlanetarySpawnResolveStatus::TerrainPending;
+                        if (spawnStatus != fw::PlanetarySpawnResolveStatus::Ready) {
+                            std::cout << "[PlayState] Teletrasporto non eseguito: superficie voxel non pronta (status="
+                                      << static_cast<unsigned>(spawnStatus) << ").\n";
+                        } else {
+                            // Teletrasporta il giocatore!
+                            for (auto playerEnt : playerView) {
+                                auto& rb = playerView.get<RigidBodyComponent>(playerEnt);
+                                // D1.2.11 TEMP DIAGNOSTICS BEGIN: observation only; assignments below are unchanged.
+                                const glm::vec3 previousPosition = rb.body.position;
+                                // D1.2.11 TEMP DIAGNOSTICS END.
+                                rb.body.position = worldPos;
+                                rb.body.velocity = glm::vec3(0.0f);
 
-                        // Teletrasporta il giocatore!
-                        auto playerView = m_registry.view<CameraComponent, TransformComponent, PlayerControllerComponent, RigidBodyComponent>();
-                        for (auto playerEnt : playerView) {
-                            auto& rb = playerView.get<RigidBodyComponent>(playerEnt);
-                            rb.body.position = worldPos;
-                            rb.body.velocity = glm::vec3(0.0f);
-                            
-                            auto& trans = playerView.get<TransformComponent>(playerEnt);
-                            trans.x = rb.body.position.x;
-                            trans.y = rb.body.position.y + rb.body.eyeOffset;
-                            trans.z = rb.body.position.z;
-                            trans.prev_x = trans.x;
-                            trans.prev_y = trans.y;
-                            trans.prev_z = trans.z;
+                                auto& trans = playerView.get<TransformComponent>(playerEnt);
+                                trans.x = rb.body.position.x;
+                                trans.y = rb.body.position.y + rb.body.eyeOffset;
+                                trans.z = rb.body.position.z;
+                                trans.prev_x = trans.x;
+                                trans.prev_y = trans.y;
+                                trans.prev_z = trans.z;
+
+                                // D1.2.11 TEMP DIAGNOSTICS BEGIN: report actual post-assignment body position.
+                                const glm::vec3 nextPosition = rb.body.position;
+                                const glm::vec3 teleportDelta = nextPosition - previousPosition;
+                                std::cout << "[D1.2.11][TELEPORT] previous=(" << previousPosition.x << ','
+                                          << previousPosition.y << ',' << previousPosition.z << ") face=" << sp.faceIndex
+                                          << " local=(" << sp.localX << ',' << sp.localZ << ") chart=(" << chart.x << ','
+                                          << chart.y << ") heightOffset=" << sp.heightOffset << " target=(" << worldPos.x
+                                          << ',' << worldPos.y << ',' << worldPos.z << ") next=(" << nextPosition.x << ','
+                                          << nextPosition.y << ',' << nextPosition.z << ") delta=(" << teleportDelta.x << ','
+                                          << teleportDelta.y << ',' << teleportDelta.z << ") distance="
+                                          << glm::length(teleportDelta) << '\n';
+                                // D1.2.11 TEMP DIAGNOSTICS END.
+                            }
                         }
                     }
                     ImGui::PopStyleColor();

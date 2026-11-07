@@ -5,6 +5,15 @@
 
 namespace fw {
 
+glm::vec2 CubeSphereMapping::FaceUVToChartCoordinates(const glm::vec2& uv) {
+    return glm::vec2(2.0f * uv.x - 1.0f, 1.0f - 2.0f * uv.y);
+}
+
+glm::vec3 CubeSphereMapping::FaceChartToDirection(CubeFace face, const glm::vec2& chart) {
+    const glm::vec2 uv((chart.x + 1.0f) * 0.5f, (1.0f - chart.y) * 0.5f);
+    return FaceUVToDirection(face, uv);
+}
+
 void CubeSphereMapping::DirectionToFaceUV(const glm::vec3& direction, CubeFace& outFace, glm::vec2& outUV) {
     glm::vec3 absNormal = glm::abs(direction);
     int face = 0;
@@ -51,13 +60,50 @@ glm::vec3 CubeSphereMapping::FaceUVToCubeDir(CubeFace face, const glm::vec2& uv)
     return dir;
 }
 
+#if defined(_MSC_VER)
+#pragma float_control(precise, on, push)
+#pragma fp_contract(off)
+#endif
 glm::vec3 CubeSphereMapping::FaceUVToDirection(CubeFace face, const glm::vec2& uv) {
-    return glm::normalize(FaceUVToCubeDir(face, uv));
+    const glm::vec3 cubeDirection = FaceUVToCubeDir(face, uv);
+    const float squaredLength = (cubeDirection.x * cubeDirection.x +
+        cubeDirection.y * cubeDirection.y) + cubeDirection.z * cubeDirection.z;
+    const float inverseLength = glm::inversesqrt(squaredLength);
+    const auto canonicalizeZero = [](float component) {
+        return component == 0.0f ? 0.0f : component;
+    };
+    return glm::vec3(
+        canonicalizeZero(cubeDirection.x * inverseLength),
+        canonicalizeZero(cubeDirection.y * inverseLength),
+        canonicalizeZero(cubeDirection.z * inverseLength));
 }
+#if defined(_MSC_VER)
+#pragma float_control(pop)
+#endif
 
 void CubeSphereMapping::UVToGrid(const glm::vec2& uv, int resolution, int& outCol, int& outRow) {
-    outCol = std::clamp((int)(uv.x * resolution), 0, resolution - 1);
-    outRow = std::clamp((int)(uv.y * resolution), 0, resolution - 1);
+    const auto mapAxis = [resolution](float coordinate) {
+        // Compare against the representable float boundaries used to construct
+        // UV values (float(k) / float(N)). Exact boundary values belong to cell k;
+        // the immediately preceding float remains in cell k - 1.
+        int firstBoundaryAfterCoordinate = 1;
+        int boundaryEnd = resolution;
+        while (firstBoundaryAfterCoordinate < boundaryEnd) {
+            const int candidate = firstBoundaryAfterCoordinate +
+                (boundaryEnd - firstBoundaryAfterCoordinate) / 2;
+            const float boundary = static_cast<float>(candidate) / static_cast<float>(resolution);
+            if (coordinate >= boundary) {
+                firstBoundaryAfterCoordinate = candidate + 1;
+            } else {
+                boundaryEnd = candidate;
+            }
+        }
+
+        return std::clamp(firstBoundaryAfterCoordinate - 1, 0, resolution - 1);
+    };
+
+    outCol = mapAxis(uv.x);
+    outRow = mapAxis(uv.y);
 }
 
 glm::vec2 CubeSphereMapping::GridToUV(int col, int row, int resolution) {

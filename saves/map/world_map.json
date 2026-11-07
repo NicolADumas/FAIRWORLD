@@ -1,0 +1,176 @@
+{
+    "isCompiled": false,
+    "planets": [
+        {
+            "baseTerrain": {
+                "baseRules": {
+                    "biome": {
+                        "environment": {
+                            "altitude": 0.5,
+                            "humidity": 0.5,
+                            "latitude": 0.0,
+                            "moisture": 0.5,
+                            "slope": 0.0,
+                            "temperature": 0.5,
+                            "waterProximity": 0.0
+                        }
+                    },
+                    "caves": {
+                        "chambers": {
+                            "frequency": 0.019999999552965164,
+                            "scale": 1.0,
+                            "strength": 1.0
+                        },
+                        "enabled": false,
+                        "maxDepth": 120.0,
+                        "minDepth": 4.0,
+                        "tunnels": {
+                            "frequency": 0.05000000074505806,
+                            "scale": 1.0,
+                            "strength": 1.0,
+                            "threshold": 0.550000011920929
+                        },
+                        "verticalBias": 0.0
+                    },
+                    "erosion": {
+                        "enabled": false,
+                        "hydraulicErosion": 0.0,
+                        "sedimentation": 0.0,
+                        "thermalErosion": 0.0,
+                        "weathering": 0.0
+                    },
+                    "height": {
+                        "algorithm": 0,
+                        "common": {
+                            "amplitude": 25.0,
+                            "baseHeight": 25.0,
+                            "frequency": 0.029999999329447746,
+                            "macroScale": 1.0
+                        },
+                        "specialized": {
+                            "octaves": 4
+                        }
+                    },
+                    "layers": {
+                        "coreBlockName": "fairworld:stone",
+                        "layers": []
+                    },
+                    "water": {
+                        "basinStrength": 0.0,
+                        "enabled": false,
+                        "floorBlockName": "fairworld:sand",
+                        "globalLevel": 16,
+                        "liquidBlockName": "fairworld:water",
+                        "regionalVariation": 0.0,
+                        "shorelineFalloff": 0.0
+                    }
+                },
+                "biome": 8
+            },
+            "chunkInstances": [],
+            "chunkOverrides": [],
+            "isFlat": false,
+            "maxX": 16,
+            "maxY": 128,
+            "maxZ": 16,
+            "minX": -16,
+            "minY": 0,
+            "minZ": -16,
+            "name": "Fairworld Prime",
+            "planetSize": 0,
+            "regions": [],
+            "spawnPoints": [],
+            "type": 0
+        }
+    ],
+    "terrainLibrary": [
+        {
+            "baseAngularRadius": 0.25,
+            "baseRules": {
+                "biome": {
+                    "environment": {
+                        "altitude": 0.5,
+                        "humidity": 0.5,
+                        "latitude": 0.0,
+                        "moisture": 0.5,
+                        "slope": 0.0,
+                        "temperature": 0.5,
+                        "waterProximity": 0.0
+                    }
+                },
+                "caves": {
+                    "chambers": {
+                        "frequency": 0.019999999552965164,
+                        "scale": 1.0,
+                        "strength": 1.0
+                    },
+                    "enabled": false,
+                    "maxDepth": 120.0,
+                    "minDepth": 4.0,
+                    "tunnels": {
+                        "frequency": 0.05000000074505806,
+                        "scale": 1.0,
+                        "strength": 1.0,
+                        "threshold": 0.550000011920929
+                    },
+                    "verticalBias": 0.0
+                },
+                "erosion": {
+                    "enabled": false,
+                    "hydraulicErosion": 0.0,
+                    "sedimentation": 0.0,
+                    "thermalErosion": 0.0,
+                    "weathering": 0.0
+                },
+                "height": {
+                    "algorithm": 0,
+                    "common": {
+                        "amplitude": 25.0,
+                        "baseHeight": 25.0,
+                        "frequency": 0.029999999329447746,
+                        "macroScale": 1.0
+                    },
+                    "specialized": {
+                        "octaves": 4
+                    }
+                },
+                "layers": {
+                    "coreBlockName": "fairworld:stone",
+                    "layers": [
+                        {
+                            "blendMode": 0,
+                            "blockName": "fairworld:grass",
+                            "maxDepth": 1.0,
+                            "minDepth": 0.0,
+                            "noiseScale": 0.029999999329447746,
+                            "noiseStrength": 0.0
+                        },
+                        {
+                            "blendMode": 0,
+                            "blockName": "fairworld:dirt",
+                            "maxDepth": 4.0,
+                            "minDepth": 1.0,
+                            "noiseScale": 0.029999999329447746,
+                            "noiseStrength": 0.0
+                        }
+                    ]
+                },
+                "water": {
+                    "basinStrength": 0.0,
+                    "enabled": false,
+                    "floorBlockName": "fairworld:sand",
+                    "globalLevel": 16,
+                    "liquidBlockName": "fairworld:water",
+                    "regionalVariation": 0.0,
+                    "shorelineFalloff": 0.0
+                }
+            },
+            "baseType": 0,
+            "id": "default_terrain",
+            "name": "Terreno Standard",
+            "planetSize": 2,
+            "seed": 0,
+            "subRegions": []
+        }
+    ]
+}

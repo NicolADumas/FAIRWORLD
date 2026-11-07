@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f91ee1a4-6b7b-34e6-9ea3-5031e04288c8" DefaultStartup="true">
+		<BuildDependency Project="FairworldAppearanceTests.vcxproj"/>
+		<BuildDependency Project="FairworldAsyncInputTests.vcxproj"/>
+		<BuildDependency Project="FairworldAuthoringTests.vcxproj"/>
+		<BuildDependency Project="FairworldBindingTests.vcxproj"/>
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="FairworldCustomScientificTests.vcxproj"/>
+		<BuildDependency Project="FairworldDiagnostics.vcxproj"/>
+		<BuildDependency Project="FairworldDmaResultContractTests.vcxproj"/>
+		<BuildDependency Project="FairworldEditor.vcxproj"/>
+		<BuildDependency Project="FairworldEventTests.vcxproj"/>
+		<BuildDependency Project="FairworldForgeVertexContractTests.vcxproj"/>
+		<BuildDependency Project="FairworldGameplayStressTests.vcxproj"/>
+		<BuildDependency Project="FairworldJobSystemContractTests.vcxproj"/>
+		<BuildDependency Project="FairworldLifecycleTests.vcxproj"/>
+		<BuildDependency Project="FairworldMemoryTests.vcxproj"/>
+		<BuildDependency Project="FairworldNoiseTests.vcxproj"/>
+		<BuildDependency Project="FairworldPlanetaryVoxelE2ETests.vcxproj"/>
+		<BuildDependency Project="FairworldScientificTests.vcxproj"/>
+		<BuildDependency Project="FairworldSculptTests.vcxproj"/>
+		<BuildDependency Project="FairworldTextureCacheTests.vcxproj"/>
+		<BuildDependency Project="FairworldTransferGraphicsSyncTests.vcxproj"/>
+		<BuildDependency Project="FairworldUVTests.vcxproj"/>
+		<BuildDependency Project="FairworldVramAllocatorContractTests.vcxproj"/>
+		<BuildDependency Project="FairworldVulkanRecoveryTests.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="Module_GeometryNodes.vcxproj"/>
+		<BuildDependency Project="Module_Modeling.vcxproj"/>
+		<BuildDependency Project="Module_Sculpting.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldAppearanceTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="2945312b-780c-3aee-9835-23b6dd209ab8">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldAsyncInputTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="34253cb3-4b45-301b-9f1e-8e56bf0b1d63">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldAuthoringTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="be018bb1-f3f1-37a9-83a9-eae91529cd11">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldBindingTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="230256d7-ac7e-348a-a42f-b78a86c5fe9e">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldCore.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d483896a-d239-355f-bcaa-78e3d3b70053">
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldCustomScientificTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="40a61db5-fa61-3fba-ab09-e06664fc8348">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldDiagnostics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="1e04c709-9db4-32e6-9373-e5acb5cc3e64">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldDmaResultContractTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="44a8d113-4e8f-392a-99cb-0922ef2e42e2">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldEditor.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="25d681cb-afa5-3378-8626-183e9458589c">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldEventTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8fd95584-10c2-3fd7-af77-5099df032597">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldForgeVertexContractTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d385322d-09e1-3651-be21-5e3f6ba58b87">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldGameplayStressTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="7a39982d-0c22-3b06-bac8-ff2223fb4839">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldJobSystemContractTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e57ffb10-5563-3cf7-b356-c9be0407ca5e">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldLifecycleTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d711de49-69b5-3ed2-b9f4-c28811a05e2b">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldMemoryTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8b2ce54b-3f13-3ed1-89d7-816ef6fac47d">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldNoiseTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="7f3db298-96e0-3060-af31-cb807672f954">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldPlanetaryVoxelE2ETests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4c4736c2-332f-370c-a025-92e4c8535a09">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldScientificTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3b91b122-5104-3e9a-8f83-d6ea01ca1297">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldSculptTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="5f278b77-bd41-3abe-b800-766ef7ba007d">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldTextureCacheTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="131329a1-a46a-3ae6-9635-e4c28e375a1c">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldTransferGraphicsSyncTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e3651b49-c912-3e63-986b-7b6d07d1bcb5">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldUVTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="7fc6638f-0f64-378e-b23a-4b282b9b658e">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldVramAllocatorContractTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="fb890683-88ce-395d-a6ed-377612b33f02">
+		<BuildDependency Project="FairworldCore.vcxproj"/>
+		<BuildDependency Project="_deps/joltphysics-build/Jolt.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="FairworldVulkanRecoveryTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f1d739a8-ad58-392a-a03e-e06ece9f5714">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="INSTALL.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="fbc808a2-76d8-329a-8a80-1510ebb01dd2">
+		<BuildDependency Project="ALL_BUILD.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="_deps/joltphysics-build/Jolt.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="0c57da1c-040e-325f-84bb-4ed93f7c7447">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="Module_GeometryNodes.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4c294196-8b61-3b1c-acef-66b070dcee66">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="Module_Modeling.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="0ae6f4bd-cc47-3c12-8cba-160929fadb15">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="Module_Sculpting.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="86038b73-57f1-30df-9490-7bc90bb8198d">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="RUN_TESTS.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="859534d5-3191-3753-8992-0e4ea430f4d0">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="c8e11fc6-b3e9-3ab1-b95e-9fac5b459b68"/>
+</Solution>

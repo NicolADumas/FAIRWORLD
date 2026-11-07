@@ -224,9 +224,11 @@ bool LifecycleFreezeGate::RunRuntimeGate(SharedContext* context)
 //   - Tutti i semaphore RenderManager sono stati distrutti
 //   - VulkanResourceTracker::Shutdown() NON ancora chiamato (stamperebbe solo dopo)
 // ─────────────────────────────────────────────────────────────
-VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal()
+VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal(bool cleanupDeferred, bool deviceLostAfterCleanup)
 {
     VulkanFinalSnapshot snap;
+    snap.cleanupDeferred = cleanupDeferred;
+    snap.deviceLostAfterCleanup = deviceLostAfterCleanup;
     snap.liveSemaphores = VulkanResourceTracker::Get().GetLiveSemaphoreCount();
     snap.validationErrors = fw::forensic::GetValidationErrorCount();
     return snap;
@@ -237,7 +239,7 @@ VulkanFinalSnapshot LifecycleFreezeGate::CollectVulkanFinal()
 // ─────────────────────────────────────────────────────────────
 bool LifecycleFreezeGate::EvaluateVulkanFinal(const VulkanFinalSnapshot& snap)
 {
-    return snap.liveSemaphores == 0 && snap.validationErrors == 0;
+    return !snap.cleanupDeferred && snap.liveSemaphores == 0 && snap.validationErrors == 0;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -252,6 +254,13 @@ void LifecycleFreezeGate::PrintVulkanFinalReport(const VulkanFinalSnapshot& snap
     std::cout << " (post RenderManager::Shutdown)\n";
     std::cout << "====================================================\n\n";
 
+    if (snap.cleanupDeferred) {
+        std::cout << "      Vulkan cleanup state             DEFERRED [FAIL] (resources still owned; not destroyed)\n";
+    } else if (snap.deviceLostAfterCleanup) {
+        std::cout << "      Vulkan cleanup state             DEVICE LOST; teardown completed [WARN]\n";
+    } else {
+        std::cout << "      Vulkan cleanup state             COMPLETED [PASS]\n";
+    }
     PrintRow("Tracked Semaphores LIVE", snap.liveSemaphores, snap.liveSemaphores == 0);
     PrintRow("Validation Layer Errors", snap.validationErrors, snap.validationErrors == 0);
     std::cout << "\n";
@@ -268,9 +277,9 @@ void LifecycleFreezeGate::PrintVulkanFinalReport(const VulkanFinalSnapshot& snap
 // ─────────────────────────────────────────────────────────────
 //  FINAL VULKAN OWNERSHIP GATE — Run (helper combinato)
 // ─────────────────────────────────────────────────────────────
-bool LifecycleFreezeGate::RunVulkanFinalGate()
+bool LifecycleFreezeGate::RunVulkanFinalGate(bool cleanupDeferred, bool deviceLostAfterCleanup)
 {
-    VulkanFinalSnapshot snap = CollectVulkanFinal();
+    VulkanFinalSnapshot snap = CollectVulkanFinal(cleanupDeferred, deviceLostAfterCleanup);
     PrintVulkanFinalReport(snap);
     return EvaluateVulkanFinal(snap);
 }
